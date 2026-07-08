@@ -379,4 +379,4 @@ def test_web_opens_candidate_stock_when_tdx_stock_detail_is_missing(
     assert "系统暂时无法生成复盘" not in html
     assert "兴业科技" in html
     assert "个股分析" in html
-    assert "五维分析" in html
+    assert "6 维判断" in html

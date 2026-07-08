@@ -269,9 +269,9 @@ def test_stock_module_surfaces_core_evidence_chain() -> None:
     )
 
     assert "核心证据链" in html
-    assert "趋势证据" in html
-    assert "风险边界" in html
-    assert "公告闸门" in html
+    assert "技术面" in html
+    assert "消息/公告" in html
+    assert "成本位置" in html
     assert "操作条件" in html
 
 
@@ -488,7 +488,7 @@ def test_smart_select_uses_tdx_snapshot_scan_metadata_for_full_market_scope() ->
     assert "全市场行情分页扫描" in screener_html
 
 
-def test_stock_module_surfaces_five_dimension_analysis() -> None:
+def test_stock_module_surfaces_six_dimension_decision() -> None:
     html = render_page(
         stock_code="600519",
         provider_name="sample",
@@ -500,12 +500,15 @@ def test_stock_module_surfaces_five_dimension_analysis() -> None:
     portfolio_start = html.index('id="portfolio"')
     stock_html = html[stock_start:portfolio_start]
 
-    assert "五维分析" in stock_html
+    assert "6 维判断" in stock_html
+    assert "一句最终动作" in stock_html
+    assert "技术面" in stock_html
     assert "基本面" in stock_html
     assert "资金面" in stock_html
-    assert "消息面" in stock_html
-    assert "统计面" in stock_html
+    assert "消息/公告" in stock_html
     assert "概念板块" in stock_html
+    assert "成本位置" in stock_html
+    assert "五维分析" not in stock_html
     assert "专业八维诊断" in stock_html
     assert "技术趋势" in stock_html
     assert "量价结构" in stock_html
@@ -639,6 +642,42 @@ def test_data_quality_module_surfaces_source_route_without_fake_precision() -> N
     assert "补充</span><strong>AKShare" in html
     assert "跨市场</span><strong>港股 / 美股" in html
     assert "候选价格</span><strong>可用" in html
+
+
+def test_settings_page_starts_with_plain_health_summary_not_engineering_tables() -> None:
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+
+    settings_start = html.index('id="settings"')
+    settings_html = html[settings_start:]
+
+    assert "系统健康检查" in settings_html
+    assert "数据是否正常" in settings_html
+    assert "邮件是否正常" in settings_html
+    assert "账号是否正常" in settings_html
+    assert "自动更新是否正常" in settings_html
+    assert settings_html.index("系统健康检查") < settings_html.index("Provider 矩阵")
+
+
+def test_watchlist_is_marked_as_low_frequency_tracking_not_daily_decision() -> None:
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+
+    watchlist_start = html.index('id="watchlist"')
+    daily_start = html.index('id="daily"')
+    watchlist_html = html[watchlist_start:daily_start]
+
+    assert "低频跟踪" in watchlist_html
+    assert "不影响今日交易" in watchlist_html
+    assert "长期观察" in watchlist_html
 
 
 def test_page_removes_twenty_engineering_refactor_items() -> None:

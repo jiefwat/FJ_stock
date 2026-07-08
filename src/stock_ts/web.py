@@ -3243,12 +3243,13 @@ def _render_watchlist_module(stock: DeepStockReport) -> str:
     trigger = stock.invalid_conditions[0] if stock.invalid_conditions else "跌破失效价降级观察"
     return f"""
     <section class="module" id="module-watchlist">
-      <div class="module-header"><div><h2 class="module-title">自选研究</h2></div><span class="status-pill">研究假设</span></div>
+      <div class="module-header"><div><h2 class="module-title">自选研究</h2></div><span class="status-pill">低频跟踪</span></div>
       <div class="summary-grid">
         <div class="summary-card"><span>当前标的</span><strong>{escape(stock.name)} · {escape(stock.code)}</strong></div>
         <div class="summary-card"><span>观察分</span><strong>{stock.upside.score}/100</strong></div>
         <div class="summary-card"><span>核心风险</span><strong>{escape(risk)}</strong></div>
         <div class="summary-card"><span>触发条件</span><strong>{escape(trigger)}</strong></div>
+        <div class="summary-card"><span>用途</span><strong>长期观察</strong><p class="kpi-foot">不影响今日交易；只沉淀假设、提醒和复盘线索。</p></div>
       </div>
       <div class="panel">
         <h3>添加自选</h3>
@@ -3294,9 +3295,15 @@ def _render_system_settings_module(
         ]
     )
     auth_panel = _render_auth_settings_panel(current_user=current_user, holdings_path=holdings_path)
+    health_summary = _render_system_health_summary(
+        quality=quality,
+        settings_summary=summary,
+        current_user=current_user,
+    )
     return f"""
     <section class="module" id="module-settings">
       <div class="module-header"><div><h2 class="module-title">检查系统</h2></div><span class="risk-pill mid">{escape(quality.status)}</span></div>
+      {health_summary}
       {_retitle_module(_render_compact_data_quality_module(quality), old_id="module-data-quality", new_id="module-settings-quality")}
       <div class="grid-2" style="margin-top:16px">
         <div class="panel"><h3>Provider 矩阵</h3><table class="data-table"><thead><tr><th>数据源</th><th>状态</th><th>覆盖</th><th>限制</th></tr></thead><tbody>{rows}</tbody></table></div>
@@ -3304,6 +3311,36 @@ def _render_system_settings_module(
       </div>
       {auth_panel}
     </section>"""
+
+
+def _render_system_health_summary(
+    *,
+    quality: DataQualityView,
+    settings_summary: dict[str, str],
+    current_user: AuthUser | None,
+) -> str:
+    data_state = "正常" if quality.gate_level == "ok" else "需复核"
+    email_state = "正常" if settings_summary.get("email") == "configured" else "未配置"
+    account_state = "已登录" if current_user is not None else "按当前模式"
+    pipeline_status = _read_key_value_status(
+        Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily")) / "pipeline.status"
+    )
+    auto_state = _human_pipeline_status(pipeline_status.get("status", "未执行"))
+    cards = [
+        ("数据是否正常", data_state, quality.summary),
+        ("邮件是否正常", email_state, "用于早间复盘和机会发送。"),
+        ("账号是否正常", account_state, "持仓按账号隔离；行情和选股全站共享。"),
+        ("自动更新是否正常", auto_state, "每 2 小时刷新一次，失败看下方监控。"),
+    ]
+    card_html = "".join(
+        f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong><p class='kpi-foot'>{escape(note)}</p></div>"
+        for label, value, note in cards
+    )
+    return f"""
+      <div class="panel">
+        <div class="editor-toolbar"><div><h3>系统健康检查</h3><p class="section-subtitle">先看能不能用，再看工程细节。</p></div></div>
+        <div class="summary-grid">{card_html}</div>
+      </div>"""
 
 
 def _render_auth_settings_panel(
@@ -4084,25 +4121,27 @@ def _render_stock_compact_research_panel(
     )
     announcement_count = len(announcement_report.items) if announcement_report else 0
     rows = [
-        ("趋势证据", stock.trend, technical.structure),
-        ("风险边界", stock.risk_level, f"{risk}；{invalid}"),
-        ("公告闸门", event_radar.gate, f"事件风险 {event_radar.risk_score}/100"),
+        (
+            "技术面",
+            f"{stock.trend} · MA5 {_fmt_optional(technical.ma5)}",
+            f"RSI {_fmt_optional(technical.rsi14)}；量能比 {technical.volume_ratio:.2f}；{technical.structure}",
+        ),
         ("基本面", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
         ("资金面", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
         (
-            "消息面",
+            "消息/公告",
             _stock_news_text(event_radar, announcement_count, len(stock_raw.news_items)),
             _stock_news_note(stock_raw, event_radar),
-        ),
-        (
-            "统计面",
-            f"MA5 {_fmt_optional(technical.ma5)} · RSI {_fmt_optional(technical.rsi14)}",
-            f"量能比 {technical.volume_ratio:.2f} · {technical.structure}",
         ),
         (
             "概念板块",
             _stock_sector_strength_text(stock, sectors),
             _stock_sector_strength_note(stock, sectors),
+        ),
+        (
+            "成本位置",
+            _stock_cost_position_text(position),
+            _stock_cost_position_note(position, trade_plan, invalid),
         ),
     ]
     row_html = "".join(
@@ -4149,7 +4188,8 @@ def _render_stock_compact_research_panel(
     return f"""
       <div class="grid-2 stock-research-grid" style="margin-top:16px">
         <div class="panel">
-          <h3>核心证据链 / 五维分析</h3>
+          <h3>核心证据链 / 6 维判断</h3>
+          <div class="quality-banner good" style="margin-bottom:12px"><strong>一句最终动作：</strong>{escape(trade_plan.verdict)}；{escape(trade_plan.today_action if hasattr(trade_plan, "today_action") else trade_plan.entry_trigger)}</div>
           <table class="data-table"><thead><tr><th>维度</th><th>结论</th><th>依据</th></tr></thead><tbody>{row_html}</tbody></table>
         </div>
         <div class="panel">
@@ -4227,6 +4267,30 @@ def _stock_holding_state(position: PositionAnalysis) -> str:
     if position.pnl >= 0 and position.trend == "上升趋势":
         return "保护利润 / 趋势持有"
     return "成本复核"
+
+
+def _stock_cost_position_text(position: PositionAnalysis | None) -> str:
+    if position is None:
+        return "未持仓"
+    if position.pnl_ratio >= 15:
+        return f"盈利 {position.pnl_ratio:.2f}%"
+    if position.pnl_ratio <= -10:
+        return f"亏损 {abs(position.pnl_ratio):.2f}%"
+    return f"接近成本 {position.pnl_ratio:.2f}%"
+
+
+def _stock_cost_position_note(
+    position: PositionAnalysis | None,
+    trade_plan: TradePlan,
+    invalid: str,
+) -> str:
+    if position is None:
+        return "当前账号没有成本价，先按技术触发和风控线观察。"
+    if position.pnl_ratio >= 15:
+        return f"成本 {position.holding.cost_price:.2f}；优先保护利润，减仓触发：{trade_plan.reduce_trigger}"
+    if position.pnl_ratio <= -10:
+        return f"成本 {position.holding.cost_price:.2f}；不补亏，失效条件：{invalid}"
+    return f"成本 {position.holding.cost_price:.2f}；按买入/止损触发执行，不临时加仓。"
 
 
 def _stock_chart_url(stock_code: str, provider_name: str, holdings_path: str) -> str:
