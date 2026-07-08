@@ -577,3 +577,58 @@ def test_morning_report_falls_back_to_deep_stock_observation_for_holdings(tmp_pa
     holding_lines = _section_lines(content, "## 今天持仓怎么做", "## 今日机会")
     assert holding_lines
     assert all(len(line) <= 170 for line in holding_lines)
+
+
+def test_morning_report_starts_with_commuter_decision_brief(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-08）\n\n"
+        "## 深度结论\n- 市场震荡，先控风险，只做主线前排观察\n\n"
+        "## 每日大盘情况\n- 上涨 2100 / 下跌 2800 / 平盘 120，市场热度 48/100\n\n"
+        "## 板块情况\n- 商业航天强，白酒弱\n\n"
+        "## 每日持仓分析\n"
+        "## 组合健康度\n- 健康度：46/100\n\n"
+        "## 持仓明细\n"
+        "- 甬矽电子（688362）：市值 54360.00，仓位 11.4%，"
+        "盈亏 19019.60（53.82%），趋势 下降趋势，风险 高\n"
+        "- 润建股份（002929）：市值 55192.00，仓位 11.6%，"
+        "盈亏 -5837.12（-9.56%），趋势 下降趋势，风险 中\n\n"
+        "## 候选股票池摘要\n"
+        "## 候选股票\n"
+        "1. 航天科技（000901，商业航天）：观察分 88/100\n"
+        "   - 入选理由：商业航天强度高，量能放大\n"
+        "   - 风险提示：高位分歧\n"
+        "   - 观察条件：回踩不破开盘价\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\nexternal_enrich=failed:timeout\nreport=ok\n",
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    first_block = content.split("## 地铁上先看这 5 条", 1)[0]
+    assert "## 手机决策版" in first_block
+    assert "大盘：" in first_block
+    assert "风险：" in first_block
+    assert "持仓：" in first_block
+    assert "机会：" in first_block
+    assert "今天不要做：" in first_block
+    assert "甬矽电子" in first_block
+    assert "航天科技" in first_block
+    assert "网页" not in first_block
+    decision_lines = [line for line in first_block.splitlines() if line.startswith("- ")]
+    assert decision_lines
+    assert all(len(line) <= 150 for line in decision_lines)

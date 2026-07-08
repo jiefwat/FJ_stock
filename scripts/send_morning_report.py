@@ -76,11 +76,21 @@ def build_morning_report(
         portfolio=portfolio,
         opportunities="\n".join(opportunity_actions) if opportunity_actions else opportunities,
     )
+    commuter_brief = _commuter_decision_brief(
+        conclusion=first_conclusion,
+        market=market,
+        portfolio_actions=portfolio_actions,
+        opportunity_actions=opportunity_actions,
+        pipeline=pipeline,
+    )
     lines = [
         f"# StockTS 早间复盘与机会｜今日操作（{generated_at[:10]}，基于交易日：{trade_date}）",
         "",
         "## 一句话结论",
         _bullet(first_conclusion),
+        "",
+        "## 手机决策版",
+        *(_bullet(item) for item in commuter_brief),
         "",
         "## 地铁上先看这 5 条",
         *(_bullet(item) for item in quick_reads),
@@ -903,6 +913,40 @@ def _quick_read_items(
         f"持仓：{_strip_bullet(_first_content_line(portfolio)) or '持仓摘要缺失'}",
         f"机会：{_strip_bullet(_first_content_line(opportunities)) or '候选机会缺失'}",
     ]
+
+
+def _commuter_decision_brief(
+    *,
+    conclusion: str,
+    market: str,
+    portfolio_actions: list[str],
+    opportunity_actions: list[str],
+    pipeline: str,
+) -> list[str]:
+    risk = _data_gap_sentence(pipeline) or _risk_sentence_from_text(conclusion + "\n" + market)
+    first_holding = _strip_bullet(portfolio_actions[0]) if portfolio_actions else "暂无持仓动作；先确认日报和持仓数据。"
+    first_opportunity = (
+        _strip_number_prefix(opportunity_actions[0]) if opportunity_actions else "暂无可读机会；今天不为了交易而交易。"
+    )
+    return [
+        f"大盘：{_strip_bullet(_first_content_line(market)) or _strip_bullet(conclusion)}",
+        f"风险：{risk}",
+        f"持仓：{first_holding}",
+        f"机会：{first_opportunity}",
+        "今天不要做：不追高、不补亏、不用数据缺口当买入理由；不是买点不交易。",
+    ]
+
+
+def _risk_sentence_from_text(text: str) -> str:
+    clean = _strip_bullet(_first_content_line(text))
+    for keyword in ["跌停", "风险", "分歧", "偏弱", "震荡", "回撤"]:
+        if keyword in clean:
+            return _shorten_line(clean, limit=120)
+    return "未看到硬风险扩散；仍按仓位纪律和价格触发执行。"
+
+
+def _strip_number_prefix(text: str) -> str:
+    return re.sub(r"^\s*\d+[.、]\s*", "", _strip_bullet(text)).strip()
 
 
 def _content_items(content: str) -> list[str]:

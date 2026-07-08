@@ -118,3 +118,17 @@ def test_web_home_is_daily_action_desk_with_portfolio_queue_and_stock_drawer() -
     assert "风险原因" in html
     assert "消息事件" in html
     assert "数据状态" in html
+
+
+def test_web_home_surfaces_commuter_decision_brief() -> None:
+    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
+    home_start = html.index('id="home"')
+    market_start = html.index('id="market"')
+    home_html = html[home_start:market_start]
+
+    assert "今日交易简报" in home_html
+    assert "今天先防守还是进攻" in home_html
+    assert "持仓先处理" in home_html
+    assert "今日机会 10" in home_html
+    assert "今天不要做什么" in home_html
+    assert "不是买点不追" in home_html

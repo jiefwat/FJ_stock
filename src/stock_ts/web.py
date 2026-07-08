@@ -2791,6 +2791,16 @@ def _render_home_module(
             ("stock", "分析个股", top_holding_text),
         ]
     )
+    decision_brief = _render_home_decision_brief(
+        market=market,
+        risk_gate=risk_gate,
+        portfolio=portfolio,
+        suggested_position=suggested_position,
+        max_risk_holding=max_risk_holding,
+        candidate_label=candidate_label,
+        mainline=mainline,
+        quality=quality,
+    )
     action_desk = f"""
       <div class="action-desk">
         <div class="action-desk-hero">
@@ -2817,6 +2827,7 @@ def _render_home_module(
         <span class="risk-pill {risk_gate.level}">{escape(risk_gate.gate)}</span>
       </div>
       {action_desk}
+      {decision_brief}
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>今日先做这三件事</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
         <div class="workflow-grid">{action_cards}</div>
@@ -2864,6 +2875,60 @@ def _render_home_module(
         </div>
       </div>
     </section>"""
+
+
+def _render_home_decision_brief(
+    *,
+    market: MarketSnapshot,
+    risk_gate: RiskGateView,
+    portfolio: PortfolioAnalysisReport,
+    suggested_position: str,
+    max_risk_holding: str,
+    candidate_label: str,
+    mainline: str,
+    quality: DataQualityView,
+) -> str:
+    posture = _home_trading_posture(market, risk_gate, portfolio, suggested_position)
+    avoid = _home_avoid_action(market, risk_gate, quality)
+    return f"""
+      <div class="panel home-brief" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>今日交易简报</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>今天先防守还是进攻</span><strong>{escape(posture)}</strong><p class="kpi-foot">{escape(risk_gate.reason)}</p></div>
+          <div class="summary-card"><span>持仓先处理</span><strong>{escape(max_risk_holding)}</strong><p class="kpi-foot">先处理风险仓，再看盈利保护。</p></div>
+          <div class="summary-card"><span>今日机会 10</span><strong>{escape(candidate_label)}</strong><p class="kpi-foot">主线：{escape(mainline)}；先观察，不等于买入。</p></div>
+          <div class="summary-card"><span>今天不要做什么</span><strong>{escape(avoid)}</strong><p class="kpi-foot">不是买点不追，不用亏损理由补仓。</p></div>
+        </div>
+      </div>"""
+
+
+def _home_trading_posture(
+    market: MarketSnapshot,
+    risk_gate: RiskGateView,
+    portfolio: PortfolioAnalysisReport,
+    suggested_position: str,
+) -> str:
+    if risk_gate.level == "high" or portfolio.health_score < 40:
+        return f"防守，仓位 {suggested_position}"
+    if market.heat_score >= 70 and risk_gate.level != "high":
+        return f"谨慎进攻，仓位 {suggested_position}"
+    if market.heat_score < 50:
+        return f"先防守，仓位 {suggested_position}"
+    return f"结构机会，仓位 {suggested_position}"
+
+
+def _home_avoid_action(
+    market: MarketSnapshot,
+    risk_gate: RiskGateView,
+    quality: DataQualityView,
+) -> str:
+    if quality.gate_level == "blocked":
+        return "数据缺口时不交易"
+    if risk_gate.level == "high" or market.limit_down_count >= 15:
+        return "不追高，不补亏"
+    if market.heat_score >= 75:
+        return "高开不追，等承接"
+    return "不是买点不追"
 
 
 def _highest_priority_position(portfolio: PortfolioAnalysisReport) -> PositionAnalysis | None:
