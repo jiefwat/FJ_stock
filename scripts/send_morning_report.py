@@ -96,11 +96,15 @@ def build_morning_report(
         opportunity_actions=opportunity_actions,
         pipeline=pipeline,
     )
+    execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
     lines = [
         f"# StockTS 早间复盘与机会｜今日操作（{generated_at[:10]}，基于交易日：{trade_date}）",
         "",
         "## 一句话结论",
         _bullet(first_conclusion),
+        "",
+        "## 先确认能不能执行",
+        *execution_guard,
         "",
         "## 手机决策版",
         *(_bullet(item) for item in commuter_brief),
@@ -495,7 +499,9 @@ def _deep_stock_observation_decision_map(markdown: str) -> dict[str, dict[str, s
         if current_event:
             event = _shorten_line(current_event, limit=92)
             conflict = decision.get("conflict", "")
-            decision["conflict"] = _shorten_line(f"{conflict}；{event}" if conflict else event, limit=92)
+            decision["conflict"] = _shorten_line(
+                f"{conflict}；{event}" if conflict else event, limit=92
+            )
         current_action = ""
         current_event = ""
 
@@ -1079,6 +1085,49 @@ def _parse_status(status_text: str) -> dict[str, str]:
     return status
 
 
+def _pipeline_step_status_label(value: object) -> str:
+    text = str(value or "").strip()
+    lower = text.lower()
+    if lower.startswith("failed"):
+        if "timeout" in lower or "timed out" in lower:
+            return "失败：超时"
+        return "失败：待复核"
+    if lower.startswith("partial"):
+        if "news" in lower or "moneyflow" in lower:
+            return "部分完成：新闻/资金缺口"
+        return "部分完成"
+    return text or "未知"
+
+
+def _execution_guard_lines(trade_date: str, report_date: str, pipeline_status: str) -> list[str]:
+    status = _parse_status(pipeline_status)
+    generated_date = str(status.get("generated_at", ""))[:10]
+    if trade_date != report_date or (generated_date and generated_date != report_date):
+        known_date = generated_date or trade_date
+        return [
+            _bullet(
+                f"先别按今天盘面执行：数据基于 {trade_date}，流水线生成 {known_date}，"
+                f"今天 {report_date}。先等自动任务刷新或手动复核行情。"
+            ),
+            _bullet("可以参考方向和风险清单，但不要把涨跌幅、买点、卖点当成今日实时信号。"),
+        ]
+    failed = [
+        _pipeline_step_status_label(value)
+        for key, value in status.items()
+        if key not in {"status", "generated_at", "codes", "error"}
+        and str(value).lower().startswith(("failed", "partial"))
+    ]
+    if failed:
+        return [
+            _bullet(
+                "先降级使用："
+                + "；".join(dict.fromkeys(item for item in failed if item))
+                + "。缺口项只观察，不作为买入理由。"
+            )
+        ]
+    return [_bullet("可以执行条件化复盘：数据未发现硬滞后；仍按触发线和止损线，不做无条件交易。")]
+
+
 def _data_notice_lines(trade_date: str, report_date: str, pipeline_status: str) -> list[str]:
     lines = [
         _bullet(f"基于交易日：{trade_date}；内容仅用于研究复盘。"),
@@ -1129,9 +1178,15 @@ def _commuter_decision_brief(
     pipeline: str,
 ) -> list[str]:
     risk = _data_gap_sentence(pipeline) or _risk_sentence_from_text(conclusion + "\n" + market)
-    first_holding = _strip_bullet(portfolio_actions[0]) if portfolio_actions else "暂无持仓动作；先确认日报和持仓数据。"
+    first_holding = (
+        _strip_bullet(portfolio_actions[0])
+        if portfolio_actions
+        else "暂无持仓动作；先确认日报和持仓数据。"
+    )
     first_opportunity = (
-        _strip_number_prefix(opportunity_actions[0]) if opportunity_actions else "暂无可读机会；今天不为了交易而交易。"
+        _strip_number_prefix(opportunity_actions[0])
+        if opportunity_actions
+        else "暂无可读机会；今天不为了交易而交易。"
     )
     return [
         f"大盘：{_strip_bullet(_first_content_line(market)) or _strip_bullet(conclusion)}",

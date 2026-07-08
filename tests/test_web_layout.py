@@ -168,3 +168,25 @@ def test_home_grid_assigns_daily_action_children_to_full_rows() -> None:
     assert "#module-home > .home-brief" in CSS
     assert "#module-home > .panel:not(.home-brief)" in CSS
     assert "grid-column: 1 / -1" in CSS
+
+
+def test_automation_monitor_frontloads_stale_execution_guard(tmp_path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\n"
+        "generated_at=2026-06-26T18:00:00\n"
+        "refresh=ok\n"
+        "tdx_enrich=ok\n"
+        "external_enrich=ok\n"
+        "announcements=ok\n"
+        "report=ok\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
+
+    assert "执行可用性" in html
+    assert "先别按今天盘面执行" in html
+    assert "已滞后" in html

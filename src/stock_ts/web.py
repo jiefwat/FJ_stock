@@ -5338,6 +5338,7 @@ def _render_automation_monitor_panel() -> str:
     freshness = _automation_freshness_label(generated_at)
     failed_steps = _automation_failed_steps(status)
     advice = _automation_advice(failed_steps)
+    execution_readiness = _automation_execution_readiness(status, freshness, failed_steps)
     step_rows = "".join(
         f"<tr><td>{escape(label)}</td><td>{escape(_human_pipeline_status(status.get(key, '未执行')))}</td></tr>"
         for key, label in [
@@ -5355,10 +5356,25 @@ def _render_automation_monitor_panel() -> str:
           <div class="summary-card"><span>运行节奏</span><strong>每 2 小时</strong><p class="kpi-foot">服务器定时刷新行情、K线、新闻、公告和日报。</p></div>
           <div class="summary-card"><span>最近运行</span><strong>{escape(generated_at)}</strong><p class="kpi-foot">{escape(freshness)}</p></div>
           <div class="summary-card"><span>整体状态</span><strong>{escape(_human_pipeline_status(status.get("status", "未知")))}</strong><p class="kpi-foot">以 pipeline.status 为准。</p></div>
+          <div class="summary-card"><span>执行可用性</span><strong>{escape(execution_readiness)}</strong><p class="kpi-foot">先确认新鲜度，再看交易动作。</p></div>
           <div class="summary-card"><span>处理建议</span><strong>{escape(advice)}</strong><p class="kpi-foot">先看 pipeline.status，再看定时任务日志。</p></div>
         </div>
         <table class="data-table" style="margin-top:12px"><thead><tr><th>步骤</th><th>结果</th></tr></thead><tbody>{step_rows}</tbody></table>
       </div>"""
+
+
+def _automation_execution_readiness(
+    status: dict[str, str],
+    freshness: str,
+    failed_steps: list[str],
+) -> str:
+    if freshness.startswith("已滞后"):
+        return "先别按今天盘面执行"
+    if failed_steps:
+        return "降级为观察"
+    if _human_pipeline_status(status.get("status", "")) == "完成":
+        return "可条件化使用"
+    return "先复核数据"
 
 
 def _automation_freshness_label(generated_at: str) -> str:

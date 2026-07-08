@@ -55,6 +55,10 @@
 - [x] 预留 AKShare provider 与 Streamlit Dashboard。
 - [x] 补齐 pytest 回归测试。
 
+## 自动执行 TODO
+
+- 详细执行清单见 `docs/agent-ops/autonomous-product-todo.md`。后续 Agent 默认可直接实现其中事项，不需要逐项等待用户确认；完成后必须更新勾选状态、补测试并部署。
+
 ## 下一阶段优先级
 
 1. 数据缓存：新增 SQLite/Parquet 缓存，避免重复拉取全市场数据。

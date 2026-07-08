@@ -120,3 +120,34 @@ def _lines_between(content: str, start: str, end: str) -> list[str]:
     start_index = content.index(start)
     end_index = content.index(end, start_index)
     return content[start_index:end_index].splitlines()
+
+
+def test_morning_report_frontloads_execution_guard_for_stale_artifacts(tmp_path: Path) -> None:
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-06-26）\n\n"
+        "## 深度结论\n- 市场偏弱，先控风险\n"
+        "## 每日大盘情况\n- 上涨少，下跌多\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-06-26T18:00:00\nreport=ok\n",
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = morning.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+    first_block = "\n".join(content.splitlines()[:18])
+
+    assert "## 先确认能不能执行" in first_block
+    assert "先别按今天盘面执行" in first_block
+    assert first_block.index("先确认能不能执行") < content.index("手机决策版")
