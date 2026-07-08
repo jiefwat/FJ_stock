@@ -48,6 +48,7 @@
 - [x] 参考 Vibe-Trading / Vibe-Research / Longbridge 方向新增研究运行卡：把目标、证据、动作、数据闸门和 Shadow Account 边界统一接入早间邮件与每日深度复盘。
 - [x] 参考 TradingAgents 重构个股多轮对抗：从三段式多空裁判升级为技术、基本面、新闻情绪、多空研究员、交易员、风控经理、组合经理的角色链。
 - [x] 继续参考 daily_stock_analysis：新增多源数据质量摘要、实时 quote fallback 骨架、fail-open 新闻情报源和新闻风险/催化分类。
+- [x] 将 daily_stock_analysis 的上下文包/信号归因与 TradingAgents 的分析师团队、研究辩论、交易员、风控和组合经理流程真正接入个股页与 Markdown 个股报告，输出股票特异化证据和缺口降级。
 - [x] 安装并读取 `yqn-dev-skills`。
 - [x] 使用 `python-superpower-bootstrap` 生成 standard 级 Python 项目骨架。
 - [x] 建立大盘分析、个股分析、报告渲染、CLI、sample provider。

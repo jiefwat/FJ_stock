@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from .agentic_stock_analysis import StockAgentDecision, build_stock_agent_decision
 from .analysis import analyze_candidates, analyze_stock
 from .announcements import AnnouncementReport, fetch_cninfo_announcements
 from .auth import AuthConfig, AuthUser, SessionManager, UserStore, is_auth_enabled
@@ -27,6 +28,7 @@ from .models import (
     PortfolioAnalysisReport,
     PositionAnalysis,
     SectorAnalysisReport,
+    StockAnalysisReport,
     StockRawData,
 )
 from .news import analyze_news
@@ -4394,7 +4396,11 @@ def _render_stock_compact_research_panel(
         f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
         for label, value in trade_snapshot
     )
-    scorecard_html = _render_stock_professional_scorecard(stock_raw, portfolio)
+    base_report = analyze_stock(stock_raw)
+    scorecard_html = _render_stock_professional_scorecard(stock_raw, portfolio, base_report)
+    agentic_html = _render_stock_agentic_decision_chain(
+        build_stock_agent_decision(stock_raw, base_report)
+    )
     return f"""
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>交易快照</h3><p class="section-subtitle">先看最终动作、触发和止损，再看证据。</p></div></div>
@@ -4415,16 +4421,94 @@ def _render_stock_compact_research_panel(
         <div class="editor-toolbar"><div><h3>3个风险</h3><p class="section-subtitle">只保留会改变今天动作的风险。</p></div></div>
         <ul class="reason-list">{risk_html}</ul>
       </div>
+      {agentic_html}
       {scorecard_html}"""
+
+
+def _render_stock_agentic_decision_chain(decision: StockAgentDecision) -> str:
+    context = decision.context_pack
+    attribution = decision.signal_attribution
+    source_text = "、".join(context.data_sources[:4])
+    available_text = "、".join(context.available_blocks) or "暂无"
+    missing_text = "、".join(context.missing_blocks) or "无"
+    limitation_text = "；".join(context.limitations[:2]) or "核心数据块可用"
+    analyst_rows = "".join(
+        "<tr>"
+        f"<td><strong>{escape(item.role)}</strong></td>"
+        f"<td>{escape(item.verdict)}</td>"
+        f"<td>{escape('；'.join(item.evidence[:2]))}</td>"
+        f"<td>{escape(item.action)}</td>"
+        "</tr>"
+        for item in decision.analyst_team
+    )
+    attr_cards = [
+        ("技术", f"{attribution.technical_indicators}%"),
+        ("消息", f"{attribution.news_sentiment}%"),
+        ("基本面", f"{attribution.fundamentals}%"),
+        ("资金/成交", f"{attribution.capital_volume}%"),
+    ]
+    attr_html = "".join(
+        f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
+        for label, value in attr_cards
+    )
+    no_trade = _li_join(decision.trader.no_trade_conditions[:3])
+    return f"""
+      <div class="panel" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>TradingAgents 决策链</h3><p class="section-subtitle">分析师团队 → 多空辩论 → 交易员 → 风控/组合经理；只使用已接入数据。</p></div>
+          <span class="portfolio-chip">{escape(context.subject)} · {escape(context.trade_date)}</span>
+        </div>
+        <div class="quality-banner" style="margin-bottom:12px">
+          <strong>daily_stock_analysis 信号归因：</strong>
+          可用 {escape(available_text)}；缺口 {escape(missing_text)}；限制 {escape(limitation_text)}；来源 {escape(source_text)}
+        </div>
+        <div class="summary-grid compact-summary-grid">{attr_html}</div>
+        <div class="grid-2 stock-research-grid" style="margin-top:12px">
+          <div class="panel compact-panel">
+            <h3>分析师团队</h3>
+            <table class="data-table"><thead><tr><th>角色</th><th>判断</th><th>证据</th><th>动作</th></tr></thead><tbody>{analyst_rows}</tbody></table>
+          </div>
+          <div class="panel compact-panel">
+            <h3>多空审议</h3>
+            <div class="metric-list">
+              <div class="metric-line"><span>多头观点</span><strong>{escape(decision.research_debate.bull_thesis)}</strong></div>
+              <div class="metric-line"><span>空头观点</span><strong>{escape(decision.research_debate.bear_thesis)}</strong></div>
+              <div class="metric-line"><span>研究经理裁决</span><strong>{escape(decision.research_debate.judge)}</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2 stock-research-grid" style="margin-top:12px">
+          <div class="panel compact-panel">
+            <h3>交易员执行</h3>
+            <div class="metric-list">
+              <div class="metric-line"><span>动作</span><strong>{escape(decision.trader.action)}</strong></div>
+              <div class="metric-line"><span>触发</span><strong>{escape(decision.trader.entry_trigger)}</strong></div>
+              <div class="metric-line"><span>失效</span><strong>{escape(decision.trader.invalidation)}</strong></div>
+              <div class="metric-line"><span>仓位</span><strong>{escape(decision.trader.position_rule)}</strong></div>
+            </div>
+            <ul class="reason-list">{no_trade}</ul>
+          </div>
+          <div class="panel compact-panel">
+            <h3>组合经理最终意见</h3>
+            <div class="metric-list">
+              <div class="metric-line"><span>激进</span><strong>{escape(decision.risk_review.aggressive)}</strong></div>
+              <div class="metric-line"><span>中性</span><strong>{escape(decision.risk_review.neutral)}</strong></div>
+              <div class="metric-line"><span>保守</span><strong>{escape(decision.risk_review.conservative)}</strong></div>
+              <div class="metric-line"><span>最终</span><strong>{escape(decision.risk_review.portfolio_decision)}</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>"""
 
 
 def _render_stock_professional_scorecard(
     stock_raw: StockRawData,
     portfolio: PortfolioAnalysisReport,
+    report: StockAnalysisReport | None = None,
 ) -> str:
     if not stock_raw.bars:
         return ""
-    report = analyze_stock(stock_raw)
+    report = report or analyze_stock(stock_raw)
     position = next(
         (item for item in portfolio.positions if item.holding.code == report.code), None
     )

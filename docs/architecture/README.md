@@ -35,6 +35,7 @@ CLI / Dashboard
 - `src/stock_ts/realtime_quotes.py`：统一实时行情 quote 类型和 fallback 管理器，后续 Tencent、TDX、AKShare、iTick 实时接口统一接入。
 - `src/stock_ts/news_intelligence.py`：实时新闻/情报源轻量层，支持 JSON 新闻源、URL 去重、风险/催化分类和 fail-open 状态。
 - `src/stock_ts/analysis.py`：大盘、个股和持仓分析规则，输入领域模型，输出分析模型。
+- `src/stock_ts/agentic_stock_analysis.py`：个股方法论决策链，参考 daily_stock_analysis 的上下文包、信号归因和数据缺口降级，以及 TradingAgents 的“分析师团队 -> 多空审议 -> 交易员 -> 风控/组合经理”流程；实现为确定性规则，不伪造 LLM 结论，不补全缺失资金/新闻/基本面。
 - `src/stock_ts/deep_models.py`：深度分析领域模型，集中放置多角度、潜力观察、对抗轮次、单股/批量/每日深度报告的数据结构。
 - `src/stock_ts/deep_analysis.py`：深度分析规则层，组合市场、板块、舆情、持仓和个股基础报告，输出多角度评分、未来上涨潜力观察分和 TradingAgents 式多角色对抗；最终结论必须由个股自身优势、主要矛盾、动作倾向和失效条件组合生成，禁止只按分数档位输出固定套话；保留旧渲染函数 re-export，兼容已有调用方。
 - `src/stock_ts/deep_report.py`：深度分析 Markdown 渲染层，负责单股、批量和每日深度复盘文本输出，并对缺失对抗轮次做防御性兜底。
@@ -44,6 +45,7 @@ CLI / Dashboard
 - `src/stock_ts/trade_plan.py`：明确操作计划层，把深度分析、技术结构、公告事件和数据质量转换成当前动作、目标仓位、买入/加仓触发、止损/减仓触发、止盈计划、禁止动作和盘中执行清单。
 - `src/stock_ts/daily_decisions.py`：结构化日报决策层，把 `latest.md` 中的大盘摘要、红黄绿持仓、每只持仓动作/触发/止损/可信度、今日机会、数据限制和自动任务异常写成 `reports/daily/latest_decisions.json`；晨报和首页决策优先读取 JSON，缺失时再降级解析 Markdown，避免从长文本里猜交易动作。
 - Web 个股页必须以 6 维判断组织精华信息：技术面、基本面、资金面、消息/公告、概念板块、成本位置；成本位置必须结合当前账号持仓成本，未持仓时明确标注。
+- Web 个股页和 Markdown 个股报告必须展示 `TradingAgents 决策链`：先展示 daily_stock_analysis 风格的信号归因与数据包，再展示技术、基本面、新闻/情绪、资金/成交四类分析师证据，最后输出多空观点、交易员触发/失效、组合经理最终意见；若数据缺失，结论必须降级并写明缺口。
 - `src/stock_ts/llm.py`：可选大模型增强层，使用 OpenAI-compatible chat completions 接口；无 Key 时输出降级说明，有 Key 时在结构化分析基础上生成 AI 研报。
 - `src/stock_ts/watchlist.py`：自选股研究工作台，读取轻量 YAML-like 清单，沉淀研究假设、标签、价格/评分提醒，并复用深度分析生成观察排序。
 - `src/stock_ts/backtest.py`：轻量策略验证层，当前支持本地日线 CSV 的 MA 均线回测，输出收益、买入持有对照、最大回撤、胜率、交易明细和限制说明。

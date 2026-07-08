@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .agentic_stock_analysis import build_stock_agent_decision_from_report
 from .models import (
     CandidatePoolReport,
     MarketSnapshot,
@@ -71,6 +72,7 @@ def render_sector_markdown(report: SectorAnalysisReport) -> str:
 
 
 def render_stock_markdown(report: StockAnalysisReport) -> str:
+    agentic = build_stock_agent_decision_from_report(report)
     lines = [
         f"# 个股分析：{report.name}（{report.code}）",
         "",
@@ -102,6 +104,44 @@ def render_stock_markdown(report: StockAnalysisReport) -> str:
                 f"- {item.name}：{item.score}/100（{item.status}）｜"
                 f"证据：{item.evidence}｜动作：{item.action}"
             )
+    lines.extend(
+        [
+            "",
+            "## TradingAgents 决策链",
+            (
+                "- daily_stock_analysis 信号归因："
+                f"技术 {agentic.signal_attribution.technical_indicators}%；"
+                f"消息 {agentic.signal_attribution.news_sentiment}%；"
+                f"基本面 {agentic.signal_attribution.fundamentals}%；"
+                f"资金/成交 {agentic.signal_attribution.capital_volume}%"
+            ),
+            "- 数据包："
+            f"可用 {'、'.join(agentic.context_pack.available_blocks) or '暂无'}；"
+            f"缺口 {'、'.join(agentic.context_pack.missing_blocks) or '无'}",
+            "",
+            "### 分析师团队",
+        ]
+    )
+    for item in agentic.analyst_team:
+        lines.append(
+            f"- {item.role}：{item.verdict}｜"
+            f"证据：{'；'.join(item.evidence[:2])}｜动作：{item.action}"
+        )
+    lines.extend(
+        [
+            "",
+            "### 多空审议",
+            f"- 多头观点：{agentic.research_debate.bull_thesis}",
+            f"- 空头观点：{agentic.research_debate.bear_thesis}",
+            f"- 研究经理裁决：{agentic.research_debate.judge}",
+            "",
+            "### 交易与风控",
+            f"- 交易员执行：{agentic.trader.action}｜"
+            f"触发：{agentic.trader.entry_trigger}｜失效：{agentic.trader.invalidation}",
+            f"- 仓位规则：{agentic.trader.position_rule}",
+            f"- 组合经理最终意见：{agentic.risk_review.portfolio_decision}",
+        ]
+    )
     lines.extend(["", "## 后续跟踪"])
     lines.extend(f"- {item}" for item in report.watch_points)
     return "\n".join(lines) + "\n"
