@@ -686,3 +686,41 @@ def test_morning_report_adds_traffic_light_trade_list_without_duplicate_holdings
     assert joined.count("润建股份") == 1
     assert joined.count("蓝色光标") == 1
     assert joined.count("大业股份") == 1
+
+
+def test_morning_report_traffic_light_uses_weak_holding_summary_when_details_missing(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-08）\n\n"
+        "## 深度结论\n- 市场偏弱，防守优先\n\n"
+        "## 持仓分析\n"
+        "- 弱势或高风险持仓：甬矽电子、润建股份、大业股份\n"
+        "- 大盘环境偏弱，持仓需要降低回撤暴露\n\n"
+        "## 候选股票\n"
+        "1. 济民健康（603222，未识别主题）：观察分 80/100\n"
+        "   - 入选理由：量能放大\n"
+        "   - 风险提示：追高风险\n"
+        "   - 观察条件：回踩承接\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    trade_lines = _section_lines(content, "## 红黄绿交易清单", "## 地铁上先看这 5 条")
+    joined = "\n".join(trade_lines)
+    assert "红灯：甬矽电子、润建股份、大业股份" in joined
+    assert "红灯：暂无" not in joined

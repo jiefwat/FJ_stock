@@ -724,6 +724,9 @@ def _traffic_light_trade_list(markdown: str, *, limit: int) -> list[str]:
         elif is_loss or item_trend == "下降趋势" or risk == "中":
             yellow.append(name)
 
+    if not red and not yellow and not green:
+        red.extend(_weak_holding_names_from_summary(markdown))
+
     candidate_names = [
         entry["name"]
         for entry in candidates
@@ -751,6 +754,22 @@ def _traffic_light_trade_list(markdown: str, *, limit: int) -> list[str]:
             + "；动作：只等开盘承接，不因名单出现就买"
         ),
     ]
+
+
+def _weak_holding_names_from_summary(markdown: str) -> list[str]:
+    names: list[str] = []
+    for match in re.finditer(r"弱势或高风险持仓：([^\n。；]+)", markdown):
+        for raw_name in re.split(r"[、,，]", match.group(1)):
+            name = raw_name.strip(" ：:。；; ")
+            if not name or _looks_like_summary_phrase(name):
+                continue
+            names.append(name)
+    return list(dict.fromkeys(names))
+
+
+def _looks_like_summary_phrase(text: str) -> bool:
+    summary_keywords = ("持仓", "大盘", "环境", "需要", "降低", "回撤", "先处理")
+    return any(keyword in text for keyword in summary_keywords) or len(text) > 12
 
 
 def _join_names(names: list[str], *, limit: int = 4) -> str:
