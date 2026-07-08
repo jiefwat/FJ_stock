@@ -300,6 +300,41 @@ def test_enrich_tdx_snapshot_keeps_partial_fields_when_some_interfaces_fail(tmp_
     assert stock["enrichment_errors"]["fund_flow"] == "fund unavailable"
 
 
+
+def test_enrich_tdx_snapshot_flushes_each_stock_before_next_request(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    data["stocks"]["600481"] = {"name": "双良节能", "bars": data["stocks"]["688362"]["bars"]}
+    data["candidate_universe"]["items"].append(
+        {
+            "code": "600481",
+            "name": "双良节能",
+            "sector": "光伏",
+            "bars": data["stocks"]["688362"]["bars"],
+        }
+    )
+    snapshot.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    seen_flushed = {"value": False}
+
+    class InspectingAk(RichAk):
+        def stock_zh_a_hist(
+            self, symbol: str, period: str = "daily", adjust: str = "qfq"
+        ) -> MiniFrame:
+            if symbol == "600481":
+                current = json.loads(snapshot.read_text(encoding="utf-8"))
+                seen_flushed["value"] = bool(current["stocks"]["688362"].get("news_items"))
+            return super().stock_zh_a_hist(symbol, period=period, adjust=adjust)
+
+    summary = module.enrich_snapshot(
+        snapshot, codes=["688362", "600481"], ak=InspectingAk(), market_news_limit=0
+    )
+
+    assert summary["enriched_stock_count"] == 2
+    assert seen_flushed["value"] is True
+
 def test_enrich_tdx_snapshot_uses_tushare_for_kline_and_valuation(tmp_path: Path) -> None:
     module = _load_enrichment_module()
     snapshot = tmp_path / "tdx.json"

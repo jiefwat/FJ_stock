@@ -581,6 +581,13 @@ def _stock_fund_dimension(raw: StockRawData) -> tuple[int, str, str]:
     if value is None:
         value = _optional_float(raw.fund_flow_detail.get("main_net_inflow"))
     if value is None:
+        volume_score, volume_evidence, volume_action = _stock_volume_dimension(raw)
+        if "样本不足" not in volume_evidence:
+            return (
+                volume_score,
+                f"成交侧替代观察：{volume_evidence}",
+                f"{volume_action}；不把成交侧替代值当作主力净流",
+            )
         return 45, "资金流未接入，不能确认主力态度", "资金面不作为买入理由"
     direction = "净流入" if value >= 0 else "净流出"
     score = max(15, min(90, int(55 + value * 8)))

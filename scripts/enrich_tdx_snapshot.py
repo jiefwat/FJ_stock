@@ -67,6 +67,7 @@ def enrich_snapshot(
     if not isinstance(stocks, dict):
         stocks = {}
         snapshot["stocks"] = stocks
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     for index, code in enumerate(selected_codes):
         try:
@@ -88,6 +89,8 @@ def enrich_snapshot(
             enriched_count += 1
         except Exception as exc:
             errors[code] = str(exc)[:240]
+        # Flush each stock so a later timeout still leaves K-line/news/fundamental progress.
+        path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if sleep_seconds > 0 and index < len(selected_codes) - 1:
             time.sleep(sleep_seconds)
 
@@ -115,7 +118,6 @@ def enrich_snapshot(
         "intelligence_statuses": intelligence_result["statuses"],
         "intelligence_warnings": intelligence_result["warnings"],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {
         "output": str(path),

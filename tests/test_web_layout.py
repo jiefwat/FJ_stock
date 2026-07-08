@@ -159,3 +159,12 @@ def test_web_home_surfaces_commuter_decision_brief() -> None:
     assert "今日机会 10" in home_html
     assert "今天不要做什么" in home_html
     assert "不是买点不追" in home_html
+
+
+def test_home_grid_assigns_daily_action_children_to_full_rows() -> None:
+    from stock_ts.webapp.styles import CSS
+
+    assert "#module-home > .action-desk" in CSS
+    assert "#module-home > .home-brief" in CSS
+    assert "#module-home > .panel:not(.home-brief)" in CSS
+    assert "grid-column: 1 / -1" in CSS

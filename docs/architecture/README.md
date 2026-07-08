@@ -61,7 +61,7 @@ CLI / Dashboard
 - 本地 CSV 导入：用于导入已有行情、手工整理新闻、第三方导出的舆情列表；不依赖网络。
 - `tencent` / `auto`：无额外依赖的腾讯行情源，当前用于较新的 A 股指数、个股 quote 与日线 K 线；板块和候选池暂时使用 sample 兜底并通过 Web 数据质量模块提示来源边界。
 - `eltdx`：通过 `python3.11` 桥接 `eltdx` MCP/TDX 能力，补最新 quote、日线、题材和主题轮动；为避免公开 Web 首屏被桥接超时拖慢，`auto` 默认优先使用 Tencent，只有设置 `STOCK_TS_AUTO_PREFER_ELTDX=1` 时才优先使用它。
-- `tdx-snapshot`：面向 TDX MCP/通达信服务的本地 JSON 快照 provider；Codex 会话可用 MCP 查行情，项目运行时读取落地后的 `data/imports/tdx_snapshots.json`，避免业务代码直接依赖聊天工具。Web 工作台固定使用该源，缺少大盘、板块、候选池或个股快照时直接报错，不用 sample 伪装真实行情。全市场智能选股通过 `scripts/refresh_tdx_snapshot.py --quote-only` 先扫描全市场行情分页，再写入预筛候选和扫描元数据；深度数据通过 `--enrich-existing` 对现有候选前排补真实日线和主题；K 线、估值、资金流和新闻通过 `scripts/enrich_tdx_snapshot.py` 先写回快照。页面必须展示扫描总数、预筛数量、深度补强数量、资金抱团/市场热度/超跌反弹/风险排查等策略分层和口径限制。
+- `tdx-snapshot`：面向 TDX MCP/通达信服务的本地 JSON 快照 provider；Codex 会话可用 MCP 查行情，项目运行时读取落地后的 `data/imports/tdx_snapshots.json`，避免业务代码直接依赖聊天工具。Web 工作台固定使用该源，缺少大盘、板块、候选池或个股快照时直接报错，不用 sample 伪装真实行情。全市场智能选股通过 `scripts/refresh_tdx_snapshot.py --quote-only` 先扫描全市场行情分页，再写入预筛候选和扫描元数据；深度数据通过 `--enrich-existing` 对现有候选前排补真实日线和主题；K 线、估值、资金流和新闻通过 `scripts/enrich_tdx_snapshot.py` 先写回快照。每日流水线必须优先对持仓股票执行完整新闻/资金/估值补强，再分批补候选池；补强脚本每处理一只股票就落盘，避免外部接口超时导致已拿到的数据丢失。页面必须展示扫描总数、预筛数量、深度补强数量、资金抱团/市场热度/超跌反弹/风险排查等策略分层和口径限制。
 - 板块主题口径：页面里的“板块/方向/主题”必须是行业、概念或题材，如白酒、商业航天、通用设备、机器人概念；不得把创业板、科创板、沪市主板、深市主板等交易板当作板块主题。TDX 主题缺失时显示“未识别主题”或跳过聚合，不用交易板兜底。
 - `akshare`：首个真实数据源适配，依赖 `akshare` 包；当前支持指数/个股、行业板块、候选池和个股新闻。全市场 spot 失败时大盘降级为指数行情，候选池回退到行业板块成份；外部接口全部不可用时使用 sample 兜底并输出 warning。
 - `tushare`：A 股日线 K 线主源，适合财务、资金流、指数成分、交易日历；`scripts/refresh_a_share_kline.py` 会在盘后流水线里优先用 Tushare `daily` 刷新持仓和候选池日线，港股等非 A 股必须跳过并记录，不用错误 K 线兜底。

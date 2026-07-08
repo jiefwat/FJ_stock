@@ -3242,14 +3242,30 @@ def _home_sector_judgement(item, *, mode: str, rank: int) -> str:
             return f"普跌确认：多数成份走弱，先避开补跌扩散；{spread}，{amount}"
         return f"跌幅靠前但未完全扩散，重点看龙头是否止跌；{spread}，风险 {item.risk}"
     if item.limit_up_count >= 5:
-        return f"涨停集中，资金抱团明显；{spread}，涨停 {item.limit_up_count}，{amount}"
+        return f"第{rank}位涨停集中：资金抱团明显；{spread}，涨停 {item.limit_up_count}，{amount}"
     if item.amount_change >= 5:
-        return f"成交显著放大，说明有增量资金参与；{spread}，涨停 {item.limit_up_count}"
+        if item.amount_change >= 20:
+            return (
+                f"第{rank}位成交爆发：量能变化过大，先防高位分歧；"
+                f"{spread}，涨停 {item.limit_up_count}，{amount}"
+            )
+        if item.amount_change >= 10:
+            return (
+                f"第{rank}位增量资金较强：需要看前排能否继续承接；"
+                f"{spread}，涨停 {item.limit_up_count}，{amount}"
+            )
+        return (
+            f"第{rank}位温和放量：有增量资金参与，但仍需次日确认；"
+            f"{spread}，涨停 {item.limit_up_count}，{amount}"
+        )
     if item.risk != "风险可控":
-        return f"强势但分歧高，只看前排承接；{spread}，风险 {item.risk}"
+        return f"第{rank}位强势但分歧高：只看前排承接；{spread}，风险 {item.risk}，{amount}"
     if item.advancing_ratio >= 0.8:
-        return f"上涨覆盖面较广，观察能否从前排扩散到低位；{spread}，资金 {item.fund_status}"
-    return f"少数个股带动，持续性要看明日扩散；{spread}，涨停 {item.limit_up_count}"
+        return (
+            f"第{rank}位覆盖面较广：观察能否从前排扩散到低位；"
+            f"{spread}，资金 {item.fund_status}，{amount}"
+        )
+    return f"第{rank}位少数个股带动：持续性看明日扩散；{spread}，涨停 {item.limit_up_count}，{amount}"
 
 
 def _render_sentiment_module(
@@ -4985,7 +5001,8 @@ def _stock_valuation_note(stock_raw: StockRawData) -> str:
 
 def _stock_fund_flow_text(stock_raw: StockRawData) -> str:
     if stock_raw.fund_flow is None:
-        return "资金明细未接入"
+        proxy = _stock_volume_side_fund_text(stock_raw)
+        return proxy or "资金明细未接入"
     pct = _optional_number(stock_raw.fund_flow_detail.get("main_net_pct"))
     source = str(stock_raw.fund_flow_detail.get("source") or "")
     label = "成交侧" if "active_volume" in source else "主力"
@@ -4999,7 +5016,31 @@ def _stock_fund_flow_note(stock_raw: StockRawData) -> str:
     date = stock_raw.fund_flow_detail.get("date")
     if source:
         return f"来源 {source}{' · ' + str(date) if date else ''}"
+    if stock_raw.bars:
+        return "资金接口缺失时，用成交量与价格方向做资金侧替代观察，不等同主力净流。"
     return "当前优先使用资金/成交侧信号，不伪造主力净流"
+
+
+def _stock_volume_side_fund_text(stock_raw: StockRawData) -> str:
+    if len(stock_raw.bars) < 3:
+        return ""
+    latest = stock_raw.bars[-1]
+    previous = stock_raw.bars[-2]
+    ratio = _stock_volume_ratio(stock_raw)
+    if ratio <= 0:
+        return ""
+    price_up = latest.close >= previous.close
+    if ratio >= 1.3 and price_up:
+        state = "放量上涨，资金承接偏积极"
+    elif ratio >= 1.3:
+        state = "放量下跌，资金分歧偏大"
+    elif ratio <= 0.75 and price_up:
+        state = "缩量上涨，追高确认不足"
+    elif ratio <= 0.75:
+        state = "缩量下跌，抛压暂未放大"
+    else:
+        state = "量价中性，资金态度不明确"
+    return f"成交侧{state} · 量能 {ratio:.2f}x"
 
 
 def _stock_news_text(

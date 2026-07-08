@@ -234,3 +234,58 @@ def test_daily_pipeline_continues_when_a_share_kline_hits_rate_limit(tmp_path: P
     assert "external_enrich=ok" in status
     assert "report=ok" in status
     assert any(any("run_daily_analysis.py" in item for item in command) for command in calls)
+
+
+def test_daily_pipeline_enriches_holdings_with_news_before_broad_candidate_chunks(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n"
+        "688362,甬矽电子,100,20,半导体,测试\n",
+        encoding="utf-8",
+    )
+    _write_snapshot(snapshot)
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], timeout_seconds: int) -> None:
+        calls.append(command)
+        if any("run_daily_analysis.py" in item for item in command):
+            out_dir = Path(command[command.index("--output-dir") + 1])
+            html_dir = Path(command[command.index("--html-dir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            html_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "latest.status").write_text("status=ok\n", encoding="utf-8")
+            (out_dir / "latest.md").write_text("# report", encoding="utf-8")
+            (html_dir / "latest.html").write_text("<html></html>", encoding="utf-8")
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=tmp_path / "reports" / "daily",
+            html_dir=tmp_path / "reports" / "html",
+            announcement_dir=tmp_path / "reports" / "announcements",
+            enrich_limit=12,
+            skip_refresh=True,
+            skip_tdx_enrich=True,
+            skip_a_share_kline=True,
+            skip_announcements=True,
+        ),
+        runner=runner,
+    )
+
+    assert result.ok is True
+    enrich_calls = [
+        command
+        for command in calls
+        if any("enrich_tdx_snapshot.py" in item for item in command)
+    ]
+    assert len(enrich_calls) >= 2
+    holdings_command = enrich_calls[0]
+    assert holdings_command[holdings_command.index("--codes") + 1] == "603278,688362"
+    assert "--skip-akshare-stock-fields" not in holdings_command
+    assert holdings_command[holdings_command.index("--news-limit") + 1] == "3"
+    assert any("--skip-akshare-stock-fields" in command for command in enrich_calls[1:])

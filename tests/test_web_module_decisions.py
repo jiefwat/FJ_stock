@@ -1,9 +1,15 @@
 import json
 
-from stock_ts.models import SectorRawData
+from stock_ts.models import DailyBar, SectorRawData, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
-from stock_ts.web import _sector_next_check, _sector_strategy, render_page
+from stock_ts.web import (
+    _home_sector_judgement,
+    _sector_next_check,
+    _sector_strategy,
+    _stock_fund_flow_text,
+    render_page,
+)
 
 
 def test_workspaces_do_not_repeat_global_precision_summary() -> None:
@@ -143,6 +149,33 @@ def test_home_sector_board_hides_abnormal_pct_and_uses_distinct_judgement() -> N
     assert home_html.count("全市场板块多为上涨，该板块属于相对弱势") <= 1
 
 
+
+def test_home_sector_judgement_varies_by_rank_and_evidence() -> None:
+    class Sector:
+        def __init__(self, name: str, amount_change: float, limit_up_count: int) -> None:
+            self.name = name
+            self.pct_chg = 18.0
+            self.amount_change = amount_change
+            self.limit_up_count = limit_up_count
+            self.advancing_ratio = 1.0
+            self.risk = "高位分歧风险"
+            self.fund_status = "资金一般"
+
+    rows = [
+        Sector("信息安全", 5.65, 2),
+        Sector("信创", 14.39, 2),
+        Sector("芯片", 19.15, 1),
+    ]
+    judgements = [
+        _home_sector_judgement(item, mode="lead", rank=index)
+        for index, item in enumerate(rows, start=1)
+    ]
+
+    assert len(set(judgements)) == len(judgements)
+    assert any("第1位" in item for item in judgements)
+    assert any("成交变化 14.39亿" in item for item in judgements)
+    assert judgements.count("成交显著放大，说明有增量资金参与；扩散 100%，涨停 2") == 0
+
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     html = render_page(
         stock_code="600519",
@@ -261,6 +294,25 @@ def test_candidate_and_sector_tables_avoid_copy_paste_default_phrases() -> None:
     for phrase in repeated_defaults:
         assert html.count(phrase) <= 2, phrase
 
+
+
+def test_stock_fund_dimension_falls_back_to_volume_side_when_moneyflow_missing() -> None:
+    raw = StockRawData(
+        code="603278",
+        name="大业股份",
+        bars=[
+            DailyBar("2026-07-04", 10, 10.2, 9.8, 10.0, 1000),
+            DailyBar("2026-07-05", 10, 10.3, 9.9, 10.1, 1200),
+            DailyBar("2026-07-06", 10.1, 10.6, 10, 10.5, 1800),
+            DailyBar("2026-07-07", 10.5, 11.0, 10.4, 10.9, 2200),
+            DailyBar("2026-07-08", 10.9, 11.3, 10.8, 11.2, 2600),
+        ],
+    )
+
+    text = _stock_fund_flow_text(raw)
+
+    assert "成交侧" in text
+    assert "资金明细未接入" not in text
 
 def test_stock_module_surfaces_core_evidence_chain() -> None:
     html = render_page(

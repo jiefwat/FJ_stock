@@ -84,11 +84,7 @@ def run_daily_pipeline(
         if config.skip_external_enrich:
             steps["external_enrich"] = "skipped"
         elif codes:
-            try:
-                command_runner(_external_enrich_command(config, codes), config.external_enrich_timeout)
-                steps["external_enrich"] = "ok"
-            except Exception as exc:
-                steps["external_enrich"] = f"failed:{_short_error(exc)}"
+            steps["external_enrich"] = _run_external_enrichment(config, codes, command_runner)
         else:
             steps["external_enrich"] = "skipped_no_codes"
 
@@ -165,8 +161,66 @@ def _a_share_kline_command(config: DailyPipelineConfig) -> list[str]:
     ]
 
 
-def _external_enrich_command(config: DailyPipelineConfig, codes: list[str]) -> list[str]:
-    return [
+def _run_external_enrichment(
+    config: DailyPipelineConfig,
+    codes: list[str],
+    command_runner: CommandRunner,
+) -> str:
+    commands = _external_enrich_commands(config, codes)
+    if not commands:
+        return "skipped_no_codes"
+
+    failures: list[str] = []
+    success_count = 0
+    timeout = max(120, min(config.external_enrich_timeout, 360))
+    for command in commands:
+        try:
+            command_runner(command, timeout)
+            success_count += 1
+        except Exception as exc:
+            failures.append(_short_error(exc))
+    if not failures:
+        return "ok"
+    first_error = failures[0]
+    if success_count:
+        return f"partial:{success_count}/{len(commands)} chunks ok; {first_error}"
+    return f"failed:{first_error}"
+
+
+def _external_enrich_commands(config: DailyPipelineConfig, codes: list[str]) -> list[list[str]]:
+    enrich_limit = max(config.enrich_limit, 0)
+    if enrich_limit == 0:
+        return []
+    code_set = set(codes)
+    holdings = [
+        code for code in _holding_codes(Path(config.holdings_path)) if code in code_set
+    ]
+    commands: list[list[str]] = []
+    if holdings:
+        # Holdings are the user-facing priority: include AKShare news/fund/valuation fields.
+        commands.append(
+            _external_enrich_command(
+                config,
+                holdings[:enrich_limit],
+                akshare_stock_fields=True,
+            )
+        )
+    holding_set = set(holdings)
+    remaining = [code for code in codes if code not in holding_set]
+    for chunk in _chunks(remaining[:enrich_limit], 10):
+        commands.append(_external_enrich_command(config, chunk, akshare_stock_fields=False))
+    if not commands and codes:
+        commands.append(_external_enrich_command(config, codes, akshare_stock_fields=True))
+    return commands
+
+
+def _external_enrich_command(
+    config: DailyPipelineConfig,
+    codes: list[str],
+    *,
+    akshare_stock_fields: bool,
+) -> list[str]:
+    command = [
         config.python_executable,
         "scripts/enrich_tdx_snapshot.py",
         "--snapshot",
@@ -180,14 +234,21 @@ def _external_enrich_command(config: DailyPipelineConfig, codes: list[str]) -> l
         "--market-news-limit",
         str(config.market_news_limit),
         "--field-timeout",
-        "10",
+        "8" if akshare_stock_fields else "10",
         "--request-timeout",
-        "8",
+        "6" if akshare_stock_fields else "8",
         "--sleep",
-        "0.1",
+        "0",
         "--enable-tushare-moneyflow",
-        "--skip-akshare-stock-fields",
     ]
+    if not akshare_stock_fields:
+        command.append("--skip-akshare-stock-fields")
+    return command
+
+
+def _chunks(items: list[str], size: int) -> list[list[str]]:
+    chunk_size = max(1, size)
+    return [items[index : index + chunk_size] for index in range(0, len(items), chunk_size)]
 
 
 def _report_command(config: DailyPipelineConfig) -> list[str]:

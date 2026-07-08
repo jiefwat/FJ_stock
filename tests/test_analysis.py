@@ -193,6 +193,22 @@ def test_stock_analysis_builds_professional_scorecard_dimensions() -> None:
     assert any("不加仓" in item.action for item in report.dimensions)
 
 
+
+def test_stock_analysis_uses_volume_proxy_when_fund_flow_missing() -> None:
+    bars = [
+        DailyBar(date="2026-07-04", open=10, high=10.2, low=9.8, close=10.0, volume=1000),
+        DailyBar(date="2026-07-05", open=10, high=10.3, low=9.9, close=10.1, volume=1200),
+        DailyBar(date="2026-07-06", open=10.1, high=10.6, low=10, close=10.5, volume=1800),
+        DailyBar(date="2026-07-07", open=10.5, high=11.0, low=10.4, close=10.9, volume=2200),
+        DailyBar(date="2026-07-08", open=10.9, high=11.3, low=10.8, close=11.2, volume=2600),
+    ]
+
+    report = analyze_stock(StockRawData(code="603278", name="大业股份", bars=bars))
+    fund_dimension = next(item for item in report.dimensions if item.name == "资金行为")
+
+    assert "成交侧" in fund_dimension.evidence
+    assert "资金流未接入" not in fund_dimension.evidence
+
 def test_stock_markdown_renders_professional_scorecard() -> None:
     bars = [
         DailyBar(

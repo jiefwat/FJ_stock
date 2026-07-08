@@ -1820,6 +1820,15 @@ body {
 #module-home > .grid-2 {
   grid-column: 1 / -1;
 }
+#module-home > .action-desk {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+#module-home > .home-brief,
+#module-home > .panel:not(.home-brief) {
+  grid-column: span 6;
+  min-width: 0;
+}
 #module-home > .module-header + .panel {
   grid-column: span 5;
   min-height: 128px;
