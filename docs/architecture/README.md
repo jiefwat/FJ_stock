@@ -42,6 +42,7 @@ CLI / Dashboard
 - `src/stock_ts/research_run_card.py`：研究运行卡层，参考 Vibe-Trading / Vibe-Research / Longbridge 类产品的“目标-证据-动作-边界”范式，把日报和流水线状态压缩成可审计的盘前任务卡；坚持只读研究和纸面推演，不接真实下单。
 - `src/stock_ts/professional_research.py`：单股专业研究附录层，输出支撑/压力/失效线、均线、RSI、MACD、量能比、盘口技术结构、公告事件雷达和复核动作；Web 和 CLI `research` 复用。
 - `src/stock_ts/trade_plan.py`：明确操作计划层，把深度分析、技术结构、公告事件和数据质量转换成当前动作、目标仓位、买入/加仓触发、止损/减仓触发、止盈计划、禁止动作和盘中执行清单。
+- `src/stock_ts/daily_decisions.py`：结构化日报决策层，把 `latest.md` 中的大盘摘要、红黄绿持仓、今日机会和数据限制写成 `reports/daily/latest_decisions.json`；晨报和后续首页决策优先读取 JSON，缺失时再降级解析 Markdown，避免从长文本里猜交易动作。
 - Web 个股页必须以 6 维判断组织精华信息：技术面、基本面、资金面、消息/公告、概念板块、成本位置；成本位置必须结合当前账号持仓成本，未持仓时明确标注。
 - `src/stock_ts/llm.py`：可选大模型增强层，使用 OpenAI-compatible chat completions 接口；无 Key 时输出降级说明，有 Key 时在结构化分析基础上生成 AI 研报。
 - `src/stock_ts/watchlist.py`：自选股研究工作台，读取轻量 YAML-like 清单，沉淀研究假设、标签、价格/评分提醒，并复用深度分析生成观察排序。

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from stock_ts.daily_artifacts import DailyArtifactConfig, run_daily_artifact_job
@@ -18,17 +19,25 @@ def test_daily_artifact_job_writes_latest_and_dated_reports(tmp_path: Path) -> N
     assert result.trade_date
     assert result.markdown_latest == tmp_path / "daily" / "latest.md"
     assert result.html_latest == tmp_path / "html" / "latest.html"
+    assert result.decisions_latest == tmp_path / "daily" / "latest_decisions.json"
     assert result.markdown_dated == tmp_path / "daily" / f"{result.trade_date}.md"
     assert result.html_dated == tmp_path / "html" / f"{result.trade_date}.html"
     assert result.markdown_latest.exists()
     assert result.markdown_dated.exists()
     assert result.html_latest.exists()
     assert result.html_dated.exists()
+    assert result.decisions_latest.exists()
     markdown = result.markdown_latest.read_text(encoding="utf-8")
     assert "StockTS 每日深度复盘" in markdown
     assert "港股 06088" in markdown
     assert "港股 06088" in result.html_latest.read_text(encoding="utf-8")
-    assert "provider=sample" in result.status_path.read_text(encoding="utf-8")
+    decisions = json.loads(result.decisions_latest.read_text(encoding="utf-8"))
+    assert decisions["schema_version"] == 1
+    assert "traffic_lights" in decisions
+    assert "opportunities" in decisions
+    status_text = result.status_path.read_text(encoding="utf-8")
+    assert "provider=sample" in status_text
+    assert "decisions=" in status_text
 
 
 def test_daily_artifact_job_writes_failure_status(tmp_path: Path) -> None:

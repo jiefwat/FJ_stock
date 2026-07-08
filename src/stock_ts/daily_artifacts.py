@@ -6,6 +6,7 @@ from html import escape
 from pathlib import Path
 from traceback import format_exception_only
 
+from .daily_decisions import write_decision_artifact
 from .html_report import render_daily_deep_html
 from .providers import create_provider
 from .workflows import build_daily_deep_report
@@ -30,6 +31,8 @@ class DailyArtifactResult:
     status_path: Path
     markdown_latest: Path | None = None
     markdown_dated: Path | None = None
+    decisions_latest: Path | None = None
+    decisions_dated: Path | None = None
     html_latest: Path | None = None
     html_dated: Path | None = None
     error: str = ""
@@ -60,12 +63,16 @@ def run_daily_artifact_job(config: DailyArtifactConfig) -> DailyArtifactResult:
             markdown = markdown.rstrip() + "\n\n" + caveat_markdown + "\n"
         markdown_latest = output_dir / "latest.md"
         markdown_dated = output_dir / f"{trade_date}.md"
+        decisions_latest = output_dir / "latest_decisions.json"
+        decisions_dated = output_dir / f"{trade_date}_decisions.json"
         html_latest = html_dir / "latest.html"
         html_dated = html_dir / f"{trade_date}.html"
         html = _append_caveat_html(render_daily_deep_html(report), caveat_markdown)
 
         markdown_latest.write_text(markdown, encoding="utf-8")
         markdown_dated.write_text(markdown, encoding="utf-8")
+        write_decision_artifact(markdown, decisions_latest)
+        write_decision_artifact(markdown, decisions_dated)
         html_latest.write_text(html, encoding="utf-8")
         html_dated.write_text(html, encoding="utf-8")
         _write_status(
@@ -76,6 +83,7 @@ def run_daily_artifact_job(config: DailyArtifactConfig) -> DailyArtifactResult:
                 f"trade_date={report.trade_date}",
                 f"generated_at={datetime.now().isoformat(timespec='seconds')}",
                 f"markdown={markdown_latest}",
+                f"decisions={decisions_latest}",
                 f"html={html_latest}",
             ],
         )
@@ -85,6 +93,8 @@ def run_daily_artifact_job(config: DailyArtifactConfig) -> DailyArtifactResult:
             status_path=status_path,
             markdown_latest=markdown_latest,
             markdown_dated=markdown_dated,
+            decisions_latest=decisions_latest,
+            decisions_dated=decisions_dated,
             html_latest=html_latest,
             html_dated=html_dated,
         )

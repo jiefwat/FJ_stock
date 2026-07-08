@@ -57,6 +57,8 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 
 - `reports/daily/latest.md`
 - `reports/daily/YYYY-MM-DD.md`
+- `reports/daily/latest_decisions.json`
+- `reports/daily/YYYY-MM-DD_decisions.json`
 - `reports/daily/latest.status`
 - `reports/daily/pipeline.status`
 - `reports/html/latest.html`
@@ -66,7 +68,7 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 失败时返回非 0，并把错误写入 `reports/daily/latest.status`，Web 会读取这个状态提示。
 ## 早间邮件
 
-每天早上发送昨晚生成好的最新日报，不重新拉行情。邮件会优先输出仓位建议、持仓四象限、开盘前操作清单和压缩版机会；如果最新日报包含个股“决策摘要”，持仓建议会直接使用最终判断、核心矛盾、今日动作、禁忌、转强和离场条件，不再只提示去网页查看；当新闻、资金或 K 线补强不完整时，会在邮件里标注对应判断不可信。
+每天早上发送昨晚生成好的最新日报，不重新拉行情。邮件会优先读取 `reports/daily/latest_decisions.json`，输出红黄绿交易清单和压缩版机会；JSON 缺失时再降级解析 Markdown。如果最新日报包含个股“决策摘要”，持仓建议会直接使用最终判断、核心矛盾、今日动作、禁忌、转强和离场条件，不再只提示去网页查看；当新闻、资金或 K 线补强不完整时，会在邮件里标注对应判断不可信。
 
 ```bash
 PYTHONPATH=src python3 scripts/send_morning_report.py \

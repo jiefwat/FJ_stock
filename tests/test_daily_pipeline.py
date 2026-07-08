@@ -114,6 +114,10 @@ def test_daily_pipeline_runs_refresh_enrich_announcements_and_report(tmp_path: P
     assert any(any("run_daily_analysis.py" in item for item in command) for command in calls)
     assert "a_share_kline=ok" in status
     assert (tmp_path / "reports" / "announcements" / "latest.md").exists()
+    decisions_path = tmp_path / "reports" / "daily" / "latest_decisions.json"
+    assert decisions_path.exists()
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    assert decisions["schema_version"] == 1
 
 
 def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path) -> None:

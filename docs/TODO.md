@@ -38,6 +38,7 @@
 - [x] 增加自动日报产物脚本 `scripts/run_daily_analysis.py`，生成 `reports/daily/latest.md`、日期归档、`latest.status` 和 HTML 归档。
 - [x] 增加完整每日数据流水线 `scripts/run_daily_pipeline.py`，串联 TDX 全市场刷新、候选 K 线/主题补强、多源 K 线/资金/估值/新闻补强、公告摘要和日报生成。
 - [x] Web 每日复盘模块读取最新自动日报产物，展示生成状态、摘要、持仓要点和 HTML 产物路径。
+- [x] 增加结构化日报决策产物 `reports/daily/latest_decisions.json`，沉淀大盘摘要、红黄绿持仓、今日机会和数据限制，晨报优先读取 JSON，减少 Markdown 解析误差。
 - [x] Web 从长 HTML 报告改为应用式模块切换壳，新增顶部应用工具栏、左侧按钮导航和 hash 模块路由。
 - [x] 首页增加用户工作台：按“我今天先看什么”组织组合风险、个股执行、候选机会和数据核对，并提供模块快速跳转。
 - [x] Web 壳升级为任务式导航，增加全局数据状态条、侧边栏快速个股搜索和一键复制今日行动，减少每页重复说明。
@@ -63,6 +64,7 @@
 5. 自选股增强：补 watchlist 分组、历史观察分趋势、提醒外发和每日自动跟踪。
 6. 日报自动化：持续观察 `stock-ts-daily-analysis.timer` 的 `pipeline.status`，把失败项展示到 Web 数据质量模块。
 7. AI 分析增强：将 `ai-insight` 扩展到 `daily-deep` 和 `watchlist`，并补结构化 JSON 输出、Prompt 回放测试和成本统计。
+8. 决策产物增强：让首页、每日复盘和个股页逐步改为读取 `latest_decisions.json`，并补每只持仓的价格触发线、失效线和数据可信度。
 
 ## 风险与约束
 

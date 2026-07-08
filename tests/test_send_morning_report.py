@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -724,3 +725,70 @@ def test_morning_report_traffic_light_uses_weak_holding_summary_when_details_mis
     joined = "\n".join(trade_lines)
     assert "红灯：甬矽电子、润建股份、大业股份" in joined
     assert "红灯：暂无" not in joined
+
+
+def test_morning_report_prefers_structured_decisions_json(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-08）\n\n"
+        "## 深度结论\n- Markdown 旧摘要，不应覆盖 JSON\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "latest_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trade_date": "2026-07-08",
+                "market": {"summary": "结构化大盘：防守优先"},
+                "traffic_lights": {
+                    "red": [
+                        {
+                            "name": "甬矽电子",
+                            "action": "不加仓；反弹降风险",
+                            "reason": "趋势下降，风险高",
+                        }
+                    ],
+                    "yellow": [
+                        {"name": "蓝色光标", "action": "等待修复", "reason": "亏损但趋势未坏"}
+                    ],
+                    "green": [
+                        {"name": "大业股份", "action": "持有跟踪", "reason": "盈利且趋势向上"}
+                    ],
+                },
+                "opportunities": [
+                    {
+                        "name": "济民健康",
+                        "sector": "医药",
+                        "reason": "量能放大",
+                        "risk": "追高风险",
+                        "action": "回踩承接",
+                    }
+                ],
+                "data_limits": ["资金面判断不可信"],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert "结构化大盘：防守优先" in content
+    assert "红灯：甬矽电子；动作：不加仓；反弹降风险" in content
+    assert "黄灯：蓝色光标；动作：等待修复" in content
+    assert "绿灯：大业股份；动作：持有跟踪" in content
+    assert "1. 济民健康｜医药｜机会：量能放大；风险：追高风险；动作：回踩承接" in content
+    assert "Markdown 旧摘要" not in content.split("## 昨日大盘", 1)[0]

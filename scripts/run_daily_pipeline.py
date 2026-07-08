@@ -13,6 +13,7 @@ from traceback import format_exception_only
 from typing import Callable
 
 from stock_ts.announcements import fetch_cninfo_announcements, render_announcement_markdown
+from stock_ts.daily_decisions import write_decision_artifact
 
 CommandRunner = Callable[[list[str], int], None]
 
@@ -103,6 +104,7 @@ def run_daily_pipeline(
         command_runner(_report_command(config), 180)
         steps["report"] = "ok"
         _write_pipeline_status(status_path, "ok", steps, codes, "")
+        _write_pipeline_decisions(config, status_path)
         return DailyPipelineResult(ok=True, status_path=status_path)
     except Exception as exc:
         error = "".join(format_exception_only(type(exc), exc)).strip()
@@ -265,6 +267,19 @@ def _write_announcements(config: DailyPipelineConfig, codes: list[str]) -> None:
         except Exception as exc:
             blocks.extend([f"## {code}", "", f"- 公告抓取失败：{exc}", ""])
     (out_dir / "latest.md").write_text("\n".join(blocks).strip() + "\n", encoding="utf-8")
+
+
+def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) -> None:
+    out_dir = Path(config.output_dir)
+    markdown_path = out_dir / "latest.md"
+    if not markdown_path.exists():
+        return
+    status_text = status_path.read_text(encoding="utf-8", errors="ignore") if status_path.exists() else ""
+    write_decision_artifact(
+        markdown_path.read_text(encoding="utf-8", errors="ignore"),
+        out_dir / "latest_decisions.json",
+        pipeline_status=status_text,
+    )
 
 
 def _write_pipeline_status(

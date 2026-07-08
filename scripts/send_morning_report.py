@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from stock_ts.daily_decisions import read_decision_artifact
 from stock_ts.notification import dispatch_report
 from stock_ts.symbols import stock_name_for_code
 
@@ -30,12 +31,14 @@ def build_morning_report(
     site_url: str = "https://stock.jiewat-kaka-fj.com",
 ) -> str:
     daily_path = Path(daily_dir) / "latest.md"
+    decisions_path = Path(daily_dir) / "latest_decisions.json"
     pipeline_path = Path(daily_dir) / "pipeline.status"
     announcements_path = Path(announcement_dir) / "latest.md"
     daily = _read_text(daily_path)
+    decisions = read_decision_artifact(decisions_path)
     pipeline = _read_text(pipeline_path)
     announcements = _read_text(announcements_path)
-    trade_date = _report_trade_date(daily)
+    trade_date = _decision_trade_date(decisions) or _report_trade_date(daily)
     name_map = _stock_name_map(daily, holdings_path=holdings_path)
     conclusion = _section(daily, "## 深度结论", max_lines=8)
     market = _first_section(
@@ -43,6 +46,10 @@ def build_morning_report(
         ["## 每日大盘情况", "## 每日大盘分析", "## A股大盘"],
         max_lines=10,
     )
+    decision_market = _decision_market_summary(decisions)
+    if decision_market:
+        conclusion = f"- {decision_market}"
+        market = f"- {decision_market}"
     sectors = _first_section(
         daily,
         ["## 板块情况", "## 每日板块情况", "## 板块主题"],
@@ -67,7 +74,10 @@ def build_morning_report(
     portfolio_layers = _portfolio_layer_lines(daily)
     opening_actions = _opening_action_checklist(daily, pipeline, limit=5)
     announcement_actions = _announcement_action_summary(announcements, name_map=name_map)
-    traffic_light_actions = _traffic_light_trade_list(daily, limit=5)
+    traffic_light_actions = _decision_traffic_light_actions(decisions) or _traffic_light_trade_list(
+        daily, limit=5
+    )
+    opportunity_actions = _decision_opportunity_actions(decisions, limit=10) or opportunity_actions
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     quick_reads = _quick_read_items(
@@ -174,6 +184,88 @@ def _read_text(path: Path) -> str:
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def _decision_trade_date(decisions: dict[str, object]) -> str:
+    value = decisions.get("trade_date") if isinstance(decisions, dict) else ""
+    return str(value).strip() if value else ""
+
+
+def _decision_market_summary(decisions: dict[str, object]) -> str:
+    market = decisions.get("market") if isinstance(decisions, dict) else None
+    if not isinstance(market, dict):
+        return ""
+    summary = market.get("summary")
+    return _shorten_line(str(summary).strip(), limit=140) if summary else ""
+
+
+def _decision_traffic_light_actions(decisions: dict[str, object]) -> list[str]:
+    lights = decisions.get("traffic_lights") if isinstance(decisions, dict) else None
+    if not isinstance(lights, dict):
+        return []
+    rows = [
+        ("red", "红灯", "不加仓，反弹优先锁利润/降风险"),
+        ("yellow", "黄灯", "只看修复确认，不补亏不追高"),
+        ("green", "绿灯", "持有跟踪，跌破纪律线再减"),
+    ]
+    actions: list[str] = []
+    for key, label, fallback_action in rows:
+        items = lights.get(key)
+        if not isinstance(items, list):
+            continue
+        names = [str(item.get("name", "")).strip() for item in items if isinstance(item, dict)]
+        names = [name for name in names if name]
+        first_action = _first_decision_item_value(items, "action") or fallback_action
+        first_reason = _first_decision_item_value(items, "reason")
+        line = f"{label}：{_join_names(names) if names else '暂无'}；动作：{first_action}"
+        if first_reason:
+            line += f"；原因：{first_reason}"
+        actions.append(_bullet(line))
+    opportunities = decisions.get("opportunities")
+    if isinstance(opportunities, list):
+        names = [
+            str(item.get("name", "")).strip()
+            for item in opportunities
+            if isinstance(item, dict) and item.get("name")
+        ]
+        actions.append(
+            _bullet(
+                "机会："
+                + (_join_names(names, limit=5) if names else "暂无")
+                + "；动作：只等开盘承接，不因名单出现就买"
+            )
+        )
+    return actions
+
+
+def _decision_opportunity_actions(decisions: dict[str, object], *, limit: int) -> list[str]:
+    items = decisions.get("opportunities") if isinstance(decisions, dict) else None
+    if not isinstance(items, list):
+        return []
+    actions: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "未识别股票").strip()
+        sector = str(item.get("sector") or "未识别板块").strip()
+        reason = str(item.get("reason") or "入选理由待补充").strip()
+        risk = str(item.get("risk") or "等待盘中确认").strip()
+        action = str(item.get("action") or "只观察，不追高").strip()
+        actions.append(
+            f"{len(actions) + 1}. {_shorten_line(f'{name}｜{sector}｜机会：{reason}；风险：{risk}；动作：{action}', limit=150)}"
+        )
+        if len(actions) >= limit:
+            break
+    return actions
+
+
+def _first_decision_item_value(items: object, key: str) -> str:
+    if not isinstance(items, list):
+        return ""
+    for item in items:
+        if isinstance(item, dict) and item.get(key):
+            return _shorten_line(str(item[key]).strip(), limit=80)
+    return ""
 
 
 def _section(markdown: str, heading: str, *, max_lines: int) -> str:
