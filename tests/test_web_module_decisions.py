@@ -1,3 +1,5 @@
+import json
+
 from stock_ts.models import SectorRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
@@ -509,17 +511,10 @@ def test_stock_module_surfaces_six_dimension_decision() -> None:
     assert "概念板块" in stock_html
     assert "成本位置" in stock_html
     assert "五维分析" not in stock_html
-    assert "专业八维诊断" in stock_html
-    assert "技术趋势" in stock_html
-    assert "量价结构" in stock_html
-    assert "估值位置" in stock_html
-    assert "资金行为" in stock_html
-    assert "公告舆情" in stock_html
-    assert "板块强弱" in stock_html
-    assert "持仓成本" in stock_html
-    assert "风控边界" in stock_html
-    assert "证据充分度" in stock_html
-    assert "综合判断" in stock_html
+    assert "交易快照" in stock_html
+    assert "6个证据" in stock_html
+    assert "3个风险" in stock_html
+    assert "专业八维诊断" not in stock_html
 
 
 def test_portfolio_module_surfaces_overall_diagnosis() -> None:
@@ -1045,3 +1040,55 @@ def test_home_page_surfaces_traffic_light_position_actions(tmp_path) -> None:
     assert "绿灯" in home_html
     assert "机会" in home_html
     assert "今天按颜色处理，不按喜好处理" in home_html
+
+
+def test_home_prefers_structured_daily_decisions(tmp_path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "latest_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trade_date": "2026-07-08",
+                "market": {"summary": "结构化大盘：先防守"},
+                "traffic_lights": {
+                    "red": [{"name": "结构化红灯", "action": "先降风险", "reason": "JSON 风险"}],
+                    "yellow": [{"name": "结构化黄灯", "action": "等修复", "reason": "JSON 修复"}],
+                    "green": [{"name": "结构化绿灯", "action": "持有", "reason": "JSON 趋势"}],
+                },
+                "opportunities": [
+                    {
+                        "name": "结构化机会",
+                        "sector": "商业航天",
+                        "reason": "主线强",
+                        "risk": "追高",
+                        "action": "回踩承接",
+                    }
+                ],
+                "data_limits": ["资金面判断不可信"],
+                "action_limits": ["资金面不可用：不把资金作为买入理由"],
+                "automation": {"failed_steps": ["外部补强"], "advice": "新闻资金失败，机会只观察"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+    home_start = html.index('id="home"')
+    market_start = html.index('id="market"')
+    home_html = html[home_start:market_start]
+
+    assert "结构化大盘：先防守" in home_html
+    assert "结构化红灯" in home_html
+    assert "结构化黄灯" in home_html
+    assert "结构化绿灯" in home_html
+    assert "结构化机会" in home_html
+    assert "资金面不可用：不把资金作为买入理由" in home_html
+    assert "新闻资金失败，机会只观察" in home_html

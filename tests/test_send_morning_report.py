@@ -792,3 +792,49 @@ def test_morning_report_prefers_structured_decisions_json(tmp_path: Path) -> Non
     assert "绿灯：大业股份；动作：持有跟踪" in content
     assert "1. 济民健康｜医药｜机会：量能放大；风险：追高风险；动作：回踩承接" in content
     assert "Markdown 旧摘要" not in content.split("## 昨日大盘", 1)[0]
+
+
+def test_morning_report_surfaces_structured_action_limits_and_automation(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-08）\n\n## 深度结论\n- 市场震荡\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "latest_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trade_date": "2026-07-08",
+                "market": {"summary": "市场震荡，先看风险"},
+                "traffic_lights": {"red": [], "yellow": [], "green": []},
+                "opportunities": [],
+                "data_limits": ["资金面判断不可信"],
+                "action_limits": ["资金面不可用：不把资金作为买入理由"],
+                "automation": {
+                    "failed_steps": ["外部补强"],
+                    "advice": "外部补强失败，新闻资金只观察",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert "## 今日交易限制" in content
+    assert "资金面不可用：不把资金作为买入理由" in content
+    assert "## 自动任务提醒" in content
+    assert "外部补强失败，新闻资金只观察" in content

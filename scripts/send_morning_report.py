@@ -78,6 +78,8 @@ def build_morning_report(
         daily, limit=5
     )
     opportunity_actions = _decision_opportunity_actions(decisions, limit=10) or opportunity_actions
+    action_limit_lines = _decision_action_limit_lines(decisions)
+    automation_lines = _decision_automation_lines(decisions)
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     quick_reads = _quick_read_items(
@@ -105,6 +107,12 @@ def build_morning_report(
         "",
         "## 红黄绿交易清单",
         "\n".join(traffic_light_actions),
+        "",
+        "## 今日交易限制",
+        "\n".join(action_limit_lines),
+        "",
+        "## 自动任务提醒",
+        "\n".join(automation_lines),
         "",
         "## 地铁上先看这 5 条",
         *(_bullet(item) for item in quick_reads),
@@ -257,6 +265,33 @@ def _decision_opportunity_actions(decisions: dict[str, object], *, limit: int) -
         if len(actions) >= limit:
             break
     return actions
+
+
+def _decision_action_limit_lines(decisions: dict[str, object]) -> list[str]:
+    limits = decisions.get("action_limits") if isinstance(decisions, dict) else None
+    if not isinstance(limits, list):
+        return [_bullet("未读取到结构化交易限制；按数据状态和价格触发执行。")]
+    visible = [str(item).strip() for item in limits if str(item).strip()]
+    if not visible:
+        return [_bullet("未触发结构化交易限制；仍不追高、不补亏。")]
+    return [_bullet(item) for item in visible[:6]]
+
+
+def _decision_automation_lines(decisions: dict[str, object]) -> list[str]:
+    automation = decisions.get("automation") if isinstance(decisions, dict) else None
+    if not isinstance(automation, dict):
+        return [_bullet("未读取到自动任务结构化状态；以 pipeline.status 为准。")]
+    advice = str(automation.get("advice") or "").strip()
+    failed = automation.get("failed_steps")
+    failed_text = ""
+    if isinstance(failed, list) and failed:
+        failed_text = "异常步骤：" + "、".join(str(item) for item in failed if item)
+    lines = []
+    if advice:
+        lines.append(_bullet(advice))
+    if failed_text:
+        lines.append(_bullet(failed_text))
+    return lines or [_bullet("自动更新未发现硬失败。")]
 
 
 def _first_decision_item_value(items: object, key: str) -> str:

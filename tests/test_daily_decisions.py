@@ -52,6 +52,14 @@ def test_build_decision_artifact_extracts_trade_actions_and_data_limits() -> Non
     assert artifact["opportunities"][0]["action"] == "回踩承接"
     assert "资金面判断不可信" in artifact["data_limits"]
     assert "消息催化判断不可信" in artifact["data_limits"]
+    assert "资金面不可用：不把资金作为买入理由" in artifact["action_limits"]
+    assert "新闻不可用：不做消息催化交易" in artifact["action_limits"]
+    assert artifact["automation"]["failed_steps"] == ["外部补强"]
+    first_action = artifact["stock_actions"][0]
+    assert first_action["name"] == "甬矽电子"
+    assert first_action["trigger"]
+    assert first_action["stop_loss"]
+    assert first_action["data_reliability"] == "需复核"
 
 
 def test_write_and_read_decision_artifact_roundtrip(tmp_path: Path) -> None:
@@ -67,3 +75,20 @@ def test_write_and_read_decision_artifact_roundtrip(tmp_path: Path) -> None:
     raw = json.loads(target.read_text(encoding="utf-8"))
     assert loaded == raw
     assert loaded["trade_date"] == "2026-07-08"
+
+
+def test_decision_artifact_falls_back_to_deep_stock_observation_actions() -> None:
+    markdown = (
+        "# StockTS 每日深度复盘（2026-07-08）\n\n"
+        "## 个股深度观察\n"
+        "- 大业股份（603278）：75/100，大业股份：高优先级观察，只等开盘承接确认。"
+        "优势是板块主线；触发条件看量价承接和板块延续，失效条件为跌破 5 日均线且成交额放大。\n"
+        "  - 今日动作：开盘前确认所属板块是否仍在市场主线或资金活跃方向。\n"
+        "  - 主要风险：个股风险等级为 低\n"
+    )
+
+    artifact = build_decision_artifact(markdown, pipeline_status="status=ok\nreport=ok\n")
+
+    assert artifact["stock_actions"][0]["name"] == "大业股份"
+    assert artifact["stock_actions"][0]["trigger"] == "看量价承接和板块延续"
+    assert artifact["stock_actions"][0]["stop_loss"] == "跌破 5 日均线且成交额放大"

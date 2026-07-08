@@ -9,7 +9,16 @@ from typing import Any
 def build_decision_artifact(markdown: str, *, pipeline_status: str = "") -> dict[str, Any]:
     """Build the compact decision contract used by mobile email and the home page."""
     positions = _position_records(markdown)
-    red, yellow, green = _traffic_lights(markdown, positions)
+    data_limits = _data_limits(pipeline_status)
+    action_limits = _action_limits(pipeline_status)
+    automation = _automation_state(pipeline_status)
+    reliability = _data_reliability(data_limits)
+    red, yellow, green = _traffic_lights(markdown, positions, reliability=reliability)
+    stock_actions = [_stock_action(item, reliability=reliability) for item in positions]
+    if not stock_actions:
+        stock_actions = [*red, *yellow, *green]
+    if not stock_actions:
+        stock_actions = _deep_observation_actions(markdown, reliability=reliability)
     return {
         "schema_version": 1,
         "trade_date": _trade_date(markdown),
@@ -21,8 +30,11 @@ def build_decision_artifact(markdown: str, *, pipeline_status: str = "") -> dict
             "yellow": yellow,
             "green": green,
         },
+        "stock_actions": stock_actions,
         "opportunities": _candidate_entries(markdown, limit=10),
-        "data_limits": _data_limits(pipeline_status),
+        "data_limits": data_limits,
+        "action_limits": action_limits,
+        "automation": automation,
     }
 
 
@@ -71,6 +83,8 @@ def _market_summary(markdown: str) -> str:
 def _traffic_lights(
     markdown: str,
     positions: list[dict[str, Any]],
+    *,
+    reliability: str,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     red: list[dict[str, str]] = []
     yellow: list[dict[str, str]] = []
@@ -82,29 +96,86 @@ def _traffic_lights(
         is_profit = bool(item["is_profit"])
         is_loss = bool(item["is_loss"])
         if risk == "高" or (is_profit and trend == "下降趋势"):
-            red.append(_traffic_item(name, "不加仓；反弹优先锁利润/降风险", item))
+            red.append(_traffic_item(name, "不加仓；反弹优先锁利润/降风险", item, reliability))
         elif is_profit and trend == "上升趋势":
-            green.append(_traffic_item(name, "持有跟踪；跌破纪律线再减", item))
+            green.append(_traffic_item(name, "持有跟踪；跌破纪律线再减", item, reliability))
         elif is_loss or trend == "下降趋势" or risk == "中":
-            yellow.append(_traffic_item(name, "只看修复确认；不补亏不追高", item))
+            yellow.append(_traffic_item(name, "只看修复确认；不补亏不追高", item, reliability))
     if not red and not yellow and not green:
         red.extend(
             {
                 "name": name,
                 "action": "不加仓；反弹优先锁利润/降风险",
                 "reason": "日报标记为弱势或高风险持仓",
+                "trigger": "反弹不能收复短期均线先降风险",
+                "stop_loss": "继续放量下跌或跌破最近支撑先处理",
+                "data_reliability": reliability,
             }
             for name in _weak_holding_names_from_summary(markdown)
         )
     return red, yellow, green
 
 
-def _traffic_item(name: str, action: str, source: dict[str, Any]) -> dict[str, str]:
+def _traffic_item(
+    name: str,
+    action: str,
+    source: dict[str, Any],
+    reliability: str,
+) -> dict[str, str]:
     reason = f"趋势 {source['trend']}，风险 {source['risk']}"
     pnl = str(source.get("pnl") or "")
     if pnl:
         reason += f"，盈亏 {pnl}"
-    return {"name": name, "action": action, "reason": reason}
+    return {
+        "name": name,
+        "action": action,
+        "reason": reason,
+        "trigger": _position_trigger(source),
+        "stop_loss": _position_stop_loss(source),
+        "data_reliability": reliability,
+    }
+
+
+def _stock_action(source: dict[str, Any], *, reliability: str) -> dict[str, str]:
+    name = str(source.get("name") or "")
+    risk = str(source.get("risk") or "未识别")
+    trend = str(source.get("trend") or "未识别")
+    if risk == "高" or trend == "下降趋势":
+        action = "不加仓；反弹先降风险"
+    elif source.get("is_loss"):
+        action = "等待修复；不补亏"
+    elif source.get("is_profit"):
+        action = "持有跟踪；保护利润"
+    else:
+        action = "观察；按触发条件执行"
+    return {
+        "name": name,
+        "action": action,
+        "reason": _traffic_item(name, action, source, reliability)["reason"],
+        "trigger": _position_trigger(source),
+        "stop_loss": _position_stop_loss(source),
+        "data_reliability": reliability,
+    }
+
+
+def _position_trigger(source: dict[str, Any]) -> str:
+    trend = str(source.get("trend") or "")
+    risk = str(source.get("risk") or "")
+    if risk == "高" or trend == "下降趋势":
+        return "站回短期均线且放量承接后再提高优先级"
+    if source.get("is_loss"):
+        return "放量站回成本区或短期均线后再观察"
+    return "主线延续且不跌破 5 日线时持有跟踪"
+
+
+def _position_stop_loss(source: dict[str, Any]) -> str:
+    trend = str(source.get("trend") or "")
+    risk = str(source.get("risk") or "")
+    if risk == "高":
+        return "继续放量下跌或风险未收敛时先降仓"
+    if trend == "下降趋势":
+        return "反弹无量或再次跌破短期均线时先降风险"
+    return "跌破 5 日线且不能快速收回时减仓"
 
 
 def _position_records(markdown: str) -> list[dict[str, Any]]:
@@ -131,6 +202,64 @@ def _position_records(markdown: str) -> list[dict[str, Any]]:
             }
         )
     return records
+
+
+def _deep_observation_actions(markdown: str, *, reliability: str) -> list[dict[str, str]]:
+    section = _section(markdown, "## 个股深度观察", max_lines=120)
+    actions: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    for item in _content_items(section):
+        match = re.match(
+            r"(?P<name>.+?)（(?P<code>[0-9A-Za-z]{5,6})(?:，[^）]*)?）："
+            r"(?P<score>\d{1,3})/100，(?P<summary>.+)",
+            item,
+        )
+        if match:
+            if current:
+                actions.append(_complete_deep_action(current, reliability))
+            summary = match.group("summary").strip()
+            current = {
+                "name": _clean_stock_name(match.group("name")),
+                "action": "只观察；等待开盘承接确认",
+                "reason": _short_summary(summary),
+                "trigger": _extract_after(summary, "触发条件", "，") or "看量价承接和板块延续",
+                "stop_loss": (
+                    _extract_after(summary, "失效条件为", "。")
+                    or "跌破 5 日线且成交额放大"
+                ),
+            }
+            continue
+        if current is None:
+            continue
+        if item.startswith("今日动作："):
+            current["action"] = item.removeprefix("今日动作：").strip()
+        elif item.startswith("主要风险："):
+            current["reason"] = item.removeprefix("主要风险：").strip()
+    if current:
+        actions.append(_complete_deep_action(current, reliability))
+    return actions
+
+
+def _complete_deep_action(item: dict[str, str], reliability: str) -> dict[str, str]:
+    return {
+        "name": item.get("name", ""),
+        "action": item.get("action", "只观察；等待开盘承接确认"),
+        "reason": item.get("reason", "个股深度观察摘要"),
+        "trigger": item.get("trigger", "看量价承接和板块延续"),
+        "stop_loss": item.get("stop_loss", "跌破 5 日线且成交额放大"),
+        "data_reliability": reliability,
+    }
+
+
+def _extract_after(text: str, prefix: str, end: str) -> str:
+    if prefix not in text:
+        return ""
+    tail = text.split(prefix, 1)[1].lstrip("：:为")
+    return tail.split(end, 1)[0].strip(" ；;，,。")
+
+
+def _short_summary(text: str) -> str:
+    return text.split("；", 1)[0].strip("。；")[:80]
 
 
 def _candidate_entries(markdown: str, *, limit: int) -> list[dict[str, str]]:
@@ -197,6 +326,51 @@ def _data_limits(status_text: str) -> list[str]:
     elif kline.startswith("partial"):
         limits.append("部分K线缺失，相关个股只做观察")
     return limits
+
+
+def _action_limits(status_text: str) -> list[str]:
+    status = _parse_status(status_text)
+    limits: list[str] = []
+    external = str(status.get("external_enrich", ""))
+    kline = str(status.get("a_share_kline", ""))
+    if external.startswith(("failed", "partial")):
+        limits.extend(["资金面不可用：不把资金作为买入理由", "新闻不可用：不做消息催化交易"])
+    if kline.startswith("failed"):
+        limits.append("K线不完整：不做趋势突破判断")
+    elif kline.startswith("partial"):
+        limits.append("部分K线缺失：相关个股只观察不进攻")
+    return limits
+
+
+def _automation_state(status_text: str) -> dict[str, object]:
+    status = _parse_status(status_text)
+    labels = {
+        "refresh": "全市场刷新",
+        "tdx_enrich": "TDX补强",
+        "external_enrich": "外部补强",
+        "a_share_kline": "K线",
+        "announcements": "公告",
+        "report": "日报",
+    }
+    failed = [
+        label
+        for key, label in labels.items()
+        if str(status.get(key, "")).startswith("failed")
+    ]
+    if failed:
+        advice = "、".join(failed) + "异常；相关结论只做观察，不作为买入理由"
+    else:
+        advice = "自动更新未发现硬失败"
+    return {
+        "generated_at": status.get("generated_at", ""),
+        "status": status.get("status", "unknown"),
+        "failed_steps": failed,
+        "advice": advice,
+    }
+
+
+def _data_reliability(data_limits: list[str]) -> str:
+    return "需复核" if data_limits else "基础可信"
 
 
 def _section(markdown: str, heading: str, *, max_lines: int = 80) -> str:

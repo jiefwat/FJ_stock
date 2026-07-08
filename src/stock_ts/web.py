@@ -16,6 +16,7 @@ from .analysis import analyze_candidates, analyze_stock
 from .announcements import AnnouncementReport, fetch_cninfo_announcements
 from .auth import AuthConfig, AuthUser, SessionManager, UserStore, is_auth_enabled
 from .config import get_settings, save_dotenv_values
+from .daily_decisions import read_decision_artifact
 from .data_sources import build_data_source_matrix
 from .deep_models import DeepStockReport
 from .models import (
@@ -938,6 +939,7 @@ def render_page(
         event_radar=event_radar,
         portfolio=portfolio,
     )
+    daily_decisions = _read_latest_daily_decisions()
     trade_plan = build_trade_plan(
         stock_name=stock.name,
         latest_close=stock.latest_close,
@@ -958,6 +960,7 @@ def render_page(
             risk_gate=risk_gate,
             provider_name=provider_name,
             holdings_path=holdings_path,
+            daily_decisions=daily_decisions,
         ),
         "market": _render_compact_market_module(market, sectors, portfolio, candidates),
         "sector": _retitle_module(
@@ -2675,6 +2678,11 @@ def _freshness_detail(quality: DataQualityView) -> str:
     return "可用"
 
 
+def _read_latest_daily_decisions() -> dict[str, object]:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    return read_decision_artifact(report_dir / "latest_decisions.json")
+
+
 def _render_home_module(
     *,
     quality: DataQualityView,
@@ -2685,7 +2693,9 @@ def _render_home_module(
     risk_gate: RiskGateView,
     provider_name: str,
     holdings_path: str,
+    daily_decisions: dict[str, object] | None = None,
 ) -> str:
+    daily_decisions = daily_decisions or {}
     mainline = "、".join(sectors.market_mainline[:3]) if sectors.market_mainline else "待确认"
     first_risk = portfolio.risk_alerts[0] if portfolio.risk_alerts else "暂无突出风险"
     top_holding = max(portfolio.positions, key=lambda item: item.weight, default=None)
@@ -2697,19 +2707,26 @@ def _render_home_module(
         if candidates.candidates and candidates.price_reliable
         else "候选排序暂停"
     )
+    structured_opportunity = _decision_first_opportunity(daily_decisions)
+    if structured_opportunity:
+        candidate_label = structured_opportunity
     risk_position = _highest_priority_position(portfolio)
     max_risk_holding = (
         f"{risk_position.holding.name} · {risk_position.risk_level}风险"
         if risk_position
         else "暂无突出风险"
     )
+    structured_red = _decision_names(daily_decisions, "red")
+    if structured_red:
+        max_risk_holding = structured_red[0]
     suggested_position = _home_position_cap(portfolio, risk_gate)
     data_time = quality.latest_date or quality.market_date or market.trade_date
+    market_summary = _decision_market_summary(daily_decisions) or market.summary
     next_actions = [
         (
             "先定风险闸门",
             risk_gate.gate,
-            f"{risk_gate.reason}；大盘细节去 A股大盘看。",
+            f"{market_summary}；大盘细节去 A股大盘看。",
             "market",
         ),
         (
@@ -2802,12 +2819,17 @@ def _render_home_module(
         mainline=mainline,
         quality=quality,
     )
-    traffic_light_actions = _render_home_traffic_light_actions(portfolio, candidates)
+    traffic_light_actions = _render_home_traffic_light_actions(
+        portfolio,
+        candidates,
+        daily_decisions=daily_decisions,
+    )
+    decision_limits = _render_home_decision_limits(daily_decisions)
     action_desk = f"""
       <div class="action-desk">
         <div class="action-desk-hero">
           <h3>今日行动台</h3>
-          <p>{escape(market.summary)}；先按风险闸门决定仓位，再处理持仓，最后只看满足条件的机会。</p>
+          <p>{escape(market_summary)}；先按风险闸门决定仓位，再处理持仓，最后只看满足条件的机会。</p>
           <div class="action-desk-grid">
             <div class="action-desk-metric"><span>建议仓位</span><strong>{escape(suggested_position)}</strong></div>
             <div class="action-desk-metric"><span>最大风险持仓</span><strong>{escape(max_risk_holding)}</strong></div>
@@ -2830,6 +2852,7 @@ def _render_home_module(
       </div>
       {action_desk}
       {traffic_light_actions}
+      {decision_limits}
       {decision_brief}
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>今日先做这三件事</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
@@ -2908,7 +2931,13 @@ def _render_home_decision_brief(
 def _render_home_traffic_light_actions(
     portfolio: PortfolioAnalysisReport,
     candidates: CandidatePoolReport,
+    *,
+    daily_decisions: dict[str, object] | None = None,
 ) -> str:
+    if daily_decisions:
+        structured = _render_decision_traffic_light_actions(daily_decisions)
+        if structured:
+            return structured
     red: list[str] = []
     yellow: list[str] = []
     green: list[str] = []
@@ -2941,6 +2970,62 @@ def _render_home_traffic_light_actions(
       </div>"""
 
 
+def _render_decision_traffic_light_actions(decisions: dict[str, object]) -> str:
+    lights = decisions.get("traffic_lights")
+    if not isinstance(lights, dict):
+        return ""
+    rows = [
+        ("red", "红灯", "先降风险"),
+        ("yellow", "黄灯", "等修复"),
+        ("green", "绿灯", "持有跟踪"),
+    ]
+    cards = "".join(
+        _render_home_traffic_card(
+            label,
+            action,
+            _decision_names(decisions, key),
+            _decision_first_reason(decisions, key) or "按结构化日报决策执行",
+        )
+        for key, label, action in rows
+    )
+    opportunities = [
+        str(item.get("name", "")).strip()
+        for item in _decision_list(decisions, "opportunities")
+        if isinstance(item, dict) and item.get("name")
+    ]
+    cards += _render_home_traffic_card(
+        "机会",
+        "只观察",
+        opportunities,
+        "等主线延续和开盘承接；名单不等于买点",
+    )
+    return f"""
+      <div class="panel home-brief" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>红黄绿处理顺序</h3><p class="section-subtitle">来自 latest_decisions.json；今天按颜色处理，不按喜好处理。</p></div></div>
+        <div class="summary-grid">{cards}</div>
+      </div>"""
+
+
+def _render_home_decision_limits(decisions: dict[str, object]) -> str:
+    action_limits = [str(item) for item in _decision_list(decisions, "action_limits") if item]
+    automation = decisions.get("automation") if isinstance(decisions, dict) else None
+    automation_advice = ""
+    if isinstance(automation, dict):
+        automation_advice = str(automation.get("advice") or "").strip()
+    if not action_limits and not automation_advice:
+        return ""
+    limit_items = _li_join(action_limits or ["未触发交易限制"])
+    advice = automation_advice or "自动更新未发现硬失败"
+    return f"""
+      <div class="panel" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>今日交易限制</h3><p class="section-subtitle">数据缺口直接变成操作限制，不把缺口当利好。</p></div></div>
+        <div class="grid-2">
+          <div class="compact-note-card"><strong>不能作为买入理由</strong><ul>{limit_items}</ul></div>
+          <div class="compact-note-card"><strong>自动任务提醒</strong><ul>{_li_join([advice])}</ul></div>
+        </div>
+      </div>"""
+
+
 def _render_home_traffic_card(
     label: str,
     action: str,
@@ -2960,6 +3045,55 @@ def _join_limited_names(names: list[str], *, limit: int = 4) -> str:
     visible = names[:limit]
     suffix = f"等{len(names)}只" if len(names) > limit else ""
     return "、".join(visible) + suffix
+
+
+def _decision_market_summary(decisions: dict[str, object]) -> str:
+    market = decisions.get("market") if isinstance(decisions, dict) else None
+    if not isinstance(market, dict):
+        return ""
+    return str(market.get("summary") or "").strip()
+
+
+def _decision_first_opportunity(decisions: dict[str, object]) -> str:
+    opportunities = _decision_list(decisions, "opportunities")
+    for item in opportunities:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        code = str(item.get("code") or "").strip()
+        if name:
+            return f"{name} · {code}" if code else name
+    return ""
+
+
+def _decision_names(decisions: dict[str, object], light_key: str) -> list[str]:
+    lights = decisions.get("traffic_lights") if isinstance(decisions, dict) else None
+    if not isinstance(lights, dict):
+        return []
+    items = lights.get(light_key)
+    if not isinstance(items, list):
+        return []
+    return [
+        str(item.get("name", "")).strip()
+        for item in items
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+
+def _decision_first_reason(decisions: dict[str, object], light_key: str) -> str:
+    lights = decisions.get("traffic_lights") if isinstance(decisions, dict) else None
+    items = lights.get(light_key) if isinstance(lights, dict) else None
+    if not isinstance(items, list):
+        return ""
+    for item in items:
+        if isinstance(item, dict) and item.get("reason"):
+            return str(item["reason"]).strip()
+    return ""
+
+
+def _decision_list(decisions: dict[str, object], key: str) -> list[object]:
+    value = decisions.get(key) if isinstance(decisions, dict) else None
+    return value if isinstance(value, list) else []
 
 
 def _home_trading_posture(
@@ -4183,7 +4317,7 @@ def _render_stock_compact_research_panel(
         (
             "技术面",
             f"{stock.trend} · MA5 {_fmt_optional(technical.ma5)}",
-            f"RSI {_fmt_optional(technical.rsi14)}；量能比 {technical.volume_ratio:.2f}；{technical.structure}",
+            f"盘口技术结构：{technical.structure}；RSI {_fmt_optional(technical.rsi14)}；量能比 {technical.volume_ratio:.2f}",
         ),
         ("基本面", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
         ("资金面", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
@@ -4228,26 +4362,31 @@ def _render_stock_compact_research_panel(
         f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
         for label, value in cards
     )
-    pro_cards = [
-        ("技术趋势", stock.trend),
-        ("盘口技术结构", technical.structure),
-        ("量价结构", technical.structure),
-        ("估值位置", _stock_valuation_text(stock_raw)),
-        ("资金行为", _stock_fund_flow_text(stock_raw)),
-        ("公告舆情", event_radar.gate),
-        ("板块强弱", _stock_sector_strength_text(stock, sectors)),
-        ("证据充分度", quality.signal),
-        ("综合判断", driver),
+    risk_points = [
+        risk,
+        invalid,
+        quality.warnings[0] if quality.warnings else "未触发数据质量硬风险",
     ]
-    pro_html = "".join(
-        f"<div class='compact-metric-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
-        for label, value in pro_cards
+    risk_html = _li_join([_short_condition(item, 70) for item in risk_points])
+    trade_snapshot = [
+        ("最终动作", trade_plan.verdict),
+        ("今天怎么做", getattr(trade_plan, "today_action", trade_plan.reason)),
+        ("买点/触发", _short_condition(trade_plan.entry_trigger, 54)),
+        ("卖点/止损", _short_condition(trade_plan.stop_loss, 54)),
+    ]
+    trade_snapshot_html = "".join(
+        f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
+        for label, value in trade_snapshot
     )
     scorecard_html = _render_stock_professional_scorecard(stock_raw, portfolio)
     return f"""
+      <div class="panel" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>交易快照</h3><p class="section-subtitle">先看最终动作、触发和止损，再看证据。</p></div></div>
+        <div class="summary-grid compact-summary-grid">{trade_snapshot_html}</div>
+      </div>
       <div class="grid-2 stock-research-grid" style="margin-top:16px">
         <div class="panel">
-          <h3>核心证据链 / 6 维判断</h3>
+          <h3>核心证据链 / 6 维判断 / 6个证据</h3>
           <div class="quality-banner good" style="margin-bottom:12px"><strong>一句最终动作：</strong>{escape(trade_plan.verdict)}；{escape(trade_plan.today_action if hasattr(trade_plan, "today_action") else trade_plan.entry_trigger)}</div>
           <table class="data-table"><thead><tr><th>维度</th><th>结论</th><th>依据</th></tr></thead><tbody>{row_html}</tbody></table>
         </div>
@@ -4257,8 +4396,8 @@ def _render_stock_compact_research_panel(
         </div>
       </div>
       <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>专业八维诊断</h3><p class="section-subtitle">只保留会影响交易计划的八个证据。</p></div></div>
-        <div class="compact-metric-grid">{pro_html}</div>
+        <div class="editor-toolbar"><div><h3>3个风险</h3><p class="section-subtitle">只保留会改变今天动作的风险。</p></div></div>
+        <ul class="reason-list">{risk_html}</ul>
       </div>
       {scorecard_html}"""
 
@@ -4817,7 +4956,7 @@ def _render_stock_professional_diagnosis(
     return f"""
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>专业八维诊断</h3><p class="section-subtitle">先看证据是否充分，再看机会分；缺数据时不硬给买卖结论。</p></div>
+          <div><h3>压缩证据</h3><p class="section-subtitle">先看证据是否充分，再看机会分；缺数据时不硬给买卖结论。</p></div>
         </div>
         <div class="summary-grid">{cards}</div>
       </div>"""
