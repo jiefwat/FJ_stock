@@ -1,0 +1,22 @@
+stocks:
+  - code: 600519
+    name: 贵州茅台
+    sector: 白酒
+    tags: 核心资产,消费,低频跟踪
+    thesis: 消费龙头样例，重点观察板块弱势时是否跑输市场以及估值修复条件。
+    alert_price_below: 1500
+    alert_score_below: 60
+  - code: 300750
+    name: 宁德时代
+    sector: 新能源车
+    tags: 成长,新能源,高景气
+    thesis: 成长方向样例，重点观察新能源车板块能否重新进入市场主线。
+    alert_price_below: 190
+    alert_score_below: 65
+  - code: 000001
+    name: 平安银行
+    sector: 银行
+    tags: 低估值,金融,防守
+    thesis: 防守方向样例，重点观察市场退潮时是否提供组合波动缓冲。
+    alert_price_below: 11
+    alert_score_below: 55

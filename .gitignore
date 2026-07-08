@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.env
+.DS_Store
+dist/
+build/
+*.egg-info/
+node_modules/
+
+# Local runtime data, personal holdings, generated reports, and account storage.
+data/auth/
+data/cache/
+data/backups/
+data/portfolio/*.csv
+data/imports/tdx_snapshots*
+reports/**
+!reports/
+!reports/.gitkeep
+public/
+backups/
+
+# Local handoff notes can include machine/server-specific deployment details.
+docs/agent-ops/agent-handoff-current.md

@@ -1,0 +1,25 @@
+[project]
+name = "stock-ts"
+version = "0.1.0"
+description = "A-share market and stock analysis toolkit"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+stock-ts = "stock_ts.cli:main"
+
+[project.optional-dependencies]
+data = ["akshare>=1.15.0", "eltdx>=1.0.2", "pandas>=2.2.0", "tushare>=1.4.0"]
+dashboard = ["streamlit>=1.35.0", "plotly>=5.22.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.6.0", "mypy>=1.10.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
