@@ -2802,6 +2802,7 @@ def _render_home_module(
         mainline=mainline,
         quality=quality,
     )
+    traffic_light_actions = _render_home_traffic_light_actions(portfolio, candidates)
     action_desk = f"""
       <div class="action-desk">
         <div class="action-desk-hero">
@@ -2828,6 +2829,7 @@ def _render_home_module(
         <span class="risk-pill {risk_gate.level}">{escape(risk_gate.gate)}</span>
       </div>
       {action_desk}
+      {traffic_light_actions}
       {decision_brief}
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>今日先做这三件事</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
@@ -2901,6 +2903,63 @@ def _render_home_decision_brief(
           <div class="summary-card"><span>今天不要做什么</span><strong>{escape(avoid)}</strong><p class="kpi-foot">不是买点不追，不用亏损理由补仓。</p></div>
         </div>
       </div>"""
+
+
+def _render_home_traffic_light_actions(
+    portfolio: PortfolioAnalysisReport,
+    candidates: CandidatePoolReport,
+) -> str:
+    red: list[str] = []
+    yellow: list[str] = []
+    green: list[str] = []
+    held_names = {position.holding.name for position in portfolio.positions}
+    for position in portfolio.positions:
+        name = position.holding.name
+        if position.risk_level == "高" or (
+            position.pnl >= 0 and position.trend == "下降趋势"
+        ):
+            red.append(name)
+        elif position.pnl >= 0 and position.trend == "上升趋势":
+            green.append(name)
+        elif position.pnl < 0 or position.trend == "下降趋势" or position.risk_level == "中":
+            yellow.append(name)
+
+    opportunities = [
+        item.name
+        for item in candidates.candidates
+        if item.name not in held_names
+    ][:4]
+    return f"""
+      <div class="panel home-brief" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>红黄绿处理顺序</h3><p class="section-subtitle">今天按颜色处理，不按喜好处理。</p></div></div>
+        <div class="summary-grid">
+          {_render_home_traffic_card("红灯", "先降风险", red, "不加仓；反弹优先锁利润或减风险")}
+          {_render_home_traffic_card("黄灯", "等修复", yellow, "只看放量修复；不补亏、不追高")}
+          {_render_home_traffic_card("绿灯", "持有跟踪", green, "按计划持有；跌破纪律线再减")}
+          {_render_home_traffic_card("机会", "只观察", opportunities, "等主线延续和开盘承接；名单不等于买点")}
+        </div>
+      </div>"""
+
+
+def _render_home_traffic_card(
+    label: str,
+    action: str,
+    names: list[str],
+    note: str,
+) -> str:
+    visible = _join_limited_names(names) if names else "暂无"
+    return f"""
+      <div class="summary-card">
+        <span>{escape(label)}</span>
+        <strong>{escape(visible)}</strong>
+        <p class="kpi-foot">{escape(action)}：{escape(note)}</p>
+      </div>"""
+
+
+def _join_limited_names(names: list[str], *, limit: int = 4) -> str:
+    visible = names[:limit]
+    suffix = f"等{len(names)}只" if len(names) > limit else ""
+    return "、".join(visible) + suffix
 
 
 def _home_trading_posture(

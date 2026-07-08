@@ -1017,3 +1017,31 @@ def test_stock_module_surfaces_holding_cost_perspective_when_position_exists(tmp
     assert "持仓成本视角" in stock_html
     assert "成本 1500.00" in stock_html
     assert "保护利润" in stock_html or "修复观察" in stock_html or "问题仓" in stock_html
+
+
+def test_home_page_surfaces_traffic_light_position_actions(tmp_path) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,4000,9.00,高端装备,测试\n"
+        "300750,宁德时代,100,260.00,新能源车,测试\n"
+        "600519,贵州茅台,10,1500.00,白酒,测试\n",
+        encoding="utf-8",
+    )
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path=str(holdings),
+    )
+    home_start = html.index('id="home"')
+    market_start = html.index('id="market"')
+    home_html = html[home_start:market_start]
+
+    assert "红黄绿处理顺序" in home_html
+    assert "红灯" in home_html
+    assert "黄灯" in home_html
+    assert "绿灯" in home_html
+    assert "机会" in home_html
+    assert "今天按颜色处理，不按喜好处理" in home_html

@@ -632,3 +632,57 @@ def test_morning_report_starts_with_commuter_decision_brief(tmp_path: Path) -> N
     decision_lines = [line for line in first_block.splitlines() if line.startswith("- ")]
     assert decision_lines
     assert all(len(line) <= 150 for line in decision_lines)
+
+
+def test_morning_report_adds_traffic_light_trade_list_without_duplicate_holdings(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-08）\n\n"
+        "## 深度结论\n- 市场震荡，今天只做纪律动作\n\n"
+        "## 每日大盘情况\n- 上涨 1800，下跌 3000，跌停 43，市场热度 42/100\n\n"
+        "## 每日持仓分析\n"
+        "## 持仓明细\n"
+        "- 甬矽电子（688362）：市值 54360.00，仓位 11.4%，"
+        "盈亏 19019.60（53.82%），趋势 下降趋势，风险 高\n"
+        "- 润建股份（002929）：市值 55192.00，仓位 11.6%，"
+        "盈亏 -5837.12（-9.56%），趋势 下降趋势，风险 中\n"
+        "- 蓝色光标（300058）：市值 46200.00，仓位 9.7%，"
+        "盈亏 -10477.95（-18.49%），趋势 上升趋势，风险 低\n"
+        "- 大业股份（603278）：市值 48440.00，仓位 10.2%，"
+        "盈亏 10295.20（26.99%），趋势 上升趋势，风险 中\n\n"
+        "## 候选股票池摘要\n"
+        "## 候选股票\n"
+        "1. 航天科技（000901，商业航天）：观察分 88/100\n"
+        "   - 入选理由：商业航天强度高，量能放大\n"
+        "   - 风险提示：高位分歧\n"
+        "   - 观察条件：回踩不破开盘价\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert "## 红黄绿交易清单" in content
+    trade_lines = _section_lines(content, "## 红黄绿交易清单", "## 地铁上先看这 5 条")
+    joined = "\n".join(trade_lines)
+    assert "红灯：甬矽电子" in joined
+    assert "黄灯：润建股份、蓝色光标" in joined
+    assert "绿灯：大业股份" in joined
+    assert "机会：航天科技" in joined
+    assert joined.count("甬矽电子") == 1
+    assert joined.count("润建股份") == 1
+    assert joined.count("蓝色光标") == 1
+    assert joined.count("大业股份") == 1

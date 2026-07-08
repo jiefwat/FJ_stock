@@ -67,6 +67,7 @@ def build_morning_report(
     portfolio_layers = _portfolio_layer_lines(daily)
     opening_actions = _opening_action_checklist(daily, pipeline, limit=5)
     announcement_actions = _announcement_action_summary(announcements, name_map=name_map)
+    traffic_light_actions = _traffic_light_trade_list(daily, limit=5)
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     quick_reads = _quick_read_items(
@@ -91,6 +92,9 @@ def build_morning_report(
         "",
         "## 手机决策版",
         *(_bullet(item) for item in commuter_brief),
+        "",
+        "## 红黄绿交易清单",
+        "\n".join(traffic_light_actions),
         "",
         "## 地铁上先看这 5 条",
         *(_bullet(item) for item in quick_reads),
@@ -690,6 +694,61 @@ def _portfolio_layer_lines(markdown: str) -> list[str]:
             "趋势持有仓："
             + (_join_names(trend) if trend else "暂无")
             + "；动作：持有跟踪，跌破 5 日线再减"
+        ),
+    ]
+
+
+def _traffic_light_trade_list(markdown: str, *, limit: int) -> list[str]:
+    records = _portfolio_action_records(markdown)
+    candidates = _candidate_entries(markdown, limit=limit)
+    if not records and not candidates:
+        return [_bullet("红灯/黄灯/绿灯暂缺：未读取到持仓或候选数据，今天先不主动扩大风险。")]
+
+    red: list[str] = []
+    yellow: list[str] = []
+    green: list[str] = []
+    seen_positions: set[str] = set()
+    for item in records:
+        name = str(item["name"])
+        if not name or name in seen_positions:
+            continue
+        seen_positions.add(name)
+        item_trend = str(item["trend"])
+        risk = str(item["risk"])
+        is_profit = bool(item["is_profit"])
+        is_loss = bool(item["is_loss"])
+        if risk == "高" or (is_profit and item_trend == "下降趋势"):
+            red.append(name)
+        elif is_profit and item_trend == "上升趋势":
+            green.append(name)
+        elif is_loss or item_trend == "下降趋势" or risk == "中":
+            yellow.append(name)
+
+    candidate_names = [
+        entry["name"]
+        for entry in candidates
+        if entry.get("name") and entry["name"] not in seen_positions
+    ]
+    return [
+        _bullet(
+            "红灯："
+            + (_join_names(red) if red else "暂无")
+            + "；动作：不加仓，反弹优先锁利润/降风险"
+        ),
+        _bullet(
+            "黄灯："
+            + (_join_names(yellow) if yellow else "暂无")
+            + "；动作：只看修复确认，不补亏不追高"
+        ),
+        _bullet(
+            "绿灯："
+            + (_join_names(green) if green else "暂无")
+            + "；动作：持有跟踪，跌破纪律线再减"
+        ),
+        _bullet(
+            "机会："
+            + (_join_names(candidate_names, limit=limit) if candidate_names else "暂无")
+            + "；动作：只等开盘承接，不因名单出现就买"
         ),
     ]
 
