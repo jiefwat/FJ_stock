@@ -149,7 +149,6 @@ def test_home_sector_board_hides_abnormal_pct_and_uses_distinct_judgement() -> N
     assert home_html.count("全市场板块多为上涨，该板块属于相对弱势") <= 1
 
 
-
 def test_home_sector_judgement_varies_by_rank_and_evidence() -> None:
     class Sector:
         def __init__(self, name: str, amount_change: float, limit_up_count: int) -> None:
@@ -175,6 +174,7 @@ def test_home_sector_judgement_varies_by_rank_and_evidence() -> None:
     assert any("第1位" in item for item in judgements)
     assert any("成交变化 14.39亿" in item for item in judgements)
     assert judgements.count("成交显著放大，说明有增量资金参与；扩散 100%，涨停 2") == 0
+
 
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     html = render_page(
@@ -295,7 +295,6 @@ def test_candidate_and_sector_tables_avoid_copy_paste_default_phrases() -> None:
         assert html.count(phrase) <= 2, phrase
 
 
-
 def test_stock_fund_dimension_falls_back_to_volume_side_when_moneyflow_missing() -> None:
     raw = StockRawData(
         code="603278",
@@ -314,6 +313,7 @@ def test_stock_fund_dimension_falls_back_to_volume_side_when_moneyflow_missing()
     assert "成交侧" in text
     assert "资金明细未接入" not in text
 
+
 def test_stock_module_surfaces_core_evidence_chain() -> None:
     html = render_page(
         stock_code="600519",
@@ -322,11 +322,11 @@ def test_stock_module_surfaces_core_evidence_chain() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "核心证据链" in html
-    assert "技术面" in html
-    assert "消息/公告" in html
-    assert "成本位置" in html
-    assert "操作条件" in html
+    assert "证据链" in html
+    assert "技术" in html
+    assert "消息" in html
+    assert "成本" in html
+    assert "风险边界" in html
 
 
 def test_stock_module_surfaces_conditional_execution_panel() -> None:
@@ -337,12 +337,12 @@ def test_stock_module_surfaces_conditional_execution_panel() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "执行条件" in html
-    assert "开仓条件" in html
-    assert "加仓条件" in html
-    assert "止损条件" in html
-    assert "降风险条件" in html
-    assert "不做事项" in html
+    assert "个股决策卡" in html
+    assert "买点" in html
+    assert "卖点" in html
+    assert "仓位" in html
+    assert "完整方法链" in html
+    assert "交易员执行" in html
 
 
 def test_portfolio_module_surfaces_handling_priority() -> None:
@@ -554,18 +554,18 @@ def test_stock_module_surfaces_six_dimension_decision() -> None:
     portfolio_start = html.index('id="portfolio"')
     stock_html = html[stock_start:portfolio_start]
 
-    assert "6 维判断" in stock_html
-    assert "一句最终动作" in stock_html
-    assert "技术面" in stock_html
+    assert "个股决策卡" in stock_html
+    assert "一句话" in stock_html
+    assert "技术" in stock_html
     assert "基本面" in stock_html
-    assert "资金面" in stock_html
-    assert "消息/公告" in stock_html
-    assert "概念板块" in stock_html
-    assert "成本位置" in stock_html
+    assert "资金" in stock_html
+    assert "消息" in stock_html
+    assert "板块" in stock_html
+    assert "成本" in stock_html
     assert "五维分析" not in stock_html
-    assert "交易快照" in stock_html
-    assert "6个证据" in stock_html
-    assert "3个风险" in stock_html
+    assert "证据链" in stock_html
+    assert "风险边界" in stock_html
+    assert "完整方法链" in stock_html
     assert "专业八维诊断" not in stock_html
 
 
@@ -1001,7 +1001,7 @@ def test_stock_module_combines_kline_screen_filter_and_conditional_trade_plan() 
     assert "回测策略" not in html
 
 
-def test_stock_module_surfaces_professional_scorecard_actions() -> None:
+def test_stock_module_hides_professional_scorecard_but_keeps_actions() -> None:
     html = render_page(
         stock_code="600519",
         provider_name="sample",
@@ -1013,16 +1013,16 @@ def test_stock_module_surfaces_professional_scorecard_actions() -> None:
     portfolio_start = html.index('id="portfolio"')
     stock_html = html[stock_start:portfolio_start]
 
-    assert "专业评分卡" in stock_html
-    assert "维度评分" in stock_html
-    assert "证据" in stock_html
+    assert "专业评分卡" not in stock_html
+    assert "维度评分" not in stock_html
+    assert "证据链" in stock_html
     assert "动作" in stock_html
-    assert "估值基本面" in stock_html
-    assert "消息事件" in stock_html
-    assert "交易计划" in stock_html
+    assert "基本面" in stock_html
+    assert "消息" in stock_html
+    assert "交易员执行" in stock_html
 
 
-def test_stock_module_surfaces_decision_summary_before_scorecard() -> None:
+def test_stock_module_surfaces_decision_card_before_method_details() -> None:
     html = render_page(
         stock_code="600519",
         provider_name="sample",
@@ -1034,15 +1034,14 @@ def test_stock_module_surfaces_decision_summary_before_scorecard() -> None:
     portfolio_start = html.index('id="portfolio"')
     stock_html = html[stock_start:portfolio_start]
 
-    assert "决策摘要" in stock_html
-    assert "最终判断" in stock_html
-    assert "核心矛盾" in stock_html
-    assert "今日动作" in stock_html
-    assert "不能做什么" in stock_html
-    assert "转强条件" in stock_html
-    assert "离场条件" in stock_html
-    assert "数据可信度" in stock_html
-    assert stock_html.index("决策摘要") < stock_html.index("专业评分卡")
+    assert "个股决策卡" in stock_html
+    assert "动作" in stock_html
+    assert "今天" in stock_html
+    assert "买点" in stock_html
+    assert "卖点" in stock_html
+    assert "数据" in stock_html
+    assert "完整方法链" in stock_html
+    assert stock_html.index("个股决策卡") < stock_html.index("完整方法链")
 
 
 def test_stock_module_surfaces_holding_cost_perspective_when_position_exists(tmp_path) -> None:

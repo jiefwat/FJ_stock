@@ -238,7 +238,7 @@ def test_each_workspace_contains_its_own_core_module_content() -> None:
         "sector": "主线板块",
         "sentiment": "涨跌停情绪",
         "screener": "智能选股",
-        "stock": "核心证据链",
+        "stock": "证据链",
         "portfolio": "处理优先级",
         "watchlist": "添加自选",
         "daily": "每日复盘",

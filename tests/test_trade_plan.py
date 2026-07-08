@@ -47,9 +47,9 @@ def test_web_renders_concrete_trade_plan_not_generic_words() -> None:
         ),
     )
 
-    assert "明确操作建议" in html
-    assert "目标仓位" in html
-    assert "买入触发" in html
-    assert "加仓" in html
+    assert "个股决策卡" in html
+    assert "仓位" in html
+    assert "买点" in html
+    assert "完整方法链" in html
     assert "止损" in html
     assert "禁止动作" not in html

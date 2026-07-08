@@ -23,7 +23,7 @@ def test_web_renders_professional_research_framework_for_all_modules() -> None:
     assert "我的持仓" in html
     assert "持仓列表" in html
     assert "个股分析" in html
-    assert "明确操作建议" in html
+    assert "个股决策卡" in html
     assert "渠道配置" in html
     assert "发送通道" in html
     assert "主要数据源" not in html

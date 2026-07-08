@@ -1276,9 +1276,7 @@ def _render_market_risk_signals(market: MarketSnapshot) -> str:
 
 def _render_index_comparison_chart(market: MarketSnapshot) -> str:
     if not market.indices:
-        return (
-            "<p class='module-desc'>当前没有指数数据，先确认数据源或切回样例模式查看页面。</p>"
-        )
+        return "<p class='module-desc'>当前没有指数数据，先确认数据源或切回样例模式查看页面。</p>"
     max_pct = max(abs(item.pct_chg) for item in market.indices) or 1
     return "".join(
         _render_compare_row(
@@ -1498,7 +1496,9 @@ def _render_portfolio_priority_queue(
             position.pnl < 0 and (position.trend == "下降趋势" or position.risk_level == "中")
         ):
             lane_by_name["必须先处理"].append(position)
-        elif position.pnl >= 0 and (position.trend == "下降趋势" or position.risk_level in {"高", "中"}):
+        elif position.pnl >= 0 and (
+            position.trend == "下降趋势" or position.risk_level in {"高", "中"}
+        ):
             lane_by_name["保护利润"].append(position)
         elif position.pnl < 0 and position.trend == "上升趋势":
             lane_by_name["修复观察"].append(position)
@@ -1523,7 +1523,9 @@ def _render_portfolio_priority_lane(
 ) -> str:
     rows = "".join(
         _render_portfolio_priority_stock(position, advice_by_code.get(position.holding.code))
-        for position in sorted(positions, key=lambda item: (item.risk_level != "高", -item.weight))[:4]
+        for position in sorted(positions, key=lambda item: (item.risk_level != "高", -item.weight))[
+            :4
+        ]
     )
     if not rows:
         rows = "<div class='queue-stock'><strong>暂无</strong><span>今天没有进入这一类的持仓。</span></div>"
@@ -1751,7 +1753,6 @@ def _render_candidates_module(
       </div>
       {_candidate_accuracy_pause()}
     </section>"""
-
 
     group_key = _normalize_candidate_group(candidate_group)
     strategy_key = _normalize_candidate_strategy(candidate_strategy)
@@ -2660,11 +2661,13 @@ def _render_global_freshness_bar(
     risk_gate: RiskGateView,
 ) -> str:
     data_detail = _freshness_detail(quality)
-    provider_label = "TDX MCP" if quality.requested_provider == WEB_DATA_PROVIDER else provider_class
+    provider_label = (
+        "TDX MCP" if quality.requested_provider == WEB_DATA_PROVIDER else provider_class
+    )
     return f"""
       <div class="freshness-bar" aria-label="全局数据新鲜度">
-        <div><span>交易日</span><strong>{escape(market.trade_date or quality.market_date or '待确认')}</strong></div>
-        <div><span>行情</span><strong>{escape(quality.latest_date or '待确认')}</strong></div>
+        <div><span>交易日</span><strong>{escape(market.trade_date or quality.market_date or "待确认")}</strong></div>
+        <div><span>行情</span><strong>{escape(quality.latest_date or "待确认")}</strong></div>
         <div><span>K线/资金/新闻/公告</span><strong>{escape(data_detail)}</strong></div>
         <div><span>数据状态</span><strong>{escape(quality.signal)}</strong></div>
         <div><span>来源</span><strong>{escape(provider_label)}</strong></div>
@@ -2946,20 +2949,14 @@ def _render_home_traffic_light_actions(
     held_names = {position.holding.name for position in portfolio.positions}
     for position in portfolio.positions:
         name = position.holding.name
-        if position.risk_level == "高" or (
-            position.pnl >= 0 and position.trend == "下降趋势"
-        ):
+        if position.risk_level == "高" or (position.pnl >= 0 and position.trend == "下降趋势"):
             red.append(name)
         elif position.pnl >= 0 and position.trend == "上升趋势":
             green.append(name)
         elif position.pnl < 0 or position.trend == "下降趋势" or position.risk_level == "中":
             yellow.append(name)
 
-    opportunities = [
-        item.name
-        for item in candidates.candidates
-        if item.name not in held_names
-    ][:4]
+    opportunities = [item.name for item in candidates.candidates if item.name not in held_names][:4]
     return f"""
       <div class="panel home-brief" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>红黄绿处理顺序</h3><p class="section-subtitle">今天按颜色处理，不按喜好处理。</p></div></div>
@@ -3267,7 +3264,9 @@ def _home_sector_judgement(item, *, mode: str, rank: int) -> str:
             f"第{rank}位覆盖面较广：观察能否从前排扩散到低位；"
             f"{spread}，资金 {item.fund_status}，{amount}"
         )
-    return f"第{rank}位少数个股带动：持续性看明日扩散；{spread}，涨停 {item.limit_up_count}，{amount}"
+    return (
+        f"第{rank}位少数个股带动：持续性看明日扩散；{spread}，涨停 {item.limit_up_count}，{amount}"
+    )
 
 
 def _render_sentiment_module(
@@ -4333,96 +4332,83 @@ def _render_stock_compact_research_panel(
     announcement_count = len(announcement_report.items) if announcement_report else 0
     rows = [
         (
-            "技术面",
+            "技术",
             f"{stock.trend} · MA5 {_fmt_optional(technical.ma5)}",
-            f"盘口技术结构：{technical.structure}；RSI {_fmt_optional(technical.rsi14)}；量能比 {technical.volume_ratio:.2f}",
+            f"{technical.structure}；RSI {_fmt_optional(technical.rsi14)}",
         ),
         ("基本面", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
-        ("资金面", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
+        ("资金", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
         (
-            "消息/公告",
+            "消息",
             _stock_news_text(event_radar, announcement_count, len(stock_raw.news_items)),
             _stock_news_note(stock_raw, event_radar),
         ),
         (
-            "概念板块",
+            "板块",
             _stock_sector_strength_text(stock, sectors),
             _stock_sector_strength_note(stock, sectors),
         ),
         (
-            "成本位置",
-            _stock_cost_position_text(position),
+            "成本",
+            (
+                f"{_stock_holding_state(position)} · {_stock_cost_position_text(position)}"
+                if position
+                else _stock_cost_position_text(position)
+            ),
             _stock_cost_position_note(position, trade_plan, invalid),
         ),
     ]
     row_html = "".join(
-        f"<tr><td><strong>{escape(label)}</strong></td><td>{escape(value)}</td><td>{escape(note)}</td></tr>"
+        "<tr>"
+        f"<td><strong>{escape(label)}</strong></td>"
+        f"<td>{escape(value)}</td>"
+        f"<td>{escape(_short_condition(note, 72))}</td>"
+        "</tr>"
         for label, value, note in rows
     )
-    cost_text = (
-        f"{position.holding.cost_price:.2f} / 盈亏 {position.pnl_ratio:.2f}%"
-        if position
-        else "当前账号未持仓"
-    )
-    cards = [
-        ("当前动作", trade_plan.verdict),
-        ("目标仓位", trade_plan.target_position),
-        ("买入触发 / 开仓条件", _short_condition(trade_plan.entry_trigger, 48)),
-        ("加仓条件", _short_condition(trade_plan.add_trigger, 48)),
-        ("止损条件", _short_condition(trade_plan.stop_loss, 48)),
-        ("降风险条件", _short_condition(trade_plan.reduce_trigger, 48)),
-        ("风险边界 / 风控边界", f"{technical.invalid_line:.2f} / {invalid}"),
-        ("不做事项", trade_plan.forbidden_actions[0] if trade_plan.forbidden_actions else "无"),
-        ("持仓成本", cost_text),
-        ("数据质量", quality.status),
+    decision_cards = [
+        ("动作", trade_plan.verdict),
+        ("今天", getattr(trade_plan, "today_action", trade_plan.reason)),
+        ("买点", _short_condition(trade_plan.entry_trigger, 54)),
+        ("卖点", _short_condition(trade_plan.stop_loss, 54)),
+        ("仓位", trade_plan.target_position),
+        ("数据", quality.status),
     ]
     card_html = "".join(
         f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
-        for label, value in cards
+        for label, value in decision_cards
     )
     risk_points = [
         risk,
-        invalid,
+        f"失效线 {technical.invalid_line:.2f}；{invalid}",
+        trade_plan.forbidden_actions[0] if trade_plan.forbidden_actions else "不追高、不脱离止损线",
         quality.warnings[0] if quality.warnings else "未触发数据质量硬风险",
     ]
-    risk_html = _li_join([_short_condition(item, 70) for item in risk_points])
-    trade_snapshot = [
-        ("最终动作", trade_plan.verdict),
-        ("今天怎么做", getattr(trade_plan, "today_action", trade_plan.reason)),
-        ("买点/触发", _short_condition(trade_plan.entry_trigger, 54)),
-        ("卖点/止损", _short_condition(trade_plan.stop_loss, 54)),
-    ]
-    trade_snapshot_html = "".join(
-        f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
-        for label, value in trade_snapshot
-    )
+    risk_html = _li_join([_short_condition(item, 78) for item in risk_points])
     base_report = analyze_stock(stock_raw)
-    scorecard_html = _render_stock_professional_scorecard(stock_raw, portfolio, base_report)
     agentic_html = _render_stock_agentic_decision_chain(
         build_stock_agent_decision(stock_raw, base_report)
     )
     return f"""
       <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>交易快照</h3><p class="section-subtitle">先看最终动作、触发和止损，再看证据。</p></div></div>
-        <div class="summary-grid compact-summary-grid">{trade_snapshot_html}</div>
+        <div class="editor-toolbar">
+          <div><h3>个股决策卡</h3><p class="section-subtitle">只保留今天要用的结论、证据和风控。</p></div>
+          <span class="portfolio-chip">{escape(stock.name)} · {escape(stock.code)}</span>
+        </div>
+        <div class="quality-banner good" style="margin-bottom:12px"><strong>一句话：</strong>{escape(trade_plan.verdict)}；{escape(getattr(trade_plan, "today_action", trade_plan.reason))}</div>
+        <div class="summary-grid compact-summary-grid">{card_html}</div>
       </div>
       <div class="grid-2 stock-research-grid" style="margin-top:16px">
         <div class="panel">
-          <h3>核心证据链 / 6 维判断 / 6个证据</h3>
-          <div class="quality-banner good" style="margin-bottom:12px"><strong>一句最终动作：</strong>{escape(trade_plan.verdict)}；{escape(trade_plan.today_action if hasattr(trade_plan, "today_action") else trade_plan.entry_trigger)}</div>
+          <h3>证据链</h3>
           <table class="data-table"><thead><tr><th>维度</th><th>结论</th><th>依据</th></tr></thead><tbody>{row_html}</tbody></table>
         </div>
         <div class="panel">
-          <h3>明确操作建议 / 执行条件 / 操作条件</h3>
-          <div class="summary-grid compact-summary-grid">{card_html}</div>
+          <h3>风险边界</h3>
+          <ul class="reason-list">{risk_html}</ul>
         </div>
       </div>
-      <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>3个风险</h3><p class="section-subtitle">只保留会改变今天动作的风险。</p></div></div>
-        <ul class="reason-list">{risk_html}</ul>
-      </div>
-      {agentic_html}
-      {scorecard_html}"""
+      {agentic_html}"""
 
 
 def _render_stock_agentic_decision_chain(decision: StockAgentDecision) -> str:
@@ -4441,64 +4427,59 @@ def _render_stock_agentic_decision_chain(decision: StockAgentDecision) -> str:
         "</tr>"
         for item in decision.analyst_team
     )
-    attr_cards = [
-        ("技术", f"{attribution.technical_indicators}%"),
-        ("消息", f"{attribution.news_sentiment}%"),
-        ("基本面", f"{attribution.fundamentals}%"),
-        ("资金/成交", f"{attribution.capital_volume}%"),
-    ]
-    attr_html = "".join(
-        f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong></div>"
-        for label, value in attr_cards
+    attr_text = (
+        f"技术 {attribution.technical_indicators}% · "
+        f"消息 {attribution.news_sentiment}% · "
+        f"基本面 {attribution.fundamentals}% · "
+        f"资金/成交 {attribution.capital_volume}%"
     )
     no_trade = _li_join(decision.trader.no_trade_conditions[:3])
     return f"""
-      <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar">
-          <div><h3>TradingAgents 决策链</h3><p class="section-subtitle">分析师团队 → 多空辩论 → 交易员 → 风控/组合经理；只使用已接入数据。</p></div>
-          <span class="portfolio-chip">{escape(context.subject)} · {escape(context.trade_date)}</span>
-        </div>
-        <div class="quality-banner" style="margin-bottom:12px">
-          <strong>daily_stock_analysis 信号归因：</strong>
-          可用 {escape(available_text)}；缺口 {escape(missing_text)}；限制 {escape(limitation_text)}；来源 {escape(source_text)}
-        </div>
-        <div class="summary-grid compact-summary-grid">{attr_html}</div>
-        <div class="grid-2 stock-research-grid" style="margin-top:12px">
-          <div class="panel compact-panel">
-            <h3>分析师团队</h3>
-            <table class="data-table"><thead><tr><th>角色</th><th>判断</th><th>证据</th><th>动作</th></tr></thead><tbody>{analyst_rows}</tbody></table>
+      <details class="detail-shell" style="margin-top:16px">
+        <summary>完整方法链：TradingAgents 决策链 / daily_stock_analysis 信号归因</summary>
+        <div class="detail-body">
+          <div class="quality-banner" style="margin-bottom:12px">
+            <strong>{escape(context.subject)} · {escape(context.trade_date)}</strong><br />
+            信号归因：{escape(attr_text)}<br />
+            可用 {escape(available_text)}；缺口 {escape(missing_text)}；限制 {escape(limitation_text)}；来源 {escape(source_text)}
           </div>
-          <div class="panel compact-panel">
-            <h3>多空审议</h3>
-            <div class="metric-list">
-              <div class="metric-line"><span>多头观点</span><strong>{escape(decision.research_debate.bull_thesis)}</strong></div>
-              <div class="metric-line"><span>空头观点</span><strong>{escape(decision.research_debate.bear_thesis)}</strong></div>
-              <div class="metric-line"><span>研究经理裁决</span><strong>{escape(decision.research_debate.judge)}</strong></div>
+          <div class="grid-2 stock-research-grid">
+            <div class="panel compact-panel">
+              <h3>分析师团队</h3>
+              <table class="data-table"><thead><tr><th>角色</th><th>判断</th><th>证据</th><th>动作</th></tr></thead><tbody>{analyst_rows}</tbody></table>
+            </div>
+            <div class="panel compact-panel">
+              <h3>多空审议</h3>
+              <div class="metric-list">
+                <div class="metric-line"><span>多头观点</span><strong>{escape(decision.research_debate.bull_thesis)}</strong></div>
+                <div class="metric-line"><span>空头观点</span><strong>{escape(decision.research_debate.bear_thesis)}</strong></div>
+                <div class="metric-line"><span>研究经理裁决</span><strong>{escape(decision.research_debate.judge)}</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2 stock-research-grid" style="margin-top:12px">
+            <div class="panel compact-panel">
+              <h3>交易员执行</h3>
+              <div class="metric-list">
+                <div class="metric-line"><span>动作</span><strong>{escape(decision.trader.action)}</strong></div>
+                <div class="metric-line"><span>触发</span><strong>{escape(decision.trader.entry_trigger)}</strong></div>
+                <div class="metric-line"><span>失效</span><strong>{escape(decision.trader.invalidation)}</strong></div>
+                <div class="metric-line"><span>仓位</span><strong>{escape(decision.trader.position_rule)}</strong></div>
+              </div>
+              <ul class="reason-list">{no_trade}</ul>
+            </div>
+            <div class="panel compact-panel">
+              <h3>组合经理最终意见</h3>
+              <div class="metric-list">
+                <div class="metric-line"><span>激进</span><strong>{escape(decision.risk_review.aggressive)}</strong></div>
+                <div class="metric-line"><span>中性</span><strong>{escape(decision.risk_review.neutral)}</strong></div>
+                <div class="metric-line"><span>保守</span><strong>{escape(decision.risk_review.conservative)}</strong></div>
+                <div class="metric-line"><span>最终</span><strong>{escape(decision.risk_review.portfolio_decision)}</strong></div>
+              </div>
             </div>
           </div>
         </div>
-        <div class="grid-2 stock-research-grid" style="margin-top:12px">
-          <div class="panel compact-panel">
-            <h3>交易员执行</h3>
-            <div class="metric-list">
-              <div class="metric-line"><span>动作</span><strong>{escape(decision.trader.action)}</strong></div>
-              <div class="metric-line"><span>触发</span><strong>{escape(decision.trader.entry_trigger)}</strong></div>
-              <div class="metric-line"><span>失效</span><strong>{escape(decision.trader.invalidation)}</strong></div>
-              <div class="metric-line"><span>仓位</span><strong>{escape(decision.trader.position_rule)}</strong></div>
-            </div>
-            <ul class="reason-list">{no_trade}</ul>
-          </div>
-          <div class="panel compact-panel">
-            <h3>组合经理最终意见</h3>
-            <div class="metric-list">
-              <div class="metric-line"><span>激进</span><strong>{escape(decision.risk_review.aggressive)}</strong></div>
-              <div class="metric-line"><span>中性</span><strong>{escape(decision.risk_review.neutral)}</strong></div>
-              <div class="metric-line"><span>保守</span><strong>{escape(decision.risk_review.conservative)}</strong></div>
-              <div class="metric-line"><span>最终</span><strong>{escape(decision.risk_review.portfolio_decision)}</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>"""
+      </details>"""
 
 
 def _render_stock_professional_scorecard(

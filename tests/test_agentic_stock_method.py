@@ -175,3 +175,26 @@ def test_stock_markdown_renders_agentic_method_chain() -> None:
     assert "技术分析师" in markdown
     assert "多头观点" in markdown
     assert "组合经理最终意见" in markdown
+
+
+def test_stock_page_keeps_agentic_method_but_hides_noisy_detail_by_default() -> None:
+    html = render_page(
+        stock_code="603278",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+    stock_start = html.index('id="stock"')
+    portfolio_start = html.index('id="portfolio"')
+    stock_html = html[stock_start:portfolio_start]
+
+    assert "个股决策卡" in stock_html
+    assert "证据链" in stock_html
+    assert "风险边界" in stock_html
+    assert "完整方法链" in stock_html
+    assert "TradingAgents 决策链" in stock_html
+    assert "专业评分卡" not in stock_html
+    assert "核心证据链 / 6 维判断 / 6个证据" not in stock_html
+    assert "明确操作建议 / 执行条件 / 操作条件" not in stock_html
+    assert "3个风险" not in stock_html
+    assert stock_html.count("summary-card") < 42
