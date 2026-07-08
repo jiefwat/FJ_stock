@@ -94,6 +94,33 @@ def test_web_daily_module_surfaces_latest_automated_artifact(tmp_path, monkeypat
     assert "公告" in html
 
 
+def test_web_surfaces_automation_monitor_from_pipeline_status(tmp_path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\n"
+        "generated_at=2026-07-08T10:00:00\n"
+        "refresh=ok\n"
+        "tdx_enrich=ok\n"
+        "external_enrich=failed:timeout\n"
+        "announcements=ok\n"
+        "report=ok\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
+
+    assert "自动更新监控" in html
+    assert "每 2 小时" in html
+    assert "最近运行" in html
+    assert "2026-07-08T10:00:00" in html
+    assert "外部补强" in html
+    assert "失败：超时" in html
+    assert "处理建议" in html
+    assert "先看 pipeline.status，再看定时任务日志" in html
+
+
 def test_web_home_is_daily_action_desk_with_portfolio_queue_and_stock_drawer() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 

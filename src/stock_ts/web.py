@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -4952,6 +4953,91 @@ def _render_pipeline_status_panel(status_path: Path | None = None) -> str:
         </div>"""
 
 
+def _render_automation_monitor_panel() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    pipeline_path = report_dir / "pipeline.status"
+    status = _read_key_value_status(pipeline_path)
+    if not status:
+        return """
+        <div class="panel" style="margin-top:16px">
+          <h3>自动更新监控</h3>
+          <div class="empty-state">
+            <strong>还没有运行记录</strong>
+            <p>未找到 pipeline.status；请等待下一次定时任务，或先手动运行每日数据流水线。</p>
+          </div>
+        </div>"""
+    generated_at = status.get("generated_at", "未记录")
+    freshness = _automation_freshness_label(generated_at)
+    failed_steps = _automation_failed_steps(status)
+    advice = _automation_advice(failed_steps)
+    step_rows = "".join(
+        f"<tr><td>{escape(label)}</td><td>{escape(_human_pipeline_status(status.get(key, '未执行')))}</td></tr>"
+        for key, label in [
+            ("refresh", "全市场刷新"),
+            ("tdx_enrich", "TDX补强"),
+            ("external_enrich", "外部补强"),
+            ("announcements", "公告"),
+            ("report", "日报生成"),
+        ]
+    )
+    return f"""
+      <div class="panel" style="margin-top:16px">
+        <h3>自动更新监控</h3>
+        <div class="summary-grid">
+          <div class="summary-card"><span>运行节奏</span><strong>每 2 小时</strong><p class="kpi-foot">服务器定时刷新行情、K线、新闻、公告和日报。</p></div>
+          <div class="summary-card"><span>最近运行</span><strong>{escape(generated_at)}</strong><p class="kpi-foot">{escape(freshness)}</p></div>
+          <div class="summary-card"><span>整体状态</span><strong>{escape(_human_pipeline_status(status.get("status", "未知")))}</strong><p class="kpi-foot">以 pipeline.status 为准。</p></div>
+          <div class="summary-card"><span>处理建议</span><strong>{escape(advice)}</strong><p class="kpi-foot">先看 pipeline.status，再看定时任务日志。</p></div>
+        </div>
+        <table class="data-table" style="margin-top:12px"><thead><tr><th>步骤</th><th>结果</th></tr></thead><tbody>{step_rows}</tbody></table>
+      </div>"""
+
+
+def _automation_freshness_label(generated_at: str) -> str:
+    if not generated_at or generated_at == "未记录":
+        return "未记录运行时间"
+    try:
+        generated = datetime.fromisoformat(generated_at[:19])
+    except ValueError:
+        return "运行时间格式待复核"
+    age_hours = (datetime.now() - generated).total_seconds() / 3600
+    if age_hours <= 3:
+        return "新鲜：在 3 小时内"
+    if age_hours <= 8:
+        return "需关注：超过 3 小时"
+    return "已滞后：超过 8 小时"
+
+
+def _automation_failed_steps(status: dict[str, str]) -> list[str]:
+    failed = []
+    labels = {
+        "refresh": "全市场刷新",
+        "tdx_enrich": "TDX补强",
+        "external_enrich": "外部补强",
+        "announcements": "公告",
+        "report": "日报生成",
+    }
+    for key, label in labels.items():
+        value = status.get(key, "")
+        if str(value).lower().startswith(("failed", "partial")):
+            failed.append(label)
+    return failed
+
+
+def _automation_advice(failed_steps: list[str]) -> str:
+    if not failed_steps:
+        return "继续观察"
+    if "日报生成" in failed_steps:
+        return "先修复日报"
+    if "全市场刷新" in failed_steps or "TDX补强" in failed_steps:
+        return "先修复行情"
+    if "外部补强" in failed_steps:
+        return "先复核新闻/资金"
+    if "公告" in failed_steps:
+        return "先复核公告"
+    return "先看失败步骤"
+
+
 def _human_pipeline_status(value: str) -> str:
     clean = str(value or "").strip()
     if not clean or clean == "未执行":
@@ -5116,6 +5202,7 @@ def _render_compact_data_quality_module(quality: DataQualityView) -> str:
         <div class="compact-metric-grid">{source_route}</div>
         {_render_pipeline_status_panel()}
       </div>
+      {_render_automation_monitor_panel()}
     </section>"""
 
 
