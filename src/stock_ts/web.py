@@ -5,7 +5,7 @@ import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -996,6 +996,7 @@ def render_page(
             candidate_group=candidate_group,
             candidate_strategy=candidate_strategy,
             candidate_universe_metadata=candidate_universe_metadata,
+            quality=quality,
         ),
     }
     shell = f"""
@@ -2374,7 +2375,14 @@ def _web_live_announcements_enabled() -> bool:
 
 
 def _trade_blocking_warnings(warnings: list[str]) -> list[str]:
-    blocking_keywords = ["示例数据", "疑似降级", "未完成代码解析", "示例股票", "个股日期需复核"]
+    blocking_keywords = [
+        "示例数据",
+        "疑似降级",
+        "未完成代码解析",
+        "示例股票",
+        "个股日期需复核",
+        "数据已滞后",
+    ]
     return [
         warning for warning in warnings if any(keyword in warning for keyword in blocking_keywords)
     ]
@@ -2447,6 +2455,18 @@ def _assess_data_quality(
     blocked_actions: list[str] = []
     candidate_price_reliable = candidates.price_reliable
     candidate_universe_reliable = _candidate_universe_prices_reliable(candidate_universe)
+    freshness_warnings = _trade_date_freshness_warnings(
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        stock_date=stock.trade_date,
+        market_date=market.trade_date,
+    )
+    freshness_warnings.extend(_pipeline_freshness_warnings())
+    if freshness_warnings:
+        warnings.extend(freshness_warnings)
+        blocked_actions.extend(["候选排序", "评分展示", "按今天盘面执行"])
+        candidate_price_reliable = False
+        candidate_universe_reliable = False
     if not candidate_price_reliable or not candidate_universe_reliable:
         warnings.append("候选排序暂停：候选池缺少真实日线。")
         blocked_actions.extend(["候选排序", "评分展示", "涨跌幅展示"])
@@ -2501,6 +2521,88 @@ def _assess_data_quality(
         summary=summary,
         blocked_actions=blocked_actions,
     )
+
+
+def _trade_date_freshness_warnings(
+    *,
+    requested_provider: str,
+    actual_provider: str,
+    stock_date: str,
+    market_date: str,
+) -> list[str]:
+    if requested_provider.strip().lower() == "sample" or actual_provider == "SampleDataProvider":
+        return []
+    expected = _expected_latest_a_share_trade_date(_current_datetime())
+    stale_dates = [
+        label
+        for label, value in [("个股", stock_date), ("大盘", market_date)]
+        if _iso_date_is_before(value, expected)
+    ]
+    if not stale_dates:
+        return []
+    joined = "、".join(stale_dates)
+    return [
+        f"数据已滞后：最近应为 {expected}，{joined}仍停留在旧交易日，不能按今天盘面执行。"
+    ]
+
+
+def _pipeline_freshness_warnings() -> list[str]:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    status = _read_key_value_status(report_dir / "pipeline.status")
+    if not status:
+        return []
+    generated_at = status.get("generated_at", "")
+    age_hours = _hours_since(generated_at)
+    if age_hours is not None and age_hours > 8:
+        return ["自动更新已滞后：超过 8 小时，先刷新数据流水线。"]
+    failed_steps = _automation_failed_steps(status)
+    if failed_steps:
+        failed_text = "、".join(failed_steps)
+        return [f"自动更新未完整：{failed_text}失败或部分完成，先修复流水线。"]
+    return []
+
+
+def _current_datetime() -> datetime:
+    override = os.getenv("STOCK_TS_NOW", "").strip()
+    if override:
+        return datetime.fromisoformat(override.replace("Z", "+00:00"))
+    return datetime.now()
+
+
+def _expected_latest_a_share_trade_date(now: datetime) -> str:
+    current = now.date()
+    if current.weekday() < 5 and (now.hour, now.minute) < (15, 30):
+        current -= timedelta(days=1)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current.isoformat()
+
+
+def _iso_date_is_before(value: str, expected: str) -> bool:
+    try:
+        candidate = datetime.fromisoformat(str(value)[:10]).date()
+        expected_date = datetime.fromisoformat(expected).date()
+    except ValueError:
+        return False
+    return candidate < expected_date
+
+
+def _hours_since(value: str) -> float | None:
+    if not value:
+        return None
+    try:
+        started = datetime.fromisoformat(value[:19])
+    except ValueError:
+        return None
+    now = _normalize_local_datetime(_current_datetime())
+    started = _normalize_local_datetime(started)
+    return (now - started).total_seconds() / 3600
+
+
+def _normalize_local_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone().replace(tzinfo=None)
 
 
 def _market_action_label(market: MarketSnapshot) -> str:
@@ -2639,6 +2741,10 @@ def _render_global_freshness_bar(
 
 
 def _freshness_detail(quality: DataQualityView) -> str:
+    if any("自动更新已滞后" in warning for warning in quality.warnings):
+        return "自动更新已滞后，先刷新数据流水线"
+    if any("数据已滞后" in warning for warning in quality.warnings):
+        return "已滞后，不能按今天盘面执行"
     if quality.gate_level == "blocked":
         return "有缺口"
     if quality.gate_level == "warn":
@@ -3245,6 +3351,7 @@ def _render_hot_opportunity_module(
     candidate_group: str,
     candidate_strategy: str,
     candidate_universe_metadata: dict[str, str] | None = None,
+    quality: DataQualityView | None = None,
 ) -> str:
     del candidate_code, candidate_group, candidate_strategy
     metadata = candidate_universe_metadata or {}
@@ -3265,12 +3372,15 @@ def _render_hot_opportunity_module(
     if not candidate_rows:
         candidate_rows = "<tr><td colspan='6'>暂无候选观察池；先看大盘和板块是否转强。</td></tr>"
     mainline = "、".join(sectors.market_mainline[:3]) or (top_sector.name if top_sector else "待确认")
+    candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"候选 {len(candidates.candidates)} 只"
     sentiment_state = _limit_up_state_label(market)
     downside_state = _limit_down_state_label(market)
     universe_text = str(len(candidate_universe) or len(candidates.candidates))
     generated_at = metadata.get("generated_at") or metadata.get("trade_date") or market.trade_date
     opportunity_action = _opportunity_action(market, top_sector, top_candidate)
-    candidate_cards = _render_opportunity_candidate_cards(candidates, provider_name, holdings_path)
+    candidate_cards = _render_opportunity_candidate_cards(
+        candidates, provider_name, holdings_path, quality=quality
+    )
     method_notes = _li_join(
         (
             candidates.method_notes
@@ -3282,7 +3392,7 @@ def _render_hot_opportunity_module(
     )
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">把板块、情绪和候选池放在一张雷达图里，只筛观察对象，不直接给买点。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">候选 {len(candidates.candidates)} 只</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">把板块、情绪和候选池放在一张雷达图里，只筛观察对象，不直接给买点。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
       {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、涨跌停情绪、候选 K 线、资金和消息标签", "主题雷达 -> 候选观察池 -> 个股分析入口")}
       {_render_opportunity_strategy_funnel(market, top_sector, top_candidate, candidates, metadata)}
       {candidate_cards}
@@ -3324,6 +3434,8 @@ def _render_opportunity_candidate_cards(
     candidates: CandidatePoolReport,
     provider_name: str,
     holdings_path: str,
+    *,
+    quality: DataQualityView | None = None,
 ) -> str:
     if not candidates.candidates:
         body = """
@@ -3333,7 +3445,13 @@ def _render_opportunity_candidate_cards(
           </div>"""
     else:
         body = "".join(
-            _render_opportunity_candidate_card(item, candidates.price_reliable, provider_name, holdings_path)
+            _render_opportunity_candidate_card(
+                item,
+                candidates.price_reliable,
+                provider_name,
+                holdings_path,
+                quality=quality,
+            )
             for item in candidates.candidates[:6]
         )
     return f"""
@@ -3351,6 +3469,8 @@ def _render_opportunity_candidate_card(
     pool_price_reliable: bool,
     provider_name: str,
     holdings_path: str,
+    *,
+    quality: DataQualityView | None = None,
 ) -> str:
     strategy = _candidate_card_strategy(item)
     evidence = "；".join(item.reasons[:2]) if item.reasons else "等待补充技术、资金或消息证据"
@@ -3365,8 +3485,15 @@ def _render_opportunity_candidate_card(
         }
     )
     risk = "；".join(item.risks[:2]) if item.risks else "未识别重大风险，仍需复核公告和流动性"
-    data_quality = "数据质量：Provider/交易日一致，价格可排序" if pool_price_reliable and item.price_reliable else "数据质量：待补数据，不能排到前列"
-    tag = "待补数据" if not (pool_price_reliable and item.price_reliable) else "只观察" if item.score < 70 else "可验证"
+    stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
+    price_ready = pool_price_reliable and item.price_reliable and not stale
+    if stale:
+        data_quality = "数据质量：已滞后，不能排到前列"
+    elif price_ready:
+        data_quality = "数据质量：Provider/交易日一致，价格可排序"
+    else:
+        data_quality = "数据质量：待补数据，不能排到前列"
+    tag = "待补数据" if not price_ready else "只观察" if item.score < 70 else "可验证"
     return f"""
           <article class="opportunity-candidate-card {escape(tag)}">
             <div class="opportunity-candidate-head">
@@ -6316,11 +6443,9 @@ def _automation_execution_readiness(
 def _automation_freshness_label(generated_at: str) -> str:
     if not generated_at or generated_at == "未记录":
         return "未记录运行时间"
-    try:
-        generated = datetime.fromisoformat(generated_at[:19])
-    except ValueError:
+    age_hours = _hours_since(generated_at)
+    if age_hours is None:
         return "运行时间格式待复核"
-    age_hours = (datetime.now() - generated).total_seconds() / 3600
     if age_hours <= 3:
         return "新鲜：在 3 小时内"
     if age_hours <= 8:

@@ -118,7 +118,9 @@ def test_web_pauses_candidate_ranking_when_tdx_snapshot_uses_synthetic_bars(
 
 def test_web_quality_gate_marks_candidate_prices_available_when_dates_are_real(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-06-19T10:00:00+08:00")
     holdings = tmp_path / "holdings.csv"
     holdings.write_text(
         "code,name,shares,cost_price,sector,note\n600519,贵州茅台,10,1500,白酒,核心\n",
@@ -275,6 +277,194 @@ def test_web_quality_gate_warns_when_market_snapshot_is_older_than_stock_kline(
 
     assert "数据状态" in html
     assert "热点机会" in html
+
+
+def test_web_blocks_opportunity_ranking_when_snapshot_trade_date_is_stale(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-11T09:30:00+08:00")
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n600519,贵州茅台,10,1500,白酒,核心\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "tdx.json"
+    old_bar = {
+        "date": "2026-07-08",
+        "open": 1500,
+        "high": 1515,
+        "low": 1490,
+        "close": 1510,
+        "volume": 10000,
+    }
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-07-08",
+                    "indices": [
+                        {
+                            "code": "000001",
+                            "name": "上证指数",
+                            "close": 4090.48,
+                            "pct_chg": -0.43,
+                            "amount": 5123.4,
+                        }
+                    ],
+                    "advancing": 2023,
+                    "declining": 3407,
+                    "limit_up": 134,
+                    "limit_down": 35,
+                    "top_sectors": [["白酒", 1.2]],
+                },
+                "sectors": [
+                    {
+                        "name": "白酒",
+                        "pct_chg": 1.2,
+                        "advancing_ratio": 0.7,
+                        "amount_change": 10.0,
+                    }
+                ],
+                "stocks": {
+                    "600519": {
+                        "name": "贵州茅台",
+                        "bars": [old_bar | {"date": "2026-07-07"}, old_bar],
+                        "fund_flow": 1.2,
+                        "pe_ttm": 22.0,
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "600519",
+                            "name": "贵州茅台",
+                            "sector": "白酒",
+                            "bars": [old_bar | {"date": "2026-07-07"}, old_bar],
+                            "fund_flow": 1.2,
+                            "pe_ttm": 22.0,
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="tdx-snapshot",
+        provider=TdxSnapshotProvider(snapshot),
+        holdings_path=str(holdings),
+    )
+
+    assert "数据已滞后：最近应为 2026-07-10" in html
+    assert "不能按今天盘面执行" in html
+    assert "数据质量：已滞后，不能排到前列" in html
+    assert "排序暂停" in html
+
+
+def test_web_blocks_actions_when_pipeline_refresh_is_stale(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-10T10:00:00+08:00")
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "\n".join(
+            [
+                "status=ok",
+                "generated_at=2026-07-09T00:30:00",
+                "refresh=ok",
+                "tdx_enrich=ok",
+                "external_enrich=ok",
+                "announcements=ok",
+                "report=ok",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n600519,贵州茅台,10,1500,白酒,核心\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "tdx.json"
+    latest_bar = {
+        "date": "2026-07-09",
+        "open": 1500,
+        "high": 1515,
+        "low": 1490,
+        "close": 1510,
+        "volume": 10000,
+    }
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-07-09",
+                    "indices": [
+                        {
+                            "code": "000001",
+                            "name": "上证指数",
+                            "close": 4090.48,
+                            "pct_chg": -0.43,
+                            "amount": 5123.4,
+                        }
+                    ],
+                    "advancing": 2023,
+                    "declining": 3407,
+                    "limit_up": 134,
+                    "limit_down": 35,
+                    "top_sectors": [["白酒", 1.2]],
+                },
+                "sectors": [
+                    {
+                        "name": "白酒",
+                        "pct_chg": 1.2,
+                        "advancing_ratio": 0.7,
+                        "amount_change": 10.0,
+                    }
+                ],
+                "stocks": {
+                    "600519": {
+                        "name": "贵州茅台",
+                        "bars": [latest_bar | {"date": "2026-07-08"}, latest_bar],
+                        "fund_flow": 1.2,
+                        "pe_ttm": 22.0,
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "600519",
+                            "name": "贵州茅台",
+                            "sector": "白酒",
+                            "bars": [latest_bar | {"date": "2026-07-08"}, latest_bar],
+                            "fund_flow": 1.2,
+                            "pe_ttm": 22.0,
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="tdx-snapshot",
+        provider=TdxSnapshotProvider(snapshot),
+        holdings_path=str(holdings),
+    )
+
+    assert "自动更新已滞后：超过 8 小时" in html
+    assert "先刷新数据流水线" in html
+    assert "排序暂停" in html
 
 
 def test_web_opens_candidate_stock_when_tdx_stock_detail_is_missing(
