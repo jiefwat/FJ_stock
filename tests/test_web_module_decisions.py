@@ -16,6 +16,10 @@ def _sample_html(**kwargs) -> str:
     )
 
 
+def _sample_stock_html(**kwargs) -> str:
+    return _workspace(_sample_html(**kwargs), "stock")
+
+
 def _workspace(html: str, key: str) -> str:
     start = html.index(f'id="{key}"')
     next_workspace = html.find('<section class="workspace-pane', start + 1)
@@ -170,6 +174,14 @@ def test_opportunity_module_renders_candidate_cards_with_quality_and_actions() -
         assert text in opportunity_html
 
 
+def test_opportunity_candidate_links_carry_source_strategy_and_evidence() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    assert "candidate_source=opportunity" in opportunity_html
+    assert "candidate_strategy_label=" in opportunity_html
+    assert "candidate_evidence=" in opportunity_html
+
+
 def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
@@ -269,6 +281,20 @@ def test_stock_module_downgrades_missing_required_data_blocks() -> None:
     assert "基本面" in stock_html
     assert stock_html.count("不作为买入理由") >= 3
     assert "缺失降级" in stock_html
+
+
+def test_stock_module_shows_candidate_source_context_when_entered_from_opportunity() -> None:
+    stock_html = _sample_stock_html(
+        stock_code="603278",
+        candidate_source="opportunity",
+        candidate_strategy_label="主线强势 + 放量突破",
+        candidate_evidence="所属主题排名前 5，成交额放大",
+    )
+
+    assert "候选来源" in stock_html
+    assert "股市机会" in stock_html
+    assert "主线强势 + 放量突破" in stock_html
+    assert "所属主题排名前 5，成交额放大" in stock_html
 
 
 def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> None:

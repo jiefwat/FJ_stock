@@ -874,6 +874,9 @@ def render_page(
     candidate_code: str = "",
     candidate_group: str = "all",
     candidate_strategy: str = "all",
+    candidate_source: str = "",
+    candidate_strategy_label: str = "",
+    candidate_evidence: str = "",
     current_user: AuthUser | None = None,
 ) -> str:
     try:
@@ -975,6 +978,9 @@ def render_page(
             stock_raw,
             sectors,
             candidates,
+            candidate_source=candidate_source,
+            candidate_strategy_label=candidate_strategy_label,
+            candidate_evidence=candidate_evidence,
             provider_name=provider_name,
             holdings_path=holdings_path,
         ),
@@ -3346,9 +3352,18 @@ def _render_opportunity_candidate_card(
     provider_name: str,
     holdings_path: str,
 ) -> str:
-    query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
     strategy = _candidate_card_strategy(item)
     evidence = "；".join(item.reasons[:2]) if item.reasons else "等待补充技术、资金或消息证据"
+    query = urlencode(
+        {
+            "code": item.code,
+            "provider": provider_name,
+            "holdings": holdings_path,
+            "candidate_source": "opportunity",
+            "candidate_strategy_label": strategy,
+            "candidate_evidence": evidence,
+        }
+    )
     risk = "；".join(item.risks[:2]) if item.risks else "未识别重大风险，仍需复核公告和流动性"
     data_quality = "数据质量：Provider/交易日一致，价格可排序" if pool_price_reliable and item.price_reliable else "数据质量：待补数据，不能排到前列"
     tag = "待补数据" if not (pool_price_reliable and item.price_reliable) else "只观察" if item.score < 70 else "可验证"
@@ -3470,6 +3485,9 @@ def _render_opportunity_candidate_row(
             "code": item.code,
             "provider": provider_name,
             "holdings": holdings_path,
+            "candidate_source": "opportunity",
+            "candidate_strategy_label": _candidate_card_strategy(item),
+            "candidate_evidence": reason,
         }
     )
     return (
@@ -4838,6 +4856,9 @@ def _render_compact_stock_module(
     sectors: SectorAnalysisReport,
     candidates: CandidatePoolReport,
     *,
+    candidate_source: str = "",
+    candidate_strategy_label: str = "",
+    candidate_evidence: str = "",
     provider_name: str,
     holdings_path: str,
 ) -> str:
@@ -4863,6 +4884,7 @@ def _render_compact_stock_module(
       {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
       {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
       {_render_stock_verdict_wall(stock, stock_raw, portfolio, quality, technical, event_radar, trade_plan, sectors, driver, risk, invalid)}
+      {_render_stock_candidate_context(candidate_source, candidate_strategy_label, candidate_evidence)}
       {_render_stock_required_data_audit(stock_raw)}
       <div class="panel" style="margin-bottom:16px">
         <div class="editor-toolbar"><div><h3>个股三面复核</h3><p class="section-subtitle">技术面看趋势位置，资金面看量能和净流，消息面看新闻公告；三面不共振时只观察。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
@@ -4889,6 +4911,28 @@ def _render_compact_stock_module(
         {evidence_drawer}
       </div>
     </section>"""
+
+
+def _render_stock_candidate_context(
+    source: str,
+    strategy: str,
+    evidence: str,
+) -> str:
+    if source != "opportunity" and not strategy and not evidence:
+        return ""
+    source_label = "股市机会" if source == "opportunity" else source or "外部入口"
+    return f"""
+      <div class="panel stock-candidate-context-panel">
+        <div class="editor-toolbar">
+          <div><h3>候选来源</h3><p class="section-subtitle">从机会进入个股分析时，保留来源、策略和命中证据，避免脱离筛选上下文。</p></div>
+          <span class="portfolio-chip">{escape(source_label)}</span>
+        </div>
+        <div class="summary-grid compact-summary-grid">
+          <div class="summary-card"><span>来源</span><strong>{escape(source_label)}</strong></div>
+          <div class="summary-card"><span>命中策略</span><strong>{escape(strategy or "未传入")}</strong></div>
+          <div class="summary-card"><span>命中证据</span><strong>{escape(evidence or "未传入")}</strong></div>
+        </div>
+      </div>"""
 
 
 def _render_stock_required_data_audit(stock_raw: StockRawData) -> str:
@@ -7001,6 +7045,9 @@ class Handler(BaseHTTPRequestHandler):
         candidate_code = query.get("candidate", [""])[0]
         candidate_group = query.get("candidate_tier", ["all"])[0]
         candidate_strategy = query.get("candidate_strategy", ["all"])[0]
+        candidate_source = query.get("candidate_source", [""])[0]
+        candidate_strategy_label = query.get("candidate_strategy_label", [""])[0]
+        candidate_evidence = query.get("candidate_evidence", [""])[0]
         provider_name = WEB_DATA_PROVIDER
         requested_holdings_path = query.get("holdings", [DEFAULT_HOLDINGS_PATH])[0]
         holdings_path = _effective_holdings_path(current_user, requested_holdings_path)
@@ -7026,6 +7073,9 @@ class Handler(BaseHTTPRequestHandler):
             candidate_code=candidate_code,
             candidate_group=candidate_group,
             candidate_strategy=candidate_strategy,
+            candidate_source=candidate_source,
+            candidate_strategy_label=candidate_strategy_label,
+            candidate_evidence=candidate_evidence,
             current_user=current_user,
         ).encode("utf-8")
         self.send_response(200)
