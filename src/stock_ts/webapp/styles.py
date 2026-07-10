@@ -2912,4 +2912,134 @@ body {
   .portfolio-budget-grid,
   .portfolio-lane-grid { grid-template-columns:1fr; }
 }
+
+.opportunity-cards-panel {
+  margin:16px 0;
+  background:linear-gradient(135deg, rgba(16,42,67,.06), rgba(255,255,255,.94));
+}
+.opportunity-card-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+.opportunity-candidate-card {
+  position:relative;
+  display:grid;
+  gap:9px;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:15px;
+  background:#fff;
+  box-shadow:0 16px 36px rgba(19,39,58,.07);
+}
+.opportunity-candidate-card p {
+  margin:0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.55;
+}
+.opportunity-candidate-head {
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:4px 10px;
+  align-items:start;
+}
+.opportunity-candidate-head span {
+  color:var(--muted);
+  font-family:var(--mono);
+  font-size:11px;
+}
+.opportunity-candidate-head strong {
+  font-size:18px;
+}
+.opportunity-candidate-head em {
+  grid-column:2;
+  grid-row:1 / span 2;
+  align-self:center;
+  border-radius:999px;
+  padding:6px 9px;
+  color:#fff;
+  background:#2b6cb0;
+  font-style:normal;
+  font-size:11px;
+  font-weight:900;
+}
+.opportunity-candidate-card.只观察 .opportunity-candidate-head em { background:#b7791f; }
+.opportunity-candidate-card.待补数据 .opportunity-candidate-head em { background:#718096; }
+.portfolio-boundary-panel {
+  background:linear-gradient(180deg,#fff,#f7fafb);
+}
+.stock-verdict-card .metric-list {
+  margin-top:12px;
+}
+.stock-verdict-card .metric-line {
+  border-color:rgba(255,255,255,.18);
+  background:rgba(255,255,255,.08);
+}
+.stock-verdict-card .metric-line span,
+.stock-verdict-card .metric-line strong {
+  color:#edf5fb;
+}
+@media (max-width: 1080px) {
+  .opportunity-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 680px) {
+  .opportunity-card-grid { grid-template-columns:1fr; }
+}
+
+
+/* 简洁模式：保留功能字段，降低装饰感。 */
+.simple-panel,
+.portfolio-command-hero.simple-panel,
+.opportunity-funnel-hero.simple-panel,
+.stock-verdict-card.simple-panel,
+.market-gate-card {
+  color:var(--ink);
+  background:#fff;
+  border:1px solid var(--line);
+  box-shadow:none;
+}
+.portfolio-command-hero.simple-panel h3,
+.opportunity-funnel-hero.simple-panel h3,
+.stock-verdict-card.simple-panel h3,
+.market-gate-card h3 {
+  font-family:var(--body);
+  font-size:22px;
+  letter-spacing:0;
+}
+.portfolio-command-hero.simple-panel p,
+.opportunity-funnel-hero.simple-panel p,
+.stock-verdict-card.simple-panel p,
+.market-gate-card p {
+  color:var(--muted);
+}
+.portfolio-command-meta {
+  position:static;
+  margin-top:14px;
+  border-top:1px solid var(--line);
+}
+.portfolio-command-meta span,
+.portfolio-command-meta strong,
+.stock-verdict-card .metric-line span,
+.stock-verdict-card .metric-line strong {
+  color:var(--ink);
+}
+.stock-verdict-card .metric-line {
+  border-color:var(--line);
+  background:#f8fbfd;
+}
+.market-heat-dial {
+  display:none;
+}
+.market-gate-copy {
+  max-width:none;
+}
+.market-gate-footer {
+  position:static;
+  margin-top:12px;
+}
+.opportunity-candidate-card {
+  box-shadow:none;
+}
+
 """

@@ -22,6 +22,7 @@ from .data_sources import build_data_source_matrix
 from .deep_models import DeepStockReport
 from .models import (
     CandidatePoolReport,
+    CandidateStockAnalysis,
     CandidateStockRawData,
     Holding,
     MarketSnapshot,
@@ -3263,6 +3264,7 @@ def _render_hot_opportunity_module(
     universe_text = str(len(candidate_universe) or len(candidates.candidates))
     generated_at = metadata.get("generated_at") or metadata.get("trade_date") or market.trade_date
     opportunity_action = _opportunity_action(market, top_sector, top_candidate)
+    candidate_cards = _render_opportunity_candidate_cards(candidates, provider_name, holdings_path)
     method_notes = _li_join(
         (
             candidates.method_notes
@@ -3277,6 +3279,7 @@ def _render_hot_opportunity_module(
       <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">把板块、情绪和候选池放在一张雷达图里，只筛观察对象，不直接给买点。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">候选 {len(candidates.candidates)} 只</span></div></div>
       {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、涨跌停情绪、候选 K 线、资金和消息标签", "主题雷达 -> 候选观察池 -> 个股分析入口")}
       {_render_opportunity_strategy_funnel(market, top_sector, top_candidate, candidates, metadata)}
+      {candidate_cards}
       <div class="panel">
         <div class="editor-toolbar"><div><h3>热点机会 · 主题雷达</h3><p class="section-subtitle">先判断热点是否可持续，再决定哪些股票值得进入个股分析。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
         <div class="summary-grid">
@@ -3311,6 +3314,70 @@ def _render_hot_opportunity_module(
     </section>"""
 
 
+def _render_opportunity_candidate_cards(
+    candidates: CandidatePoolReport,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    if not candidates.candidates:
+        body = """
+          <div class="empty-state">
+            <strong>候选卡列表暂无</strong>
+            <p>候选池为空时不做机会排序，先刷新快照或补充候选源。</p>
+          </div>"""
+    else:
+        body = "".join(
+            _render_opportunity_candidate_card(item, candidates.price_reliable, provider_name, holdings_path)
+            for item in candidates.candidates[:6]
+        )
+    return f"""
+      <div class="panel opportunity-cards-panel">
+        <div class="editor-toolbar">
+          <div><h3>候选卡列表</h3><p class="section-subtitle">每张卡只回答策略、证据、风险、数据质量和下一步，不把观察优先级写成买入评级。</p></div>
+          <span class="portfolio-chip">可验证 / 只观察 / 风险排除 / 待补数据</span>
+        </div>
+        <div class="opportunity-card-grid">{body}</div>
+      </div>"""
+
+
+def _render_opportunity_candidate_card(
+    item: CandidateStockAnalysis,
+    pool_price_reliable: bool,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
+    strategy = _candidate_card_strategy(item)
+    evidence = "；".join(item.reasons[:2]) if item.reasons else "等待补充技术、资金或消息证据"
+    risk = "；".join(item.risks[:2]) if item.risks else "未识别重大风险，仍需复核公告和流动性"
+    data_quality = "数据质量：Provider/交易日一致，价格可排序" if pool_price_reliable and item.price_reliable else "数据质量：待补数据，不能排到前列"
+    tag = "待补数据" if not (pool_price_reliable and item.price_reliable) else "只观察" if item.score < 70 else "可验证"
+    return f"""
+          <article class="opportunity-candidate-card {escape(tag)}">
+            <div class="opportunity-candidate-head">
+              <span>{escape(item.code)}</span>
+              <strong>{escape(item.name)}</strong>
+              <em>{escape(tag)}</em>
+            </div>
+            <p>策略：{escape(strategy)}</p>
+            <p>入选证据：{escape(evidence)}</p>
+            <p>主要风险：{escape(risk)}</p>
+            <p>{escape(data_quality)}</p>
+            <a class="primary-button" href="/?{query}#stock">下一步：进入股票分析验证六维证据；不直接买入</a>
+          </article>"""
+
+
+def _candidate_card_strategy(item: CandidateStockAnalysis) -> str:
+    reason_text = "；".join(item.reasons)
+    if "放量" in reason_text or "突破" in reason_text:
+        return "放量突破"
+    if item.pct_change < -3:
+        return "超跌修复"
+    if item.score >= 75:
+        return "主线强势 + 资金抱团"
+    return "主线观察"
+
+
 def _render_opportunity_strategy_funnel(
     market: MarketSnapshot,
     top_sector,
@@ -3339,10 +3406,9 @@ def _render_opportunity_strategy_funnel(
     excluded = _opportunity_exclusion_reasons(market, candidates)
     return f"""
       <div class="opportunity-funnel-panel">
-        <div class="opportunity-funnel-hero">
-          <span class="eyebrow">Strategy Funnel</span>
+        <div class="opportunity-funnel-hero simple-panel">
           <h3>策略漏斗</h3>
-          <p>全市场扫描 -> 策略命中 -> 风险排除 -> 个股验证 -> 自选跟踪。机会模块只把股票送去验证，不直接输出买入。</p>
+          <p>先看闸门，再按策略筛选，最后进入个股分析。</p>
           <div class="market-action-snapshot"><span>机会总闸门</span><strong>{escape(gate)}</strong></div>
         </div>
         <div class="opportunity-channel-grid">{channel_html}</div>
@@ -3800,9 +3866,8 @@ def _render_compact_market_module(
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
         <div>
-          <span class="eyebrow">Market Command Tower</span>
           <h2 class="module-title">每日大盘 · 仓位闸门</h2>
-          <p class="module-desc">一个好的大盘页不先堆指标，而是先回答：今天市场是否允许进攻、风险灯有没有亮、主线是否能传导到持仓和机会池。</p>
+          <p class="module-desc">先判断今天能不能做，再确认方向、风险和下一步。</p>
         </div>
         <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
       </div>
@@ -3870,23 +3935,49 @@ def _render_market_barometer_strip(
 ) -> str:
     validation = market.tomorrow_watch[0] if market.tomorrow_watch else "成交额放大，主线前排不破分时均线。"
     invalidation = market.risks[0] if market.risks else "数据过期、跌停扩散或主线资金转弱时，机会降级为只观察。"
+    target_cash = _market_target_cash(market)
+    market_status = _market_display_status(market, action)
+    event_text = market.tomorrow_watch[1] if len(market.tomorrow_watch) > 1 else "无重大事件时仍按交易日和公告窗口复核。"
+    mover_text = market.opportunities[0] if market.opportunities else "异动清单等待候选池和板块热力补充。"
     return f"""
       <div class="market-barometer-strip">
         <div class="market-barometer-title">
           <span>市场气压计</span>
-          <strong>市场总闸门：{escape(action)}</strong>
+          <strong>市场结论卡 · 市场总闸门：{escape(action)}</strong>
           <p>{escape(reason)}</p>
         </div>
         <div class="market-barometer-rail" aria-label="防守到进攻压力带">
           <i class="defense">防守</i><i class="balance">震荡</i><i class="attack">进攻</i>
         </div>
         <div class="market-barometer-facts">
+          <span>市场状态：{escape(market_status)}</span>
+          <span>风险暴露：目标现金 {escape(target_cash)}，数据降级时自动只观察。</span>
+          <span>主线：见板块主线热力地图，不用交易板兜底。</span>
+          <span>下一步：去股市机会验证候选；去我的持仓处理高风险仓位。</span>
           <span>交易日：{escape(market.trade_date)}</span>
           <span>数据源：顶部全局状态条 / Provider</span>
           <span>验证条件：{escape(_short_condition(validation, 42))}</span>
           <span>失效条件：{escape(_short_condition(invalidation, 42))}</span>
+          <span>异动清单：{escape(_short_condition(mover_text, 42))}</span>
+          <span>事件日历：{escape(_short_condition(event_text, 42))}</span>
         </div>
       </div>"""
+
+
+def _market_target_cash(market: MarketSnapshot) -> str:
+    if market.heat_score <= 40 or market.limit_down_count >= 20:
+        return "50%-70%"
+    if market.heat_score >= 70 and market.breadth_ratio >= 1.2:
+        return "20%-35%"
+    return "30%-50%"
+
+
+def _market_display_status(market: MarketSnapshot, action: str) -> str:
+    if market.heat_score <= 40 or market.limit_down_count >= 20:
+        return "防守 / 暂停"
+    if action in {"可以进攻", "积极观察"}:
+        return "进攻"
+    return "震荡"
 
 
 def _market_risk_tone(market: MarketSnapshot) -> str:
@@ -4367,6 +4458,7 @@ def _render_compact_portfolio_module(
       {_render_portfolio_risk_budget_panel(portfolio, advice, holdings_path, public_readonly)}
       {_render_portfolio_priority_queue(portfolio, advice_by_code)}
       {_render_portfolio_four_lane_board(portfolio, advice)}
+      {_render_portfolio_execution_boundaries(advice)}
       {_render_portfolio_position_overview(advice)}
       {_render_portfolio_exposure_map(portfolio)}
       {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
@@ -4392,11 +4484,12 @@ def _render_portfolio_command_panel(
     ledger_state = "线上只读" if readonly else "可编辑账本"
     tone = _portfolio_console_tone(portfolio)
     headline = _portfolio_console_headline(portfolio, market, advice)
+    portfolio_state = _portfolio_health_state(portfolio)
     return f"""
       <div class="portfolio-command-console {tone}">
-        <div class="portfolio-command-hero">
-          <span class="eyebrow">Portfolio X-Ray</span>
-          <h3>组合处置台</h3>
+        <div class="portfolio-command-hero simple-panel">
+          <h3>组合健康灯 · 组合处置台</h3>
+          <strong>组合处置摘要：组合状态 {escape(portfolio_state)}，现金比例按“{escape(advice.target_cash)}”执行。</strong>
           <p>{escape(headline)}</p>
           <div class="portfolio-command-meta">
             <span>交易日 {escape(portfolio.trade_date)}</span>
@@ -4406,9 +4499,20 @@ def _render_portfolio_command_panel(
         <div class="portfolio-command-grid">
           {_portfolio_command_card("今日先处理", priority.name if priority else "等待持仓", next_check)}
           {_portfolio_command_card("最大风险", largest_risk, _portfolio_risk_instruction(portfolio))}
+          {_portfolio_command_card("现金比例", advice.target_cash, "现金未录入时按目标现金/低风险仓位作为风险预算。")}
           {_portfolio_command_card("账本状态", ledger_state, f"{holdings_path} · 持仓 {len(portfolio.positions)} 只")}
         </div>
       </div>"""
+
+
+def _portfolio_health_state(portfolio: PortfolioAnalysisReport) -> str:
+    if portfolio.health_score >= 75 and not portfolio.risk_alerts:
+        return "稳态"
+    if portfolio.health_score < 45:
+        return "风险扩大"
+    if portfolio.top_position_weight >= 0.35:
+        return "集中偏热"
+    return "观察"
 
 
 def _portfolio_priority_advice(advice: PortfolioAdvice) -> PositionAdvice | None:
@@ -4527,6 +4631,35 @@ def _render_portfolio_four_lane_board(
           <span class="portfolio-chip">成本位置 / 下一步动作</span>
         </div>
         <div class="portfolio-lane-grid">{lane_html}</div>
+      </div>"""
+
+
+def _render_portfolio_execution_boundaries(advice: PortfolioAdvice) -> str:
+    if not advice.position_advices:
+        rows = """
+        <tr><td colspan="5">暂无持仓，先补齐账本后生成执行边界。</td></tr>
+        """
+    else:
+        rows = "".join(
+            "<tr>"
+            f"<td class='name-cell'><strong>{escape(item.name)}</strong><span>{escape(item.code)}</span></td>"
+            f"<td>{escape(item.action)}</td>"
+            f"<td>{escape(item.target_weight)}</td>"
+            f"<td>{item.stop_loss:.2f}</td>"
+            f"<td>{escape(_short_condition(item.next_check, 60))}</td>"
+            "</tr>"
+            for item in advice.position_advices[:8]
+        )
+    return f"""
+      <div class="panel portfolio-boundary-panel" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>执行边界</h3><p class="section-subtitle">每只持仓都要有动作、仓位上限、失效线和禁止动作；亏损股不默认补仓。</p></div>
+          <span class="portfolio-chip">禁止动作：未触发前不加仓，不摊薄问题仓</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>股票</th><th>动作</th><th>仓位上限</th><th>失效线</th><th>下一次复核</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
       </div>"""
 
 
@@ -4815,14 +4948,20 @@ def _render_stock_verdict_wall(
         for label, support, note in dimensions
     )
     forbidden = trade_plan.forbidden_actions[0] if trade_plan.forbidden_actions else "不追高，不脱离止损线临时加仓。"
+    holding_state = _stock_holding_state(position) if position else "未持仓"
+    portfolio_impact = _stock_portfolio_impact(position, trade_plan)
     return f"""
       <div class="stock-verdict-wall">
-        <div class="stock-verdict-card">
-          <span class="eyebrow">Evidence Bench</span>
-          <h3>最终判决卡</h3>
-          <strong>{escape(trade_plan.verdict)}</strong>
+        <div class="stock-verdict-card simple-panel">
+          <h3>单股判决卡</h3>
+          <strong>最终判决卡 · 最终动作：{escape(trade_plan.verdict)}</strong>
           <p>{escape(getattr(trade_plan, "today_action", trade_plan.reason))}</p>
           <div class="metric-list">
+            <div class="metric-line"><span>最强证据</span><strong>{escape(_short_condition(driver, 68))}</strong></div>
+            <div class="metric-line"><span>最大反证</span><strong>{escape(_short_condition(risk, 68))}</strong></div>
+            <div class="metric-line"><span>组合影响</span><strong>{escape(portfolio_impact)}</strong></div>
+            <div class="metric-line"><span>仓位上限</span><strong>{escape(trade_plan.target_position)}</strong></div>
+            <div class="metric-line"><span>当前持仓状态</span><strong>{escape(holding_state)}</strong></div>
             <div class="metric-line"><span>触发条件</span><strong>{escape(trade_plan.entry_trigger)}</strong></div>
             <div class="metric-line"><span>失效条件</span><strong>{escape(invalid)}</strong></div>
             <div class="metric-line"><span>禁止动作</span><strong>{escape(forbidden)}</strong></div>
@@ -4841,6 +4980,15 @@ def _render_stock_verdict_wall(
           </div>
         </div>
       </div>"""
+
+
+def _stock_portfolio_impact(position: PositionAnalysis | None, trade_plan: TradePlan) -> str:
+    if position is None:
+        return "未持仓，不增加当前组合集中度；先按股票分析验证。"
+    return (
+        f"已持仓，仓位 {position.weight:.1%}；"
+        f"目标 {trade_plan.target_position}，不主动摊薄问题仓。"
+    )
 
 
 def _stock_dimension_card(

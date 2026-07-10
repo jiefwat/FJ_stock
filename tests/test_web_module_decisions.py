@@ -45,6 +45,20 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     assert "候选观察池" in html
 
 
+def test_four_modules_keep_copy_functional_and_simple() -> None:
+    html = _sample_html()
+
+    for decorative_text in [
+        "Market Command Tower",
+        "Portfolio X-Ray",
+        "Strategy Funnel",
+        "Evidence Bench",
+        "一个好的大盘页",
+        "全市场扫描 -> 策略命中 -> 风险排除 -> 个股验证 -> 自选跟踪",
+    ]:
+        assert decorative_text not in html
+
+
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     market_html = _workspace(_sample_html(), "market")
 
@@ -68,6 +82,23 @@ def test_daily_market_module_matches_market_gate_design_doc() -> None:
         "交易日",
         "验证条件",
         "失效条件",
+    ]:
+        assert text in market_html
+
+
+def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "市场结论卡",
+        "市场状态",
+        "风险暴露",
+        "目标现金",
+        "主线",
+        "下一步",
+        "异动清单",
+        "事件日历",
+        "只观察",
     ]:
         assert text in market_html
 
@@ -122,6 +153,23 @@ def test_opportunity_module_uses_strategy_funnel_and_risk_exclusion() -> None:
         assert text in opportunity_html
 
 
+def test_opportunity_module_renders_candidate_cards_with_quality_and_actions() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in [
+        "候选卡列表",
+        "策略：",
+        "入选证据",
+        "主要风险",
+        "数据质量",
+        "下一步：进入股票分析验证六维证据；不直接买入",
+        "可验证",
+        "只观察",
+        "待补数据",
+    ]:
+        assert text in opportunity_html
+
+
 def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
@@ -152,6 +200,21 @@ def test_stock_module_uses_six_dimension_evidence_wall() -> None:
         "成本位置",
         "多空反证",
         "禁止动作",
+    ]:
+        assert text in stock_html
+
+
+def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "单股判决卡",
+        "最终动作",
+        "最强证据",
+        "最大反证",
+        "组合影响",
+        "仓位上限",
+        "当前持仓状态",
     ]:
         assert text in stock_html
 
@@ -200,6 +263,22 @@ def test_portfolio_module_uses_four_lane_disposal_queue() -> None:
         "成本位置",
         "持仓账本来源",
         "公开只读",
+    ]:
+        assert text in portfolio_html
+
+
+def test_portfolio_module_surfaces_health_light_and_execution_boundaries() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "组合健康灯",
+        "组合处置摘要",
+        "组合状态",
+        "现金比例",
+        "执行边界",
+        "失效线",
+        "仓位上限",
+        "禁止动作",
     ]:
         assert text in portfolio_html
 
