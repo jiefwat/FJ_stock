@@ -3042,4 +3042,50 @@ body {
   box-shadow:none;
 }
 
+
+.stock-data-audit-panel {
+  margin:16px 0;
+}
+.stock-data-block-grid {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.stock-data-block {
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+  background:#fff;
+}
+.stock-data-block.missing {
+  border-color:#efb9b2;
+  background:#fff8f6;
+}
+.stock-data-block span,
+.stock-data-block strong,
+.stock-data-block em {
+  display:block;
+}
+.stock-data-block span {
+  color:var(--muted);
+  font-size:12px;
+}
+.stock-data-block strong {
+  margin-top:6px;
+}
+.stock-data-block p,
+.stock-data-block em {
+  margin:7px 0 0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+  font-style:normal;
+}
+@media (max-width:1080px) {
+  .stock-data-block-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:680px) {
+  .stock-data-block-grid { grid-template-columns:1fr; }
+}
+
 """

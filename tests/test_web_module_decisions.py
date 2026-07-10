@@ -1,6 +1,6 @@
 import json
 
-from stock_ts.models import SectorRawData
+from stock_ts.models import DailyBar, SectorRawData, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 from stock_ts.web import render_page
@@ -217,6 +217,58 @@ def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
         "当前持仓状态",
     ]:
         assert text in stock_html
+
+
+def test_stock_module_requires_kline_fund_news_and_fundamental_blocks() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "数据源核验",
+        "K线数据",
+        "资金面",
+        "消息面",
+        "基本面",
+        "已用于分析",
+        "数据来源",
+    ]:
+        assert text in stock_html
+
+
+def test_stock_module_downgrades_missing_required_data_blocks() -> None:
+    class MinimalStockProvider(SampleDataProvider):
+        def fetch_stock(self, code: str) -> StockRawData:
+            return StockRawData(
+                code=code,
+                name="缺数样本",
+                bars=[
+                    DailyBar(
+                        date="2026-07-01",
+                        open=10,
+                        high=10.2,
+                        low=9.8,
+                        close=10.1,
+                        volume=1000,
+                    ),
+                    DailyBar(
+                        date="2026-07-02",
+                        open=10.1,
+                        high=10.3,
+                        low=10.0,
+                        close=10.2,
+                        volume=1100,
+                    ),
+                ],
+                data_sources=["sample.kline"],
+            )
+
+    stock_html = _workspace(_sample_html(provider=MinimalStockProvider()), "stock")
+
+    assert "K线数据" in stock_html
+    assert "资金面" in stock_html
+    assert "消息面" in stock_html
+    assert "基本面" in stock_html
+    assert stock_html.count("不作为买入理由") >= 3
+    assert "缺失降级" in stock_html
 
 
 def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> None:

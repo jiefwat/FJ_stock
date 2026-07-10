@@ -4863,6 +4863,7 @@ def _render_compact_stock_module(
       {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
       {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
       {_render_stock_verdict_wall(stock, stock_raw, portfolio, quality, technical, event_radar, trade_plan, sectors, driver, risk, invalid)}
+      {_render_stock_required_data_audit(stock_raw)}
       <div class="panel" style="margin-bottom:16px">
         <div class="editor-toolbar"><div><h3>个股三面复核</h3><p class="section-subtitle">技术面看趋势位置，资金面看量能和净流，消息面看新闻公告；三面不共振时只观察。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
       </div>
@@ -4888,6 +4889,125 @@ def _render_compact_stock_module(
         {evidence_drawer}
       </div>
     </section>"""
+
+
+def _render_stock_required_data_audit(stock_raw: StockRawData) -> str:
+    blocks = _stock_required_data_blocks(stock_raw)
+    rows = "".join(
+        f"""
+        <div class="stock-data-block {escape(block['tone'])}">
+          <span>{escape(block['name'])}</span>
+          <strong>{escape(block['status'])}</strong>
+          <p>{escape(block['evidence'])}</p>
+          <em>数据来源：{escape(block['source'])}</em>
+        </div>"""
+        for block in blocks
+    )
+    missing_count = sum(1 for block in blocks if block["tone"] == "missing")
+    summary = "四类必备数据已用于分析" if missing_count == 0 else f"{missing_count} 类数据缺失降级"
+    return f"""
+      <div class="panel stock-data-audit-panel">
+        <div class="editor-toolbar">
+          <div><h3>数据源核验</h3><p class="section-subtitle">K线数据、资金面、消息面、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
+          <span class="portfolio-chip">{escape(summary)}</span>
+        </div>
+        <div class="stock-data-block-grid">{rows}</div>
+      </div>"""
+
+
+def _stock_required_data_blocks(stock_raw: StockRawData) -> list[dict[str, str]]:
+    source_text = _stock_data_source_text(stock_raw)
+    return [
+        _stock_required_block(
+            "K线数据",
+            bool(stock_raw.bars),
+            f"{len(stock_raw.bars)} 根日 K；用于趋势、均线、支撑压力和量价判断。",
+            "缺失降级：K线数据缺失，不做趋势突破判断，不作为买入理由。",
+            _source_for_block(stock_raw, ["daily", "kline", "tdx", "tencent", "itick"], source_text),
+        ),
+        _stock_required_block(
+            "资金面",
+            stock_raw.fund_flow is not None or bool(stock_raw.fund_flow_detail),
+            _fund_flow_evidence(stock_raw),
+            "缺失降级：资金面缺失，不把资金流入/流出作为买入理由。",
+            _source_for_block(stock_raw, ["moneyflow", "fund", "tdx", "akshare"], source_text),
+        ),
+        _stock_required_block(
+            "消息面",
+            bool(stock_raw.news_items),
+            _news_evidence(stock_raw),
+            "缺失降级：消息面缺失，不做公告催化或情绪交易判断，不作为买入理由。",
+            _source_for_block(stock_raw, ["news", "announcement", "cninfo", "akshare"], source_text),
+        ),
+        _stock_required_block(
+            "基本面",
+            stock_raw.pe_ttm is not None or bool(stock_raw.valuation),
+            _fundamental_evidence(stock_raw),
+            "缺失降级：基本面缺失，不把估值安全垫或财务改善作为买入理由。",
+            _source_for_block(stock_raw, ["fina", "valuation", "tushare", "tdx"], source_text),
+        ),
+    ]
+
+
+def _stock_required_block(
+    name: str,
+    available: bool,
+    available_evidence: str,
+    missing_evidence: str,
+    source: str,
+) -> dict[str, str]:
+    if available:
+        return {
+            "name": name,
+            "status": "已用于分析",
+            "evidence": available_evidence,
+            "source": source,
+            "tone": "ok",
+        }
+    return {
+        "name": name,
+        "status": "缺失降级",
+        "evidence": missing_evidence,
+        "source": source,
+        "tone": "missing",
+    }
+
+
+def _stock_data_source_text(stock_raw: StockRawData) -> str:
+    return "、".join(stock_raw.data_sources) if stock_raw.data_sources else "当前 Provider / 本地快照"
+
+
+def _source_for_block(stock_raw: StockRawData, keywords: list[str], fallback: str) -> str:
+    matches = [
+        source
+        for source in stock_raw.data_sources
+        if any(keyword.lower() in source.lower() for keyword in keywords)
+    ]
+    return "、".join(matches[:3]) if matches else fallback
+
+
+def _fund_flow_evidence(stock_raw: StockRawData) -> str:
+    if stock_raw.fund_flow is not None:
+        return f"主力资金 {stock_raw.fund_flow:.2f}；用于资金承接和分歧判断。"
+    if stock_raw.fund_flow_detail:
+        return "资金明细可用；用于主力/大单/净流入结构判断。"
+    return "资金面缺失。"
+
+
+def _news_evidence(stock_raw: StockRawData) -> str:
+    if not stock_raw.news_items:
+        return "消息面缺失。"
+    latest = stock_raw.news_items[0]
+    return f"{len(stock_raw.news_items)} 条新闻/公告；最新：{latest.title}"
+
+
+def _fundamental_evidence(stock_raw: StockRawData) -> str:
+    if stock_raw.pe_ttm is not None:
+        return f"PE(TTM) {stock_raw.pe_ttm:.2f}；用于估值和基本面约束。"
+    if stock_raw.valuation:
+        keys = "、".join(str(key) for key in list(stock_raw.valuation)[:3])
+        return f"估值/财务字段可用：{keys}。"
+    return "基本面缺失。"
 
 
 def _render_stock_evidence_drawer(
