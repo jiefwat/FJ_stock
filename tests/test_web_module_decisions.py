@@ -54,6 +54,24 @@ def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     assert "看热点机会" in market_html
 
 
+def test_daily_market_module_matches_market_gate_design_doc() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "市场气压计",
+        "市场总闸门",
+        "指数脊柱",
+        "宽度温度计",
+        "板块主线热力地图",
+        "风险红灯",
+        "数据源",
+        "交易日",
+        "验证条件",
+        "失效条件",
+    ]:
+        assert text in market_html
+
+
 def test_opportunity_module_surfaces_theme_sentiment_and_candidates() -> None:
     html = _sample_html()
     opportunity_html = _workspace(html, "opportunity")
@@ -86,6 +104,24 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
     assert "涨跌异常" in opportunity_html or "复核真实板块指数" in opportunity_html
 
 
+def test_opportunity_module_uses_strategy_funnel_and_risk_exclusion() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in [
+        "策略漏斗",
+        "机会总闸门",
+        "主线强势",
+        "资金抱团",
+        "放量突破",
+        "超跌修复",
+        "公告催化",
+        "风险排除",
+        "筛选条件",
+        "进入股票分析",
+    ]:
+        assert text in opportunity_html
+
+
 def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
@@ -102,6 +138,24 @@ def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
         assert text in stock_html
 
 
+def test_stock_module_uses_six_dimension_evidence_wall() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "最终判决卡",
+        "六维证据墙",
+        "技术面",
+        "基本面",
+        "资金面",
+        "消息/公告",
+        "概念板块",
+        "成本位置",
+        "多空反证",
+        "禁止动作",
+    ]:
+        assert text in stock_html
+
+
 def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
@@ -113,6 +167,39 @@ def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> 
         "组合整体诊断",
         "处理优先级",
         "目标现金/低风险",
+    ]:
+        assert text in portfolio_html
+
+
+def test_portfolio_module_reads_like_disposal_console_before_table() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "组合处置台",
+        "今日先处理",
+        "最大风险",
+        "行业暴露地图",
+        "账本状态",
+        "下一步复核",
+    ]:
+        assert text in portfolio_html
+
+    assert portfolio_html.index("今日先处理") < portfolio_html.index("持仓风险处置")
+
+
+def test_portfolio_module_uses_four_lane_disposal_queue() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "处置队列四车道",
+        "必须处理",
+        "观察",
+        "可继续",
+        "待补数据",
+        "风险预算条",
+        "成本位置",
+        "持仓账本来源",
+        "公开只读",
     ]:
         assert text in portfolio_html
 

@@ -52,4 +52,4 @@ def test_web_renders_concrete_trade_plan_not_generic_words() -> None:
     assert "买点" in html
     assert "完整方法链" in html
     assert "止损" in html
-    assert "禁止动作" not in html
+    assert "禁止动作" in html
