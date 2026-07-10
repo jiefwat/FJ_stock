@@ -122,7 +122,7 @@ def test_cli_outputs_sectors_and_candidates(tmp_path: Path) -> None:
 def test_web_page_contains_sector_and_candidate_sections() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
-    assert "主线板块" in html
-    assert "主题强弱榜" in html
-    assert "强势个股" in html
+    assert "热点机会" in html
+    assert "板块热度" in html
+    assert "候选观察池" in html
     assert "轮动路径" not in html

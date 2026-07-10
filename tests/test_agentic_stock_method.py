@@ -134,8 +134,8 @@ def test_web_stock_page_surfaces_tradingagents_chain_and_signal_attribution() ->
         holdings_path="data/portfolio/holdings.csv",
     )
     stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
+    next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
+    stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
     assert "TradingAgents 决策链" in stock_html
     assert "daily_stock_analysis 信号归因" in stock_html
@@ -185,10 +185,10 @@ def test_stock_page_keeps_agentic_method_but_hides_noisy_detail_by_default() -> 
         holdings_path="data/portfolio/holdings.csv",
     )
     stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
+    next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
+    stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
-    assert "个股决策卡" in stock_html
+    assert "个股三面复核" in stock_html
     assert "证据链" in stock_html
     assert "风险边界" in stock_html
     assert "完整方法链" in stock_html

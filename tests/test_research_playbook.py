@@ -43,8 +43,8 @@ def test_web_renders_decision_dashboard_and_strategy_lenses() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "A股大盘" in html
+    assert "每日大盘" in html
     assert "市场" in html
-    assert "主线板块" in html
+    assert "热点机会" in html
     assert "持仓健康度" in html
     assert "今天先做什么" not in html

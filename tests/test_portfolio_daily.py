@@ -221,8 +221,8 @@ def test_cli_generates_portfolio_and_daily_reports(tmp_path: Path) -> None:
 def test_web_page_contains_market_portfolio_stock_and_report_sections() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
-    assert "今日大盘" in html
+    assert "每日大盘" in html
     assert "我的持仓" in html
     assert "个股分析" in html
-    assert "渠道配置" in html
+    assert "热点机会" in html
     assert "持仓健康度" in html

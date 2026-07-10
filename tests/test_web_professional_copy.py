@@ -17,8 +17,8 @@ def test_web_uses_professional_product_copy() -> None:
         ),
     )
 
-    assert ">分析</a>" in html
-    assert "A股大盘" in html
+    assert "href='/?code=" in html
+    assert "每日大盘" in html
     assert "今天先做什么" not in html
     assert "核心入口" not in html
     assert "Jiewat Kaka FJ" in html

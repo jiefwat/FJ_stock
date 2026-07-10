@@ -941,7 +941,6 @@ def render_page(
         event_radar=event_radar,
         portfolio=portfolio,
     )
-    daily_decisions = _read_latest_daily_decisions()
     trade_plan = build_trade_plan(
         stock_name=stock.name,
         latest_close=stock.latest_close,
@@ -953,39 +952,7 @@ def render_page(
         data_quality_warnings=_trade_blocking_warnings(quality.warnings),
     )
     section_map = {
-        "home": _render_home_module(
-            quality=quality,
-            market=market,
-            sectors=sectors,
-            portfolio=portfolio,
-            candidates=candidates,
-            risk_gate=risk_gate,
-            provider_name=provider_name,
-            holdings_path=holdings_path,
-            daily_decisions=daily_decisions,
-        ),
         "market": _render_compact_market_module(market, sectors, portfolio, candidates),
-        "sector": _retitle_module(
-            _render_compact_sector_module(sectors, candidate_universe),
-            old_id="module-sectors",
-            new_id="module-sector",
-        ),
-        "sentiment": _render_sentiment_module(candidate_universe, market, provider_class),
-        "screener": _retitle_module(
-            _render_candidates_module(
-                screener_candidates,
-                stock_code=resolved.query,
-                provider_name=provider_name,
-                holdings_path=holdings_path,
-                candidate_code=candidate_code,
-                candidate_group=candidate_group,
-                candidate_strategy=candidate_strategy,
-                candidate_universe_count=len(candidate_universe),
-                candidate_universe_metadata=candidate_universe_metadata,
-            ),
-            old_id="module-smart-select",
-            new_id="module-screener",
-        ),
         "portfolio": _render_compact_portfolio_module(
             portfolio,
             market,
@@ -1010,29 +977,18 @@ def render_page(
             provider_name=provider_name,
             holdings_path=holdings_path,
         ),
-        "watchlist": _render_watchlist_module(stock),
-        "daily": _retitle_module(
-            _render_compact_report_module(daily, quality, risk_gate),
-            old_id="module-report",
-            new_id="module-daily",
-        ),
-        "notify": _retitle_module(
-            _render_compact_status_module(
-                provider_name,
-                holdings_path,
-                provider_class,
-                resolved.query,
-                settings_notice,
-            ).replace("消息渠道", "消息自动化"),
-            old_id="module-status",
-            new_id="module-notify",
-        ),
-        "settings": _render_system_settings_module(
-            quality,
-            provider_name,
-            provider_class,
-            current_user=current_user,
+        "opportunity": _render_hot_opportunity_module(
+            sectors=sectors,
+            candidates=screener_candidates,
+            market=market,
+            candidate_universe=candidate_universe,
+            stock_code=resolved.query,
+            provider_name=provider_name,
             holdings_path=holdings_path,
+            candidate_code=candidate_code,
+            candidate_group=candidate_group,
+            candidate_strategy=candidate_strategy,
+            candidate_universe_metadata=candidate_universe_metadata,
         ),
     }
     shell = f"""
@@ -3269,6 +3225,139 @@ def _home_sector_judgement(item, *, mode: str, rank: int) -> str:
     )
 
 
+def _render_hot_opportunity_module(
+    *,
+    sectors: SectorAnalysisReport,
+    candidates: CandidatePoolReport,
+    market: MarketSnapshot,
+    candidate_universe: list[CandidateStockRawData],
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+    candidate_code: str,
+    candidate_group: str,
+    candidate_strategy: str,
+    candidate_universe_metadata: dict[str, str] | None = None,
+) -> str:
+    del candidate_code, candidate_group, candidate_strategy
+    metadata = candidate_universe_metadata or {}
+    top_sector = sectors.sectors[0] if sectors.sectors else None
+    top_candidate = candidates.candidates[0] if candidates.candidates else None
+    sector_rows = "".join(_render_opportunity_sector_row(item, candidate_universe) for item in sectors.sectors[:6])
+    if not sector_rows:
+        sector_rows = "<tr><td colspan='5'>当前数据源未返回板块热度，先等待快照刷新。</td></tr>"
+    candidate_rows = "".join(
+        _render_opportunity_candidate_row(
+            item,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            stock_code=stock_code,
+        )
+        for item in candidates.candidates[:8]
+    )
+    if not candidate_rows:
+        candidate_rows = "<tr><td colspan='6'>暂无候选观察池；先看大盘和板块是否转强。</td></tr>"
+    mainline = "、".join(sectors.market_mainline[:3]) or (top_sector.name if top_sector else "待确认")
+    sentiment_state = _limit_up_state_label(market)
+    downside_state = _limit_down_state_label(market)
+    universe_text = str(len(candidate_universe) or len(candidates.candidates))
+    generated_at = metadata.get("generated_at") or metadata.get("trade_date") or market.trade_date
+    opportunity_action = _opportunity_action(market, top_sector, top_candidate)
+    method_notes = _li_join(
+        (
+            candidates.method_notes
+            or [
+                "先看板块是否连续，再看候选是否有技术、资金和消息三面共振。",
+                "候选名单只代表观察优先级，不等于买入建议。",
+            ]
+        )[:3]
+    )
+    return f"""
+    <section class="module" id="module-opportunity">
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">把板块、情绪和候选池放在一张雷达图里，只筛观察对象，不直接给买点。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">候选 {len(candidates.candidates)} 只</span></div></div>
+      {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、涨跌停情绪、候选 K 线、资金和消息标签", "主题雷达 -> 候选观察池 -> 个股分析入口")}
+      <div class="panel">
+        <div class="editor-toolbar"><div><h3>热点机会 · 主题雷达</h3><p class="section-subtitle">先判断热点是否可持续，再决定哪些股票值得进入个股分析。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>板块热度</span><strong>{escape(top_sector.name if top_sector else "待确认")}</strong><p class="kpi-foot">{escape(top_sector.continuity if top_sector else "等待板块快照")}</p></div>
+          <div class="summary-card"><span>情绪温度</span><strong>{escape(sentiment_state)}</strong><p class="kpi-foot">涨停 {market.limit_up_count} / 跌停 {market.limit_down_count}；{escape(downside_state)}</p></div>
+          <div class="summary-card"><span>候选观察池</span><strong>{escape(top_candidate.name if top_candidate else "待刷新")}</strong><p class="kpi-foot">样本 {escape(universe_text)}；生成 {escape(generated_at)}</p></div>
+          <div class="summary-card"><span>今日策略</span><strong>{escape(opportunity_action)}</strong><p class="kpi-foot">只在大盘、板块和个股条件共振时升级研究。</p></div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:16px">
+        <div class="panel">
+          <h3>板块热度</h3>
+          <table class="data-table"><thead><tr><th>主题</th><th>强度</th><th>扩散</th><th>代表样本</th><th>下一步</th></tr></thead><tbody>{sector_rows}</tbody></table>
+        </div>
+        <div class="panel">
+          <h3>情绪温度</h3>
+          <div class="compact-note-grid">
+            <div class="compact-note-card"><strong>赚钱效应</strong><p>{escape(sentiment_state)}</p></div>
+            <div class="compact-note-card"><strong>亏钱效应</strong><p>{escape(downside_state)}</p></div>
+            <div class="compact-note-card"><strong>验证规则</strong><p>热点不扩散、跌停扩散或指数走弱时，候选只观察不执行。</p></div>
+          </div>
+        </div>
+        <div class="panel" style="grid-column:1 / -1">
+          <div class="editor-toolbar"><div><h3>候选观察池</h3><p class="section-subtitle">每个候选都要继续进入个股分析，复核 K 线、资金面和消息面。</p></div><span class="portfolio-chip">{escape("价格可靠" if candidates.price_reliable else "仅观察")}</span></div>
+          <table class="data-table candidates-table"><thead><tr><th>#</th><th>股票</th><th>分数</th><th>方向</th><th>入选理由</th><th>下一步</th></tr></thead><tbody>{candidate_rows}</tbody></table>
+        </div>
+        <div class="panel" style="grid-column:1 / -1">
+          <h3>方法说明</h3>
+          <ul>{method_notes}</ul>
+        </div>
+      </div>
+    </section>"""
+
+
+def _render_opportunity_sector_row(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    risk = _sector_risk_text(item)
+    return (
+        f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong><span>{escape(item.rotation_status)}</span></td>"
+        f"<td>{item.heat_score}/100<span>{escape(_sector_strength_reason(item))}</span></td>"
+        f"<td>{item.advancing_ratio:.0%}</td>"
+        f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
+        f"<td>{escape(_sector_next_check(item))}<span>{escape(risk)}</span></td></tr>"
+    )
+
+
+def _render_opportunity_candidate_row(
+    item,
+    *,
+    provider_name: str,
+    holdings_path: str,
+    stock_code: str,
+) -> str:
+    del stock_code
+    reason = "；".join(item.reasons[:2]) if item.reasons else "等待补充技术/资金/消息证据"
+    next_step = item.watch_conditions[0] if item.watch_conditions else "进入个股分析复核"
+    query = urlencode(
+        {
+            "code": item.code,
+            "provider": provider_name,
+            "holdings": holdings_path,
+        }
+    )
+    return (
+        f"<tr><td>{escape(item.code)}</td>"
+        f"<td class='name-cell'><strong>{escape(item.name)}</strong><span>{escape(item.sector)}</span></td>"
+        f"<td>{item.score}/100</td>"
+        f"<td>{item.pct_change:.2f}%</td>"
+        f"<td>{escape(reason)}</td>"
+        f"<td><a class='primary-button' href='/?{query}#stock'>{escape(next_step)}</a></td></tr>"
+    )
+
+
+def _opportunity_action(market: MarketSnapshot, top_sector, top_candidate) -> str:
+    if market.heat_score < 45 or market.limit_down_count >= 20:
+        return "先防守"
+    if top_sector is None or top_candidate is None:
+        return "等数据补齐"
+    if top_sector.heat_score >= 70 and market.limit_up_count >= 20:
+        return "聚焦前排"
+    return "观察轮动"
+
+
 def _render_sentiment_module(
     universe: list[CandidateStockRawData],
     market: MarketSnapshot,
@@ -3656,17 +3745,17 @@ def _render_compact_market_module(
     quick_actions = "".join(
         f'<button class="portfolio-inline-button" type="button" data-jump="{target}">{escape(label)}</button>'
         for target, label in [
-            ("sector", "看板块"),
-            ("sentiment", "看情绪"),
-            ("screener", "筛候选"),
+            ("opportunity", "看热点机会"),
             ("portfolio", "看持仓"),
+            ("stock", "看个股"),
         ]
     )
     return f"""
     <section class="module" id="module-market">
-      <div class="module-header"><div><h2 class="module-title">A股大盘</h2></div><span class="risk-pill low">{escape(market.regime)}</span></div>
+      <div class="module-header"><div><h2 class="module-title">每日大盘</h2><p class="module-desc">先判断市场可不可以做，再决定持仓风险预算和热点机会优先级。</p></div><span class="risk-pill low">{escape(market.regime)}</span></div>
+      {_render_research_data_flow_panel("每日大盘", "指数 K 线、涨跌家数、涨跌停情绪、成交额与北向/资金线索", "市场环境 -> 仓位闸门 -> 模块跳转")}
       <div class="panel">
-        <div class="editor-toolbar"><div><h3>今日大盘 · 市场结论</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
+        <div class="editor-toolbar"><div><h3>每日大盘 · 仓位闸门</h3></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
         <div class="summary-grid">
           <div class="summary-card"><span>大盘环境</span><strong>{escape(market.regime)}</strong><p class="kpi-foot">{escape(market.summary)}</p></div>
           <div class="summary-card"><span>仓位动作</span><strong>{escape(market_action)}</strong><p class="kpi-foot">{escape(market_reason)}</p></div>
@@ -3702,6 +3791,14 @@ def _render_compact_market_module(
         </div>
       </div>
     </section>"""
+
+
+def _render_research_data_flow_panel(module: str, sources: str, output: str) -> str:
+    return f"""
+      <div class="quality-banner research-flow">
+        <strong>数据链路：K线 / 资金面 / 消息面</strong>
+        <span>{escape(module)} 使用 {escape(sources)}，输出 {escape(output)}。缺失的数据只作为风险提示，不补成交易理由。</span>
+      </div>"""
 
 
 def _market_decision_reason(market: MarketSnapshot, top_sector) -> str:
@@ -4055,7 +4152,8 @@ def _render_compact_portfolio_module(
     )
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">以组合经理视角处理：先风险处置，再利润保护，最后才考虑加仓。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
+      {_render_research_data_flow_panel("我的持仓", "持仓成本、实时/收盘价、行业暴露、个股趋势和大盘风险", "持仓风险处置 -> 目标仓位 -> 下一步动作")}
       {notice_html}
       <div class="portfolio-kpis">
         {_kpi("总成本", f"{portfolio.total_cost:.2f}", "")}
@@ -4068,7 +4166,7 @@ def _render_compact_portfolio_module(
       {_render_portfolio_position_overview(advice)}
       {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
       <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>持仓列表</h3></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
+        <div class="editor-toolbar"><div><h3>持仓风险处置</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
         {action_bar}
         <table class="data-table portfolio-table"><thead><tr><th>股票</th><th>数量</th><th>成本</th><th>现价</th><th>当日盈亏</th><th>总盈亏</th><th>仓位</th><th>趋势</th><th>建议</th><th>操作</th></tr></thead><tbody>{positions}</tbody></table>
       </div>
@@ -4181,8 +4279,12 @@ def _render_compact_stock_module(
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">把单股拆成技术趋势、资金量能、消息公告和组合成本四条证据链。</p></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
       {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
+      <div class="panel" style="margin-bottom:16px">
+        <div class="editor-toolbar"><div><h3>个股三面复核</h3><p class="section-subtitle">技术面看趋势位置，资金面看量能和净流，消息面看新闻公告；三面不共振时只观察。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
+      </div>
       <div class="stock-workspace-drawer">
         <div>
           <div class="ticket-grid">

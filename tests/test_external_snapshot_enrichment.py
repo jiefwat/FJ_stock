@@ -381,8 +381,8 @@ def test_tdx_provider_and_web_use_enriched_stock_fields(tmp_path: Path) -> None:
         holdings_path=str(holdings),
     )
     stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
+    next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
+    stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
     assert "PE(TTM) 36.5" in stock_html
     assert "主力净流入 2.30 亿" in stock_html
     assert "公司产品放量" in stock_html

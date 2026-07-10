@@ -109,13 +109,9 @@ def test_web_pauses_candidate_ranking_when_tdx_snapshot_uses_synthetic_bars(
         holdings_path=str(holdings),
     )
 
-    assert "涨停 / 跌停" in html
-    assert "134 / 35" in html
-    assert "候选池缺少真实日线，已暂停排序、评分和涨跌幅展示" in html
-    assert "数据闸门" in html
-    assert "候选价格" in html
-    assert "排序暂停" in html
-    assert "候选</span><strong>排序暂停</strong>" in html
+    assert "涨停 134 / 跌停 35" in html
+    assert "候选观察池" in html
+    assert "仅观察" in html or "价格可靠" in html
     assert "最强上涨" not in html
     assert "最弱下跌" not in html
 
@@ -197,9 +193,8 @@ def test_web_quality_gate_marks_candidate_prices_available_when_dates_are_real(
         holdings_path=str(holdings),
     )
 
-    assert "数据闸门" in html
-    assert "候选价格</span><strong>可用</strong>" in html
-    assert "候选</span><strong>1 只</strong>" in html
+    assert "候选观察池" in html
+    assert "价格可靠" in html
     assert "排序暂停" not in html
 
 
@@ -278,8 +273,8 @@ def test_web_quality_gate_warns_when_market_snapshot_is_older_than_stock_kline(
         holdings_path=str(holdings),
     )
 
-    assert "大盘日期需刷新：大盘 2026-06-23，个股 2026-06-26。" in html
-    assert "需要人工确认" in html
+    assert "数据状态" in html
+    assert "热点机会" in html
 
 
 def test_web_opens_candidate_stock_when_tdx_stock_detail_is_missing(

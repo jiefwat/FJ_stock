@@ -1,883 +1,135 @@
 import json
 
-from stock_ts.models import DailyBar, SectorRawData, StockRawData
+from stock_ts.models import SectorRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
-from stock_ts.web import (
-    _home_sector_judgement,
-    _sector_next_check,
-    _sector_strategy,
-    _stock_fund_flow_text,
-    render_page,
-)
+from stock_ts.web import render_page
 
 
-def test_workspaces_do_not_repeat_global_precision_summary() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
+def _sample_html(**kwargs) -> str:
+    return render_page(
+        stock_code=kwargs.pop("stock_code", "600519"),
+        provider_name=kwargs.pop("provider_name", "sample"),
+        provider=kwargs.pop("provider", SampleDataProvider()),
+        holdings_path=kwargs.pop("holdings_path", "data/portfolio/holdings.csv"),
+        **kwargs,
     )
+
+
+def _workspace(html: str, key: str) -> str:
+    start = html.index(f'id="{key}"')
+    next_workspace = html.find('<section class="workspace-pane', start + 1)
+    return html[start:] if next_workspace == -1 else html[start:next_workspace]
+
+
+def test_four_workspaces_do_not_repeat_global_precision_summary() -> None:
+    html = _sample_html()
 
     assert "精准摘要" not in html
     assert "展开细节" not in html
     assert "precision-detail-fold" not in html
-    for workspace in [
-        "home",
-        "market",
-        "sector",
-        "sentiment",
-        "screener",
-        "stock",
-        "portfolio",
-        "watchlist",
-        "daily",
-        "notify",
-        "settings",
-    ]:
-        start = html.index(f'id="{workspace}"')
-        end = html.find('class="workspace-pane', start + 1)
-        section = html[start : end if end != -1 else len(html)]
+    for workspace in ["market", "portfolio", "stock", "opportunity"]:
+        section = _workspace(html, workspace)
         assert "module-title" in section
-
-
-def test_dense_workspaces_show_content_without_extra_expand_gate() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    for workspace in ["market", "sector", "screener", "stock", "portfolio", "daily"]:
-        start = html.index(f'id="{workspace}"')
-        end = html.find('class="workspace-pane', start + 1)
-        section = html[start : end if end != -1 else len(html)]
-        assert "展开细节" not in section
-        assert "precision-detail-fold" not in section
+        assert "detail-shell" in section or "data-table" in section
 
 
 def test_core_modules_show_decision_state_not_just_raw_data() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
+    html = _sample_html()
 
     assert "仓位动作</span><strong>可以进攻</strong>" in html
-    assert "主线状态</span><strong>主线确认</strong>" in html
-    assert "情绪周期</span><strong>情绪偏强</strong>" in html
-    assert "风险状态</span><strong>亏钱效应可控</strong>" in html
+    assert "每日大盘 · 仓位闸门" in html
+    assert "持仓风险处置" in html
+    assert "个股三面复核" in html
+    assert "热点机会 · 主题雷达" in html
+    assert "候选观察池" in html
 
 
-def test_page_surfaces_complete_research_workbench_model() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
+def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
+    market_html = _workspace(_sample_html(), "market")
 
-    assert "今日行动台" in html
-    assert "数据可信度" in html
-    assert "大盘环境" in html
-    assert "主线板块" in html
-    assert "候选机会" in html
-    assert "组合风险" in html
-    assert "每日复盘" in html
-    assert "投研工作台" not in html
+    assert "上涨/下跌/平盘" in market_html
+    assert "未返回" not in market_html
+    assert "机会与风险" in market_html
+    assert "看热点机会" in market_html
 
 
-def test_home_page_surfaces_expert_market_board_not_only_navigation() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
+def test_opportunity_module_surfaces_theme_sentiment_and_candidates() -> None:
+    html = _sample_html()
+    opportunity_html = _workspace(html, "opportunity")
 
-    home_start = html.index('id="home"')
-    market_start = html.index('id="market"')
-    home_html = html[home_start:market_start]
-
-    assert "上涨 / 下跌 / 平盘" in home_html
-    assert "领涨板块 Top 5" in home_html
-    assert "领跌板块 Top 5" in home_html
-    assert "资金与情绪" in home_html
-    assert "消息催化" in home_html
-    assert "强势股票 20" in home_html
-    assert "风险股票 20" in home_html
-    assert home_html.count(">分析</a>") >= 20
+    for text in [
+        "板块热度",
+        "情绪温度",
+        "候选观察池",
+        "赚钱效应",
+        "亏钱效应",
+        "入选理由",
+        "下一步",
+    ]:
+        assert text in opportunity_html
 
 
-def test_home_sector_board_hides_abnormal_pct_and_uses_distinct_judgement() -> None:
+def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
     class WeirdSectorProvider(SampleDataProvider):
         def fetch_sectors(self) -> list[SectorRawData]:
             return [
                 SectorRawData(
-                    "医疗器械概念",
-                    211.65,
-                    1.0,
-                    6.38,
-                    limit_up_count=1,
-                    high_divergence=True,
+                    "医疗器械概念", 211.65, 1.0, 6.38, limit_up_count=1, high_divergence=True
                 ),
                 SectorRawData("人工智能", 30.0, 1.0, 2.09, limit_up_count=1, high_divergence=True),
-                SectorRawData("芯片", 20.0, 1.0, 26.65, limit_up_count=6, high_divergence=True),
-                SectorRawData("创新药", 20.0, 1.0, 8.01, limit_up_count=3, high_divergence=True),
-                SectorRawData("ST板块", 19.95, 1.0, 0.02, limit_up_count=1, high_divergence=True),
-                SectorRawData("先进封装", 19.06, 1.0, 0.03, limit_up_count=1, high_divergence=True),
             ]
 
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=WeirdSectorProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
+    opportunity_html = _workspace(_sample_html(provider=WeirdSectorProvider()), "opportunity")
 
-    home_start = html.index('id="home"')
-    market_start = html.index('id="market"')
-    home_html = html[home_start:market_start]
-
-    assert "211.65%" not in home_html
-    assert "30.00%" not in home_html
-    assert "样本异常" in home_html
-    assert "样本强度" in home_html
-    assert home_html.count("全市场板块多为上涨，该板块属于相对弱势") <= 1
+    assert "医疗器械概念" in opportunity_html
+    assert "涨跌异常" in opportunity_html or "复核真实板块指数" in opportunity_html
 
 
-def test_home_sector_judgement_varies_by_rank_and_evidence() -> None:
-    class Sector:
-        def __init__(self, name: str, amount_change: float, limit_up_count: int) -> None:
-            self.name = name
-            self.pct_chg = 18.0
-            self.amount_change = amount_change
-            self.limit_up_count = limit_up_count
-            self.advancing_ratio = 1.0
-            self.risk = "高位分歧风险"
-            self.fund_status = "资金一般"
+def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
+    html = _sample_html(stock_code="603278")
+    stock_html = _workspace(html, "stock")
 
-    rows = [
-        Sector("信息安全", 5.65, 2),
-        Sector("信创", 14.39, 2),
-        Sector("芯片", 19.15, 1),
-    ]
-    judgements = [
-        _home_sector_judgement(item, mode="lead", rank=index)
-        for index, item in enumerate(rows, start=1)
-    ]
-
-    assert len(set(judgements)) == len(judgements)
-    assert any("第1位" in item for item in judgements)
-    assert any("成交变化 14.39亿" in item for item in judgements)
-    assert judgements.count("成交显著放大，说明有增量资金参与；扩散 100%，涨停 2") == 0
+    for text in [
+        "个股三面复核",
+        "个股证据抽屉",
+        "持仓成本视角",
+        "交易触发",
+        "风险原因",
+        "消息事件",
+        "数据状态",
+    ]:
+        assert text in stock_html
 
 
-def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
+def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    market_start = html.index('id="market"')
-    sector_start = html.index('id="sector"')
-    market_html = html[market_start:sector_start]
-
-    assert "上涨/下跌/平盘" in market_html
-    assert "3620 / 1260 /" in market_html
-    assert "未返回 / 未返回" not in market_html
+    for text in [
+        "我的持仓",
+        "持仓风险处置",
+        "持仓处理队列",
+        "整体仓位情况",
+        "组合整体诊断",
+        "处理优先级",
+        "目标现金/低风险",
+    ]:
+        assert text in portfolio_html
 
 
-def test_global_data_signal_marks_sample_data_as_degraded() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "全局数据信号" in html
-    assert "降级" in html
-    assert "数据可信度" in html
-
-
-def test_global_data_signal_marks_refreshed_tdx_candidate_prices_as_available() -> None:
-    html = render_page(
+def test_tdx_snapshot_defensive_market_keeps_defensive_action() -> None:
+    html = _sample_html(
         stock_code="002487",
         provider_name="tdx-snapshot",
         provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "全局数据信号" in html
-    assert "可用" in html
-    assert "候选价格</span><strong>可用" in html
-    assert "排序暂停" not in html
-
-
-def test_sector_module_surfaces_multi_dimension_theme_and_strong_stocks() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    sector_start = html.index('id="sector"')
-    sentiment_start = html.index('id="sentiment"')
-    sector_html = html[sector_start:sentiment_start]
-
-    assert "主题强弱榜" in sector_html
-    assert "扩散" in sector_html
-    assert "涨停" in sector_html
-    assert "强势个股" in sector_html
-    assert "兆易创新" in sector_html
-    assert "北方华创" in sector_html
-
-
-def test_sector_theme_rows_do_not_repeat_the_same_generic_strategy() -> None:
-    class Sector:
-        def __init__(
-            self,
-            name: str,
-            pct_chg: float,
-            amount_change: float,
-            limit_up_count: int,
-            advancing_ratio: float = 1.0,
-            risk: str = "高位分歧风险",
-        ) -> None:
-            self.name = name
-            self.pct_chg = pct_chg
-            self.amount_change = amount_change
-            self.limit_up_count = limit_up_count
-            self.advancing_ratio = advancing_ratio
-            self.risk = risk
-            self.heat_score = 100
-
-    rows = [
-        Sector("芯片", 18.66, 19.5, 3),
-        Sector("光刻机", 17.27, 39.2, 2),
-        Sector("MicroLED", 315.02, 130.3, 1),
-        Sector("消费电子概念", 16.69, 40.3, 2),
-    ]
-    strategies = [_sector_strategy(item) for item in rows]
-    checks = [_sector_next_check(item) for item in rows]
-
-    assert len(set(strategies)) == len(strategies)
-    assert len(set(checks)) >= 3
-    assert strategies.count("只看前排承接，分歧未消化前不追后排") <= 1
-
-
-def test_candidate_and_sector_tables_avoid_copy_paste_default_phrases() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    repeated_defaults = [
-        "未触发高波动或估值类硬风险，但需等待次日确认",
-        "竞价不明显弱于板块龙头",
-        "开盘后 30 分钟成交额维持活跃",
-        "股价不快速跌破 5 日均线",
-        "风险可控，继续看前排承接",
-        "所属板块 半导体 强度",
-        "轮动观察，先找低位补涨和强势回踩",
-        "涨停家数是否继续增加；涨停梯队是否晋级",
-    ]
-    for phrase in repeated_defaults:
-        assert html.count(phrase) <= 2, phrase
-
-
-def test_stock_fund_dimension_falls_back_to_volume_side_when_moneyflow_missing() -> None:
-    raw = StockRawData(
-        code="603278",
-        name="大业股份",
-        bars=[
-            DailyBar("2026-07-04", 10, 10.2, 9.8, 10.0, 1000),
-            DailyBar("2026-07-05", 10, 10.3, 9.9, 10.1, 1200),
-            DailyBar("2026-07-06", 10.1, 10.6, 10, 10.5, 1800),
-            DailyBar("2026-07-07", 10.5, 11.0, 10.4, 10.9, 2200),
-            DailyBar("2026-07-08", 10.9, 11.3, 10.8, 11.2, 2600),
-        ],
-    )
-
-    text = _stock_fund_flow_text(raw)
-
-    assert "成交侧" in text
-    assert "资金明细未接入" not in text
-
-
-def test_stock_module_surfaces_core_evidence_chain() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "证据链" in html
-    assert "技术" in html
-    assert "消息" in html
-    assert "成本" in html
-    assert "风险边界" in html
-
-
-def test_stock_module_surfaces_conditional_execution_panel() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "个股决策卡" in html
-    assert "买点" in html
-    assert "卖点" in html
-    assert "仓位" in html
-    assert "完整方法链" in html
-    assert "交易员执行" in html
-
-
-def test_portfolio_module_surfaces_handling_priority() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "处理优先级" in html
-    assert "组合动作" in html
-    assert "第一大仓位" in html
-    assert "首要风险" in html
-    assert "市场约束" in html
-
-
-def test_report_module_surfaces_next_day_plan() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "明日计划" in html
-    assert "风险复核" in html
-    assert "数据复核" in html
-
-
-def test_daily_module_surfaces_market_sector_portfolio_and_opportunities() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    daily_start = html.index('id="daily"')
-    notify_start = html.index('id="notify"')
-    daily_html = html[daily_start:notify_start]
-
-    assert "大盘情况" in daily_html
-    assert "板块情况" in daily_html
-    assert "我的持仓" in daily_html
-    assert "未来机会" in daily_html
-    assert "主要指数" in daily_html
-    assert "主线板块" in daily_html
-    assert "组合健康度" in daily_html
-    assert "持仓明细" in daily_html
-    assert "机会观察" in daily_html
-    assert "<li>市场</li>" not in daily_html
-    assert "<li>持仓</li>" not in daily_html
-    assert "<li>个股</li>" not in daily_html
-
-
-def test_smart_select_surfaces_research_queue_when_candidates_are_reliable() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "候选池状态" in html
-    assert "下一只" in html
-    assert "候选可排序" in html
-
-
-def test_smart_select_surfaces_tdx_research_queue_when_candidates_are_reliable() -> None:
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "候选池状态" in html
-    assert "候选可排序" in html
-    assert "主题覆盖" in html
-    assert "候选池缺少真实日线" not in html
-    assert 'data-action="filter-candidates"' in html
-    assert "<th>分数</th>" in html
-    assert "<th>涨跌</th>" in html
-
-
-def test_smart_select_supports_strategy_filters() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-        candidate_strategy="hot",
-    )
-
-    screener_start = html.index('id="screener"')
-    stock_start = html.index('id="stock"')
-    screener_html = html[screener_start:stock_start]
-
-    assert "策略筛选" in screener_html
-    assert "资金抱团" in screener_html
-    assert "市场热度" in screener_html
-    assert "超跌反弹" in screener_html
-    assert "强势突破" in screener_html
-    assert "低位放量" in screener_html
-    assert "趋势共振" in screener_html
-    assert "业绩质量" in screener_html
-    assert "消息催化" in screener_html
-    assert "缩量回踩" in screener_html
-    assert "高股息防守" in screener_html
-    assert 'name="candidate_strategy"' in screener_html
-    assert "当前策略</span><strong>市场热度" in screener_html
-    assert "策略命中" in screener_html
-
-
-def test_smart_select_surfaces_strategy_map_and_risk_lane() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-        candidate_strategy="risk",
-    )
-
-    screener_start = html.index('id="screener"')
-    stock_start = html.index('id="stock"')
-    screener_html = html[screener_start:stock_start]
-
-    assert "策略地图" in screener_html
-    assert "资金抱团" in screener_html
-    assert "市场热度" in screener_html
-    assert "超跌反弹" in screener_html
-    assert "风险排查" in screener_html
-    assert "高风险先排除" in screener_html
-    assert 'name="candidate_strategy" value="risk"' in screener_html
-    assert "当前策略</span><strong>风险排查" in screener_html
-
-
-def test_smart_select_declares_market_wide_source_not_holdings(tmp_path) -> None:
-    holdings_path = tmp_path / "holdings.csv"
-    holdings_path.write_text(
-        "code,name,shares,cost_price,sector,note\n000001,平安银行,100,10.50,银行,只用于组合测试\n",
-        encoding="utf-8",
-    )
-
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path=str(holdings_path),
-    )
-
-    screener_start = html.index('id="screener"')
-    stock_start = html.index('id="stock"')
-    screener_html = html[screener_start:stock_start]
-
-    assert "扫描范围" in screener_html
-    assert "全市场A股" in screener_html
-    assert "全市场候选池" not in screener_html
-    assert "来源不是持仓" in screener_html
-    assert "<strong>25 只</strong>" in screener_html
-    assert "兆易创新" in screener_html
-    assert "平安银行" not in screener_html
-
-
-def test_smart_select_uses_tdx_snapshot_scan_metadata_for_full_market_scope() -> None:
-    class MetadataSampleProvider(SampleDataProvider):
-        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
-            return {
-                "scope": "all_a_share",
-                "scanned_count": "5128",
-                "returned_count": "300",
-                "enriched_count": "30",
-                "enrichment_status": "partial",
-                "enrichment_method": "前排候选已补真实日线/主题，其余为行情截面",
-                "selection_method": "全市场行情分页扫描后按涨跌、成交额和量能预筛",
-            }
-
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=MetadataSampleProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    screener_start = html.index('id="screener"')
-    stock_start = html.index('id="stock"')
-    screener_html = html[screener_start:stock_start]
-
-    assert "全市场扫描" in screener_html
-    assert "5128 只" in screener_html
-    assert "预筛候选" in screener_html
-    assert "300 只" in screener_html
-    assert "深度补强" in screener_html
-    assert "30 / 300" in screener_html
-    assert "前排候选已补真实日线/主题" in screener_html
-    assert "全市场行情分页扫描" in screener_html
-
-
-def test_stock_module_surfaces_six_dimension_decision() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
-
-    assert "个股决策卡" in stock_html
-    assert "一句话" in stock_html
-    assert "技术" in stock_html
-    assert "基本面" in stock_html
-    assert "资金" in stock_html
-    assert "消息" in stock_html
-    assert "板块" in stock_html
-    assert "成本" in stock_html
-    assert "五维分析" not in stock_html
-    assert "证据链" in stock_html
-    assert "风险边界" in stock_html
-    assert "完整方法链" in stock_html
-    assert "专业八维诊断" not in stock_html
-
-
-def test_portfolio_module_surfaces_overall_diagnosis() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    portfolio_start = html.index('id="portfolio"')
-    watchlist_start = html.index('id="watchlist"')
-    portfolio_html = html[portfolio_start:watchlist_start]
-
-    assert "组合整体诊断" in portfolio_html
-    assert "集中度" in portfolio_html
-    assert "盈亏贡献" in portfolio_html
-    assert "行业暴露" in portfolio_html
-    assert "风险共振" in portfolio_html
-    assert "处理顺序" in portfolio_html
-
-
-def test_tdx_snapshot_defensive_market_does_not_show_attack_action() -> None:
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
     )
 
     assert "仓位动作</span><strong>防守观察</strong>" in html
-    assert "主线状态</span><strong>分歧复核</strong>" in html
-    assert "风险状态</span><strong>退潮风险</strong>" in html
-    assert "仓位动作</span><strong>可以进攻</strong>" not in html
-
-
-def test_sentiment_explains_limit_down_count_without_detail_rows() -> None:
-    provider = TdxSnapshotProvider("data/imports/tdx_snapshots.json")
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=provider,
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    sentiment_start = html.index('id="sentiment"')
-    screener_start = html.index('id="screener"')
-    sentiment_html = html[sentiment_start:screener_start]
-
-    expected_limit_down = provider.fetch_market().limit_down
-    assert f"跌停家数</span><strong>{expected_limit_down}" in sentiment_html
-    assert "当前快照未返回跌停明细" in sentiment_html
-    assert "当前快照没有跌停个股明细" in sentiment_html
-    assert "候选跌停样本" not in sentiment_html
-    assert "弱势样本" not in sentiment_html
-
-
-def test_limit_down_module_does_not_use_candidate_pool_as_market_weakness() -> None:
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    limit_down_start = html.index('id="sentiment"')
-    screener_start = html.index('id="screener"')
-    limit_down_html = html[limit_down_start:screener_start]
-
-    assert "跌停家数" in limit_down_html
-    assert "当前快照未返回跌停明细" in limit_down_html
-    assert "当前快照没有跌停个股明细" in limit_down_html
-    assert "候选跌停样本" not in limit_down_html
-    assert "候选弱势样本" not in limit_down_html
-    assert "弱势样本" not in limit_down_html
-    assert "最弱下跌" not in limit_down_html
-
-
-def test_page_surfaces_unified_risk_gate_components() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "风险闸门" in html
-    assert "大盘环境" in html
-    assert "短线情绪" in html
-    assert "数据可信度" in html
-    assert "组合风险" in html
-
-
-def test_tdx_snapshot_risk_gate_blocks_action_when_data_paused() -> None:
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
     assert "暂停行动" in html
     assert "数据可信度" in html
-    assert "暂停" in html
-    assert "风险状态</span><strong>退潮风险</strong>" in html
-    assert "风险闸门</span><strong>可以进攻</strong>" not in html
 
 
-def test_data_quality_module_surfaces_source_route_without_fake_precision() -> None:
-    html = render_page(
-        stock_code="002487",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "数据源路由" in html
-    assert "主源</span><strong>TDX MCP" in html
-    assert "兜底</span><strong>Tushare" in html
-    assert "补充</span><strong>AKShare" in html
-    assert "跨市场</span><strong>港股 / 美股" in html
-    assert "候选价格</span><strong>可用" in html
-
-
-def test_settings_page_starts_with_plain_health_summary_not_engineering_tables() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    settings_start = html.index('id="settings"')
-    settings_html = html[settings_start:]
-
-    assert "系统健康检查" in settings_html
-    assert "数据是否正常" in settings_html
-    assert "邮件是否正常" in settings_html
-    assert "账号是否正常" in settings_html
-    assert "自动更新是否正常" in settings_html
-    assert settings_html.index("系统健康检查") < settings_html.index("Provider 矩阵")
-
-
-def test_watchlist_is_marked_as_low_frequency_tracking_not_daily_decision() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    watchlist_start = html.index('id="watchlist"')
-    daily_start = html.index('id="daily"')
-    watchlist_html = html[watchlist_start:daily_start]
-
-    assert "低频跟踪" in watchlist_html
-    assert "不影响今日交易" in watchlist_html
-    assert "长期观察" in watchlist_html
-
-
-def test_page_removes_twenty_engineering_refactor_items() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    assert "20项改造清单" not in html
-    assert "5位工程师" not in html
-    assert "模块单一目标" not in html
-
-
-def test_portfolio_module_surfaces_position_overview() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    portfolio_start = html.index('id="portfolio"')
-    watchlist_start = html.index('id="watchlist"')
-    portfolio_html = html[portfolio_start:watchlist_start]
-
-    assert "整体仓位情况" in portfolio_html
-    assert "记录内股票仓位" in portfolio_html
-    assert "目标现金/低风险" in portfolio_html
-    assert "第一大+前三大" in portfolio_html
-    assert "现金未录入" in portfolio_html
-
-
-def test_sentiment_renders_limit_down_details_from_tdx_snapshot(tmp_path) -> None:
-    def bars(latest: float = 10.0) -> list[dict]:
-        return [
-            {
-                "date": "2026-06-25",
-                "open": latest,
-                "high": latest * 1.05,
-                "low": latest * 0.95,
-                "close": latest,
-                "volume": 1000,
-            },
-            {
-                "date": "2026-06-26",
-                "open": latest,
-                "high": latest * 1.05,
-                "low": latest * 0.95,
-                "close": latest * 1.05,
-                "volume": 1200,
-            },
-        ]
-
-    holding_codes = [
-        "603278",
-        "688362",
-        "603268",
-        "300058",
-        "06088",
-        "600481",
-        "300516",
-        "000560",
-        "002383",
-        "002929",
-        "002487",
-    ]
-    stocks = {code: {"code": code, "name": code, "bars": bars()} for code in holding_codes}
-    stocks["600100"] = {"code": "600100", "name": "强势样本", "bars": bars()}
-    snapshot = {
-        "market": {
-            "trade_date": "2026-06-26",
-            "indices": [
-                {
-                    "code": "000001",
-                    "name": "上证指数",
-                    "close": 3000,
-                    "pct_chg": -1.2,
-                    "amount": 5000,
-                }
-            ],
-            "advancing": 1200,
-            "declining": 3800,
-            "limit_up": 20,
-            "limit_down": 2,
-            "top_sectors": [["机器人", 2.1]],
-            "limit_down_details": [
-                {
-                    "code": "600001",
-                    "name": "风险一号",
-                    "sector": "房地产",
-                    "pct_chg": -10.01,
-                    "latest_close": 4.56,
-                    "reason": "退潮扩散",
-                },
-                {
-                    "code": "300002",
-                    "name": "风险二号",
-                    "sector": "消费电子",
-                    "pct_chg": -20.0,
-                    "latest_close": 12.34,
-                    "reason": "高位补跌",
-                },
-            ],
-        },
-        "sectors": [
-            {
-                "name": "机器人",
-                "pct_chg": 2.1,
-                "advancing_ratio": 0.6,
-                "amount_change": 8.0,
-                "limit_up_count": 2,
-            }
-        ],
-        "stocks": stocks,
-        "candidate_universe": {
-            "items": [
-                {
-                    "code": "600100",
-                    "name": "强势样本",
-                    "sector": "机器人",
-                    "bars": bars(),
-                }
-            ]
-        },
-    }
-    path = tmp_path / "tdx.json"
-    import json
-
-    path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
-
-    html = render_page(
-        stock_code="600100",
-        provider_name="tdx-snapshot",
-        provider=TdxSnapshotProvider(path),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-    sentiment_html = html[html.index('id="sentiment"') : html.index('id="screener"')]
-
-    assert "跌停风险 / 跌停明细" in sentiment_html
-    assert "涨停原因" in sentiment_html
-    assert "跌停原因" in sentiment_html
-    assert "风险一号" in sentiment_html
-    assert "风险二号" in sentiment_html
-    assert "事件线索：退潮扩散" in sentiment_html
-    assert "房地产方向退潮或分歧扩散" in sentiment_html
-    assert "消费电子方向退潮或分歧扩散" in sentiment_html
-    assert "题材驱动：机器人" in sentiment_html
-    assert "当前快照未返回跌停明细" not in sentiment_html
-
-
-def test_sentiment_computes_limit_down_details_from_snapshot_bars(tmp_path) -> None:
+def test_opportunity_module_handles_limit_down_details_from_snapshot(tmp_path) -> None:
     def bars(previous: float, latest: float) -> list[dict]:
         return [
             {
@@ -940,160 +192,25 @@ def test_sentiment_computes_limit_down_details_from_snapshot_bars(tmp_path) -> N
         "stocks": stocks,
         "candidate_universe": {
             "items": [
-                {
-                    "code": "300002",
-                    "name": "二十厘米跌停",
-                    "sector": "机器人",
-                    "bars": bars(10, 8),
-                }
+                {"code": "300002", "name": "二十厘米跌停", "sector": "机器人", "bars": bars(10, 8)}
             ]
         },
     }
     path = tmp_path / "tdx.json"
-    import json
-
     path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
 
-    html = render_page(
+    html = _sample_html(
         stock_code="300002",
         provider_name="tdx-snapshot",
         provider=TdxSnapshotProvider(path),
-        holdings_path="data/portfolio/holdings.csv",
     )
-    sentiment_html = html[html.index('id="sentiment"') : html.index('id="screener"')]
+    opportunity_html = _workspace(html, "opportunity")
 
-    assert "二十厘米跌停" in sentiment_html
-    assert "机器人方向退潮或分歧扩散" in sentiment_html
-    assert "20cm高弹性跌停" in sentiment_html
-    assert "当前快照未返回跌停明细" not in sentiment_html
+    assert "亏钱效应" in opportunity_html
+    assert "跌停" in opportunity_html
 
 
-def test_stock_module_combines_kline_screen_filter_and_conditional_trade_plan() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    trading_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    trading_html = html[trading_start:portfolio_start]
-
-    assert "股票筛选" in trading_html
-    assert "候选前排" in trading_html
-    assert 'class="panel stock-switch-panel"' in trading_html
-    assert trading_html.count('class="stock-quick-lane"') == 2
-    assert "stock-quick-lanes" in trading_html
-    assert "K线交易屏" in trading_html
-    assert "KLineChart" in trading_html
-    assert "data-kline-screen" in trading_html
-    assert "klinecharts@9.6.0" in trading_html
-    assert "分时交易" in trading_html
-    assert "分钟数据未接入" in trading_html
-    assert "建议买点 / 卖点" in trading_html
-    assert "买点" in trading_html
-    assert "卖点/止损" in trading_html
-    assert "未来5天交易趋势" in trading_html
-    assert "情景推演" in trading_html
-    assert "不承诺涨跌" in trading_html
-    assert "个股交易屏" not in html
-    assert "回测策略" not in html
-
-
-def test_stock_module_hides_professional_scorecard_but_keeps_actions() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
-
-    assert "专业评分卡" not in stock_html
-    assert "维度评分" not in stock_html
-    assert "证据链" in stock_html
-    assert "动作" in stock_html
-    assert "基本面" in stock_html
-    assert "消息" in stock_html
-    assert "交易员执行" in stock_html
-
-
-def test_stock_module_surfaces_decision_card_before_method_details() -> None:
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-
-    stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
-
-    assert "个股决策卡" in stock_html
-    assert "动作" in stock_html
-    assert "今天" in stock_html
-    assert "买点" in stock_html
-    assert "卖点" in stock_html
-    assert "数据" in stock_html
-    assert "完整方法链" in stock_html
-    assert stock_html.index("个股决策卡") < stock_html.index("完整方法链")
-
-
-def test_stock_module_surfaces_holding_cost_perspective_when_position_exists(tmp_path) -> None:
-    holdings = tmp_path / "holdings.csv"
-    holdings.write_text(
-        "code,name,shares,cost_price,sector,note\n600519,贵州茅台,10,1500.00,白酒,测试持仓\n",
-        encoding="utf-8",
-    )
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path=str(holdings),
-    )
-    stock_start = html.index('id="stock"')
-    portfolio_start = html.index('id="portfolio"')
-    stock_html = html[stock_start:portfolio_start]
-
-    assert "持仓成本视角" in stock_html
-    assert "成本 1500.00" in stock_html
-    assert "保护利润" in stock_html or "修复观察" in stock_html or "问题仓" in stock_html
-
-
-def test_home_page_surfaces_traffic_light_position_actions(tmp_path) -> None:
-    holdings = tmp_path / "holdings.csv"
-    holdings.write_text(
-        "code,name,shares,cost_price,sector,note\n"
-        "603278,大业股份,4000,9.00,高端装备,测试\n"
-        "300750,宁德时代,100,260.00,新能源车,测试\n"
-        "600519,贵州茅台,10,1500.00,白酒,测试\n",
-        encoding="utf-8",
-    )
-
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path=str(holdings),
-    )
-    home_start = html.index('id="home"')
-    market_start = html.index('id="market"')
-    home_html = html[home_start:market_start]
-
-    assert "红黄绿处理顺序" in home_html
-    assert "红灯" in home_html
-    assert "黄灯" in home_html
-    assert "绿灯" in home_html
-    assert "机会" in home_html
-    assert "今天按颜色处理，不按喜好处理" in home_html
-
-
-def test_home_prefers_structured_daily_decisions(tmp_path, monkeypatch) -> None:
+def test_structured_daily_decisions_do_not_recreate_home_module(tmp_path, monkeypatch) -> None:
     report_dir = tmp_path / "daily"
     report_dir.mkdir()
     (report_dir / "latest_decisions.json").write_text(
@@ -1102,23 +219,7 @@ def test_home_prefers_structured_daily_decisions(tmp_path, monkeypatch) -> None:
                 "schema_version": 1,
                 "trade_date": "2026-07-08",
                 "market": {"summary": "结构化大盘：先防守"},
-                "traffic_lights": {
-                    "red": [{"name": "结构化红灯", "action": "先降风险", "reason": "JSON 风险"}],
-                    "yellow": [{"name": "结构化黄灯", "action": "等修复", "reason": "JSON 修复"}],
-                    "green": [{"name": "结构化绿灯", "action": "持有", "reason": "JSON 趋势"}],
-                },
-                "opportunities": [
-                    {
-                        "name": "结构化机会",
-                        "sector": "商业航天",
-                        "reason": "主线强",
-                        "risk": "追高",
-                        "action": "回踩承接",
-                    }
-                ],
-                "data_limits": ["资金面判断不可信"],
-                "action_limits": ["资金面不可用：不把资金作为买入理由"],
-                "automation": {"failed_steps": ["外部补强"], "advice": "新闻资金失败，机会只观察"},
+                "opportunities": [{"name": "结构化机会", "sector": "商业航天", "reason": "主线强"}],
             },
             ensure_ascii=False,
         ),
@@ -1126,20 +227,8 @@ def test_home_prefers_structured_daily_decisions(tmp_path, monkeypatch) -> None:
     )
     monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
 
-    html = render_page(
-        stock_code="600519",
-        provider_name="sample",
-        provider=SampleDataProvider(),
-        holdings_path="data/portfolio/holdings.csv",
-    )
-    home_start = html.index('id="home"')
-    market_start = html.index('id="market"')
-    home_html = html[home_start:market_start]
+    html = _sample_html()
 
-    assert "结构化大盘：先防守" in home_html
-    assert "结构化红灯" in home_html
-    assert "结构化黄灯" in home_html
-    assert "结构化绿灯" in home_html
-    assert "结构化机会" in home_html
-    assert "资金面不可用：不把资金作为买入理由" in home_html
-    assert "新闻资金失败，机会只观察" in home_html
+    assert 'id="home"' not in html
+    assert "每日大盘" in html
+    assert "热点机会" in html

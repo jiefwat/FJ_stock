@@ -44,7 +44,7 @@ def test_web_renders_portfolio_advice_and_holding_entry() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "持仓列表" in html
+    assert "持仓风险处置" in html
     assert "我的持仓" in html
     assert "总市值" in html
     assert "累计盈亏" in html

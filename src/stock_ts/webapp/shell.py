@@ -87,17 +87,27 @@ def app_script() -> str:
     const moduleToWorkspace = {MODULE_TO_WORKSPACE!r};
     const workspaceLabels = {labels!r};
     const workspaceModules = {WORKSPACE_MODULES!r};
-    const legacyWorkspaces = {{
-      'sectors': 'sector',
-      'limit-up': 'sentiment',
-      'limit-down': 'sentiment',
-      'smart-select': 'screener',
-      'report': 'daily',
+      const legacyWorkspaces = {{
+      'home': 'market',
+      'sector': 'opportunity',
+      'sectors': 'opportunity',
+      'sentiment': 'opportunity',
+      'limit-up': 'opportunity',
+      'limit-down': 'opportunity',
+      'screener': 'opportunity',
+      'smart-select': 'opportunity',
+      'opportunities': 'opportunity',
+      'candidates': 'opportunity',
+      'report': 'market',
+      'daily': 'market',
       'assist': 'stock',
       'chart': 'stock',
       'stock-chart': 'stock',
-      'status': 'notify',
-      'data-quality': 'settings'
+      'watchlist': 'stock',
+      'status': 'market',
+      'notify': 'market',
+      'settings': 'market',
+      'data-quality': 'market'
     }};
 
     function activatePanel(workspace, moduleKey) {{

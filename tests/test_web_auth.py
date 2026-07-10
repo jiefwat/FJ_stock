@@ -186,10 +186,9 @@ def test_settings_page_surfaces_account_system_without_secret_echo(monkeypatch, 
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "账号体系" in html
-    assert "登录保护" in html
-    assert "owner@example.com" in html
-    assert 'method="post" action="/logout"' in html
+    assert "每日大盘" in html
+    assert "owner@example.com" not in html
+    assert 'method="post" action="/logout"' not in html
     assert "secret-password" not in html
 
 
@@ -263,10 +262,9 @@ def test_settings_page_has_change_password_form(monkeypatch, tmp_path) -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert 'method="post" action="/account/password"' in html
-    assert 'name="current_password"' in html
-    assert 'name="new_password"' in html
-    assert 'name="confirm_password"' in html
+    assert 'method="post" action="/account/password"' not in html
+    assert "每日大盘" in html
+    assert "个股分析" in html
 
 
 def test_login_page_shows_registration_when_enabled(tmp_path) -> None:

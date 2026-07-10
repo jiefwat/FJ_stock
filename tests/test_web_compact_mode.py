@@ -29,31 +29,16 @@ def test_web_modules_keep_only_core_content_without_narration() -> None:
         "当前会话的输入选择",
         "真实执行时使用的数据适配器",
         "A-Share Desk",
-        "候选分层",
-        "观察条件",
-        "外发前必看",
         "发送前流程",
         "多轮对抗",
         "首页只保留的摘要",
-        "主线证据",
         "评分角度",
         "怎么用",
-        "真实发送已关闭",
     ]
     for phrase in removed_phrases:
         assert phrase not in html
 
-    required_core = [
-        "今日大盘",
-        "主线板块",
-        "涨跌停情绪",
-        "智能选股",
-        "我的持仓",
-        "个股分析",
-        "每日复盘",
-        "消息自动化",
-        "TDX MCP",
-    ]
+    required_core = ["每日大盘", "我的持仓", "个股分析", "热点机会", "TDX MCP"]
     for phrase in required_core:
         assert phrase in html
 
@@ -71,6 +56,7 @@ def test_compact_stock_module_has_single_core_surface() -> None:
     assert "当前动作" in html
     assert "买点" in html
     assert "止损" in html
+    assert "个股三面复核" in html
 
 
 def test_error_page_uses_current_workspace_shell() -> None:
@@ -78,8 +64,9 @@ def test_error_page_uses_current_workspace_shell() -> None:
 
     html = render_error_page("provider failed", provider_name="tdx-snapshot")
 
-    assert 'href="#settings"' in html
-    assert 'data-workspace="settings"' in html
+    assert 'href="#market"' in html
+    assert 'href="#opportunity"' in html
+    assert 'data-workspace="market"' in html
     assert "data-view=" not in html
     assert "module-overview" not in html
     assert 'class="app-toolbar"' not in html
@@ -140,6 +127,6 @@ def test_web_hides_framework_and_method_packaging_words() -> None:
     for word in noisy_words:
         assert word not in html
 
-    assert "未来机会" in html
+    assert "热点机会" in html
     assert "触发" in html
     assert "数据状态" in html

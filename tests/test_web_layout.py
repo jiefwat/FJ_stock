@@ -6,21 +6,47 @@ def test_web_page_uses_structured_workbench_layout() -> None:
 
     assert 'class="app-shell"' in html
     assert 'class="sidebar"' in html
-    assert 'id="module-home"' in html
     assert 'id="module-market"' in html
-    assert 'id="module-sector"' in html
-    assert 'id="module-sentiment"' in html
-    assert 'id="module-screener"' in html
     assert 'id="module-portfolio"' in html
     assert 'id="module-stock"' in html
-    assert 'id="module-trading"' not in html
-    assert 'id="module-backtest"' not in html
-    assert 'id="module-watchlist"' in html
-    assert 'id="module-daily"' in html
-    assert 'id="module-notify"' in html
-    assert 'id="module-settings"' in html
+    assert 'id="module-opportunity"' in html
+    assert html.count('class="workspace-pane') == 4
+    assert 'data-workspace="market"' in html
+    assert 'data-workspace="portfolio"' in html
+    assert 'data-workspace="stock"' in html
+    assert 'data-workspace="opportunity"' in html
+    assert "每日大盘" in html
+    assert "我的持仓" in html
+    assert "个股分析" in html
+    assert "热点机会" in html
+    for removed in [
+        'id="module-home"',
+        'id="module-sector"',
+        'id="module-sentiment"',
+        'id="module-screener"',
+        'id="module-trading"',
+        'id="module-backtest"',
+        'id="module-watchlist"',
+        'id="module-daily"',
+        'id="module-notify"',
+        'id="module-settings"',
+    ]:
+        assert removed not in html
     assert 'class="data-table portfolio-table"' in html
     assert "<pre>" not in html
+
+
+def test_four_modules_explain_professional_data_flow() -> None:
+    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
+
+    assert "数据链路：K线 / 资金面 / 消息面" in html
+    assert "每日大盘 · 仓位闸门" in html
+    assert "持仓风险处置" in html
+    assert "个股三面复核" in html
+    assert "热点机会 · 主题雷达" in html
+    assert "板块热度" in html
+    assert "情绪温度" in html
+    assert "候选观察池" in html
 
 
 def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None:
@@ -30,116 +56,18 @@ def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None
     assert 'class="risk-pill' in html
     assert "table-note" in html
     assert 'class="report-copy"' not in html
-    assert "已配置" in html or "待配置" in html
-    assert "消息自动化" in html
-    assert "每日复盘" in html
+    assert "TDX MCP" in html
+    assert "热点机会" in html
 
 
-def test_web_daily_module_surfaces_latest_automated_artifact(tmp_path, monkeypatch) -> None:
-    report_dir = tmp_path / "daily"
-    report_dir.mkdir()
-    (report_dir / "latest.md").write_text(
-        "\n".join(
-            [
-                "# StockTS 每日深度复盘",
-                "",
-                "## 今日一句话",
-                "",
-                "- 自动报告已生成",
-                "",
-                "## 持仓分析",
-                "",
-                "- 组合先看风险。",
-                "",
-                "## 数据边界",
-                "",
-                "- 港股 06088 不在 A 股 TDX 全市场刷新范围内。",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (report_dir / "latest.status").write_text(
-        "status=ok\nprovider=sample\ntrade_date=2026-06-05\ngenerated_at=2026-06-05T16:30:00\n",
-        encoding="utf-8",
-    )
-    (report_dir / "pipeline.status").write_text(
-        "status=ok\n"
-        "generated_at=2026-06-05T17:00:00\n"
-        "refresh=ok\n"
-        "tdx_enrich=ok\n"
-        "external_enrich=failed:timeout\n"
-        "announcements=ok\n"
-        "report=ok\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
-
+def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
-
-    assert "最新自动日报" in html
-    assert "自动报告已生成" in html
-    assert "2026-06-05T16:30:00" in html
-    assert "港股 06088" in html
-    assert "latest.html" not in html
-    assert "latest.md" not in html
-    assert "Markdown" not in html
-    assert "HTML" not in html
-    assert "查看完整报告" in html
-    assert "复制报告" in html
-    assert "流水线状态" in html
-    assert "外部补强" in html
-    assert "failed:timeout" not in html
-    assert "失败：超时" in html
-    assert "公告" in html
-
-
-def test_web_surfaces_automation_monitor_from_pipeline_status(tmp_path, monkeypatch) -> None:
-    report_dir = tmp_path / "daily"
-    report_dir.mkdir()
-    (report_dir / "pipeline.status").write_text(
-        "status=ok\n"
-        "generated_at=2026-07-08T10:00:00\n"
-        "refresh=ok\n"
-        "tdx_enrich=ok\n"
-        "external_enrich=failed:timeout\n"
-        "announcements=ok\n"
-        "report=ok\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
-
-    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
-
-    assert "自动更新监控" in html
-    assert "每 2 小时" in html
-    assert "最近运行" in html
-    assert "2026-07-08T10:00:00" in html
-    assert "外部补强" in html
-    assert "失败：超时" in html
-    assert "处理建议" in html
-    assert "先看 pipeline.status，再看定时任务日志" in html
-
-
-def test_web_home_is_daily_action_desk_with_portfolio_queue_and_stock_drawer() -> None:
-    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
-
-    assert "今日行动台" in html
-    assert "先处理风险" in html
-    assert "再看机会" in html
-    assert "最后看数据" in html
-    assert "建议仓位" in html
-    assert "最大风险持仓" in html
-    assert "今日机会首位" in html
-    assert "数据更新时间" in html
-    assert "class=\"action-desk" in html
 
     assert "持仓处理队列" in html
     assert "必须先处理" in html
     assert "保护利润" in html
     assert "修复观察" in html
     assert "继续持有" in html
-
     assert "个股证据抽屉" in html
     assert "交易触发" in html
     assert "风险原因" in html
@@ -147,46 +75,8 @@ def test_web_home_is_daily_action_desk_with_portfolio_queue_and_stock_drawer() -
     assert "数据状态" in html
 
 
-def test_web_home_surfaces_commuter_decision_brief() -> None:
-    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
-    home_start = html.index('id="home"')
-    market_start = html.index('id="market"')
-    home_html = html[home_start:market_start]
-
-    assert "今日交易简报" in home_html
-    assert "今天先防守还是进攻" in home_html
-    assert "持仓先处理" in home_html
-    assert "今日机会 10" in home_html
-    assert "今天不要做什么" in home_html
-    assert "不是买点不追" in home_html
-
-
-def test_home_grid_assigns_daily_action_children_to_full_rows() -> None:
+def test_four_module_grid_drops_home_specific_rules() -> None:
     from stock_ts.webapp.styles import CSS
 
-    assert "#module-home > .action-desk" in CSS
-    assert "#module-home > .home-brief" in CSS
-    assert "#module-home > .panel:not(.home-brief)" in CSS
-    assert "grid-column: 1 / -1" in CSS
-
-
-def test_automation_monitor_frontloads_stale_execution_guard(tmp_path, monkeypatch) -> None:
-    report_dir = tmp_path / "daily"
-    report_dir.mkdir()
-    (report_dir / "pipeline.status").write_text(
-        "status=ok\n"
-        "generated_at=2026-06-26T18:00:00\n"
-        "refresh=ok\n"
-        "tdx_enrich=ok\n"
-        "external_enrich=ok\n"
-        "announcements=ok\n"
-        "report=ok\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
-
-    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
-
-    assert "执行可用性" in html
-    assert "先别按今天盘面执行" in html
-    assert "已滞后" in html
+    assert "#module-home > .action-desk" not in CSS
+    assert "#module-home > .home-brief" not in CSS

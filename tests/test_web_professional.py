@@ -15,7 +15,7 @@ def test_web_resolves_chinese_name_and_renders_professional_deep_sections() -> N
     assert "综合机会评分" in html
     assert "多轮对抗" not in html
     assert "失效" in html
-    assert "数据质量" in html
+    assert "数据状态" in html
     assert "TDX MCP" in html
     assert "行情日期早于大盘交易日" not in html
 
