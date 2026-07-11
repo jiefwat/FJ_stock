@@ -295,6 +295,18 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
                     amount=15.0,
                 ),
                 CandidateStockRawData(
+                    code="600005",
+                    name="未知强势股",
+                    sector="未识别主题",
+                    bars=[
+                        DailyBar("2026-07-09", 15, 15.2, 14.8, 15.0, 1000),
+                        DailyBar("2026-07-10", 15.1, 17.1, 15.0, 16.8, 2600),
+                    ],
+                    fund_flow=1.5,
+                    turnover_rate=12.0,
+                    amount=16.0,
+                ),
+                CandidateStockRawData(
                     code="600003",
                     name="弱势白酒",
                     sector="白酒",
@@ -325,12 +337,14 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
         "强势机器人B 7.50%",
         "强势算力 7.00%",
         "弱势白酒 -7.33%",
+        "未知强势股 12.00%",
         "资金流入",
         "资金流出",
-        "&gt;6% 样本 3",
+        "&gt;6% 样本 4",
         "&lt;-6% 样本 1",
     ]:
         assert text in market_html
+    assert "未识别主题：1只大涨" not in market_html
 
 
 

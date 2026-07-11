@@ -5119,11 +5119,13 @@ def _wide_move_theme_stats(
     for item in down_rows:
         theme = item.sector or "未分类"
         stats.setdefault(theme, {"up": 0, "down": 0})["down"] += 1
-    return sorted(
+    sorted_stats = sorted(
         stats.items(),
         key=lambda item: (item[1]["up"] + item[1]["down"], item[1]["up"], -item[1]["down"]),
         reverse=True,
     )
+    known_stats = [item for item in sorted_stats if _is_known_theme(item[0])]
+    return known_stats or sorted_stats
 
 
 def _wide_move_theme_conclusion(stats: list[tuple[str, dict[str, int]]]) -> str:
