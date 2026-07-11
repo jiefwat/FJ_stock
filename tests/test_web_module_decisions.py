@@ -409,6 +409,62 @@ def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
         assert shallow_text not in opportunity_html
 
 
+def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> None:
+    class DiverseCandidateProvider(SampleDataProvider):
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300111",
+                    name="趋势强股",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.1, 10.7, 10.0, 10.6, 1300),
+                        DailyBar("2026-07-08", 10.7, 11.2, 10.5, 11.0, 1700),
+                        DailyBar("2026-07-09", 11.0, 11.7, 10.9, 11.5, 2200),
+                        DailyBar("2026-07-10", 11.5, 12.4, 11.4, 12.2, 3200),
+                    ],
+                    fund_flow=2.3,
+                    turnover_rate=8.8,
+                    amount=22.5,
+                    pe_ttm=38,
+                ),
+                CandidateStockRawData(
+                    code="300222",
+                    name="冲高回落",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 20.0, 20.5, 19.8, 20.2, 2000),
+                        DailyBar("2026-07-07", 20.3, 22.5, 20.1, 22.0, 4200),
+                        DailyBar("2026-07-08", 22.2, 23.0, 21.6, 21.8, 3900),
+                        DailyBar("2026-07-09", 21.7, 22.1, 20.9, 21.1, 3600),
+                        DailyBar("2026-07-10", 21.0, 21.2, 20.0, 20.4, 3300),
+                    ],
+                    fund_flow=-0.7,
+                    turnover_rate=11.2,
+                    amount=18.0,
+                    pe_ttm=72,
+                ),
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=DiverseCandidateProvider(), provider_name="tdx-snapshot"),
+        "opportunity",
+    )
+
+    for text in ["一周趋势", "资金面", "技术面", "消息面"]:
+        assert text in opportunity_html
+
+    assert "趋势强股" in opportunity_html
+    assert "冲高回落" in opportunity_html
+    assert "近5日上涨" in opportunity_html
+    assert "近5日转弱" in opportunity_html
+    assert "净流入" in opportunity_html
+    assert "净流出" in opportunity_html
+    assert "消息面：未接入个股新闻" in opportunity_html
+    assert opportunity_html.count("个股原因：所属板块强度靠前，具备主线筛选价值") <= 1
+
+
 def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     html = _sample_html()
     opportunity_html = _workspace(html, "opportunity")

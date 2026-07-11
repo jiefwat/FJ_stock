@@ -23,6 +23,7 @@ from .config import get_settings, save_dotenv_values
 from .daily_decisions import read_decision_artifact
 from .data_sources import build_data_source_matrix
 from .deep_models import DeepStockReport
+from .indicators import pct_change, sma
 from .models import (
     CandidatePoolReport,
     CandidateStockAnalysis,
@@ -4428,9 +4429,11 @@ def _render_opportunity_recommendation_rows(
         _render_opportunity_recommendation_sector_row(item, candidate_universe)
         for item in sectors.sectors[:3]
     )
+    raw_by_code = _candidate_raw_lookup(candidate_universe)
     candidate_rows = "".join(
         _render_opportunity_recommendation_candidate_row(
             item,
+            raw=raw_by_code.get(item.code),
             provider_name=provider_name,
             holdings_path=holdings_path,
             pool_price_reliable=candidates.price_reliable,
@@ -4444,12 +4447,13 @@ def _render_opportunity_recommendation_rows(
 def _render_opportunity_recommendation_candidate_row(
     item: CandidateStockAnalysis,
     *,
+    raw: CandidateStockRawData | None = None,
     provider_name: str,
     holdings_path: str,
     pool_price_reliable: bool,
     quality: DataQualityView | None = None,
 ) -> str:
-    reason = _opportunity_candidate_cause(item)
+    reason = _opportunity_candidate_cause(item, raw=raw)
     reason = f"个股原因：{reason}"
     stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
     if stale:
@@ -4469,7 +4473,27 @@ def _render_opportunity_recommendation_candidate_row(
     )
 
 
-def _opportunity_candidate_cause(item: CandidateStockAnalysis) -> str:
+def _candidate_raw_lookup(
+    candidate_universe: list[CandidateStockRawData],
+) -> dict[str, CandidateStockRawData]:
+    return {item.code: item for item in candidate_universe}
+
+
+def _opportunity_candidate_cause(
+    item: CandidateStockAnalysis,
+    *,
+    raw: CandidateStockRawData | None = None,
+) -> str:
+    if raw is not None and raw.bars:
+        return "；".join(
+            [
+                _opportunity_week_trend_reason(raw),
+                _opportunity_technical_reason(raw),
+                _opportunity_fund_reason(raw),
+                _opportunity_news_reason(raw),
+                _opportunity_valuation_reason(raw),
+            ]
+        )
     causes: list[str] = []
     raw_reasons = item.reasons[:4]
     if any("强度" in reason for reason in raw_reasons):
@@ -4485,6 +4509,96 @@ def _opportunity_candidate_cause(item: CandidateStockAnalysis) -> str:
     if not causes:
         causes = raw_reasons or ["等待补充技术、资金或消息证据"]
     return "；".join(causes[:3])
+
+
+def _opportunity_week_trend_reason(raw: CandidateStockRawData) -> str:
+    bars = raw.bars[-5:]
+    if len(bars) < 2:
+        return "一周趋势：K线不足，不能判断周内延续"
+    week_pct = pct_change(bars[0].close, bars[-1].close)
+    up_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close > previous.close)
+    down_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close < previous.close)
+    latest_pct = pct_change(bars[-2].close, bars[-1].close)
+    recent_high = max(bar.close for bar in bars)
+    pullback_from_high = pct_change(recent_high, bars[-1].close)
+    if down_days >= 2 and pullback_from_high <= -4:
+        state = (
+            f"近5日转弱 {week_pct:.2f}%，从周内高点回落 {pullback_from_high:.2f}%，"
+            "先看承接是否恢复"
+        )
+    elif week_pct >= 8 and up_days >= 3:
+        state = f"近5日上涨 {week_pct:.2f}%，{up_days} 天收涨，趋势延续较强"
+    elif week_pct >= 3:
+        state = f"近5日上涨 {week_pct:.2f}%，但需看是否继续放量"
+    elif week_pct <= -3 and down_days >= 2:
+        state = f"近5日转弱 {week_pct:.2f}%，反弹前先看止跌"
+    elif latest_pct < -2:
+        state = f"近5日震荡 {week_pct:.2f}%，最新一日回落 {latest_pct:.2f}%"
+    else:
+        state = f"近5日震荡 {week_pct:.2f}%，还不是单边趋势"
+    return f"一周趋势：{state}"
+
+
+def _opportunity_technical_reason(raw: CandidateStockRawData) -> str:
+    closes = [bar.close for bar in raw.bars]
+    latest = raw.bars[-1]
+    ma5 = sma(closes, min(5, len(closes))) or latest.close
+    ma10 = sma(closes, min(10, len(closes))) or ma5
+    recent_high = max(bar.high for bar in raw.bars[-5:])
+    recent_low = min(bar.low for bar in raw.bars[-5:])
+    if latest.close >= ma5 >= ma10:
+        trend = f"站上5日线 {ma5:.2f}，短线结构偏强"
+    elif latest.close >= ma5:
+        trend = f"站上5日线 {ma5:.2f}，但10日线仍需确认"
+    else:
+        trend = f"低于5日线 {ma5:.2f}，技术面先降级观察"
+    return f"技术面：{trend}；5日区间 {recent_low:.2f}-{recent_high:.2f}"
+
+
+def _opportunity_fund_reason(raw: CandidateStockRawData) -> str:
+    volumes = [bar.volume for bar in raw.bars]
+    volume_ratio = _candidate_volume_ratio(volumes)
+    fund_flow = raw.fund_flow or 0.0
+    amount_text = f"成交额 {raw.amount:.1f}亿" if raw.amount else "成交额待补"
+    turnover_text = f"换手 {raw.turnover_rate:.1f}%" if raw.turnover_rate else "换手待补"
+    if fund_flow > 0:
+        flow = f"净流入 {fund_flow:.2f}亿"
+    elif fund_flow < 0:
+        flow = f"净流出 {abs(fund_flow):.2f}亿"
+    else:
+        flow = "净流向待确认"
+    if volume_ratio >= 1.3:
+        volume = f"量能放大 {volume_ratio:.2f}x"
+    elif volume_ratio <= 0.8 and volume_ratio > 0:
+        volume = f"量能收缩 {volume_ratio:.2f}x"
+    elif volume_ratio > 0:
+        volume = f"量能平稳 {volume_ratio:.2f}x"
+    else:
+        volume = "量能待补"
+    return f"资金面：{flow}，{volume}，{turnover_text}，{amount_text}"
+
+
+def _candidate_volume_ratio(volumes: list[float]) -> float:
+    if len(volumes) < 2:
+        return 0.0
+    latest = volumes[-1]
+    base = sum(volumes[-5:]) / min(len(volumes), 5)
+    return latest / base if base else 0.0
+
+
+def _opportunity_news_reason(raw: CandidateStockRawData) -> str:
+    del raw
+    return "消息面：未接入个股新闻，不作为推荐理由"
+
+
+def _opportunity_valuation_reason(raw: CandidateStockRawData) -> str:
+    if raw.pe_ttm is None:
+        return "基本面：估值待补，不能用低估值解释机会"
+    if raw.pe_ttm >= 70:
+        return f"基本面：PE(TTM) {raw.pe_ttm:.1f} 偏高，防止题材高位分歧"
+    if raw.pe_ttm <= 25:
+        return f"基本面：PE(TTM) {raw.pe_ttm:.1f} 相对不高，估值压力较小"
+    return f"基本面：PE(TTM) {raw.pe_ttm:.1f}，重点看业绩与题材是否匹配"
 
 
 def _render_opportunity_recommendation_sector_row(
