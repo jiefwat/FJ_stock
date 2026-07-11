@@ -3310,25 +3310,45 @@ body {
   .market-sector-duo { grid-template-columns:1fr; }
 }
 
-.market-event-summary-list {
+.market-event-card-list {
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:8px 14px;
-  margin:12px 0 0;
-  padding:0;
-  list-style:none;
+  gap:10px;
+  margin-top:14px;
 }
-.market-event-summary {
-  border-bottom:1px solid var(--line);
-  padding:9px 0;
+.market-event-card {
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:#fffdfa;
+  padding:13px 15px;
+}
+.market-event-head {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px 10px;
+  margin-bottom:8px;
+}
+.market-event-theme {
+  border:1px solid #dccba9;
+  background:#f8f0df;
+  color:#765622;
+  border-radius:999px;
+  padding:5px 9px;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.market-event-stocks {
   color:var(--ink);
-  font-size:13px;
-  line-height:1.5;
+  font-weight:800;
+  line-height:1.45;
 }
-@media (max-width:680px) {
-  .market-event-summary-list { grid-template-columns:1fr; }
+.market-event-reason {
+  margin:0;
+  color:var(--ink-soft);
+  line-height:1.65;
+  overflow-wrap:anywhere;
 }
-
 
 .stock-data-audit-panel {
   margin:16px 0;

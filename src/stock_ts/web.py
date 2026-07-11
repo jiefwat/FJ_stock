@@ -310,6 +310,12 @@ h1 {
 .note-list { margin:0; padding-left:18px; color:var(--muted); line-height:1.7; }
 .sector-strip { display:grid; gap:10px; }
 .sector-item { display:grid; grid-template-columns: 90px minmax(0, 1fr) 54px; align-items:center; gap:12px; }
+.market-event-card-list { display:grid; gap:10px; margin-top:14px; }
+.market-event-card { border:1px solid var(--line); border-radius:16px; background:#fffdfa; padding:13px 15px; }
+.market-event-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:8px; }
+.market-event-theme { border:1px solid #dccba9; background:#f8f0df; color:#765622; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
+.market-event-stocks { color:var(--ink); font-weight:800; line-height:1.45; }
+.market-event-reason { margin:0; color:var(--ink-soft); line-height:1.65; overflow-wrap:anywhere; }
 .data-table { width:100%; border-collapse:separate; border-spacing:0 9px; font-size:14px; }
 .data-table th { text-align:left; color:var(--muted); font-size:12px; font-weight:800; padding:0 10px 2px; }
 .data-table td { background:rgba(255,255,255,.86); border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:12px 10px; vertical-align:top; }
@@ -5218,19 +5224,17 @@ def _market_event_summaries(
 def _render_market_event_summary_list(rows: list[dict[str, str]]) -> str:
     if not rows:
         return "<div class='empty-state'><strong>暂无可映射异动</strong></div>"
-    body = "".join(
-        "<tr>"
-        f"<td>{escape(row['theme'])}</td>"
-        f"<td>{escape(row['stocks'])}</td>"
-        f"<td>{escape(row['reason'])}</td>"
-        "</tr>"
+    cards = "".join(
+        "<article class=\"market-event-card\">"
+        "<div class=\"market-event-head\">"
+        f"<span class=\"market-event-theme\">对应主题：{escape(row['theme'])}</span>"
+        f"<strong class=\"market-event-stocks\">对应股票：{escape(row['stocks'])}</strong>"
+        "</div>"
+        f"<p class=\"market-event-reason\"><strong>事件原因：</strong>{escape(row['reason'])}</p>"
+        "</article>"
         for row in rows
     )
-    return (
-        "<table class='data-table market-event-summary-list'>"
-        "<thead><tr><th>对应主题</th><th>对应股票</th><th>事件原因</th></tr></thead>"
-        f"<tbody>{body}</tbody></table>"
-    )
+    return f'<div class="market-event-card-list">{cards}</div>'
 
 
 def _candidate_price_mover_events(

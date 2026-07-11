@@ -903,3 +903,12 @@ def test_market_module_builds_price_movers_from_candidate_scan_without_news() ->
     assert "对应主题" in market_html
     assert "对应股票" in market_html
     assert "价格异动" in market_html
+
+
+def test_market_event_panel_uses_compact_card_layout_not_wide_table() -> None:
+    html = _sample_html()
+    market_html = _workspace(html, "market")
+
+    assert 'class="market-event-card-list"' in market_html
+    assert 'class="market-event-card"' in market_html
+    assert "market-event-summary-list" not in html
