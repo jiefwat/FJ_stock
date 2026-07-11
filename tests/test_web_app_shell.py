@@ -89,7 +89,7 @@ def test_each_workspace_contains_its_own_core_module_content() -> None:
     expected = {
         "market": "股票涨跌统计",
         "portfolio": "持仓股票分析",
-        "stock": "股票摘要",
+        "stock": "分析内容",
         "opportunity": "候选列表",
     }
     for workspace, marker in expected.items():

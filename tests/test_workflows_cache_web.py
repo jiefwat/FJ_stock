@@ -62,7 +62,6 @@ def test_render_page_accepts_provider_and_holdings_query_values() -> None:
     )
 
     assert "数据中台" in html
-    assert "TDX MCP" in html
     assert "请求数据源" not in html
     assert "000001" in html
     assert 'id="workspace-market"' in html
@@ -83,7 +82,7 @@ def test_render_page_accepts_empty_holdings_file(tmp_path: Path) -> None:
     assert "系统暂时无法生成复盘" not in html
     assert "持仓 0 只" in html
     assert "还没有持仓" in html
-    assert "添加持仓" in html
+    assert "添加持仓" not in html
 
 
 def test_json_cache_store_roundtrips_payload_with_metadata(tmp_path: Path) -> None:

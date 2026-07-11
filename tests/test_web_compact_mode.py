@@ -38,7 +38,7 @@ def test_web_modules_keep_only_core_content_without_narration() -> None:
     for phrase in removed_phrases:
         assert phrase not in html
 
-    required_core = ["每日大盘", "我的持仓", "个股分析", "热点机会", "TDX MCP"]
+    required_core = ["每日大盘", "我的持仓", "个股分析", "热点机会", "数据中台"]
     for phrase in required_core:
         assert phrase in html
 
@@ -54,9 +54,9 @@ def test_compact_stock_module_has_single_core_surface() -> None:
     assert 'class="stock-tabs"' not in html
     assert "data-stock-tab-trigger" not in html
     assert "当前动作" in html
-    assert "买点" in html
+    assert "买入/加仓" in html
     assert "止损" in html
-    assert "多维诊断" in html
+    assert "分析内容" in html
 
 
 def test_error_page_uses_current_workspace_shell() -> None:

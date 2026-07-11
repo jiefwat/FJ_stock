@@ -120,12 +120,10 @@ def test_web_renders_daily_and_total_pnl_with_holding_stock_view(tmp_path: Path)
         holdings_path=str(holdings_file),
     )
 
-    assert "当日盈亏" in html
-    assert "总盈亏" in html
-    assert "我的持仓视角" in html
-    assert "我的成本价" in html
-    assert "距离成本价" in html
-    assert "后续分析已结合你的成本价" in html
+    assert "持仓/成本" in html
+    assert "成本" in html
+    assert "后续建议" in html
+    assert "未来涨跌预测" in html
 
 
 def test_web_forms_keep_user_in_target_modules(tmp_path: Path) -> None:

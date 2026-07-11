@@ -105,7 +105,7 @@ def test_web_renders_professional_technical_and_announcement_sections():
         announcement_fetcher=lambda query, limit=5: report,
     )
 
-    assert "证据链" in html
-    assert "公告" in html
+    assert "分析内容" in html
+    assert "消息/公告" in html
     assert "减持股份结果公告" in html
-    assert "个股决策卡" in html
+    assert "后续建议" in html

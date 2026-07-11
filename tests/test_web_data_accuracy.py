@@ -1018,4 +1018,4 @@ def test_web_opens_candidate_stock_when_tdx_stock_detail_is_missing(
     assert "系统暂时无法生成复盘" not in html
     assert "兴业科技" in html
     assert "个股分析" in html
-    assert "证据链" in html
+    assert "分析内容" in html

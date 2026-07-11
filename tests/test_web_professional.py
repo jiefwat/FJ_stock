@@ -12,11 +12,11 @@ def test_web_resolves_chinese_name_and_renders_professional_deep_sections() -> N
     assert "603278" in html
     assert "示例股票（大业股份）" not in html
     assert "个股分析" in html
-    assert "综合机会评分" in html
+    assert "机会评分" in html
     assert "多轮对抗" not in html
     assert "失效" in html
-    assert "数据状态" in html
-    assert "TDX MCP" in html
+    assert "数据可信度" in html
+    assert "K线数据" in html
     assert "行情日期早于大盘交易日" not in html
 
 
@@ -28,7 +28,6 @@ def test_web_topbar_keeps_provider_copy_compact() -> None:
     )
 
     assert "数据中台" in html
-    assert "TDX MCP" in html
     assert "请求数据源" not in html
     assert "实际 Provider" not in html
     assert "真实执行时使用的数据适配器" not in html

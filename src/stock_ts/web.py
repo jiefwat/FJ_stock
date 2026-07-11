@@ -6172,32 +6172,11 @@ def _render_compact_stock_module(
     provider_name: str,
     holdings_path: str,
 ) -> str:
+    del candidates, candidate_source, candidate_strategy_label, candidate_evidence
     driver = stock.upside.drivers[0] if stock.upside.drivers else stock.final_conclusion
     risk = stock.risks[0] if stock.risks else "暂无"
     invalid = stock.invalid_conditions[0] if stock.invalid_conditions else trade_plan.stop_loss
-    announcement_rows = _render_announcement_rows(announcement_report)
-    holding_view = _render_stock_holding_view(stock.code, portfolio)
-    evidence_drawer = _render_stock_evidence_drawer(
-        stock=stock,
-        stock_raw=stock_raw,
-        technical=technical,
-        event_radar=event_radar,
-        trade_plan=trade_plan,
-        quality=quality,
-        driver=driver,
-        risk=risk,
-        invalid=invalid,
-    )
-    professional_brief = _render_stock_professional_brief(
-        stock=stock,
-        portfolio=portfolio,
-        quality=quality,
-        trade_plan=trade_plan,
-        driver=driver,
-        risk=risk,
-        invalid=invalid,
-    )
-    diagnosis = _render_stock_multidimensional_diagnosis(
+    analysis_content = _render_stock_simple_analysis_content(
         stock=stock,
         stock_raw=stock_raw,
         sectors=sectors,
@@ -6209,55 +6188,302 @@ def _render_compact_stock_module(
         trade_plan=trade_plan,
         invalid=invalid,
     )
-    final_summary = _render_stock_final_summary(
-        stock=stock,
-        quality=quality,
-        trade_plan=trade_plan,
-        driver=driver,
-        risk=risk,
-        invalid=invalid,
-        event_radar=event_radar,
-    )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先看当前结论，再核对技术面、基本面、资金面、消息公告、板块主题和成本位置。</p></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
-      {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
-      {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
-      {_render_stock_candidate_context(candidate_source, candidate_strategy_label, candidate_evidence)}
-      {professional_brief}
-      {diagnosis}
-      {final_summary}
-      <div class="panel" style="margin-bottom:16px">
-        <div class="editor-toolbar"><div><h3>股票摘要</h3><p class="section-subtitle">价格、交易日、趋势和风险用于人工确认当前标的是否正确。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
-      </div>
-      <div class="stock-workspace-drawer">
-        <div>
-          <div class="ticket-grid">
-            <div class="ticket-card"><span>收盘</span><strong>{stock.latest_close:.2f}</strong></div>
-            <div class="ticket-card"><span>日期</span><strong>{escape(stock.trade_date)}</strong></div>
-            <div class="ticket-card"><span>趋势</span><strong>{escape(stock.trend)}</strong></div>
-            <div class="ticket-card"><span>风险</span><strong>{escape(stock.risk_level)}</strong></div>
-          </div>
-          <details class="detail-shell">
-            <summary>数据质量与K线详情</summary>
-            <div class="detail-body">
-              {holding_view}
-              {_render_stock_required_data_audit(stock_raw)}
-              {_render_stock_kline_panel(stock, stock_raw, portfolio, quality, technical, trade_plan, event_radar)}
-            </div>
-          </details>
-          <details class="detail-shell">
-            <summary>公告</summary>
-            <div class="detail-body">
-              <div class="metric-list"><div class="metric-line"><span>事件闸门</span><strong>{escape(event_radar.gate)}</strong></div><div class="metric-line"><span>事件风险分</span><strong>{event_radar.risk_score}/100</strong></div></div>
-              <table class="data-table"><thead><tr><th>日期</th><th>标题</th><th>风险</th><th>链接</th></tr></thead><tbody>{announcement_rows}</tbody></table>
-            </div>
-          </details>
-          {_render_stock_compact_research_panel(stock, stock_raw, sectors, technical, event_radar, announcement_report, portfolio, quality, trade_plan, driver, risk, invalid)}
-        </div>
-        {evidence_drawer}
-      </div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">一个入口选择股票，结果只保留 K 线、核心结论、建议和预测四块。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      {_render_stock_simple_entry(resolved, provider_name, holdings_path)}
+      {_render_stock_simple_kline_data(stock, stock_raw, technical, quality)}
+      {analysis_content}
+      {_render_stock_simple_next_advice(stock, trade_plan, driver, risk, invalid, event_radar)}
+      {_render_stock_simple_forecast(stock, technical, trade_plan, event_radar, quality)}
     </section>"""
+
+
+def _render_stock_simple_entry(
+    resolved: ResolvedSymbol,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    return f"""
+      <div class="panel stock-switch-panel">
+        <div class="editor-toolbar">
+          <div><h3>分析入口</h3><p class="section-subtitle">输入股票代码或名称后，页面只展示本次分析结果。</p></div>
+        </div>
+        <form class="stock-form" method="get" action="{workspace_action("module-stock")}">
+          <input type="hidden" name="provider" value="{escape(provider_name)}" />
+          <input type="hidden" name="holdings" value="{escape(holdings_path)}" />
+          <input name="code" value="{escape(resolved.query)}" placeholder="输入股票代码或名称" />
+          <button type="submit">开始分析</button>
+        </form>
+      </div>"""
+
+
+def _render_stock_simple_kline_data(
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    technical: TechnicalProfile,
+    quality: DataQualityView,
+) -> str:
+    rows = _stock_simple_kline_rows(stock_raw)
+    return f"""
+      <div class="panel stock-kline-simple-panel">
+        <div class="editor-toolbar">
+          <div><h3>K线数据</h3><p class="section-subtitle">展示最近日 K 和关键技术统计，用于核对价格趋势。</p></div>
+          <span class="portfolio-chip">数据来源：{escape(_stock_data_source_text(stock_raw))}</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>最新价</span><strong>{stock.latest_close:.2f}</strong><p class="kpi-foot">{escape(stock.trade_date)}</p></div>
+          <div class="summary-card"><span>支撑/压力</span><strong>{technical.support:.2f} / {technical.resistance:.2f}</strong><p class="kpi-foot">失效 {technical.invalid_line:.2f}</p></div>
+          <div class="summary-card"><span>均线</span><strong>{escape(_stock_ma_text(technical))}</strong><p class="kpi-foot">{escape(technical.macd_status)}</p></div>
+          <div class="summary-card"><span>量能</span><strong>{technical.volume_ratio:.2f}x</strong><p class="kpi-foot">{escape(quality.status)}</p></div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>成交量</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _stock_simple_kline_rows(stock_raw: StockRawData) -> str:
+    if not stock_raw.bars:
+        return '<tr><td colspan="6">缺少 K线数据。</td></tr>'
+    return "".join(
+        "<tr>"
+        f"<td>{escape(bar.date)}</td>"
+        f"<td>{bar.open:.2f}</td>"
+        f"<td>{bar.high:.2f}</td>"
+        f"<td>{bar.low:.2f}</td>"
+        f"<td>{bar.close:.2f}</td>"
+        f"<td>{bar.volume:.0f}</td>"
+        "</tr>"
+        for bar in stock_raw.bars[-8:]
+    )
+
+
+def _stock_ma_text(technical: TechnicalProfile) -> str:
+    return f"MA5 {_fmt_optional(technical.ma5)} / MA20 {_fmt_optional(technical.ma20)}"
+
+
+def _render_stock_simple_analysis_content(
+    *,
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    sectors: SectorAnalysisReport,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+    announcement_report: AnnouncementReport | None,
+    portfolio: PortfolioAnalysisReport,
+    quality: DataQualityView,
+    trade_plan: TradePlan,
+    invalid: str,
+) -> str:
+    rows = _stock_simple_analysis_rows(
+        stock=stock,
+        stock_raw=stock_raw,
+        sectors=sectors,
+        technical=technical,
+        event_radar=event_radar,
+        announcement_report=announcement_report,
+        portfolio=portfolio,
+        trade_plan=trade_plan,
+        invalid=invalid,
+    )
+    data_rows = _stock_simple_data_rows(stock_raw)
+    warning_html = _stock_simple_quality_warning(quality)
+    return f"""
+      <div class="panel stock-analysis-simple-panel">
+        <div class="editor-toolbar">
+          <div><h3>分析内容</h3><p class="section-subtitle">当前判断：{escape(trade_plan.verdict)}；只保留影响结论的核心数据。</p></div>
+          <span class="portfolio-chip">{escape(quality.signal)}</span>
+        </div>
+        {warning_html}
+        <table class="data-table">
+          <thead><tr><th>维度</th><th>结论</th><th>依据</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+        <table class="data-table" style="margin-top:12px">
+          <thead><tr><th>数据块</th><th>状态</th><th>说明</th><th>数据来源</th></tr></thead>
+          <tbody>{data_rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _stock_simple_quality_warning(quality: DataQualityView) -> str:
+    if not quality.warnings:
+        return f'<div class="quality-banner"><strong>数据可信度</strong>：{escape(quality.status)}</div>'
+    items = "；".join(quality.warnings[:3])
+    return (
+        '<div class="quality-banner warning">'
+        f"<strong>数据可信度</strong>：{escape(quality.status)}；{escape(items)}"
+        "</div>"
+    )
+
+
+def _stock_simple_analysis_rows(
+    *,
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    sectors: SectorAnalysisReport,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+    announcement_report: AnnouncementReport | None,
+    portfolio: PortfolioAnalysisReport,
+    trade_plan: TradePlan,
+    invalid: str,
+) -> str:
+    position = next((item for item in portfolio.positions if item.holding.code == stock.code), None)
+    announcement_count = len(announcement_report.items) if announcement_report else 0
+    rows = [
+        (
+            "趋势/量价",
+            f"{stock.trend}，近一日 {_stock_recent_pct(stock_raw):.2f}%",
+            f"{technical.structure}；{_stock_volume_side_fund_text(stock_raw) or '量价待补'}",
+        ),
+        ("资金/成交", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
+        ("基本面/估值", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
+        (
+            "消息/公告",
+            _stock_news_text(event_radar, announcement_count, len(stock_raw.news_items)),
+            _stock_simple_news_evidence(stock_raw, event_radar, announcement_report),
+        ),
+        ("板块/主题", _stock_sector_strength_text(stock, sectors), _stock_sector_strength_note(stock, sectors)),
+        (
+            "持仓/成本",
+            _stock_holding_state(position) if position else "未持仓",
+            _stock_cost_position_note(position, trade_plan, invalid),
+        ),
+    ]
+    return "".join(
+        "<tr>"
+        f"<td>{escape(label)}</td>"
+        f"<td>{escape(_short_condition(verdict, 72))}</td>"
+        f"<td>{escape(evidence)}</td>"
+        "</tr>"
+        for label, verdict, evidence in rows
+    )
+
+
+def _stock_simple_news_evidence(
+    stock_raw: StockRawData,
+    event_radar: EventRadar,
+    announcement_report: AnnouncementReport | None,
+) -> str:
+    parts: list[str] = []
+    if stock_raw.news_items:
+        source = stock_raw.news_items[0].source or "新闻源"
+        titles = "；".join(item.title for item in stock_raw.news_items[:3])
+        parts.append(f"{source}：{titles}")
+    if announcement_report and announcement_report.items:
+        titles = "；".join(item.title for item in announcement_report.items[:3])
+        parts.append(f"公告：{titles}")
+    if parts:
+        return "；".join(parts)
+    return f"事件风险 {event_radar.risk_score}/100"
+
+
+def _stock_simple_data_rows(stock_raw: StockRawData) -> str:
+    return "".join(
+        "<tr>"
+        f"<td>{escape(block['name'])}</td>"
+        f"<td>{escape(block['status'])}</td>"
+        f"<td>{escape(block['evidence'])}</td>"
+        f"<td>{escape(block['source'])}</td>"
+        "</tr>"
+        for block in _stock_required_data_blocks(stock_raw)
+    )
+
+
+def _render_stock_simple_next_advice(
+    stock: DeepStockReport,
+    trade_plan: TradePlan,
+    driver: str,
+    risk: str,
+    invalid: str,
+    event_radar: EventRadar,
+) -> str:
+    rows = [
+        ("当前动作", trade_plan.verdict, trade_plan.reason),
+        ("买入/加仓", trade_plan.entry_trigger, trade_plan.add_trigger),
+        ("止损/减仓", trade_plan.stop_loss, trade_plan.reduce_trigger),
+        ("止盈", trade_plan.take_profit, f"核心驱动：{driver}"),
+        ("风险", invalid, f"{risk}；事件闸门 {event_radar.gate}"),
+    ]
+    action_rows = "".join(
+        "<tr>"
+        f"<td>{escape(label)}</td>"
+        f"<td>{escape(_short_condition(condition, 96))}</td>"
+        f"<td>{escape(_short_condition(note, 96))}</td>"
+        "</tr>"
+        for label, condition, note in rows
+    )
+    return f"""
+      <div class="panel stock-next-advice-panel">
+        <div class="editor-toolbar">
+          <div><h3>后续建议</h3><p class="section-subtitle">{escape(stock.name)} 后续只看价格触发、风险线和事件变化。</p></div>
+          <span class="portfolio-chip">{escape(trade_plan.target_position)}</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>项目</th><th>条件</th><th>说明</th></tr></thead>
+          <tbody>{action_rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _render_stock_simple_forecast(
+    stock: DeepStockReport,
+    technical: TechnicalProfile,
+    trade_plan: TradePlan,
+    event_radar: EventRadar,
+    quality: DataQualityView,
+) -> str:
+    up_target = max(technical.resistance, stock.latest_close * 1.06)
+    down_risk = min(technical.invalid_line, stock.latest_close * 0.95)
+    rows = [
+        (
+            "上涨",
+            f"放量站上 {technical.resistance:.2f}",
+            f"看 {up_target:.2f} 附近",
+            _short_condition(trade_plan.add_trigger, 72),
+        ),
+        (
+            "震荡",
+            f"{technical.support:.2f}-{technical.resistance:.2f}",
+            "区间内观察",
+            "不追涨，等方向选择。",
+        ),
+        (
+            "下跌",
+            f"跌破 {technical.invalid_line:.2f}",
+            f"看 {down_risk:.2f} 风险位",
+            _short_condition(trade_plan.reduce_trigger, 72),
+        ),
+        (
+            "数据修正",
+            quality.status,
+            event_radar.gate,
+            "若 K 线、资金、消息或基本面补齐后变化，重新分析。",
+        ),
+    ]
+    forecast_rows = "".join(
+        "<tr>"
+        f"<td>{escape(direction)}</td>"
+        f"<td>{escape(condition)}</td>"
+        f"<td>{escape(target)}</td>"
+        f"<td>{escape(action)}</td>"
+        "</tr>"
+        for direction, condition, target, action in rows
+    )
+    return f"""
+      <div class="panel stock-forecast-panel">
+        <div class="editor-toolbar">
+          <div><h3>未来涨跌预测</h3><p class="section-subtitle">按条件给上涨、震荡、下跌三种情景，价格触发后再更新判断。</p></div>
+          <span class="portfolio-chip">未来5日情景</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>方向</th><th>触发条件</th><th>目标/风险位</th><th>动作</th></tr></thead>
+          <tbody>{forecast_rows}</tbody>
+        </table>
+      </div>"""
 
 
 def _render_stock_professional_brief(
@@ -6544,6 +6770,8 @@ def _stock_required_block(
             "source": source,
             "tone": "ok",
         }
+    if "不作为买入理由" not in missing_evidence:
+        missing_evidence = f"{missing_evidence} 不作为买入理由。"
     return {
         "name": name,
         "status": "缺失降级",
@@ -7641,8 +7869,9 @@ def _stock_news_text(
 
 def _stock_news_note(stock_raw: StockRawData, event_radar: EventRadar) -> str:
     if stock_raw.news_items:
-        first = stock_raw.news_items[0]
-        return f"{first.source or '新闻源'}：{first.title}"
+        titles = "；".join(item.title for item in stock_raw.news_items[:3])
+        source = stock_raw.news_items[0].source or "新闻源"
+        return f"{source}：{titles}"
     return f"事件风险 {event_radar.risk_score}/100"
 
 

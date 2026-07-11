@@ -45,7 +45,7 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     assert "股票涨跌统计" in html
     assert "每日大盘" in html
     assert "持仓股票分析" in html
-    assert "股票摘要" in html
+    assert "分析内容" in html
     assert "热门板块主题" in html
     assert "股票机会" in html
 
@@ -292,74 +292,57 @@ def test_opportunity_candidate_links_carry_source_strategy_and_evidence() -> Non
     assert "candidate_evidence=" in opportunity_html
 
 
-def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
+def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
 
     for text in [
-        "多维诊断",
-        "个股证据抽屉",
-        "持仓成本视角",
-        "交易触发",
-        "风险原因",
-        "消息事件",
-        "数据状态",
+        "分析入口",
+        "开始分析",
+        "K线数据",
+        "分析内容",
+        "后续建议",
+        "未来涨跌预测",
     ]:
         assert text in stock_html
 
+    assert stock_html.index("分析入口") < stock_html.index("K线数据")
+    assert stock_html.index("K线数据") < stock_html.index("分析内容")
+    assert stock_html.index("分析内容") < stock_html.index("后续建议")
+    assert stock_html.index("后续建议") < stock_html.index("未来涨跌预测")
 
-def test_stock_module_uses_six_dimension_evidence_wall() -> None:
+
+def test_stock_module_removes_extra_research_panels() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
-    for text in [
-        "当前结论",
-        "六类证据",
-        "技术面",
-        "基本面",
-        "资金面",
-        "消息公告",
-        "板块主题",
-        "成本位置",
-        "多空反证",
-        "禁止动作",
-    ]:
-        assert text in stock_html
-
-
-def test_stock_module_prioritizes_deep_multidimensional_summary() -> None:
-    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
-
-    for text in [
+    for text in {
         "专业个股结论",
         "多维诊断",
-        "趋势/量价",
-        "资金/成交",
-        "基本面/估值",
-        "消息/公告",
-        "板块/主题",
-        "持仓/成本",
+        "六类证据",
         "综合总结",
-        "执行边界",
-    ]:
-        assert text in stock_html
-
-    assert stock_html.index("专业个股结论") < stock_html.index("多维诊断")
-    assert stock_html.index("多维诊断") < stock_html.index("综合总结")
-    assert "完整方法链" in stock_html
-    assert stock_html.index("综合总结") < stock_html.index("完整方法链")
+        "个股证据抽屉",
+        "股票摘要",
+        "来源上下文",
+        "数据质量与K线详情",
+        "K线交易屏",
+        "保存个股计划",
+        "我的持仓",
+        "候选前排",
+    }:
+        assert text not in stock_html
 
 
 def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "当前结论",
-        "当前动作",
-        "最强证据",
-        "最大反证",
-        "组合影响",
-        "仓位上限",
-        "当前持仓状态",
+        "当前判断",
+        "趋势/量价",
+        "资金/成交",
+        "基本面/估值",
+        "消息/公告",
+        "板块/主题",
+        "持仓/成本",
     ]:
         assert text in stock_html
 
@@ -368,12 +351,10 @@ def test_stock_module_requires_kline_fund_news_and_fundamental_blocks() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "数据质量",
         "K线数据",
         "资金面",
         "消息面",
         "基本面",
-        "已用于分析",
         "数据来源",
     ]:
         assert text in stock_html
@@ -451,10 +432,10 @@ def test_stock_module_shows_candidate_source_context_when_entered_from_opportuni
         candidate_evidence="所属主题排名前 5，成交额放大",
     )
 
-    assert "来源上下文" in stock_html
-    assert "股市机会" in stock_html
-    assert "主线强势 + 放量突破" in stock_html
-    assert "所属主题排名前 5，成交额放大" in stock_html
+    assert "分析入口" in stock_html
+    assert "K线数据" in stock_html
+    assert "来源上下文" not in stock_html
+    assert "主线强势 + 放量突破" not in stock_html
 
 
 def test_portfolio_module_keeps_only_holding_sector_and_cost_analysis() -> None:

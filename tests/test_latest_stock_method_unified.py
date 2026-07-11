@@ -99,7 +99,7 @@ def test_web_stock_module_uses_latest_stock_specific_news_method(tmp_path) -> No
 
     assert "股东拟减持" in html
     assert "机器人订单增长" in html
-    assert "消息事件" in html
+    assert "消息/公告" in html
 
 
 def test_daily_deep_markdown_exposes_latest_method_per_stock() -> None:

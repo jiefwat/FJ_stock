@@ -137,15 +137,11 @@ def test_web_stock_page_surfaces_tradingagents_chain_and_signal_attribution() ->
     next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
-    assert "TradingAgents 决策链" in stock_html
-    assert "daily_stock_analysis 信号归因" in stock_html
-    assert "技术分析师" in stock_html
-    assert "基本面分析师" in stock_html
-    assert "新闻/情绪分析师" in stock_html
-    assert "多头观点" in stock_html
-    assert "空头观点" in stock_html
-    assert "交易员执行" in stock_html
-    assert "组合经理最终意见" in stock_html
+    assert "分析入口" in stock_html
+    assert "K线数据" in stock_html
+    assert "分析内容" in stock_html
+    assert "后续建议" in stock_html
+    assert "未来涨跌预测" in stock_html
     assert "大业股份" in stock_html
 
 
@@ -188,11 +184,9 @@ def test_stock_page_keeps_agentic_method_but_hides_noisy_detail_by_default() -> 
     next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
-    assert "多维诊断" in stock_html
-    assert "证据链" in stock_html
-    assert "风险边界" in stock_html
-    assert "完整方法链" in stock_html
-    assert "TradingAgents 决策链" in stock_html
+    assert "分析内容" in stock_html
+    assert "未来涨跌预测" in stock_html
+    assert "TradingAgents 决策链" not in stock_html
     assert "专业评分卡" not in stock_html
     assert "核心证据链 / 6 维判断 / 6个证据" not in stock_html
     assert "明确操作建议 / 执行条件 / 操作条件" not in stock_html

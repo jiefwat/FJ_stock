@@ -47,7 +47,7 @@ def test_four_modules_explain_professional_data_flow() -> None:
     assert "持仓股票分析" in html
     assert "对应板块分析" in html
     assert "仓位/成本分析" in html
-    assert "股票摘要" in html
+    assert "分析内容" in html
     assert "热门板块主题" in html
     assert "股票机会" in html
     assert "候选列表" in html
@@ -60,7 +60,7 @@ def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None
     assert 'class="risk-pill' in html
     assert "table-note" in html
     assert 'class="report-copy"' not in html
-    assert "TDX MCP" in html
+    assert "数据中台" in html
     assert "热点机会" in html
 
 
@@ -74,11 +74,10 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     assert "消息/公告" in html
     assert "板块/主题" in html
     assert "持仓/成本" in html
-    assert "个股证据抽屉" in html
-    assert "交易触发" in html
-    assert "风险原因" in html
-    assert "消息事件" in html
-    assert "数据状态" in html
+    assert "分析入口" in html
+    assert "K线数据" in html
+    assert "后续建议" in html
+    assert "未来涨跌预测" in html
 
 
 def test_four_module_grid_drops_home_specific_rules() -> None:

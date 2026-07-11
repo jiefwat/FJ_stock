@@ -68,7 +68,7 @@ def test_four_modules_keep_module_owned_actions() -> None:
     for text in [
         'class="stock-form" method="get"',
         "持仓股票分析",
-        "多维诊断",
+        "分析内容",
         "股票机会",
         'href="/?code=',
     ]:

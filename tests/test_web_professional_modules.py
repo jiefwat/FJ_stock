@@ -15,7 +15,8 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "对应板块分析" in html
     assert "仓位/成本分析" in html
     assert "个股分析" in html
-    assert "多维诊断" in html
+    assert "分析入口" in html
+    assert "未来涨跌预测" in html
     assert "热点机会" in html
     assert "热门板块主题" in html
     assert "热门板块主题" in html
