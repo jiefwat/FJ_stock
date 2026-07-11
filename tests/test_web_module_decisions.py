@@ -13,6 +13,7 @@ from stock_ts.models import (
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 from stock_ts.web import (
+    _manual_refresh_command,
     _render_automation_monitor_panel,
     _render_latest_daily_artifact,
     render_page,
@@ -878,6 +879,42 @@ def test_data_refresh_times_render_as_beijing_time() -> None:
     assert "2026-07-11 14:06:19 北京时间" in html
     assert "2026-07-11T06:06:19.966626+00:00" not in html
     assert "2026-07-11T01:00:00Z" not in html
+
+
+def test_module_refresh_time_uses_latest_data_chain_timestamp(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-11T14:28:15\nrefresh=ok\nreport=ok\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    class MixedRefreshProvider(SampleDataProvider):
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "snapshot_source": "tdx-mcp-eltdx-bridge",
+                "snapshot_generated_at": "2026-07-11T06:06:19.966626+00:00",
+                "kline_refresh_generated_at": "2026-07-11T14:07:52",
+                "announcement_refresh_generated_at": "2026-07-11T14:28:12",
+            }
+
+    html = _sample_html(provider=MixedRefreshProvider(), provider_name="tdx-snapshot")
+
+    assert "数据刷新时间：2026-07-11 14:28:15 北京时间" in html
+    assert "数据刷新时间：2026-07-11 14:06:19 北京时间" not in html
+
+
+def test_manual_refresh_command_runs_real_pipeline(monkeypatch) -> None:
+    monkeypatch.delenv("STOCK_TS_MANUAL_REFRESH_COMMAND", raising=False)
+
+    command = _manual_refresh_command()
+
+    assert "scripts/run_daily_pipeline.py" in command
+    assert "--snapshot" in command
+    assert "data/imports/tdx_snapshots.json" in command
+    assert "--provider" in command
+    assert "tdx-snapshot" in command
 
 
 def test_pipeline_refresh_times_render_as_beijing_time(tmp_path: Path, monkeypatch) -> None:

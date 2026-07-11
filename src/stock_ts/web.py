@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -2863,11 +2866,56 @@ def _build_data_center_view(
     return DataCenterView(
         status=status,
         updated_at=_format_beijing_time(
-            _first_present(snapshot_generated, *(row.latest_at for row in rows)) or "待确认"
+            _latest_data_chain_timestamp(
+                snapshot_generated,
+                *_metadata_refresh_timestamps(candidate_universe_metadata),
+                _pipeline_status_generated_at(),
+                _data_chain_status_generated_at(),
+            )
+            or "待确认"
         ),
         rows=rows,
         alerts=alerts,
     )
+
+
+def _metadata_refresh_timestamps(metadata: dict[str, str]) -> list[str]:
+    return [
+        str(value)
+        for key, value in metadata.items()
+        if key.endswith("generated_at") and str(value or "").strip()
+    ]
+
+
+def _pipeline_status_generated_at() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    status = _read_key_value_status(report_dir / "pipeline.status")
+    return status.get("generated_at", "")
+
+
+def _data_chain_status_generated_at() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    payload = _read_json_file(report_dir / "data_chain_status.json")
+    return str(payload.get("generated_at") or "")
+
+
+def _latest_data_chain_timestamp(*values: str) -> str:
+    latest_raw = ""
+    latest_dt: datetime | None = None
+    for value in values:
+        raw = str(value or "").strip()
+        if not raw or raw == "待确认":
+            continue
+        parsed = _parse_datetime_value(raw)
+        if parsed is None:
+            if not latest_raw:
+                latest_raw = raw
+            continue
+        comparable = parsed.astimezone(timezone.utc)
+        if latest_dt is None or comparable > latest_dt:
+            latest_dt = comparable
+            latest_raw = raw
+    return latest_raw
 
 
 def _format_beijing_time(value: str) -> str:
@@ -3481,10 +3529,117 @@ def _render_module_refresh_tools(
           <input type="hidden" name="code" value="{escape(stock_code)}" />
           <input type="hidden" name="provider" value="{escape(provider_name)}" />
           <input type="hidden" name="holdings" value="{escape(holdings_path)}" />
+          <input type="hidden" name="workspace" value="{escape(workspace)}" />
           <input type="hidden" name="refresh" value="1" />
           <button class="ghost-button module-refresh-button" type="submit">手动刷新数据</button>
         </form>
       </div>"""
+
+
+def _manual_refresh_command() -> list[str]:
+    custom = os.getenv("STOCK_TS_MANUAL_REFRESH_COMMAND", "").strip()
+    if custom:
+        return shlex.split(custom)
+    python = os.getenv("STOCK_TS_PIPELINE_PYTHON", "").strip() or sys.executable
+    report_dir = os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily")
+    return [
+        python,
+        "scripts/run_daily_pipeline.py",
+        "--python",
+        python,
+        "--snapshot",
+        os.getenv("STOCK_TS_TDX_SNAPSHOT_PATH", "data/imports/tdx_snapshots.json"),
+        "--holdings",
+        os.getenv("STOCK_TS_PIPELINE_HOLDINGS_PATH", DEFAULT_HOLDINGS_PATH),
+        "--provider",
+        "tdx-snapshot",
+        "--candidate-limit",
+        os.getenv("STOCK_TS_PIPELINE_CANDIDATE_LIMIT", "300"),
+        "--enrich-limit",
+        os.getenv("STOCK_TS_PIPELINE_ENRICH_LIMIT", "50"),
+        "--external-enrich-timeout",
+        os.getenv("STOCK_TS_PIPELINE_EXTERNAL_ENRICH_TIMEOUT", "300"),
+        "--announcement-limit",
+        os.getenv("STOCK_TS_PIPELINE_ANNOUNCEMENT_LIMIT", "5"),
+        "--output-dir",
+        report_dir,
+        "--html-dir",
+        os.getenv("STOCK_TS_DAILY_HTML_DIR", "reports/html"),
+        "--announcement-dir",
+        os.getenv("STOCK_TS_ANNOUNCEMENT_DIR", "reports/announcements"),
+    ]
+
+
+def _trigger_manual_data_refresh() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    report_dir.mkdir(parents=True, exist_ok=True)
+    requested_at = datetime.now(timezone(timedelta(hours=8))).isoformat()
+    request_path = report_dir / "manual_refresh.status"
+    log_path = report_dir / "manual_refresh.log"
+    command = _manual_refresh_command()
+    request_path.write_text(
+        "\n".join(
+            [
+                "status=starting",
+                f"requested_at={requested_at}",
+                f"command={shlex.join(command)}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        with log_path.open("ab") as log_file:
+            log_file.write(f"\n== manual refresh {requested_at} ==\n".encode())
+            subprocess.Popen(
+                command,
+                cwd=Path.cwd(),
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=os.environ.copy(),
+            )
+    except Exception as exc:
+        request_path.write_text(
+            "\n".join(
+                [
+                    "status=failed_to_start",
+                    f"requested_at={requested_at}",
+                    f"error={type(exc).__name__}: {exc}",
+                    f"command={shlex.join(command)}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return "failed_to_start"
+    request_path.write_text(
+        "\n".join(
+            [
+                "status=started",
+                f"requested_at={requested_at}",
+                f"command={shlex.join(command)}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return "started"
+
+
+def _manual_refresh_redirect_location(query: dict[str, list[str]]) -> str:
+    workspace = (query.get("workspace", [""])[0] or "").strip()
+    cleaned: dict[str, list[str]] = {
+        key: values
+        for key, values in query.items()
+        if key not in {"refresh", "workspace"} and values
+    }
+    location = "/"
+    if cleaned:
+        location += "?" + urlencode(cleaned, doseq=True)
+    if workspace:
+        location += f"#{workspace}"
+    return location
 
 
 def _render_data_center_panel(
@@ -10145,6 +10300,12 @@ class Handler(BaseHTTPRequestHandler):
         candidate_strategy_label = query.get("candidate_strategy_label", [""])[0]
         candidate_evidence = query.get("candidate_evidence", [""])[0]
         refresh = query.get("refresh", [""])[0] == "1"
+        if refresh:
+            _trigger_manual_data_refresh()
+            self.send_response(303)
+            self.send_header("Location", _manual_refresh_redirect_location(query))
+            self.end_headers()
+            return
         provider_name = WEB_DATA_PROVIDER
         requested_holdings_path = query.get("holdings", [DEFAULT_HOLDINGS_PATH])[0]
         holdings_path = _effective_holdings_path(current_user, requested_holdings_path)
