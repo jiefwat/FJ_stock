@@ -1,4 +1,10 @@
-from stock_ts.announcements import fetch_cninfo_announcements, render_announcement_markdown
+from typing import Optional
+
+from stock_ts.announcements import (
+    fetch_cninfo_announcements,
+    fetch_hkex_announcements,
+    render_announcement_markdown,
+)
 
 
 def test_fetch_cninfo_announcements_parses_items_and_risk_flags() -> None:
@@ -52,6 +58,40 @@ def test_fetch_cninfo_announcements_uses_exchange_from_code_prefix() -> None:
 
     assert captured["column"] == "sse"
     assert captured["plate"] == "sh"
+
+
+def test_fetch_hkex_announcements_parses_pdf_items_and_financial_flags() -> None:
+    def fake_hkex_open(url: str, data: Optional[bytes], _headers: dict[str, str]) -> bytes:
+        if "partial.do" in url:
+            return (
+                b'callback({"more":"0","stockInfo":['
+                b'{"stockId":147704,"code":"06088","name":"FIT HON TENG"}'
+                b"]});"
+            )
+        assert data is not None
+        assert b"stockId=147704" in data
+        return b"""
+        <html><body>
+          <div class="total-records">Total records found: 46</div>
+          <a href="/listedco/listconews/sehk/2026/0707/2026070700470.pdf">
+            Monthly Return of Equity Issuer on Movements in Securities
+          </a>
+          <a href="/listedco/listconews/sehk/2026/0511/2026051100402.pdf">
+            CERTAIN FINANCIAL INFORMATION FOR THE THREE MONTHS ENDED MARCH 31, 2026
+          </a>
+        </body></html>
+        """
+
+    report = fetch_hkex_announcements("06088", limit=5, open_url=fake_hkex_open)
+
+    assert report.source == "hkexnews"
+    assert report.query == "06088"
+    assert report.total == 46
+    assert report.items[0].date == "2026-07-07"
+    assert report.items[0].url == (
+        "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0707/2026070700470.pdf"
+    )
+    assert report.items[1].risk_flags == ["财报/业绩"]
 
 
 def test_render_announcement_markdown_contains_professional_sections() -> None:
