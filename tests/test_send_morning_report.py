@@ -314,6 +314,33 @@ def test_send_morning_report_uses_dispatcher_with_email_channel(tmp_path: Path) 
     assert "StockTS 早间复盘与机会" in calls[0][2]
 
 
+def test_send_morning_report_passes_personal_holdings_path(monkeypatch, tmp_path: Path) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_build(**kwargs):  # noqa: ANN003, ANN202
+        calls.append(kwargs)
+        return "# report\n"
+
+    def fake_dispatch(
+        content: str, *, channels: list[str], subject: str, dry_run: bool, style: str
+    ):
+        return module.SendResult(ok=True, markdown="# ok\n")
+
+    monkeypatch.setattr(module, "build_morning_report", fake_build)
+    holdings_path = tmp_path / "user-data" / "2" / "holdings.csv"
+
+    result = module.send_morning_report(
+        holdings_path=holdings_path,
+        channels=["email"],
+        dry_run=True,
+        dispatcher=fake_dispatch,
+    )
+
+    assert result.ok is True
+    assert calls[0]["holdings_path"] == holdings_path
+
+
 def test_main_skips_successfully_when_email_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
     module = _load_module()
     daily_dir = tmp_path / "daily"

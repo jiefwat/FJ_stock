@@ -31,10 +31,9 @@ def test_stock_ts_morning_email_timer_sends_at_0830() -> None:
     timer_text = timer.read_text(encoding="utf-8")
     service_text = service.read_text(encoding="utf-8")
 
-    assert "OnCalendar=*-*-* 08:30:00" in timer_text
+    assert "OnCalendar=*-*-* *:0/15:00" in timer_text
     assert "Persistent=true" in timer_text
-    assert "scripts/send_morning_report.py" in service_text
-    assert "--channels email" in service_text
+    assert "scripts/send_user_morning_reports.py" in service_text
     assert "--style digest" in service_text
     assert "--skip-if-email-missing" in service_text
 

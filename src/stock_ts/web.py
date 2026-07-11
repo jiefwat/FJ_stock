@@ -15,6 +15,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from .account_settings import (
+    MorningEmailPreferences,
+    load_morning_email_preferences,
+    save_morning_email_preferences,
+)
 from .agentic_stock_analysis import StockAgentDecision, build_stock_agent_decision
 from .analysis import analyze_candidates, analyze_stock
 from .announcements import AnnouncementItem, AnnouncementReport, fetch_cninfo_announcements
@@ -5232,6 +5237,7 @@ def _render_auth_settings_panel(
         if enabled and current_user is not None
         else '<div class="portfolio-action-bar" style="margin-top:12px"><a class="ghost-button" href="/login">登录 / 注册</a></div>'
     )
+    morning_email_panel = _render_morning_email_settings_panel(current_user)
     return f"""
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar">
@@ -5250,6 +5256,37 @@ def _render_auth_settings_panel(
         </div>
         {password_form}
         <div class="portfolio-action-bar" style="margin-top:12px">{logout_form}</div>
+      </div>
+      {morning_email_panel}"""
+
+
+def _render_morning_email_settings_panel(current_user: AuthUser | None) -> str:
+    if current_user is None:
+        return ""
+    preferences = load_morning_email_preferences(
+        current_user.id,
+        username=current_user.username,
+        user_data_dir=os.getenv("STOCK_TS_USER_DATA_DIR", DEFAULT_USER_DATA_DIR),
+    )
+    settings = get_settings()
+    email_status = _email_config_status_label(settings)
+    enabled_checked = " checked" if preferences.enabled else ""
+    receiver = preferences.receiver or (current_user.username if "@" in current_user.username else "")
+    return f"""
+      <div class="panel" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>每日晨报邮箱</h3><p class="section-subtitle">配置当前账号的接收邮箱和发送时间；SMTP 发送账号由系统统一配置。</p></div>
+          <span class="portfolio-chip">发送通道：{escape(email_status)}</span>
+        </div>
+        <form class="portfolio-form-grid" method="post" action="/account/morning-email">
+          <label class="field-stack field-span-2">接收邮箱<input name="morning_email_receiver" value="{escape(receiver)}" placeholder="name@example.com，多个用英文逗号分隔" /></label>
+          <label class="field-stack">发送时间<input name="morning_email_time" type="time" value="{escape(preferences.send_time)}" /></label>
+          <label class="checkbox-line"><input type="checkbox" name="morning_email_enabled" value="1"{enabled_checked} />启用自动晨报</label>
+          <div class="form-actions"><button class="primary-button" type="submit">保存晨报配置</button></div>
+        </form>
+        <form class="portfolio-action-bar" method="post" action="/account/morning-email/send" style="margin-top:12px">
+          <button class="ghost-button" type="submit">立即发送晨报</button>
+        </form>
       </div>"""
 
 
@@ -5267,6 +5304,7 @@ def _render_account_management_module(
         current_user=current_user,
         holdings_path=holdings_path,
     )
+    notice_html = _render_settings_notice(notice)
     owner_tools = ""
     if current_user is not None and current_user.role == "owner":
         owner_tools = _render_compact_status_module(
@@ -5285,6 +5323,7 @@ def _render_account_management_module(
     return f"""
     <section class="module" id="module-account">
       <div class="module-header"><div><h2 class="module-title">账户管理</h2><p class="module-desc">登录、退出、密码和个人持仓账本。行情、板块、机会和数据中台全站一致。</p></div><span class="status-pill">正规账户体系</span></div>
+      {notice_html}
       {account_panel}
       {owner_tools}
     </section>"""
@@ -10656,6 +10695,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/account/password":
             self._handle_password_post()
             return
+        if parsed.path == "/account/morning-email":
+            self._handle_morning_email_settings_post()
+            return
+        if parsed.path == "/account/morning-email/send":
+            self._handle_morning_email_send_post()
+            return
         if _is_public_readonly():
             self.send_response(403)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -10858,6 +10903,81 @@ class Handler(BaseHTTPRequestHandler):
         )
         self.end_headers()
 
+    def _handle_morning_email_settings_post(self) -> None:
+        config = AuthConfig.from_env()
+        user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+        if user is None:
+            self.send_response(303)
+            self.send_header(
+                "Location",
+                "/login?" + urlencode({"next": "/#module-account", "error": "请先登录"}),
+            )
+            self.end_headers()
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = self.rfile.read(length).decode("utf-8")
+        form = parse_qs(payload)
+        receiver = (form.get("morning_email_receiver", [""])[0] or "").strip()
+        send_time = (form.get("morning_email_time", ["08:30"])[0] or "08:30").strip()
+        enabled = form.get("morning_email_enabled", [""])[0] == "1"
+        try:
+            save_morning_email_preferences(
+                user.id,
+                receiver=receiver,
+                send_time=send_time,
+                enabled=enabled,
+                user_data_dir=os.getenv("STOCK_TS_USER_DATA_DIR", DEFAULT_USER_DATA_DIR),
+            )
+            notice = "晨报邮箱配置已保存。"
+            level = "success"
+        except ValueError as exc:
+            notice = str(exc)
+            level = "error"
+        self.send_response(303)
+        self.send_header(
+            "Location",
+            _account_redirect_url(
+                holdings_path=_effective_holdings_path(user),
+                notice=notice,
+                notice_level=level,
+            ),
+        )
+        self.end_headers()
+
+    def _handle_morning_email_send_post(self) -> None:
+        config = AuthConfig.from_env()
+        user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+        if user is None:
+            self.send_response(303)
+            self.send_header(
+                "Location",
+                "/login?" + urlencode({"next": "/#module-account", "error": "请先登录"}),
+            )
+            self.end_headers()
+            return
+        holdings_path = _effective_holdings_path(user)
+        preferences = load_morning_email_preferences(
+            user.id,
+            username=user.username,
+            user_data_dir=os.getenv("STOCK_TS_USER_DATA_DIR", DEFAULT_USER_DATA_DIR),
+        )
+        ok, detail = _send_personal_morning_report(
+            user,
+            preferences,
+            holdings_path=holdings_path,
+        )
+        notice = f"晨报已发送：{detail}" if ok else f"晨报发送失败：{detail}"
+        self.send_response(303)
+        self.send_header(
+            "Location",
+            _account_redirect_url(
+                holdings_path=holdings_path,
+                notice=notice,
+                notice_level="success" if ok else "error",
+            ),
+        )
+        self.end_headers()
+
     def _handle_holdings_post(self, form: dict[str, list[str]]) -> None:
         code = form.get("page_code", [""])[0]
         provider_name = WEB_DATA_PROVIDER
@@ -11012,6 +11132,40 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         return
+
+
+def _send_personal_morning_report(
+    user: AuthUser,
+    preferences: MorningEmailPreferences,
+    *,
+    holdings_path: str | Path,
+    dry_run: bool = False,
+) -> tuple[bool, str]:
+    del user
+    receivers = preferences.receivers
+    if not receivers:
+        return False, "接收邮箱为空。"
+    try:
+        from scripts.send_morning_report import send_morning_report
+
+        result = send_morning_report(
+            holdings_path=holdings_path,
+            channels=["email"],
+            email_receivers=receivers,
+            dry_run=dry_run,
+            style="digest",
+        )
+    except Exception as exc:
+        return False, str(exc)
+    return bool(result.ok), _first_dispatch_detail(result.markdown)
+
+
+def _first_dispatch_detail(markdown: str) -> str:
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            return stripped[2:]
+    return "未返回发送明细"
 
 
 def _holding_from_form(form: dict[str, list[str]]) -> Holding:
@@ -11178,6 +11332,23 @@ def _settings_redirect_url(
         }
     )
     return f"/?{query}#module-status"
+
+
+def _account_redirect_url(
+    *,
+    holdings_path: str,
+    notice: str,
+    notice_level: str,
+) -> str:
+    query = urlencode(
+        {
+            "provider": WEB_DATA_PROVIDER,
+            "holdings": holdings_path,
+            "settings_notice": notice,
+            "settings_notice_level": notice_level,
+        }
+    )
+    return f"/?{query}#module-account"
 
 
 def _default_stock_query(stock_code: str, holdings_path: str) -> str:

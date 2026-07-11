@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import stock_ts.web as web_module
 from stock_ts.auth import AuthConfig, AuthUser, SessionManager, UserStore
 from stock_ts.portfolio import load_holdings_csv
 from stock_ts.providers.sample import SampleDataProvider
@@ -219,6 +221,38 @@ def test_authenticated_workbench_has_account_menu_and_logout(monkeypatch, tmp_pa
     assert 'method="post" action="/logout"' in html
     assert 'method="post" action="/account/password"' in html
     assert 'data-workspace="account"' in html
+
+
+def test_account_page_has_personal_morning_email_settings(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(tmp_path / "users.sqlite3"))
+    monkeypatch.setenv("STOCK_TS_USER_DATA_DIR", str(tmp_path / "user-data"))
+    user = AuthUser(id=2, username="member@example.com", role="member")
+    holdings_path = tmp_path / "user-data" / "2" / "holdings.csv"
+    holdings_path.parent.mkdir(parents=True)
+    holdings_path.write_text("code,name,shares,cost_price,sector,note\n", encoding="utf-8")
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path=str(holdings_path),
+        current_user=user,
+    )
+    account_html = html.split('id="account"', 1)[1]
+
+    assert "每日晨报邮箱" in account_html
+    assert "发送时间" in account_html
+    assert 'method="post" action="/account/morning-email"' in account_html
+    assert 'method="post" action="/account/morning-email/send"' in account_html
+    assert 'name="morning_email_receiver"' in account_html
+    assert 'name="morning_email_time"' in account_html
+    assert 'name="morning_email_enabled"' in account_html
+    assert "立即发送晨报" in account_html
+    assert "secret-password" not in account_html
 
 
 def test_member_account_page_hides_global_notification_settings(monkeypatch, tmp_path) -> None:
@@ -463,6 +497,154 @@ def test_effective_holdings_path_keeps_explicit_path_when_auth_disabled(tmp_path
     explicit = str(tmp_path / "holdings.csv")
 
     assert _effective_holdings_path(None, explicit) == explicit
+
+
+def test_http_handler_saves_personal_morning_email_settings(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_USER_DATA_DIR", str(tmp_path / "user-data"))
+    server = _serve_once(monkeypatch, tmp_path)
+    opener = urllib.request.build_opener(_NoRedirect)
+    store = UserStore(tmp_path / "users.sqlite3")
+    member = store.register_user("member@example.com", "member-secret")
+    token = SessionManager("session-secret").issue_session(
+        user_id=member.id,
+        username=member.username,
+    )
+    payload = urllib.parse.urlencode(
+        {
+            "morning_email_receiver": "daily@example.com",
+            "morning_email_time": "08:45",
+            "morning_email_enabled": "1",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/account/morning-email",
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": f"stock_ts_session={token}",
+        },
+    )
+    try:
+        try:
+            opener.open(request, timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 303
+            assert "#module-account" in exc.headers["Location"]
+            assert "晨报邮箱配置已保存" in urllib.parse.unquote(exc.headers["Location"])
+        else:  # pragma: no cover - defensive
+            raise AssertionError("expected account redirect")
+
+        pref_path = tmp_path / "user-data" / str(member.id) / "morning_email.json"
+        data = json.loads(pref_path.read_text(encoding="utf-8"))
+        assert data["receiver"] == "daily@example.com"
+        assert data["send_time"] == "08:45"
+        assert data["enabled"] is True
+        assert "secret-password" not in pref_path.read_text(encoding="utf-8")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_handler_rejects_invalid_morning_email_time(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_USER_DATA_DIR", str(tmp_path / "user-data"))
+    server = _serve_once(monkeypatch, tmp_path)
+    opener = urllib.request.build_opener(_NoRedirect)
+    store = UserStore(tmp_path / "users.sqlite3")
+    member = store.register_user("member@example.com", "member-secret")
+    token = SessionManager("session-secret").issue_session(
+        user_id=member.id,
+        username=member.username,
+    )
+    payload = urllib.parse.urlencode(
+        {
+            "morning_email_receiver": "daily@example.com",
+            "morning_email_time": "25:99",
+            "morning_email_enabled": "1",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/account/morning-email",
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": f"stock_ts_session={token}",
+        },
+    )
+    try:
+        try:
+            opener.open(request, timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 303
+            assert "发送时间不合法" in urllib.parse.unquote(exc.headers["Location"])
+        else:  # pragma: no cover - defensive
+            raise AssertionError("expected validation redirect")
+
+        assert not (tmp_path / "user-data" / str(member.id) / "morning_email.json").exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_handler_sends_personal_morning_email_to_saved_receiver(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_USER_DATA_DIR", str(tmp_path / "user-data"))
+    server = _serve_once(monkeypatch, tmp_path)
+    opener = urllib.request.build_opener(_NoRedirect)
+    store = UserStore(tmp_path / "users.sqlite3")
+    member = store.register_user("member@example.com", "member-secret")
+    token = SessionManager("session-secret").issue_session(
+        user_id=member.id,
+        username=member.username,
+    )
+    pref_dir = tmp_path / "user-data" / str(member.id)
+    pref_dir.mkdir(parents=True)
+    (pref_dir / "morning_email.json").write_text(
+        json.dumps(
+            {
+                "user_id": member.id,
+                "receiver": "daily@example.com",
+                "send_time": "08:30",
+                "enabled": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_send(user, preferences, *, holdings_path, dry_run=False):  # noqa: ANN001, ANN202
+        calls.append((user, preferences, holdings_path, dry_run))
+        return True, "sent to 1 receiver(s)"
+
+    monkeypatch.setattr(web_module, "_send_personal_morning_report", fake_send)
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/account/morning-email/send",
+        data=b"",
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": f"stock_ts_session={token}",
+        },
+    )
+    try:
+        try:
+            opener.open(request, timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 303
+            assert "晨报已发送" in urllib.parse.unquote(exc.headers["Location"])
+        else:  # pragma: no cover - defensive
+            raise AssertionError("expected send redirect")
+
+        assert calls
+        assert calls[0][0].id == member.id
+        assert calls[0][1].receiver == "daily@example.com"
+        assert str(calls[0][2]).endswith(f"{member.id}/holdings.csv")
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_member_cannot_update_global_settings(monkeypatch, tmp_path) -> None:

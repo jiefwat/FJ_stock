@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -168,8 +169,10 @@ def send_morning_report(
     daily_dir: str | Path = "reports/daily",
     html_dir: str | Path = "reports/html",
     announcement_dir: str | Path = "reports/announcements",
+    holdings_path: str | Path = "data/portfolio/holdings.csv",
     site_url: str = "https://stock.jiewat-kaka-fj.com",
     channels: list[str] | None = None,
+    email_receivers: list[str] | None = None,
     dry_run: bool = False,
     style: str = "digest",
     dispatcher: DispatchFunc = dispatch_report,
@@ -178,16 +181,27 @@ def send_morning_report(
         daily_dir=daily_dir,
         html_dir=html_dir,
         announcement_dir=announcement_dir,
+        holdings_path=holdings_path,
         site_url=site_url,
     )
     subject = f"StockTS 早间复盘与机会 {datetime.now().date().isoformat()}"
-    result = dispatcher(
-        content,
-        channels=channels or ["email"],
-        subject=subject,
-        dry_run=dry_run,
-        style=style,
-    )
+    previous_receivers = os.environ.get("EMAIL_RECEIVERS")
+    if email_receivers is not None:
+        os.environ["EMAIL_RECEIVERS"] = ",".join(email_receivers)
+    try:
+        result = dispatcher(
+            content,
+            channels=channels or ["email"],
+            subject=subject,
+            dry_run=dry_run,
+            style=style,
+        )
+    finally:
+        if email_receivers is not None:
+            if previous_receivers is None:
+                os.environ.pop("EMAIL_RECEIVERS", None)
+            else:
+                os.environ["EMAIL_RECEIVERS"] = previous_receivers
     return SendResult(
         ok=bool(getattr(result, "ok", False)), markdown=str(getattr(result, "markdown", ""))
     )
@@ -1281,8 +1295,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--daily-dir", default="reports/daily")
     parser.add_argument("--html-dir", default="reports/html")
     parser.add_argument("--announcement-dir", default="reports/announcements")
+    parser.add_argument("--holdings-path", default="data/portfolio/holdings.csv")
     parser.add_argument("--site-url", default="https://stock.jiewat-kaka-fj.com")
     parser.add_argument("--channels", default="email")
+    parser.add_argument("--email-receivers", default="")
     parser.add_argument("--style", default="digest")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-if-email-missing", action="store_true")
@@ -1302,8 +1318,11 @@ def main(argv: list[str] | None = None) -> int:
         daily_dir=args.daily_dir,
         html_dir=args.html_dir,
         announcement_dir=args.announcement_dir,
+        holdings_path=args.holdings_path,
         site_url=args.site_url,
         channels=channels,
+        email_receivers=[item.strip() for item in args.email_receivers.split(",") if item.strip()]
+        or None,
         dry_run=args.dry_run,
         style=args.style,
     )

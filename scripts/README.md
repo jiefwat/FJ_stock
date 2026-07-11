@@ -105,8 +105,10 @@ PYTHONPATH=src python3 scripts/send_morning_report.py \
   --daily-dir reports/daily \
   --html-dir reports/html \
   --announcement-dir reports/announcements \
+  --holdings-path data/auth/users/1/holdings.csv \
   --channels email \
+  --email-receivers user@example.com \
   --style digest
 ```
 
-依赖 `.env` 中的 `EMAIL_SENDER`、`EMAIL_PASSWORD` 和 `EMAIL_RECEIVERS`。缺少邮箱授权码时只能 dry-run，不能真实发送。定时模板位于 `deploy/systemd/stock-ts-morning-email.service` 和 `deploy/systemd/stock-ts-morning-email.timer`，默认每天 08:30 发送。
+依赖 `.env` 中的 `EMAIL_SENDER` 和 `EMAIL_PASSWORD`。单账号发送可用 `--email-receivers` 覆盖接收人；账号管理页会把每个用户的接收邮箱、启用状态和发送时间保存到 `data/auth/users/<user_id>/morning_email.json`。定时模板位于 `deploy/systemd/stock-ts-morning-email.service` 和 `deploy/systemd/stock-ts-morning-email.timer`，默认每 15 分钟检查一次，到达用户配置时间后当天只发送一次。

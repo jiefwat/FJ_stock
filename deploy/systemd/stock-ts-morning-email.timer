@@ -2,7 +2,7 @@
 Description=Send StockTS morning recap email every morning
 
 [Timer]
-OnCalendar=*-*-* 08:30:00
+OnCalendar=*-*-* *:0/15:00
 Persistent=true
 AccuracySec=5m
 Unit=stock-ts-morning-email.service
