@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -3034,7 +3035,7 @@ def _format_beijing_time(value: str) -> str:
 
 
 def _parse_datetime_value(value: str) -> datetime | None:
-    normalized = value.strip()
+    normalized = value.strip().removesuffix("北京时间").strip()
     if not normalized:
         return None
     if normalized.endswith("Z"):
@@ -3626,9 +3627,14 @@ def _render_module_refresh_tools(
     workspace: str,
 ) -> str:
     action = f"/#{workspace}"
+    manual_status = _manual_refresh_status_text(refresh_time)
+    manual_status_html = (
+        f"<span>{escape(manual_status)}</span>" if manual_status else ""
+    )
     return f"""
       <div class="module-refresh-tools">
         <span>数据刷新时间：{escape(refresh_time or "待确认")}</span>
+        {manual_status_html}
         <form method="get" action="{escape(action, quote=True)}">
           <input type="hidden" name="code" value="{escape(stock_code)}" />
           <input type="hidden" name="provider" value="{escape(provider_name)}" />
@@ -3638,6 +3644,41 @@ def _render_module_refresh_tools(
           <button class="ghost-button module-refresh-button" type="submit">手动刷新数据</button>
         </form>
       </div>"""
+
+
+def _manual_refresh_status_text(refresh_time: str) -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    status = _read_key_value_status(report_dir / "manual_refresh.status")
+    if not status:
+        return ""
+    status_value = str(status.get("status") or "").strip()
+    requested_at = str(status.get("requested_at") or "").strip()
+    completed_at = str(status.get("completed_at") or "").strip()
+    marker = completed_at or requested_at
+    if not marker:
+        return ""
+    marker_dt = _parse_datetime_value(marker)
+    refresh_dt = _parse_datetime_value(refresh_time)
+    if marker_dt is not None and refresh_dt is not None and marker_dt <= refresh_dt:
+        return ""
+    label_map = {
+        "starting": "准备中",
+        "started": "进行中",
+        "ok": "已完成",
+        "completed": "已完成",
+        "failed": "失败",
+        "failed_to_start": "启动失败",
+    }
+    label = label_map.get(status_value, status_value or "状态未知")
+    if status_value in {"starting", "started"} and marker_dt is not None:
+        now = _current_datetime()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone(timedelta(hours=8)))
+        if now.astimezone(timezone(timedelta(hours=8))) - marker_dt.astimezone(
+            timezone(timedelta(hours=8))
+        ) > timedelta(minutes=30):
+            label = "可能超时"
+    return f"刷新请求：{_format_beijing_time(marker)}（{label}）"
 
 
 def _manual_refresh_command() -> list[str]:
@@ -3693,16 +3734,12 @@ def _trigger_manual_data_refresh() -> str:
         encoding="utf-8",
     )
     try:
-        with log_path.open("ab") as log_file:
-            log_file.write(f"\n== manual refresh {requested_at} ==\n".encode())
-            subprocess.Popen(
-                command,
-                cwd=Path.cwd(),
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                env=os.environ.copy(),
-            )
+        worker = threading.Thread(
+            target=_run_manual_refresh_command,
+            args=(command, request_path, log_path, requested_at),
+            daemon=True,
+        )
+        worker.start()
     except Exception as exc:
         request_path.write_text(
             "\n".join(
@@ -3729,6 +3766,58 @@ def _trigger_manual_data_refresh() -> str:
         encoding="utf-8",
     )
     return "started"
+
+
+def _run_manual_refresh_command(
+    command: list[str],
+    request_path: Path,
+    log_path: Path,
+    requested_at: str,
+) -> None:
+    exit_code = 1
+    try:
+        with log_path.open("ab") as log_file:
+            log_file.write(f"\n== manual refresh {requested_at} ==\n".encode())
+            result = subprocess.run(
+                command,
+                cwd=Path.cwd(),
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+                check=False,
+            )
+            exit_code = result.returncode
+        completed_at = datetime.now(timezone(timedelta(hours=8))).isoformat()
+        status = "ok" if exit_code == 0 else "failed"
+        request_path.write_text(
+            "\n".join(
+                [
+                    f"status={status}",
+                    f"requested_at={requested_at}",
+                    f"completed_at={completed_at}",
+                    f"exit_code={exit_code}",
+                    f"command={shlex.join(command)}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        completed_at = datetime.now(timezone(timedelta(hours=8))).isoformat()
+        request_path.write_text(
+            "\n".join(
+                [
+                    "status=failed",
+                    f"requested_at={requested_at}",
+                    f"completed_at={completed_at}",
+                    f"exit_code={exit_code}",
+                    f"error={type(exc).__name__}: {exc}",
+                    f"command={shlex.join(command)}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def _manual_refresh_redirect_location(query: dict[str, list[str]]) -> str:

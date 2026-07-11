@@ -16,6 +16,7 @@ from stock_ts.web import (
     _manual_refresh_command,
     _render_automation_monitor_panel,
     _render_latest_daily_artifact,
+    _run_manual_refresh_command,
     render_page,
 )
 
@@ -1105,6 +1106,29 @@ def test_module_refresh_time_uses_latest_data_chain_timestamp(tmp_path: Path, mo
     assert "数据刷新时间：2026-07-11 14:06:19 北京时间" not in html
 
 
+def test_module_header_shows_manual_refresh_request_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-11T14:28:15\nrefresh=ok\nreport=ok\n",
+        encoding="utf-8",
+    )
+    (report_dir / "manual_refresh.status").write_text(
+        "status=started\nrequested_at=2026-07-11T21:04:37+08:00\ncommand=demo\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-11T21:05:00+08:00")
+
+    html = _sample_html()
+    market_html = _workspace(html, "market")
+
+    assert "数据刷新时间：2026-07-11 14:28:15 北京时间" in market_html
+    assert "刷新请求：2026-07-11 21:04:37 北京时间（进行中）" in market_html
+
+
 def test_manual_refresh_command_runs_real_pipeline(monkeypatch) -> None:
     monkeypatch.delenv("STOCK_TS_MANUAL_REFRESH_COMMAND", raising=False)
 
@@ -1115,6 +1139,24 @@ def test_manual_refresh_command_runs_real_pipeline(monkeypatch) -> None:
     assert "data/imports/tdx_snapshots.json" in command
     assert "--provider" in command
     assert "tdx-snapshot" in command
+
+
+def test_manual_refresh_worker_writes_completion_status(tmp_path: Path) -> None:
+    request_path = tmp_path / "manual_refresh.status"
+    log_path = tmp_path / "manual_refresh.log"
+
+    _run_manual_refresh_command(
+        ["/bin/sh", "-c", "echo refreshed"],
+        request_path,
+        log_path,
+        "2026-07-11T21:04:37+08:00",
+    )
+
+    status = request_path.read_text(encoding="utf-8")
+    assert "status=ok" in status
+    assert "completed_at=" in status
+    assert "exit_code=0" in status
+    assert "refreshed" in log_path.read_text(encoding="utf-8")
 
 
 def test_pipeline_refresh_times_render_as_beijing_time(tmp_path: Path, monkeypatch) -> None:
