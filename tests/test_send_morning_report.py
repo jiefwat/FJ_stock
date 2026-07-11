@@ -899,3 +899,46 @@ def test_morning_report_surfaces_structured_action_limits_and_automation(tmp_pat
     assert "资金面不可用：不把资金作为买入理由" in content
     assert "## 自动任务提醒" in content
     assert "外部补强失败，新闻资金只观察" in content
+
+
+def test_morning_report_surfaces_dual_git_method_chain_from_daily_artifact(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日复盘（2026-07-08）\n\n"
+        "## 深度结论\n- 市场震荡\n\n"
+        "## 每日板块情况\n- 白酒\n\n"
+        "## 板块统一方法链\n"
+        "- 白酒：板块方法链：daily_stock_analysis 上下文包：可用 K线、资金；"
+        "TradingAgents 板块审议：多空审议：资金改善。\n\n"
+        "## 每日持仓分析\n- 贵州茅台（600519）：趋势 上升趋势，风险 低\n\n"
+        "## 持仓股票统一方法链\n"
+        "- 贵州茅台（600519）：daily_stock_analysis 信号归因：技术 40%；"
+        "消息 20%；基本面 20%；资金/成交 20%\n"
+        "  - TradingAgents 分析师团队：技术分析师支持\n"
+        "  - 多空审议：多头观点明确；空头观点估值约束\n"
+        "  - 组合经理最终意见：继续观察。\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-08T08:00:00+08:00\n",
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert "## 分析方法校验" in content
+    assert "daily_stock_analysis 信号归因" in content
+    assert "TradingAgents" in content
+    assert "板块方法链" in content
+    assert "组合经理最终意见" in content

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from stock_ts.deep_report import render_daily_deep_markdown, render_deep_stock_markdown
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.report import render_stock_markdown
-from stock_ts.workflows import build_daily_deep_report, build_deep_stock_report, build_stock_report
+from stock_ts.workflows import (
+    build_daily_deep_report,
+    build_daily_report,
+    build_deep_stock_report,
+    build_stock_report,
+)
 
 
 def test_stock_markdown_hides_method_explainer_but_keeps_decision_fields() -> None:
@@ -41,3 +48,32 @@ def test_daily_deep_markdown_removes_raw_report_duplication_and_duplicate_discla
     assert "## 个股深度观察" in markdown
     assert "今日动作" in markdown
     assert "消息事件/新闻舆情" in markdown
+
+
+def test_daily_markdown_uses_dual_git_method_chain_for_all_surfaces(
+    tmp_path: Path,
+) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心持仓\n",
+        encoding="utf-8",
+    )
+
+    daily = build_daily_report(
+        SampleDataProvider(),
+        holdings_path=holdings,
+        candidate_limit=3,
+    )
+    markdown = daily.markdown
+
+    assert "## 持仓股票统一方法链" in markdown
+    assert "贵州茅台（600519）" in markdown
+    assert "daily_stock_analysis 信号归因" in markdown
+    assert "TradingAgents 分析师团队" in markdown
+    assert "多空审议" in markdown
+    assert "组合经理最终意见" in markdown
+    assert "## 候选股票统一方法链" in markdown
+    assert "## 板块统一方法链" in markdown
+    assert "板块方法链" in markdown
+    assert "TradingAgents 板块审议" in markdown

@@ -82,6 +82,7 @@ def build_morning_report(
     opportunity_actions = _decision_opportunity_actions(decisions, limit=10) or opportunity_actions
     action_limit_lines = _decision_action_limit_lines(decisions)
     automation_lines = _decision_automation_lines(decisions)
+    method_chain_lines = _method_chain_summary_lines(daily)
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     quick_reads = _quick_read_items(
@@ -119,6 +120,9 @@ def build_morning_report(
         "",
         "## 自动任务提醒",
         "\n".join(automation_lines),
+        "",
+        "## 分析方法校验",
+        "\n".join(method_chain_lines),
         "",
         "## 地铁上先看这 5 条",
         *(_bullet(item) for item in quick_reads),
@@ -1169,6 +1173,48 @@ def _compact_block(content: str, *, fallback: str, max_items: int) -> str:
     if not items:
         items = [fallback]
     return "\n".join(_bullet(item) for item in items)
+
+
+def _method_chain_summary_lines(markdown: str) -> list[str]:
+    labels = [
+        "daily_stock_analysis 信号归因",
+        "TradingAgents",
+        "板块方法链",
+        "组合经理最终意见",
+    ]
+    source = "\n".join(
+        section
+        for section in [
+            _section(markdown, "## 板块统一方法链", max_lines=24),
+            _section(markdown, "## 持仓股票统一方法链", max_lines=32),
+            _section(markdown, "## 候选股票统一方法链", max_lines=32),
+            _section(markdown, "## 个股分析", max_lines=48),
+            _section(markdown, "## 个股深度观察", max_lines=48),
+        ]
+        if section
+    )
+    if not source:
+        return [
+            _bullet(
+                "方法链未在日报产物中展开：本次晨报只读取结构化动作，需重新生成日报以校验双方法链。"
+            )
+        ]
+    lines: list[str] = []
+    for label in labels:
+        count = source.count(label)
+        if count:
+            first = _first_line_containing(source, label)
+            lines.append(_bullet(f"{label}：已覆盖 {count} 处；样例：{first}"))
+        else:
+            lines.append(_bullet(f"{label}：未在日报产物中出现，相关结论需降级复核。"))
+    return lines
+
+
+def _first_line_containing(text: str, pattern: str) -> str:
+    for line in text.splitlines():
+        if pattern in line:
+            return _shorten_line(_strip_bullet(line), limit=120)
+    return "未提取到样例"
 
 
 def _quick_read_items(
