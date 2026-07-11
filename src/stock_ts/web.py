@@ -936,6 +936,7 @@ def render_page(
         market=market,
         candidates=candidates,
         candidate_universe=candidate_universe,
+        market_news=daily.news,
     )
     announcement_report = _safe_fetch_announcements(
         resolved.code,
@@ -2487,6 +2488,7 @@ def _assess_data_quality(
     market: MarketSnapshot,
     candidates: CandidatePoolReport,
     candidate_universe: list[CandidateStockRawData],
+    market_news: NewsSentimentReport | None = None,
 ) -> DataQualityView:
     warnings = list(resolved.warnings)
     blocked_actions: list[str] = []
@@ -2512,6 +2514,14 @@ def _assess_data_quality(
         blocked_actions.extend(["候选排序", "评分展示", "按今天盘面执行"])
         candidate_price_reliable = False
         candidate_universe_reliable = False
+    warnings.extend(
+        _multisource_context_warnings(
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
+            stock_raw=stock_raw,
+            market_news=market_news,
+        )
+    )
     if not candidate_price_reliable or not candidate_universe_reliable:
         warnings.append("候选排序暂停：候选池缺少真实日线。")
         blocked_actions.extend(["候选排序", "评分展示", "涨跌幅展示"])
@@ -2649,6 +2659,79 @@ def _candidate_kline_staleness_detail(
 def _latest_bar_date(bars: list[DailyBar]) -> str:
     dates = [bar.date for bar in bars if getattr(bar, "date", "")]
     return max(dates) if dates else ""
+
+
+def _multisource_context_warnings(
+    *,
+    requested_provider: str,
+    actual_provider: str,
+    stock_raw: StockRawData,
+    market_news: NewsSentimentReport | None,
+) -> list[str]:
+    if requested_provider.strip().lower() == "sample" or actual_provider == "SampleDataProvider":
+        return []
+    expected = _expected_latest_a_share_trade_date(_current_datetime())
+    warnings: list[str] = []
+    market_news_latest = _latest_news_date(market_news.items if market_news else [])
+    if not market_news_latest:
+        warnings.append("市场新闻缺失：消息面和舆情分析不能代表当天盘面。")
+    elif _iso_date_is_before(market_news_latest, expected):
+        warnings.append(
+            f"市场新闻已滞后：最近应为 {expected}，市场新闻最晚 {market_news_latest}。"
+        )
+
+    missing_blocks = _missing_stock_context_blocks(stock_raw)
+    if missing_blocks:
+        warnings.append(
+            f"多维数据缺口：{'、'.join(missing_blocks)}缺失，不能输出完整股票分析。"
+        )
+    stock_news_latest = _latest_news_date(stock_raw.news_items)
+    if stock_news_latest and _iso_date_is_before(stock_news_latest, expected):
+        warnings.append(
+            f"个股新闻已滞后：最近应为 {expected}，个股新闻最晚 {stock_news_latest}。"
+        )
+    announcement_latest = _latest_announcement_date(stock_raw.announcements)
+    if announcement_latest and _iso_date_is_before(announcement_latest, expected):
+        warnings.append(
+            f"公告快照需复核：最近应为 {expected}，公告最晚 {announcement_latest}。"
+        )
+    return warnings
+
+
+def _missing_stock_context_blocks(stock_raw: StockRawData) -> list[str]:
+    missing: list[str] = []
+    if stock_raw.fund_flow is None and not stock_raw.fund_flow_detail:
+        missing.append("资金面")
+    if not stock_raw.news_items:
+        missing.append("消息面")
+    if not stock_raw.announcements:
+        missing.append("公告")
+    if (
+        stock_raw.pe_ttm is None
+        and not stock_raw.valuation
+        and not stock_raw.fundamental_metrics
+    ):
+        missing.append("基本面")
+    return missing
+
+
+def _latest_news_date(items: list) -> str:
+    dates = [str(getattr(item, "date", "") or "")[:10] for item in items]
+    return max([date for date in dates if date], default="")
+
+
+def _latest_announcement_date(items: list[dict[str, object]]) -> str:
+    dates = [
+        str(
+            item.get("date")
+            or item.get("announcement_date")
+            or item.get("公告日期")
+            or ""
+        )[:10]
+        for item in items
+        if isinstance(item, dict)
+    ]
+    return max([date for date in dates if date], default="")
 
 
 def _pipeline_freshness_warnings() -> list[str]:
@@ -2856,6 +2939,13 @@ def _freshness_detail(quality: DataQualityView) -> str:
         return "自动更新已滞后，先刷新数据流水线"
     if any("数据已滞后" in warning for warning in quality.warnings):
         return "已滞后，不能按今天盘面执行"
+    context_warnings = [
+        warning
+        for warning in quality.warnings
+        if warning.startswith("市场新闻") or warning.startswith("多维数据缺口")
+    ]
+    if context_warnings:
+        return "；".join(context_warnings[:2])
     if quality.gate_level == "blocked":
         return "有缺口"
     if quality.gate_level == "warn":
@@ -5210,11 +5300,11 @@ def _render_stock_required_data_audit(stock_raw: StockRawData) -> str:
         for block in blocks
     )
     missing_count = sum(1 for block in blocks if block["tone"] == "missing")
-    summary = "四类必备数据已用于分析" if missing_count == 0 else f"{missing_count} 类数据缺失降级"
+    summary = "五类必备数据已用于分析" if missing_count == 0 else f"{missing_count} 类数据缺失降级"
     return f"""
       <div class="panel stock-data-audit-panel">
         <div class="editor-toolbar">
-          <div><h3>数据源核验</h3><p class="section-subtitle">K线数据、资金面、消息面、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
+          <div><h3>数据源核验</h3><p class="section-subtitle">K线数据、资金面、消息面、公告、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
           <span class="portfolio-chip">{escape(summary)}</span>
         </div>
         <div class="stock-data-block-grid">{rows}</div>
@@ -5244,6 +5334,13 @@ def _stock_required_data_blocks(stock_raw: StockRawData) -> list[dict[str, str]]
             _news_evidence(stock_raw),
             "缺失降级：消息面缺失，不做公告催化或情绪交易判断，不作为买入理由。",
             _source_for_block(stock_raw, ["news", "announcement", "cninfo", "akshare"], source_text),
+        ),
+        _stock_required_block(
+            "公告",
+            bool(stock_raw.announcements),
+            _announcement_evidence(stock_raw),
+            "缺失降级：公告缺失，不做公告催化、监管风险或财报事件判断。",
+            _source_for_block(stock_raw, ["announcement", "cninfo"], source_text),
         ),
         _stock_required_block(
             "基本面",
@@ -5298,6 +5395,15 @@ def _fund_flow_evidence(stock_raw: StockRawData) -> str:
     if stock_raw.fund_flow is not None:
         return f"主力资金 {stock_raw.fund_flow:.2f}；用于资金承接和分歧判断。"
     if stock_raw.fund_flow_detail:
+        amount_yuan = _optional_number(stock_raw.fund_flow_detail.get("amount_yuan"))
+        turnover_rate = _optional_number(stock_raw.fund_flow_detail.get("turnover_rate"))
+        pieces: list[str] = []
+        if amount_yuan is not None:
+            pieces.append(f"成交额 {amount_yuan / 10000:.2f} 万")
+        if turnover_rate is not None:
+            pieces.append(f"换手率 {turnover_rate:.2f}%")
+        if pieces:
+            return "；".join(pieces) + "；用于成交承接代理判断，不等同主力净流。"
         return "资金明细可用；用于主力/大单/净流入结构判断。"
     return "资金面缺失。"
 
@@ -5307,6 +5413,14 @@ def _news_evidence(stock_raw: StockRawData) -> str:
         return "消息面缺失。"
     latest = stock_raw.news_items[0]
     return f"{len(stock_raw.news_items)} 条新闻/公告；最新：{latest.title}"
+
+
+def _announcement_evidence(stock_raw: StockRawData) -> str:
+    if not stock_raw.announcements:
+        return "公告缺失。"
+    latest = stock_raw.announcements[0]
+    title = latest.get("title") or latest.get("公告标题") or "未命名公告"
+    return f"{len(stock_raw.announcements)} 条公告；最新：{title}"
 
 
 def _fundamental_evidence(stock_raw: StockRawData) -> str:
@@ -6282,6 +6396,16 @@ def _fundamental_metric_parts(stock_raw: StockRawData) -> list[str]:
             parts.append(f"{label} {value:.2f}x")
         else:
             parts.append(f"{label} {value:.1f}%")
+    for key, label in [
+        ("eps", "EPS"),
+        ("net_asset_per_share", "每股净资产"),
+        ("operating_revenue", "营收"),
+        ("net_profit", "净利润"),
+        ("operating_cash_flow", "经营现金流"),
+    ]:
+        value = _optional_number(metrics.get(key))
+        if value is not None:
+            parts.append(f"{label} {value:.2f}")
     return parts
 
 
