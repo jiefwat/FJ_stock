@@ -586,6 +586,28 @@ def test_stock_analysis_uses_multi_day_theme_and_relative_comparison() -> None:
     assert "近一日 " not in stock_html
 
 
+def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "多角色分析方法",
+        "技术分析师",
+        "基本面分析师",
+        "新闻事件分析师",
+        "情绪/资金分析师",
+        "多空辩论",
+        "交易员",
+        "风控经理",
+        "输入",
+        "判断",
+    ]:
+        assert text in stock_html
+
+    assert stock_html.index("综合结论") < stock_html.index("多角色分析方法")
+    assert stock_html.index("多角色分析方法") < stock_html.index("后续建议")
+    assert "完整方法链" not in stock_html
+
+
 def test_stock_forecast_outputs_prediction_not_only_scenarios() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
