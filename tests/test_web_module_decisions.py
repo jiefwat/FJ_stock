@@ -180,7 +180,7 @@ def test_daily_market_shows_concise_data_sector_analysis_and_mapped_events() -> 
         "分析",
         "异动事件",
         "事件原因",
-        "价格异动",
+        "基本面：",
     ]:
         assert text in market_html
 
@@ -1366,6 +1366,105 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "弱势；扩散" not in market_html
 
 
+def test_market_sector_and_wide_move_causes_use_news_fundamental_not_price_only() -> None:
+    class CausalProvider(SampleDataProvider):
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="机器人",
+                    pct_chg=3.2,
+                    advancing_ratio=0.76,
+                    amount_change=18.0,
+                    fund_flow=2.4,
+                    limit_up_count=3,
+                ),
+                SectorRawData(
+                    name="白酒",
+                    pct_chg=-2.1,
+                    advancing_ratio=0.32,
+                    amount_change=-10.0,
+                    fund_flow=-1.8,
+                    limit_up_count=0,
+                ),
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300111",
+                    name="订单机器人",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-09", 10.0, 10.2, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-10", 10.2, 11.0, 10.1, 10.8, 2600),
+                    ],
+                    fund_flow=2.1,
+                    turnover_rate=8.6,
+                    amount=18.0,
+                    pe_ttm=24.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="订单机器人签下机器人订单",
+                            summary="订单增长",
+                            sentiment="positive",
+                        )
+                    ],
+                    announcements=[
+                        {
+                            "title": "订单机器人关于重大合同的公告",
+                            "date": "2026-07-10",
+                        }
+                    ],
+                ),
+                CandidateStockRawData(
+                    code="600333",
+                    name="风险白酒",
+                    sector="白酒",
+                    bars=[
+                        DailyBar("2026-07-09", 20.0, 20.2, 19.8, 20.0, 1000),
+                        DailyBar("2026-07-10", 19.8, 20.0, 18.3, 18.5, 3100),
+                    ],
+                    fund_flow=-1.8,
+                    turnover_rate=7.2,
+                    amount=15.0,
+                    pe_ttm=68.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="财联社",
+                            title="风险白酒库存压力上升",
+                            summary="渠道压力",
+                            sentiment="negative",
+                        )
+                    ],
+                ),
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=CausalProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+
+    for text in [
+        "消息面：订单机器人签下机器人订单",
+        "公告：订单机器人关于重大合同的公告",
+        "基本面：PE(TTM) 24.0",
+        "消息面：风险白酒库存压力上升",
+        "基本面：PE(TTM) 68.0",
+    ]:
+        assert text in market_html
+    for phenomenon in [
+        "多数成份同步上涨",
+        "板块内多数个股同步上涨",
+        "成交额改善",
+        "成交额 18.0 亿",
+        "价格大幅波动",
+    ]:
+        assert phenomenon not in market_html
+
+
 def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
     from stock_ts.models import NewsItem
 
@@ -1435,7 +1534,8 @@ def test_market_module_builds_price_movers_from_candidate_scan_without_news() ->
     assert "异动事件" in market_html
     assert "对应主题" in market_html
     assert "对应股票" in market_html
-    assert "价格异动" in market_html
+    assert "事件原因" in market_html
+    assert "价格异动" not in market_html
 
 
 def test_market_event_panel_uses_compact_card_layout_not_wide_table() -> None:

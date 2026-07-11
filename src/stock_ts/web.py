@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from html import escape
 from http.cookies import SimpleCookie
@@ -1169,6 +1169,9 @@ class LimitBoardRow:
     turnover_rate: float = 0.0
     latest_date: str = ""
     fund_flow: float | None = None
+    pe_ttm: float | None = None
+    news_items: list[NewsItem] = field(default_factory=list)
+    announcements: list[dict[str, object]] = field(default_factory=list)
 
 
 def _safe_fetch_candidate_universe(provider: StockDataProvider) -> list[CandidateStockRawData]:
@@ -1243,6 +1246,9 @@ def _build_limit_board_rows(universe: list[CandidateStockRawData]) -> list[Limit
                 turnover_rate=item.turnover_rate,
                 latest_date=item.bars[-1].date,
                 fund_flow=item.fund_flow,
+                pe_ttm=item.pe_ttm,
+                news_items=item.news_items,
+                announcements=item.announcements,
             )
         )
     return rows
@@ -4620,7 +4626,7 @@ def _render_opportunity_recommendation_sector_row(
 ) -> str:
     risk = _sector_risk_text(item)
     reason_parts = [
-        f"板块原因：{_opportunity_sector_cause(item)}",
+        f"板块原因：{_opportunity_sector_cause(item, candidate_universe)}",
         f"入选原因：{_opportunity_sector_entry_reason(item)}",
     ]
     if risk:
@@ -4634,16 +4640,14 @@ def _render_opportunity_recommendation_sector_row(
     )
 
 
-def _opportunity_sector_cause(item) -> str:
-    if item.advancing_ratio >= 0.65 and item.limit_up_count >= 2:
-        return "板块内上涨扩散充分，并有涨停前排带动"
-    if item.advancing_ratio >= 0.65:
-        return "多数成份同步上涨，说明不是单只股票孤立拉升"
-    if item.limit_up_count >= 2:
-        return "涨停前排提供热度，但还需要扩散确认"
-    if item.fund_status == "资金活跃" or item.amount_change > 0:
-        return "成交或资金改善带来轮动机会"
-    return "相对强度靠前，但原因仍需结合龙头承接复核"
+def _opportunity_sector_cause(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    evidence = _sector_causal_evidence(item.name, candidate_universe)
+    if evidence:
+        return "；".join(evidence[:3])
+    return "未识别明确消息/公告/基本面催化，只能列为观察方向，不把涨跌当原因"
 
 
 def _opportunity_sector_entry_reason(item) -> str:
@@ -4655,10 +4659,10 @@ def _opportunity_sector_entry_reason(item) -> str:
     if item.continuity in {"持续性强", "持续性观察"}:
         parts.append(item.continuity)
     if item.fund_status == "资金活跃":
-        parts.append("资金流入配合")
+        parts.append("资金面：资金活跃，等待消息/公告/基本面确认")
     elif item.amount_change > 0:
-        parts.append("成交额改善")
-    return "；".join(parts) if parts else "仅作观察，等待资金和扩散继续确认"
+        parts.append("资金面：成交放大，等待消息/公告/基本面确认")
+    return "；".join(parts) if parts else "仅作观察，等待资金、消息、公告和基本面确认"
 
 
 def _render_opportunity_candidate_cards(
@@ -5591,27 +5595,14 @@ def _render_wide_move_stock_link(
 
 
 def _wide_move_analysis(item: LimitBoardRow, *, up: bool) -> str:
-    pieces: list[str] = []
-    if _is_known_theme(item.sector):
-        pieces.append(f"{item.sector}主题{'走强' if up else '承压'}")
-    if item.fund_flow is not None:
-        if item.fund_flow > 0:
-            pieces.append("资金流入")
-        elif item.fund_flow < 0:
-            pieces.append("资金流出")
-        else:
-            pieces.append("资金中性")
-    if item.turnover_rate >= 8:
-        pieces.append(f"换手活跃 {item.turnover_rate:.1f}%")
-    if item.amount >= 10:
-        pieces.append(f"成交额 {item.amount:.1f} 亿")
-    if up and item.pct_change >= 9:
-        pieces.append("接近涨停，关注封板和次日溢价")
-    elif not up and item.pct_change <= -9:
-        pieces.append("接近跌停，优先排查公告和流动性风险")
-    if not pieces:
-        pieces.append("价格大幅波动，需结合板块、资金和消息复核")
-    return "；".join(pieces[:4])
+    evidence = _candidate_causal_evidence(item)
+    if evidence:
+        return "；".join(evidence[:4])
+    direction = "上涨" if up else "下跌"
+    return (
+        f"未识别明确消息/公告/基本面原因；当前只是{direction}异动，"
+        "需继续查新闻、公告、财务和资金面"
+    )
 
 
 def _market_distribution_pct_values(
@@ -5686,7 +5677,7 @@ def _render_market_strength_sector_row(
         if stocks
         else "候选池暂无同主题样本"
     )
-    analysis = _sector_strength_analysis(item, reverse=reverse)
+    analysis = _sector_strength_analysis(item, candidate_universe, reverse=reverse)
     return (
         f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
         f"<span>热度 {item.heat_score}/100</span></td>"
@@ -5710,69 +5701,102 @@ def _theme_stocks_by_move(
     return sorted(rows, key=lambda item: item.pct_change, reverse=reverse)[:5]
 
 
-def _sector_strength_analysis(item, *, reverse: bool) -> str:
+def _sector_strength_analysis(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+    *,
+    reverse: bool,
+) -> str:
     if reverse:
-        return _sector_strong_reason(item)
-    return _sector_weak_reason(item)
+        return _sector_strong_reason(item, candidate_universe)
+    return _sector_weak_reason(item, candidate_universe)
 
 
-def _sector_strong_reason(item) -> str:
-    reasons: list[str] = []
-    if item.advancing_ratio >= 0.65 and item.limit_up_count >= 2:
-        reasons.append("上涨扩散充分，且有涨停前排形成梯队")
-    elif item.advancing_ratio >= 0.65:
-        reasons.append("板块内多数个股同步上涨，不是单票拉升")
-    elif item.limit_up_count >= 2:
-        reasons.append("涨停前排带动板块热度，但仍需看扩散")
-    elif item.pct_chg > 0:
-        reasons.append("板块涨幅靠前，但内部扩散还不充分")
-    else:
-        reasons.append("相对排名靠前，绝对强度仍需复核")
-
-    if item.fund_status == "资金活跃":
-        reasons.append("资金流入配合")
-    elif item.amount_change > 0:
-        reasons.append("成交额改善")
-    elif item.fund_status == "资金流出":
-        reasons.append("资金流出，强度可能只是短线脉冲")
-    else:
-        reasons.append("资金配合一般，持续性要看后续放量")
-
-    if item.continuity in {"持续性强", "持续性观察"}:
-        reasons.append(item.continuity)
-    elif item.rotation_status == "市场主线":
-        reasons.append("已进入市场主线候选")
-
-    return f"走强原因：{'；'.join(reasons[:3])}"
+def _sector_strong_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    evidence = _sector_causal_evidence(item.name, candidate_universe)
+    if evidence:
+        return f"走强原因：{'；'.join(evidence[:3])}"
+    return (
+        "走强原因：未识别明确消息/公告/基本面催化；"
+        "当前只看到盘面强弱，不能把上涨本身当原因；"
+        f"资金面：{_sector_fund_context(item)}"
+    )
 
 
-def _sector_weak_reason(item) -> str:
-    reasons: list[str] = []
-    if item.pct_chg < 0 and item.advancing_ratio < 0.45:
-        reasons.append("板块下跌且内部多数个股走弱")
-    elif item.pct_chg < 0:
-        reasons.append("板块价格转弱")
-    elif item.advancing_ratio < 0.45:
-        reasons.append("内部上涨家数不足，承接不强")
-    else:
-        reasons.append("在当前市场里涨幅落后，资金优先级偏低")
-
-    if item.fund_status == "资金流出":
-        reasons.append("资金流出压制反弹")
-    elif item.amount_change < 0:
-        reasons.append("成交额收缩，说明跟进资金不足")
-    elif item.limit_up_count == 0:
-        reasons.append("缺少涨停前排带动")
-    else:
-        reasons.append("仍有局部活跃，先看能否扩散")
-
-    if item.risk != "风险可控":
-        reasons.append(item.risk)
-    elif item.rotation_status == "退潮方向":
-        reasons.append("处在退潮方向")
-
+def _sector_weak_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    evidence = _sector_causal_evidence(item.name, candidate_universe)
     label = "走弱原因" if item.pct_chg < 0 or item.advancing_ratio < 0.5 else "相对弱势原因"
-    return f"{label}：{'；'.join(reasons[:3])}"
+    if evidence:
+        return f"{label}：{'；'.join(evidence[:3])}"
+    return (
+        f"{label}：未识别明确消息/公告/基本面利空；"
+        "当前只看到盘面转弱，不能把下跌本身当原因；"
+        f"资金面：{_sector_fund_context(item)}"
+    )
+
+
+def _sector_causal_evidence(
+    theme: str,
+    candidate_universe: list[CandidateStockRawData],
+) -> list[str]:
+    related = [
+        item for item in candidate_universe if localize_sector_name(item.sector) == localize_sector_name(theme)
+    ]
+    evidence: list[str] = []
+    for item in related:
+        evidence.extend(_candidate_causal_evidence(item))
+        if len(evidence) >= 4:
+            break
+    return _dedupe_texts(evidence)
+
+
+def _candidate_causal_evidence(item: CandidateStockRawData | LimitBoardRow) -> list[str]:
+    evidence: list[str] = []
+    news_items = getattr(item, "news_items", []) or []
+    announcements = getattr(item, "announcements", []) or []
+    pe_ttm = getattr(item, "pe_ttm", None)
+    fund_flow = getattr(item, "fund_flow", None)
+    if news_items:
+        title = _first_non_empty([news_items[0].title, news_items[0].summary])
+        if title:
+            evidence.append(f"消息面：{_short_condition(title, 36)}")
+    if announcements:
+        title = _announcement_title(announcements[0])
+        if title:
+            evidence.append(f"公告：{_short_condition(title, 36)}")
+    if pe_ttm is not None:
+        evidence.append(f"基本面：PE(TTM) {pe_ttm:.1f}")
+    if fund_flow is not None:
+        direction = "净流入" if fund_flow > 0 else "净流出" if fund_flow < 0 else "中性"
+        evidence.append(f"资金面：{direction} {abs(fund_flow):.2f} 亿")
+    return evidence
+
+
+def _announcement_title(item: dict[str, object]) -> str:
+    return str(item.get("title") or item.get("公告标题") or item.get("name") or "").strip()
+
+
+def _first_non_empty(values: list[str]) -> str:
+    return next((str(value).strip() for value in values if str(value).strip()), "")
+
+
+def _dedupe_texts(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def _sector_fund_context(item) -> str:
+    if item.fund_status == "资金活跃":
+        return "资金活跃，但仍需消息/公告/基本面解释催化"
+    if item.fund_status == "资金流出":
+        return "资金流出，只能说明压力，不能解释根因"
+    return "资金配合一般，需继续补新闻、公告和基本面"
 
 
 def _render_professional_market_diagnosis(
@@ -6278,9 +6302,7 @@ def _event_reason_text(item: NewsItem, theme: str, stock_text: str) -> str:
     title = item.title.strip("【】[]")
     summary = item.summary.strip()
     if "价格异动" in title:
-        reason = title
-        if summary:
-            reason = f"{reason}；{summary}"
+        reason = summary or "未识别明确消息/公告/基本面原因；价格异动只作为复核入口"
     elif "波动超" in title:
         reason = title.split("：", 1)[-1]
     elif "板块" in title and theme:
@@ -6340,14 +6362,19 @@ def _candidate_price_mover_events(
             date=row.latest_date,
             source="TDX候选池.价格异动",
             title=f"{row.name}价格异动：{row.pct_change:.2f}%",
-            summary=(
-                f"{row.sector}；成交额 {row.amount:.1f} 亿；"
-                f"换手 {row.turnover_rate:.2f}%；只作为异动复核入口"
-            ),
+            summary=_candidate_price_mover_reason(row),
             sentiment="neutral",
         )
         for row in rows
     ]
+
+
+def _candidate_price_mover_reason(row: LimitBoardRow) -> str:
+    evidence = _candidate_causal_evidence(row)
+    if evidence:
+        return "；".join(evidence[:4])
+    return "未识别明确消息/公告/基本面原因；价格异动只作为复核入口"
+
 
 def _sentiment_label(value: str) -> str:
     return {"positive": "正面", "negative": "负面", "neutral": "中性"}.get(value, value)
