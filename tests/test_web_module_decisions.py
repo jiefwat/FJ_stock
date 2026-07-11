@@ -804,6 +804,37 @@ def test_data_center_does_not_warn_for_complete_hk_yahoo_and_hkex_context(
     assert "基本面缺字段" not in data_center_html
 
 
+
+
+def test_daily_market_shows_twenty_event_summaries_only() -> None:
+    from stock_ts.models import NewsItem
+
+    class ManyEventProvider(SampleDataProvider):
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date=f"2026-07-{index:02d}",
+                    source=f"source-{index}",
+                    title=f"事件标题 {index}",
+                    summary=f"异动摘要 {index}",
+                    sentiment="neutral",
+                )
+                for index in range(1, 26)
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=ManyEventProvider(), provider_name="tdx-snapshot"), "market"
+    )
+
+    assert "下一步验证" not in market_html
+    assert "异动事件" in market_html
+    assert market_html.count('class="market-event-summary"') == 20
+    assert "异动摘要 1" in market_html
+    assert "异动摘要 20" in market_html
+    assert "异动摘要 21" not in market_html
+    assert "事件标题" not in market_html
+    assert "source-" not in market_html
+
 def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:
     market_html = _workspace(_sample_html(), "market")
 
@@ -841,13 +872,14 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
     )
 
     assert "异动事件" in market_html
-    assert "中芯国际异动：波动超 20 日均值" in market_html
-    assert "longbridge.mcp.市场异动" in market_html
+    assert "半导体厂商" in market_html
+    assert "中芯国际异动：波动超 20 日均值" not in market_html
+    assert "longbridge.mcp.市场异动" not in market_html
 
 
 def test_market_module_builds_price_movers_from_candidate_scan_without_news() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     assert "异动事件" in market_html
-    assert "价格异动" in market_html
-    assert "兆易创新" in market_html or "北方华创" in market_html
+    assert "换手" in market_html
+    assert "价格异动" not in market_html

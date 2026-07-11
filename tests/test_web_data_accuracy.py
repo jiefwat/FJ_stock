@@ -784,9 +784,10 @@ def test_web_consumes_real_news_announcement_financial_and_sentiment_snapshot(
         holdings_path=str(holdings),
     )
 
-    assert "市场异动" in html
-    assert "正面 1 / 负面 1" in html
-    assert "多家公司提示减持风险" in html
+    assert "异动事件" in html
+    assert "正面 1 / 负面 1" not in html
+    assert "多家公司提示减持风险" not in html
+    assert "减持公告可能压制风险偏好" in html
     assert "贵州茅台2026年半年度业绩预告公告" in html
     assert "营收同比 15.2%" in html
     assert "净利同比 18.4%" in html

@@ -3263,6 +3263,26 @@ body {
 }
 
 
+.market-event-summary-list {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px 14px;
+  margin:12px 0 0;
+  padding:0;
+  list-style:none;
+}
+.market-event-summary {
+  border-bottom:1px solid var(--line);
+  padding:9px 0;
+  color:var(--ink);
+  font-size:13px;
+  line-height:1.5;
+}
+@media (max-width:680px) {
+  .market-event-summary-list { grid-template-columns:1fr; }
+}
+
+
 .stock-data-audit-panel {
   margin:16px 0;
 }

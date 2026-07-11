@@ -4863,82 +4863,45 @@ def _render_market_sentiment_panel(
 ) -> str:
     candidate_universe = candidate_universe or []
     if news is None or not news.items:
-        mover_panel = _render_market_mover_events([], candidate_universe=candidate_universe)
+        event_summaries = _market_event_summaries([], candidate_universe=candidate_universe)
         return f"""
       <div class="panel market-panel" style="margin-top:16px">
-        <h3>市场异动</h3>
-        <div class="empty-state"><strong>市场新闻未接入</strong><p>缺少市场新闻/舆情源时，不把消息面当作交易理由；价格异动只做复核入口。</p></div>
-        {mover_panel}
+        <div class="editor-toolbar"><div><h3>异动事件</h3></div><span class="portfolio-chip">{len(event_summaries)} 条摘要</span></div>
+        {_render_market_event_summary_list(event_summaries)}
       </div>"""
-    latest = news.items[0]
-    mover_events = _market_mover_events(news.items)
-    mover_panel = _render_market_mover_events(
-        mover_events, candidate_universe=candidate_universe
-    )
-    rows = "".join(
-        f"<tr><td>{escape(item.date[:10])}</td><td>{escape(item.source)}</td><td>{escape(_sentiment_label(item.sentiment))}</td><td>{escape(item.title)}</td></tr>"
-        for item in news.items[:5]
-    )
-    risk = news.risks[0] if news.risks else "未识别明显负面"
+    event_summaries = _market_event_summaries(news.items, candidate_universe=candidate_universe)
     return f"""
       <div class="panel market-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>市场异动</h3><p class="section-subtitle">新闻只做风险偏好和催化验证，不替代价格、成交和公告。</p></div><span class="portfolio-chip">正面 {news.positive_count} / 负面 {news.negative_count}</span></div>
-        <div class="summary-grid">
-          <div class="summary-card"><span>舆情结论</span><strong>{escape(news.summary)}</strong></div>
-          <div class="summary-card"><span>最新消息</span><strong>{escape(latest.title)}</strong><p class="kpi-foot">{escape(latest.source)}</p></div>
-          <div class="summary-card"><span>风险提示</span><strong>{escape(risk)}</strong></div>
-        </div>
-        {mover_panel}
-        <table class="data-table" style="margin-top:12px"><thead><tr><th>日期</th><th>来源</th><th>情绪</th><th>标题</th></tr></thead><tbody>{rows}</tbody></table>
+        <div class="editor-toolbar"><div><h3>异动事件</h3></div><span class="portfolio-chip">{len(event_summaries)} 条摘要</span></div>
+        {_render_market_event_summary_list(event_summaries)}
       </div>"""
 
 
-def _market_mover_events(items: list[NewsItem]) -> list[NewsItem]:
-    return [
-        item
-        for item in items
-        if "市场异动" in item.source or item.title.endswith("异动") or "异动：" in item.title
-    ][:5]
-
-
-def _render_market_mover_events(
+def _market_event_summaries(
     items: list[NewsItem],
     *,
     candidate_universe: list[CandidateStockRawData] | None = None,
-) -> str:
-    candidate_universe = candidate_universe or []
-    if items:
-        events = "".join(
-            f"""
-        <div class="market-mover-card">
-          <span>{escape(item.date[:10])} · {escape(item.source)}</span>
-          <strong>{escape(item.title)}</strong>
-          <p>{escape(item.summary or "等待补充异动原因")}</p>
-        </div>"""
-            for item in items
-        )
-    else:
-        price_movers = _candidate_price_mover_events(candidate_universe)
-        if not price_movers:
-            return """
-        <div class="market-mover-strip">
-          <strong>异动事件</strong><span>暂未导入 MCP/行情异动事件，先看价格和板块强弱。</span>
-        </div>"""
-        events = "".join(
-            f"""
-        <div class="market-mover-card">
-          <span>{escape(item.date[:10])} · {escape(item.source)}</span>
-          <strong>{escape(item.title)}</strong>
-          <p>{escape(item.summary)}</p>
-        </div>"""
-            for item in price_movers
-        )
-    return f"""
-        <div class="market-mover-panel">
-          <div class="sector-top5-head"><strong>异动事件</strong><span>来自 MCP/行情异动源，只做风险偏好和事件复核。</span></div>
-          <div class="market-mover-grid">{events}</div>
-        </div>"""
+) -> list[str]:
+    summaries = [
+        _short_condition(item.summary or item.title, 120)
+        for item in items
+        if (item.summary or item.title).strip()
+    ]
+    if not summaries:
+        summaries = [
+            _short_condition(item.summary or item.title, 120)
+            for item in _candidate_price_mover_events(candidate_universe or [])
+        ]
+    return summaries[:20]
 
+
+def _render_market_event_summary_list(summaries: list[str]) -> str:
+    if not summaries:
+        return "<div class='empty-state'><strong>暂无异动摘要</strong></div>"
+    rows = "".join(
+        f'<li class="market-event-summary">{escape(summary)}</li>' for summary in summaries
+    )
+    return f"<ol class='market-event-summary-list'>{rows}</ol>"
 
 
 
@@ -5093,7 +5056,7 @@ def _render_market_sector_top5_panel(
           <div class="sector-top5-panel">
             <div class="sector-top5-head"><strong>板块Top5</strong><span>每个方向只给代表股票和分析结果，不直接当买点。</span></div>
             <table class="data-table compact-sector-table">
-              <thead><tr><th>板块</th><th>代表股票</th><th>分析结果</th><th>下一步验证</th></tr></thead>
+              <thead><tr><th>板块</th><th>代表股票</th><th>分析结果</th></tr></thead>
               <tbody>{rows}</tbody>
             </table>
           </div>"""
@@ -5118,8 +5081,7 @@ def _render_market_sector_top5_row(
         f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
         f"<span>热度 {item.heat_score}/100 · {escape(item.rotation_status)}</span></td>"
         f"<td>{escape(stock_text)}</td>"
-        f"<td>{escape(analysis)}</td>"
-        f"<td>{escape(_sector_next_check(item))}</td></tr>"
+        f"<td>{escape(analysis)}</td></tr>"
     )
 
 
@@ -5199,7 +5161,7 @@ def _render_compact_sector_module(
       </div>
       <div class="panel" style="margin-top:16px">
         <h3>主题强弱榜</h3>
-        <table class="data-table"><thead><tr><th>主题</th><th>强度证据</th><th>代表个股</th><th>风险点</th><th>操作策略</th><th>下一步验证</th></tr></thead><tbody>{rows}</tbody></table>
+        <table class="data-table"><thead><tr><th>主题</th><th>强度证据</th><th>代表个股</th><th>风险点</th><th>操作策略</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
     </section>"""
 
@@ -5211,7 +5173,6 @@ def _render_sector_theme_row(
     strong_stock_text = _sector_representative_stocks(item, candidate_universe)
     conclusion = _sector_state_label(item)
     strength = _sector_strength_reason(item)
-    next_check = _sector_next_check(item)
     strategy = _sector_strategy(item)
     risk = _sector_risk_text(item)
     return (
@@ -5220,8 +5181,7 @@ def _render_sector_theme_row(
         f"<td>{escape(conclusion)}<span>{escape(strength)}</span></td>"
         f"<td>{escape(strong_stock_text)}</td>"
         f"<td>{escape(risk)}</td>"
-        f"<td>{escape(strategy)}</td>"
-        f"<td>{escape(next_check)}</td></tr>"
+        f"<td>{escape(strategy)}</td></tr>"
     )
 
 
