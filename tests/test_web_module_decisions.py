@@ -12,7 +12,11 @@ from stock_ts.models import (
 )
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
-from stock_ts.web import render_page
+from stock_ts.web import (
+    _render_automation_monitor_panel,
+    _render_latest_daily_artifact,
+    render_page,
+)
 
 
 def _sample_html(**kwargs) -> str:
@@ -673,8 +677,48 @@ def test_data_center_keeps_mcp_market_news_status_simple() -> None:
     data_center_html = _workspace(html, "data-center")
 
     assert "新闻舆情" in data_center_html
-    assert "2026-07-11T01:00:00Z" in data_center_html
+    assert "2026-07-11 09:00:00 北京时间" in data_center_html
+    assert "2026-07-11T01:00:00Z" not in data_center_html
     assert "longbridge.mcp" not in data_center_html
+
+
+def test_data_refresh_times_render_as_beijing_time() -> None:
+    class UtcRefreshProvider(SampleDataProvider):
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "snapshot_source": "tdx-mcp-eltdx-bridge",
+                "snapshot_generated_at": "2026-07-11T06:06:19.966626+00:00",
+                "mcp_market_news_refresh_generated_at": "2026-07-11T01:00:00Z",
+            }
+
+    html = _sample_html(provider=UtcRefreshProvider(), provider_name="tdx-snapshot")
+
+    assert "2026-07-11 14:06:19 北京时间" in html
+    assert "2026-07-11T06:06:19.966626+00:00" not in html
+    assert "2026-07-11T01:00:00Z" not in html
+
+
+def test_pipeline_refresh_times_render_as_beijing_time(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "latest.md").write_text(
+        "# 每日复盘\n\n## 今日一句话\n- 数据时间显示用北京时间。\n",
+        encoding="utf-8",
+    )
+    (report_dir / "latest.status").write_text(
+        "status=ok\ntrade_date=2026-07-11\ngenerated_at=2026-07-11T06:06:19.966626+00:00\n",
+        encoding="utf-8",
+    )
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-11T06:06:19.966626+00:00\nrefresh=ok\nreport=ok\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    html = _render_latest_daily_artifact() + _render_automation_monitor_panel()
+
+    assert "2026-07-11 14:06:19 北京时间" in html
+    assert "2026-07-11T06:06:19.966626+00:00" not in html
 
 
 def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monkeypatch) -> None:

@@ -5,7 +5,7 @@ import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import escape
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2860,10 +2860,38 @@ def _build_data_center_view(
         status = "正常"
     return DataCenterView(
         status=status,
-        updated_at=_first_present(snapshot_generated, *(row.latest_at for row in rows)) or "待确认",
+        updated_at=_format_beijing_time(
+            _first_present(snapshot_generated, *(row.latest_at for row in rows)) or "待确认"
+        ),
         rows=rows,
         alerts=alerts,
     )
+
+
+def _format_beijing_time(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw or raw == "待确认":
+        return raw or "待确认"
+    parsed = _parse_datetime_value(raw)
+    if parsed is None:
+        return raw
+    beijing = parsed.astimezone(timezone(timedelta(hours=8)))
+    return f"{beijing:%Y-%m-%d %H:%M:%S} 北京时间"
+
+
+def _parse_datetime_value(value: str) -> datetime | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone(timedelta(hours=8)))
+    return parsed
 
 
 def _data_center_row(
@@ -2883,7 +2911,7 @@ def _data_center_row(
     missing = [item for item in missing if item]
     latest_text = latest_date or "未采集"
     if updated_at:
-        latest_text = f"{latest_text} / 更新 {updated_at}"
+        latest_text = f"{latest_text} / 更新 {_format_beijing_time(updated_at)}"
     is_stale = (
         freshness_required and bool(latest_date) and _iso_date_is_before(latest_date, expected)
     )
@@ -2946,7 +2974,7 @@ def _data_chain_center_row() -> DataCenterRow | None:
         category="全链路校验",
         channel="reports/daily/data_chain_status.json",
         status=display_status,
-        latest_at=str(payload.get("generated_at") or "待确认"),
+        latest_at=_format_beijing_time(str(payload.get("generated_at") or "待确认")),
         coverage=coverage,
         missing=missing,
         impact=impact,
@@ -8562,7 +8590,7 @@ def _render_latest_daily_artifact() -> str:
         fallback=[],
     )[:3]
     trade_date = status.get("trade_date", "待确认")
-    generated_at = status.get("generated_at", "待确认")
+    generated_at = _format_beijing_time(status.get("generated_at", "待确认"))
     return f"""
       <div class="panel" style="margin-top:16px">
         <h3>最新自动日报</h3>
@@ -8618,7 +8646,7 @@ def _render_pipeline_status_panel(status_path: Path | None = None) -> str:
         item
         for item in [
             f"状态 {status.get('status', 'unknown')}",
-            status.get("generated_at", ""),
+            _format_beijing_time(status.get("generated_at", "")),
         ]
         if item
     )
@@ -8644,6 +8672,7 @@ def _render_automation_monitor_panel() -> str:
           </div>
         </div>"""
     generated_at = status.get("generated_at", "未记录")
+    generated_at_display = _format_beijing_time(generated_at)
     freshness = _automation_freshness_label(generated_at)
     failed_steps = _automation_failed_steps(status)
     advice = _automation_advice(failed_steps)
@@ -8663,7 +8692,7 @@ def _render_automation_monitor_panel() -> str:
         <h3>自动更新监控</h3>
         <div class="summary-grid">
           <div class="summary-card"><span>运行节奏</span><strong>00:00/06:00/09:00/12:30/14:00</strong><p class="kpi-foot">服务器定时刷新行情、K线、新闻、公告和日报。</p></div>
-          <div class="summary-card"><span>最近运行</span><strong>{escape(generated_at)}</strong><p class="kpi-foot">{escape(freshness)}</p></div>
+          <div class="summary-card"><span>最近运行</span><strong>{escape(generated_at_display)}</strong><p class="kpi-foot">{escape(freshness)}</p></div>
           <div class="summary-card"><span>整体状态</span><strong>{escape(_human_pipeline_status(status.get("status", "未知")))}</strong><p class="kpi-foot">以 pipeline.status 为准。</p></div>
           <div class="summary-card"><span>执行可用性</span><strong>{escape(execution_readiness)}</strong><p class="kpi-foot">先确认新鲜度，再看交易动作。</p></div>
           <div class="summary-card"><span>处理建议</span><strong>{escape(advice)}</strong><p class="kpi-foot">先看 pipeline.status，再看定时任务日志。</p></div>
