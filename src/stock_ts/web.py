@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from .agentic_stock_analysis import StockAgentDecision, build_stock_agent_decision
 from .analysis import analyze_candidates, analyze_stock
-from .announcements import AnnouncementReport, fetch_cninfo_announcements
+from .announcements import AnnouncementItem, AnnouncementReport, fetch_cninfo_announcements
 from .auth import AuthConfig, AuthUser, SessionManager, UserStore, is_auth_enabled
 from .config import get_settings, save_dotenv_values
 from .daily_decisions import read_decision_artifact
@@ -26,6 +26,7 @@ from .models import (
     CandidateStockRawData,
     Holding,
     MarketSnapshot,
+    NewsSentimentReport,
     PortfolioAnalysisReport,
     PositionAnalysis,
     SectorAnalysisReport,
@@ -938,6 +939,8 @@ def render_page(
         resolved.code,
         announcement_fetcher=announcement_fetcher,
     )
+    if announcement_report is None or not announcement_report.items:
+        announcement_report = _announcement_report_from_stock_raw(resolved.code, stock_raw)
     event_radar = build_event_radar(announcement_report)
     risk_gate = _build_risk_gate(
         quality=quality,
@@ -956,7 +959,9 @@ def render_page(
         data_quality_warnings=_trade_blocking_warnings(quality.warnings),
     )
     section_map = {
-        "market": _render_compact_market_module(market, sectors, portfolio, candidates),
+        "market": _render_compact_market_module(
+            market, sectors, portfolio, candidates, news=daily.news
+        ),
         "portfolio": _render_compact_portfolio_module(
             portfolio,
             market,
@@ -2365,6 +2370,35 @@ def _safe_fetch_announcements(
         return None
 
 
+def _announcement_report_from_stock_raw(query: str, stock_raw: StockRawData) -> AnnouncementReport | None:
+    if not stock_raw.announcements:
+        return None
+    items = [_announcement_item_from_payload(stock_raw, payload) for payload in stock_raw.announcements]
+    risk_events = [item for item in items if item.risk_flags]
+    return AnnouncementReport(
+        query=query,
+        total=len(items),
+        items=items,
+        risk_events=risk_events,
+        source="snapshot.cninfo",
+    )
+
+
+def _announcement_item_from_payload(
+    stock_raw: StockRawData, payload: dict[str, object]
+) -> AnnouncementItem:
+    flags_payload = payload.get("risk_flags")
+    flags = [str(item) for item in flags_payload] if isinstance(flags_payload, list) else []
+    return AnnouncementItem(
+        code=str(payload.get("code") or stock_raw.code),
+        name=str(payload.get("name") or stock_raw.name),
+        title=str(payload.get("title") or payload.get("announcementTitle") or ""),
+        date=str(payload.get("date") or payload.get("announcement_date") or ""),
+        url=str(payload.get("url") or ""),
+        risk_flags=flags,
+    )
+
+
 def _web_live_announcements_enabled() -> bool:
     return os.getenv("STOCK_TS_WEB_LIVE_ANNOUNCEMENTS", "").strip().lower() in {
         "1",
@@ -3648,7 +3682,6 @@ def _render_sentiment_module(
     up_analysis = _limit_up_analysis(market)
     down_analysis = _limit_down_analysis(market)
     risk_items = "".join(f"<li>{escape(item)}</li>" for item in _sentiment_risk_reminders(market))
-    next_items = "".join(f"<li>{escape(item)}</li>" for item in _sentiment_next_checks(market))
     if not _candidate_universe_prices_reliable(universe):
         return f"""
     <section class="module" id="module-sentiment">
@@ -3662,8 +3695,7 @@ def _render_sentiment_module(
         <div class="summary-card"><span>风险处理</span><strong>{escape(_sentiment_risk_action(market))}</strong><p class="kpi-foot">候选日线不足，先不做个股排序。</p></div>
       </div>
       <div class="grid-2" style="margin-top:16px">
-        <div class="panel"><h3>风险提醒</h3><ul class="reason-list">{risk_items}</ul></div>
-        <div class="panel"><h3>下一步验证</h3><ul class="reason-list">{next_items}</ul></div>
+        <div class="panel" style="grid-column:1 / -1"><h3>风险提醒</h3><ul class="reason-list">{risk_items}</ul></div>
       </div>
       {_candidate_accuracy_pause()}
     </section>"""
@@ -3696,8 +3728,7 @@ def _render_sentiment_module(
         {downside_panel}
       </div>
       <div class="grid-2" style="margin-top:16px">
-        <div class="panel"><h3>风险提醒</h3><ul class="reason-list">{risk_items}</ul></div>
-        <div class="panel"><h3>下一步验证</h3><ul class="reason-list">{next_items}</ul></div>
+        <div class="panel" style="grid-column:1 / -1"><h3>风险提醒</h3><ul class="reason-list">{risk_items}</ul></div>
       </div>
     </section>"""
 
@@ -3975,6 +4006,8 @@ def _render_compact_market_module(
     sectors: SectorAnalysisReport,
     portfolio: PortfolioAnalysisReport,
     candidates: CandidatePoolReport,
+    *,
+    news: NewsSentimentReport | None = None,
 ) -> str:
     top_sector = sectors.sectors[0] if sectors.sectors else None
     market_action = _market_action_label(market)
@@ -3990,7 +4023,6 @@ def _render_compact_market_module(
     breadth_lamps = _render_market_breadth_lamps(market, portfolio)
     sector_heatmap = _render_market_sector_heatmap(sectors)
     risk_items = _render_market_risk_cards(market)
-    watch_items = _render_market_watch_stack(market)
     dimension_rows = "".join(
         f"<tr><td>{escape(item.name)}</td><td>{item.score}</td><td>{escape(item.status)}</td></tr>"
         for item in market.dimensions[:4]
@@ -4053,14 +4085,11 @@ def _render_compact_market_module(
           <div class="market-risk-stack">{risk_items}</div>
         </div>
       </div>
+      {_render_market_sentiment_panel(news)}
       <div class="market-radar-grid wide-left">
-        <div class="panel market-panel market-sector-panel">
+        <div class="panel market-panel market-sector-panel" style="grid-column:1 / -1">
           <div class="editor-toolbar"><div><h3>板块主线热力地图</h3><p class="section-subtitle">行业 / 概念主线只作为机会入口；大盘页不直接给买入结论。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
           <div class="market-sector-heatmap">{sector_heatmap}</div>
-        </div>
-        <div class="panel market-panel">
-          <h3>下一步检查单</h3>
-          <div class="market-watch-stack">{watch_items}</div>
           <div class="portfolio-action-bar market-action-bar">{quick_actions}</div>
         </div>
       </div>
@@ -4107,6 +4136,35 @@ def _render_market_barometer_strip(
           <span>事件日历：{escape(_short_condition(event_text, 42))}</span>
         </div>
       </div>"""
+
+
+def _render_market_sentiment_panel(news: NewsSentimentReport | None) -> str:
+    if news is None or not news.items:
+        return """
+      <div class="panel market-panel" style="margin-top:16px">
+        <h3>市场舆情分析</h3>
+        <div class="empty-state"><strong>市场新闻未接入</strong><p>缺少市场新闻/舆情源时，不把消息面当作交易理由。</p></div>
+      </div>"""
+    latest = news.items[0]
+    rows = "".join(
+        f"<tr><td>{escape(item.date[:10])}</td><td>{escape(item.source)}</td><td>{escape(_sentiment_label(item.sentiment))}</td><td>{escape(item.title)}</td></tr>"
+        for item in news.items[:5]
+    )
+    risk = news.risks[0] if news.risks else "未识别明显负面"
+    return f"""
+      <div class="panel market-panel" style="margin-top:16px">
+        <div class="editor-toolbar"><div><h3>市场舆情分析</h3><p class="section-subtitle">新闻只做风险偏好和催化验证，不替代价格、成交和公告。</p></div><span class="portfolio-chip">正面 {news.positive_count} / 负面 {news.negative_count}</span></div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>舆情结论</span><strong>{escape(news.summary)}</strong></div>
+          <div class="summary-card"><span>最新消息</span><strong>{escape(latest.title)}</strong><p class="kpi-foot">{escape(latest.source)}</p></div>
+          <div class="summary-card"><span>风险提示</span><strong>{escape(risk)}</strong></div>
+        </div>
+        <table class="data-table" style="margin-top:12px"><thead><tr><th>日期</th><th>来源</th><th>情绪</th><th>标题</th></tr></thead><tbody>{rows}</tbody></table>
+      </div>"""
+
+
+def _sentiment_label(value: str) -> str:
+    return {"positive": "正面", "negative": "负面", "neutral": "中性"}.get(value, value)
 
 
 def _market_target_cash(market: MarketSnapshot) -> str:
@@ -5112,7 +5170,9 @@ def _stock_required_data_blocks(stock_raw: StockRawData) -> list[dict[str, str]]
         ),
         _stock_required_block(
             "基本面",
-            stock_raw.pe_ttm is not None or bool(stock_raw.valuation),
+            stock_raw.pe_ttm is not None
+            or bool(stock_raw.valuation)
+            or bool(stock_raw.fundamental_metrics),
             _fundamental_evidence(stock_raw),
             "缺失降级：基本面缺失，不把估值安全垫或财务改善作为买入理由。",
             _source_for_block(stock_raw, ["fina", "valuation", "tushare", "tdx"], source_text),
@@ -5173,6 +5233,9 @@ def _news_evidence(stock_raw: StockRawData) -> str:
 
 
 def _fundamental_evidence(stock_raw: StockRawData) -> str:
+    metrics = _fundamental_metric_parts(stock_raw)
+    if metrics:
+        return "；".join(metrics[:4]) + "；用于公司质量和估值约束。"
     if stock_raw.pe_ttm is not None:
         return f"PE(TTM) {stock_raw.pe_ttm:.2f}；用于估值和基本面约束。"
     if stock_raw.valuation:
@@ -5678,7 +5741,6 @@ def _render_stock_kline_panel(
         event_radar=event_radar,
         quality=quality,
     )
-    checklist = _li_join(trade_plan.intraday_checklist[:4])
     data_json = escape(json.dumps(chart_payload, ensure_ascii=False), quote=False)
     return f"""
     <div class="trading-screen stock-kline-panel">
@@ -5735,10 +5797,6 @@ def _render_stock_kline_panel(
           <div class="panel tight-panel">
             <h3>建议买点 / 卖点</h3>
             <div class="trading-signal-grid">{signal_cards}</div>
-          </div>
-          <div class="panel tight-panel">
-            <h3>盘中检查</h3>
-            <ul class="note-list">{checklist}</ul>
           </div>
         </aside>
       </div>
@@ -6107,24 +6165,47 @@ def _render_stock_professional_diagnosis(
 
 
 def _stock_valuation_text(stock_raw: StockRawData) -> str:
-    if stock_raw.pe_ttm is None:
+    metrics = _fundamental_metric_parts(stock_raw)
+    if stock_raw.pe_ttm is None and not metrics:
         return "估值未接入"
     pb = _optional_number(stock_raw.valuation.get("pb"))
     total_mv = _optional_number(stock_raw.valuation.get("total_mv"))
-    parts = [f"PE(TTM) {stock_raw.pe_ttm:.1f}"]
+    parts = [f"PE(TTM) {stock_raw.pe_ttm:.1f}"] if stock_raw.pe_ttm is not None else []
     if pb is not None:
         parts.append(f"PB {pb:.2f}")
     if total_mv is not None:
         parts.append(f"市值 {total_mv / 100000000:.0f} 亿")
+    parts.extend(metrics[:4])
     return " · ".join(parts)
 
 
 def _stock_valuation_note(stock_raw: StockRawData) -> str:
-    source = stock_raw.valuation.get("source")
-    date = stock_raw.valuation.get("date")
+    source = stock_raw.fundamental_metrics.get("source") or stock_raw.valuation.get("source")
+    date = stock_raw.fundamental_metrics.get("date") or stock_raw.valuation.get("date")
     if source:
         return f"来源 {source}{' · ' + str(date) if date else ''}"
     return "财务质量、营收利润和估值分位待接入"
+
+
+def _fundamental_metric_parts(stock_raw: StockRawData) -> list[str]:
+    metrics = stock_raw.fundamental_metrics
+    parts: list[str] = []
+    for key, label, suffix in [
+        ("revenue_yoy", "营收同比", "%"),
+        ("net_profit_yoy", "净利同比", "%"),
+        ("roe", "ROE", "%"),
+        ("gross_margin", "毛利率", "%"),
+        ("debt_to_assets", "资产负债率", "%"),
+        ("ocf_to_profit", "经营现金流/净利", "x"),
+    ]:
+        value = _optional_number(metrics.get(key))
+        if value is None:
+            continue
+        if suffix == "x":
+            parts.append(f"{label} {value:.2f}x")
+        else:
+            parts.append(f"{label} {value:.1f}%")
+    return parts
 
 
 def _stock_fund_flow_text(stock_raw: StockRawData) -> str:

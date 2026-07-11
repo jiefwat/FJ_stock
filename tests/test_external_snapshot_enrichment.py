@@ -185,6 +185,21 @@ class RichTushare:
             ]
         )
 
+    def fina_indicator(self, ts_code: str, limit: int, fields: str):
+        return MiniFrame(
+            [
+                {
+                    "end_date": "20260630",
+                    "or_yoy": 15.2,
+                    "netprofit_yoy": 18.4,
+                    "roe": 29.6,
+                    "grossprofit_margin": 91.3,
+                    "debt_to_assets": 18.5,
+                    "ocf_to_profit": 1.18,
+                }
+            ]
+        )
+
     def moneyflow(self, ts_code: str, limit: int):
         return MiniFrame([{"trade_date": "20260618", "net_mf_amount": 12345}])
 
@@ -354,6 +369,10 @@ def test_enrich_tdx_snapshot_uses_tushare_for_kline_and_valuation(tmp_path: Path
     assert stock["pe_ttm"] == 40.2
     assert stock["valuation"]["source"] == "tushare.daily_basic"
     assert stock["valuation"]["pb"] == 5.1
+    assert stock["fundamental_metrics"]["source"] == "tushare.fina_indicator"
+    assert stock["fundamental_metrics"]["revenue_yoy"] == 15.2
+    assert stock["fundamental_metrics"]["net_profit_yoy"] == 18.4
+    assert stock["fundamental_metrics"]["roe"] == 29.6
 
 
 def test_tdx_provider_and_web_use_enriched_stock_fields(tmp_path: Path) -> None:

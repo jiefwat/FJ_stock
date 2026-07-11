@@ -63,6 +63,17 @@ def test_four_modules_keep_copy_functional_and_simple() -> None:
         assert decorative_text not in html
 
 
+def test_four_modules_do_not_render_narrator_checklist_panels() -> None:
+    html = _sample_html()
+
+    for narrator_panel in [
+        "<h3>下一步检查单</h3>",
+        "<h3>下一步验证</h3>",
+        "<h3>盘中检查</h3>",
+    ]:
+        assert narrator_panel not in html
+
+
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     market_html = _workspace(_sample_html(), "market")
 

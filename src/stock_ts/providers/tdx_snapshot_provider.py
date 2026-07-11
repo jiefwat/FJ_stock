@@ -52,9 +52,18 @@ class TdxSnapshotProvider(StockDataProvider):
             fund_flow=_optional_float(stock_payload.get("fund_flow")),
             pe_ttm=_optional_float(stock_payload.get("pe_ttm")),
             valuation=_dict_from_payload(stock_payload.get("valuation")),
+            fundamental_metrics=_dict_from_payload(stock_payload.get("fundamental_metrics")),
             fund_flow_detail=_dict_from_payload(stock_payload.get("fund_flow_detail")),
             news_items=[
                 _news_from_dict(item) for item in _as_list(stock_payload.get("news_items"))
+            ],
+            announcements=[
+                item
+                for item in (
+                    _dict_object_from_payload(row)
+                    for row in _as_list(stock_payload.get("announcements"))
+                )
+                if item
             ],
             data_sources=[
                 str(item) for item in _as_list(stock_payload.get("data_sources")) if item
@@ -356,6 +365,10 @@ def _dict_from_payload(value: object) -> dict[str, float | str | None]:
         str(key): item if isinstance(item, (int, float)) or item is None else str(item)
         for key, item in value.items()
     }
+
+
+def _dict_object_from_payload(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _as_list(value: object) -> list[Any]:

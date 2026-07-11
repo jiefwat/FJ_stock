@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+from stock_ts.announcements import AnnouncementItem, AnnouncementReport
+
 
 def _load_pipeline_module():
     spec = importlib.util.spec_from_file_location(
@@ -118,6 +120,46 @@ def test_daily_pipeline_runs_refresh_enrich_announcements_and_report(tmp_path: P
     assert decisions_path.exists()
     decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
     assert decisions["schema_version"] == 1
+
+
+def test_daily_pipeline_writes_cninfo_announcements_back_to_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    _write_snapshot(snapshot)
+
+    def fake_fetch(query: str, *, limit: int):
+        return AnnouncementReport(
+            query=query,
+            total=1,
+            items=[
+                AnnouncementItem(
+                    code=query,
+                    name="测试公司",
+                    title="测试公司半年度业绩预告公告",
+                    date="2026-07-09",
+                    url="https://static.cninfo.com.cn/test.pdf",
+                    risk_flags=[],
+                )
+            ],
+            risk_events=[],
+        )
+
+    monkeypatch.setattr(pipeline_module, "fetch_cninfo_announcements", fake_fetch)
+
+    pipeline_module._write_announcements(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            announcement_dir=tmp_path / "reports" / "announcements",
+            announcement_limit=3,
+        ),
+        ["603278"],
+    )
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    announcements = payload["stocks"]["603278"]["announcements"]
+    assert announcements[0]["title"] == "测试公司半年度业绩预告公告"
+    assert announcements[0]["source"] == "cninfo"
 
 
 def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path) -> None:

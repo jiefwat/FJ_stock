@@ -467,6 +467,162 @@ def test_web_blocks_actions_when_pipeline_refresh_is_stale(
     assert "排序暂停" in html
 
 
+def test_web_consumes_real_news_announcement_financial_and_sentiment_snapshot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-10T10:00:00+08:00")
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n600519,贵州茅台,10,1500,白酒,核心\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "tdx.json"
+    latest_bar = {
+        "date": "2026-07-09",
+        "open": 1500,
+        "high": 1515,
+        "low": 1490,
+        "close": 1510,
+        "volume": 10000,
+    }
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-07-09",
+                    "indices": [
+                        {
+                            "code": "000001",
+                            "name": "上证指数",
+                            "close": 4090.48,
+                            "pct_chg": -0.43,
+                            "amount": 5123.4,
+                        }
+                    ],
+                    "advancing": 2023,
+                    "declining": 3407,
+                    "limit_up": 134,
+                    "limit_down": 35,
+                    "top_sectors": [["白酒", 1.2]],
+                },
+                "market_news": [
+                    {
+                        "date": "2026-07-09",
+                        "source": "东方财富财经",
+                        "title": "A股机器人板块涨停扩散",
+                        "summary": "机器人、算力主线活跃",
+                        "sentiment": "positive",
+                    },
+                    {
+                        "date": "2026-07-09",
+                        "source": "财联社",
+                        "title": "多家公司提示减持风险",
+                        "summary": "减持公告可能压制风险偏好",
+                        "sentiment": "negative",
+                    },
+                ],
+                "sectors": [
+                    {
+                        "name": "白酒",
+                        "pct_chg": 1.2,
+                        "advancing_ratio": 0.7,
+                        "amount_change": 10.0,
+                    }
+                ],
+                "stocks": {
+                    "600519": {
+                        "name": "贵州茅台",
+                        "bars": [latest_bar | {"date": "2026-07-08"}, latest_bar],
+                        "fund_flow": 1.2,
+                        "pe_ttm": 22.0,
+                        "valuation": {
+                            "source": "tushare.daily_basic",
+                            "date": "2026-07-09",
+                            "pb": 8.1,
+                            "total_mv": 1850000000000,
+                        },
+                        "fundamental_metrics": {
+                            "source": "tushare.fina_indicator",
+                            "date": "2026-07-09",
+                            "revenue_yoy": 15.2,
+                            "net_profit_yoy": 18.4,
+                            "roe": 29.6,
+                            "gross_margin": 91.3,
+                            "debt_to_assets": 18.5,
+                            "ocf_to_profit": 1.18,
+                        },
+                        "fund_flow_detail": {
+                            "source": "tushare.moneyflow",
+                            "date": "2026-07-09",
+                            "main_net_inflow": 1.2,
+                            "main_net_pct": 3.4,
+                        },
+                        "news_items": [
+                            {
+                                "date": "2026-07-09",
+                                "source": "东方财富",
+                                "title": "贵州茅台发布经营稳健消息",
+                                "summary": "营收增长，现金流稳定",
+                                "sentiment": "positive",
+                            }
+                        ],
+                        "announcements": [
+                            {
+                                "date": "2026-07-09",
+                                "source": "cninfo",
+                                "title": "贵州茅台2026年半年度业绩预告公告",
+                                "url": "https://static.cninfo.com.cn/test.pdf",
+                                "risk_flags": [],
+                            }
+                        ],
+                        "data_sources": [
+                            "tdx.kline",
+                            "tushare.daily_basic",
+                            "tushare.fina_indicator",
+                            "tushare.moneyflow",
+                            "akshare.stock_news_em",
+                            "cninfo.announcement",
+                        ],
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "600519",
+                            "name": "贵州茅台",
+                            "sector": "白酒",
+                            "bars": [latest_bar | {"date": "2026-07-08"}, latest_bar],
+                            "fund_flow": 1.2,
+                            "pe_ttm": 22.0,
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_page(
+        stock_code="600519",
+        provider_name="tdx-snapshot",
+        provider=TdxSnapshotProvider(snapshot),
+        holdings_path=str(holdings),
+    )
+
+    assert "市场舆情分析" in html
+    assert "正面 1 / 负面 1" in html
+    assert "多家公司提示减持风险" in html
+    assert "贵州茅台2026年半年度业绩预告公告" in html
+    assert "营收同比 15.2%" in html
+    assert "净利同比 18.4%" in html
+    assert "ROE 29.6%" in html
+    assert "tushare.fina_indicator" in html
+    assert "akshare.stock_news_em" in html
+    assert "cninfo.announcement" in html
+
+
 def test_web_opens_candidate_stock_when_tdx_stock_detail_is_missing(
     tmp_path: Path,
 ) -> None:

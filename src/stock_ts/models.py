@@ -84,8 +84,10 @@ class StockRawData:
     fund_flow: float | None = None
     pe_ttm: float | None = None
     valuation: dict[str, float | str | None] = field(default_factory=dict)
+    fundamental_metrics: dict[str, float | str | None] = field(default_factory=dict)
     fund_flow_detail: dict[str, float | str | None] = field(default_factory=dict)
     news_items: list[NewsItem] = field(default_factory=list)
+    announcements: list[dict[str, object]] = field(default_factory=list)
     data_sources: list[str] = field(default_factory=list)
 
 

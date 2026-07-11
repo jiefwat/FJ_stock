@@ -313,6 +313,8 @@ def _candidate_codes(path: Path) -> list[str]:
 def _write_announcements(config: DailyPipelineConfig, codes: list[str]) -> None:
     out_dir = Path(config.announcement_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = Path(config.snapshot_path)
+    snapshot = _read_snapshot_payload(snapshot_path)
     blocks = [
         "# StockTS 公告事件快照",
         "",
@@ -324,10 +326,59 @@ def _write_announcements(config: DailyPipelineConfig, codes: list[str]) -> None:
             report = fetch_cninfo_announcements(code, limit=config.announcement_limit)
             markdown = render_announcement_markdown(report)
             (out_dir / f"{code}.md").write_text(markdown, encoding="utf-8")
-            blocks.extend([f"## {code}", "", f"- 返回公告：{len(report.items)}", f"- 风险事件：{len(report.risk_events)}", ""])
+            _write_announcement_report_to_snapshot(snapshot, code, report)
+            blocks.extend(
+                [
+                    f"## {code}",
+                    "",
+                    f"- 返回公告：{len(report.items)}",
+                    f"- 风险事件：{len(report.risk_events)}",
+                    "",
+                ]
+            )
         except Exception as exc:
             blocks.extend([f"## {code}", "", f"- 公告抓取失败：{exc}", ""])
     (out_dir / "latest.md").write_text("\n".join(blocks).strip() + "\n", encoding="utf-8")
+    if snapshot:
+        snapshot_path.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+
+def _read_snapshot_payload(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_announcement_report_to_snapshot(snapshot: dict, code: str, report) -> None:
+    if not snapshot:
+        return
+    stocks = snapshot.setdefault("stocks", {})
+    if not isinstance(stocks, dict):
+        return
+    stock = stocks.setdefault(code, {"name": code})
+    if not isinstance(stock, dict):
+        return
+    stock["announcements"] = [
+        {
+            "code": item.code or code,
+            "name": item.name,
+            "title": item.title,
+            "date": item.date,
+            "url": item.url,
+            "risk_flags": list(item.risk_flags),
+            "source": report.source,
+        }
+        for item in report.items
+    ]
+    sources = set(str(item) for item in stock.get("data_sources", []) if item)
+    sources.add("cninfo.announcement")
+    stock["data_sources"] = sorted(sources)
 
 
 def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) -> None:
@@ -335,7 +386,9 @@ def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) ->
     markdown_path = out_dir / "latest.md"
     if not markdown_path.exists():
         return
-    status_text = status_path.read_text(encoding="utf-8", errors="ignore") if status_path.exists() else ""
+    status_text = (
+        status_path.read_text(encoding="utf-8", errors="ignore") if status_path.exists() else ""
+    )
     write_decision_artifact(
         markdown_path.read_text(encoding="utf-8", errors="ignore"),
         out_dir / "latest_decisions.json",

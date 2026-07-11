@@ -168,6 +168,13 @@ def _enrich_stock_payload(
                     payload["turnover_rate"] = valuation.get("turnover_rate")
         except Exception as exc:
             field_errors["tushare_daily_basic"] = str(exc)[:180]
+        try:
+            with _time_limit(field_timeout):
+                fundamentals = _fetch_tushare_fina_indicator(tushare_client, code)
+            if fundamentals:
+                payload["fundamental_metrics"] = fundamentals
+        except Exception as exc:
+            field_errors["tushare_fina_indicator"] = str(exc)[:180]
         if tushare_moneyflow:
             try:
                 with _time_limit(field_timeout):
@@ -340,6 +347,31 @@ def _fetch_tushare_daily_basic(ts_client: object, code: str) -> dict[str, Any]:
         "total_mv": _optional_float(latest.get("total_mv")),
         "circ_mv": _optional_float(latest.get("circ_mv")),
         "turnover_rate": _optional_float(latest.get("turnover_rate")),
+    }
+
+
+def _fetch_tushare_fina_indicator(ts_client: object, code: str) -> dict[str, Any]:
+    frame = ts_client.fina_indicator(  # type: ignore[attr-defined]
+        ts_code=_tushare_code(code),
+        limit=1,
+        fields=(
+            "ts_code,end_date,or_yoy,netprofit_yoy,roe,grossprofit_margin,"
+            "debt_to_assets,ocf_to_profit"
+        ),
+    )
+    rows = _records(frame)
+    if not rows:
+        return {}
+    latest = rows[0]
+    return {
+        "source": "tushare.fina_indicator",
+        "date": _format_tushare_date(str(latest.get("end_date") or "")),
+        "revenue_yoy": _optional_float(latest.get("or_yoy")),
+        "net_profit_yoy": _optional_float(latest.get("netprofit_yoy")),
+        "roe": _optional_float(latest.get("roe")),
+        "gross_margin": _optional_float(latest.get("grossprofit_margin")),
+        "debt_to_assets": _optional_float(latest.get("debt_to_assets")),
+        "ocf_to_profit": _optional_float(latest.get("ocf_to_profit")),
     }
 
 
@@ -749,7 +781,9 @@ def _optional_float(value: object) -> float | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Enrich StockTS TDX snapshot with AKShare K-line, valuation, fund flow and news."
+        description=(
+            "Enrich StockTS TDX snapshot with AKShare K-line, valuation, fund flow and news."
+        )
     )
     parser.add_argument("--snapshot", default="data/imports/tdx_snapshots.json")
     parser.add_argument(
@@ -778,7 +812,10 @@ def main(argv: list[str] | None = None) -> int:
         "--intelligence-url",
         action="append",
         default=[],
-        help="Optional NewsNow/RSS-bridge JSON URL; can be repeated. Env: STOCK_TS_INTELLIGENCE_URLS",
+        help=(
+            "Optional NewsNow/RSS-bridge JSON URL; can be repeated. "
+            "Env: STOCK_TS_INTELLIGENCE_URLS"
+        ),
     )
     args = parser.parse_args(argv)
     codes = [item.strip() for item in args.codes.split(",") if item.strip()] or None
