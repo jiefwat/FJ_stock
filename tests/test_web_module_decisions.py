@@ -700,6 +700,20 @@ def test_opportunity_uses_stock_analysis_method_and_current_future_trend() -> No
         assert old_header not in opportunity_html
 
 
+def test_opportunity_stocks_use_dual_git_method_chain() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in [
+        "daily_stock_analysis 信号归因",
+        "TradingAgents",
+        "分析师团队",
+        "多空审议",
+        "交易员",
+        "组合经理",
+    ]:
+        assert text in opportunity_html
+
+
 def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
@@ -1693,6 +1707,34 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "强势；扩散" not in market_html
     assert "弱势；扩散" not in market_html
     assert "等待新闻、公告和基本面形成交叉验证" not in market_html
+
+
+def test_market_sector_analysis_uses_dual_git_method_chain() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "板块方法链",
+        "daily_stock_analysis 信号归因",
+        "TradingAgents 板块审议",
+        "板块分析师团队",
+        "多空审议",
+        "组合经理",
+    ]:
+        assert text in market_html
+
+
+def test_portfolio_stocks_use_dual_git_method_chain() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "daily_stock_analysis 信号归因",
+        "TradingAgents",
+        "分析师团队",
+        "多空审议",
+        "交易员",
+        "组合经理最终意见",
+    ]:
+        assert text in portfolio_html
 
 
 def test_market_sector_top5_representatives_use_live_news_when_snapshot_missing() -> None:

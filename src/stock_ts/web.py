@@ -984,6 +984,7 @@ def render_page(
         return render_error_page(
             "未生成持仓分析，请检查 holdings 参数", provider_name=provider_name
         )
+    portfolio_agentic_decisions = _build_portfolio_agentic_decisions(active_provider, portfolio)
     candidate_universe = _safe_fetch_candidate_universe(active_provider)
     preferred_news_codes = _dedupe_texts(
         [resolved.code]
@@ -1066,6 +1067,7 @@ def render_page(
             portfolio_notice,
             edit_code,
             refresh_time=refresh_time,
+            agentic_decisions=portfolio_agentic_decisions,
         ),
         "stock": _render_compact_stock_module(
             stock,
@@ -1213,6 +1215,94 @@ def _safe_fetch_candidate_universe(provider: StockDataProvider) -> list[Candidat
         return provider.fetch_candidate_universe()
     except Exception:
         return []
+
+
+def _candidate_raw_to_stock_raw(raw: CandidateStockRawData) -> StockRawData:
+    return StockRawData(
+        code=raw.code,
+        name=raw.name,
+        bars=raw.bars,
+        fund_flow=raw.fund_flow,
+        pe_ttm=raw.pe_ttm,
+        news_items=list(raw.news_items),
+        announcements=list(raw.announcements),
+        data_sources=["candidate_universe", localize_sector_name(raw.sector)],
+    )
+
+
+def _safe_agentic_decision_from_stock_raw(
+    raw: StockRawData,
+) -> StockAgentDecision | None:
+    try:
+        return build_stock_agent_decision(raw, analyze_stock(raw))
+    except Exception:
+        return None
+
+
+def _safe_agentic_decision_from_candidate(
+    raw: CandidateStockRawData | None,
+) -> StockAgentDecision | None:
+    if raw is None or not raw.bars:
+        return None
+    return _safe_agentic_decision_from_stock_raw(_candidate_raw_to_stock_raw(raw))
+
+
+def _build_portfolio_agentic_decisions(
+    provider: StockDataProvider,
+    portfolio: PortfolioAnalysisReport,
+) -> dict[str, StockAgentDecision]:
+    decisions: dict[str, StockAgentDecision] = {}
+    for position in portfolio.positions:
+        try:
+            raw = provider.fetch_stock(position.holding.code)
+        except Exception:
+            continue
+        decision = _safe_agentic_decision_from_stock_raw(raw)
+        if decision is not None:
+            decisions[position.holding.code] = decision
+    return decisions
+
+
+def _agentic_signal_text(decision: StockAgentDecision | None) -> str:
+    if decision is None:
+        return "daily_stock_analysis 信号归因：数据不足，等待K线、资金、基本面、消息补齐"
+    attribution = decision.signal_attribution
+    return (
+        "daily_stock_analysis 信号归因："
+        f"技术 {attribution.technical_indicators}% / "
+        f"消息 {attribution.news_sentiment}% / "
+        f"基本面 {attribution.fundamentals}% / "
+        f"资金成交 {attribution.capital_volume}%"
+    )
+
+
+def _agentic_team_text(decision: StockAgentDecision | None) -> str:
+    if decision is None:
+        return "TradingAgents 分析师团队：证据不足，先不输出交易结论"
+    items = [
+        f"{item.role}{item.verdict}"
+        for item in decision.analyst_team[:4]
+    ]
+    return f"TradingAgents 分析师团队：{'；'.join(items)}"
+
+
+def _agentic_debate_text(decision: StockAgentDecision | None) -> str:
+    if decision is None:
+        return "多空审议：缺少完整数据，结论降级"
+    return (
+        "多空审议："
+        f"{_short_condition(decision.research_debate.judge, 90)}"
+    )
+
+
+def _agentic_trader_text(decision: StockAgentDecision | None) -> str:
+    if decision is None:
+        return "交易员：等待触发；组合经理最终意见：不因单点数据交易"
+    return (
+        f"交易员：{decision.trader.action}，触发："
+        f"{_short_condition(decision.trader.entry_trigger, 48)}；"
+        f"组合经理最终意见：{_short_condition(decision.risk_review.portfolio_decision, 72)}"
+    )
 
 
 def _resolve_live_stock_news_fetcher(
@@ -4664,6 +4754,101 @@ class OpportunityRecommendationDimensions:
     future_trend: str
 
 
+@dataclass(frozen=True)
+class SectorMethodChainSummary:
+    context_pack: str
+    signal_attribution: str
+    analyst_team: str
+    debate: str
+    trader_risk: str
+
+
+def _sector_method_chain_summary(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+) -> SectorMethodChainSummary:
+    sector_name = localize_sector_name(item.name)
+    related = [
+        raw
+        for raw in candidate_universe
+        if localize_sector_name(raw.sector) == sector_name and raw.bars
+    ]
+    related = sorted(
+        related,
+        key=lambda raw: (
+            _candidate_week_pct_change(raw),
+            raw.fund_flow or 0.0,
+            raw.amount,
+        ),
+        reverse=True,
+    )[:5]
+    decisions = [
+        decision
+        for decision in (_safe_agentic_decision_from_candidate(raw) for raw in related[:3])
+        if decision is not None
+    ]
+    available = ["板块涨跌", "扩散率", "成交额变化"]
+    if related:
+        available.append("代表股K线")
+    if any(raw.news_items or raw.announcements for raw in related):
+        available.append("代表股消息/公告")
+    missing = []
+    if not related:
+        missing.append("代表股样本")
+    if not any(raw.fund_flow is not None for raw in related):
+        missing.append("代表股资金明细")
+    if not any(raw.pe_ttm is not None for raw in related):
+        missing.append("代表股估值")
+    if decisions:
+        tech = round(sum(d.signal_attribution.technical_indicators for d in decisions) / len(decisions))
+        news = round(sum(d.signal_attribution.news_sentiment for d in decisions) / len(decisions))
+        fundamental = round(sum(d.signal_attribution.fundamentals for d in decisions) / len(decisions))
+        capital = round(sum(d.signal_attribution.capital_volume for d in decisions) / len(decisions))
+    else:
+        tech = 35 + int(max(min(item.advancing_ratio, 1.0), 0.0) * 35)
+        news = 15
+        fundamental = 15
+        capital = 35 if item.fund_status == "资金流入" else 20
+    context = (
+        f"板块方法链：daily_stock_analysis 上下文包：可用 {'、'.join(available)}；"
+        f"缺口 {'、'.join(missing) if missing else '无'}；代表股 "
+        f"{'、'.join(raw.name for raw in related[:3]) or '暂无'}"
+    )
+    signal = (
+        "daily_stock_analysis 信号归因："
+        f"技术/扩散 {tech}% / 消息 {news}% / 基本面 {fundamental}% / 资金成交 {capital}%"
+    )
+    team = (
+        "板块分析师团队："
+        f"技术分析师看扩散 {item.advancing_ratio:.0%} 和涨停 {item.limit_up_count}；"
+        f"资金分析师看 {item.fund_status}、成交变化 {item.amount_change:+.1f}亿；"
+        f"新闻分析师看代表股事件；基本面分析师看代表股估值"
+    )
+    if item.pct_chg >= 0 and item.advancing_ratio >= 0.6:
+        judge = "多头占优但需要代表股继续放量确认"
+    elif item.pct_chg < 0 or item.advancing_ratio < 0.45:
+        judge = "空头/分歧占优，先防守再观察修复"
+    else:
+        judge = "多空均衡，等待资金和代表股方向选择"
+    debate = (
+        "TradingAgents 板块审议：多空审议："
+        f"多头看{sector_name}扩散和代表股承接；空头看资金分歧、消息缺口和弱势股拖累；"
+        f"研究经理裁决：{judge}"
+    )
+    trader = (
+        "交易员/组合经理："
+        f"{'只跟踪龙头确认，不追弱势反弹' if item.pct_chg >= 0 else '不新增主题仓位，等止跌和资金回流'}；"
+        f"组合经理按{sector_name}在市场主线中的位置调整权重"
+    )
+    return SectorMethodChainSummary(
+        context_pack=context,
+        signal_attribution=signal,
+        analyst_team=team,
+        debate=debate,
+        trader_risk=trader,
+    )
+
+
 def _render_opportunity_recommendation_candidate_row(
     item: CandidateStockAnalysis,
     *,
@@ -4676,6 +4861,7 @@ def _render_opportunity_recommendation_candidate_row(
     dimensions = _opportunity_candidate_dimensions(
         item,
         raw=raw,
+        agentic_decision=_safe_agentic_decision_from_candidate(raw),
         pool_price_reliable=pool_price_reliable,
         quality=quality,
     )
@@ -4700,20 +4886,21 @@ def _opportunity_candidate_dimensions(
     item: CandidateStockAnalysis,
     *,
     raw: CandidateStockRawData | None,
+    agentic_decision: StockAgentDecision | None = None,
     pool_price_reliable: bool,
     quality: DataQualityView | None,
 ) -> OpportunityRecommendationDimensions:
     if raw is not None and raw.bars:
-        current_trend = f"统一个股分析：当前趋势：{_candidate_current_trend_state(raw)}"
-        trend_reason = f"趋势/量价原因：{_opportunity_week_trend_reason(raw)}；{_opportunity_technical_reason(raw)}"
+        current_trend = f"统一个股分析：{_agentic_signal_text(agentic_decision)}；当前趋势：{_candidate_current_trend_state(raw)}"
+        trend_reason = f"趋势/量价原因：{_agentic_team_text(agentic_decision)}；{_opportunity_week_trend_reason(raw)}；{_opportunity_technical_reason(raw)}"
         fund_reason = _opportunity_fund_reason(raw).replace("资金面：", "资金/成交原因：", 1)
         news_reason = _opportunity_news_reason(raw).replace("消息面：", "消息/公告原因：", 1)
         fundamental_reason = _opportunity_valuation_reason(raw).replace("基本面：", "基本面/估值原因：", 1)
-        theme_reason = _opportunity_theme_reason(item, raw)
-        future_trend = _opportunity_future_trend_reason(item, raw, quality)
+        theme_reason = f"{_opportunity_theme_reason(item, raw)}；{_agentic_debate_text(agentic_decision)}"
+        future_trend = f"{_opportunity_future_trend_reason(item, raw, quality)}；{_agentic_trader_text(agentic_decision)}"
     else:
-        current_trend = f"统一个股分析：当前趋势：候选涨跌 {item.pct_change:.2f}%，评分 {item.score}/100"
-        trend_reason = f"趋势/量价原因：{_opportunity_candidate_cause(item, raw=raw)}"
+        current_trend = f"统一个股分析：daily_stock_analysis 信号归因：候选评分 {item.score}/100；TradingAgents：等待候选深度数据；当前趋势：候选涨跌 {item.pct_change:.2f}%"
+        trend_reason = f"趋势/量价原因：分析师团队：K线/资金/消息待补；{_opportunity_candidate_cause(item, raw=raw)}"
         fund_reason = f"资金/成交原因：{item.name}资金字段缺口，暂看{localize_sector_name(item.sector)}板块承接"
         news_reason = (
             f"消息/公告原因：{item.name}暂无可验证个股事件，"
@@ -4723,8 +4910,8 @@ def _opportunity_candidate_dimensions(
             f"基本面/估值原因：{item.name}估值字段缺口，"
             f"按{localize_sector_name(item.sector)}景气度和后续财报复核"
         )
-        theme_reason = f"板块/主题原因：{localize_sector_name(item.sector)}主题，先按候选评分和板块强度复核"
-        future_trend = _opportunity_future_trend_from_candidate(item, quality)
+        theme_reason = f"板块/主题原因：{localize_sector_name(item.sector)}主题；多空审议：候选证据不足，先按板块和个股页复核"
+        future_trend = f"{_opportunity_future_trend_from_candidate(item, quality)}；交易员：等待触发；组合经理：不因单日涨跌追入"
     stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
     if stale:
         risk_text = "风险原因：数据质量：已滞后，不能排到前列"
@@ -4998,6 +5185,7 @@ def _opportunity_sector_dimensions(
     item,
     candidate_universe: list[CandidateStockRawData],
 ) -> OpportunityRecommendationDimensions:
+    method = _sector_method_chain_summary(item, candidate_universe)
     risk = _sector_risk_text(item)
     causal_evidence = _sector_causal_evidence(item.name, candidate_universe)
     event_evidence = [
@@ -5027,11 +5215,11 @@ def _opportunity_sector_dimensions(
         selection_risk = f"{selection_risk}；风险原因：{risk}"
     return OpportunityRecommendationDimensions(
         current_trend=(
-            f"统一个股分析：当前趋势：主题级事件，{localize_sector_name(item.name)}"
+            f"统一个股分析：{method.signal_attribution}；当前趋势：主题级事件，{localize_sector_name(item.name)}"
             f"热度 {item.heat_score}/100"
         ),
         trend_reason=(
-            f"趋势/量价原因：板块原因：覆盖 {item.advancing_ratio:.0%}，"
+            f"趋势/量价原因：{method.analyst_team}；板块原因：覆盖 {item.advancing_ratio:.0%}，"
             f"涨停 {item.limit_up_count}，{item.continuity}，{item.rotation_status}"
         ),
         fund_reason=(
@@ -5040,8 +5228,8 @@ def _opportunity_sector_dimensions(
         ),
         fundamental_reason=fundamental_text.replace("基本面/估值：", "基本面/估值原因：", 1),
         news_reason=event_text.replace("消息/公告：", "消息/公告原因：", 1),
-        theme_reason=f"板块/主题原因：{selection_risk}",
-        future_trend=_opportunity_sector_future_trend(item),
+        theme_reason=f"板块/主题原因：{method.context_pack}；{selection_risk}",
+        future_trend=f"{_opportunity_sector_future_trend(item)}；{method.debate}；{method.trader_risk}",
     )
 
 
@@ -6296,9 +6484,15 @@ def _sector_strength_analysis(
     *,
     reverse: bool,
 ) -> str:
+    method = _sector_method_chain_summary(item, candidate_universe)
     if reverse:
-        return _sector_strong_reason(item, candidate_universe)
-    return _sector_weak_reason(item, candidate_universe)
+        reason = _sector_strong_reason(item, candidate_universe)
+    else:
+        reason = _sector_weak_reason(item, candidate_universe)
+    return (
+        f"{reason}；{method.context_pack}；{method.signal_attribution}；"
+        f"{method.analyst_team}；{method.debate}；{method.trader_risk}"
+    )
 
 
 def _sector_strong_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
@@ -7463,6 +7657,7 @@ def _render_compact_portfolio_module(
     notice: PortfolioNotice | None,
     edit_code: str,
     refresh_time: str,
+    agentic_decisions: dict[str, StockAgentDecision] | None = None,
 ) -> str:
     advice = build_portfolio_advice(
         portfolio,
@@ -7495,6 +7690,7 @@ def _render_compact_portfolio_module(
         holdings_path=holdings_path,
         stock_code=stock_code,
         readonly=readonly,
+        agentic_decisions=agentic_decisions or {},
     )
     notice_html = _render_portfolio_notice(notice)
     return f"""
@@ -7554,6 +7750,7 @@ def _render_portfolio_unified_analysis_panel(
     holdings_path: str,
     stock_code: str,
     readonly: bool = False,
+    agentic_decisions: dict[str, StockAgentDecision] | None = None,
 ) -> str:
     if not portfolio.positions:
         rows = """
@@ -7570,6 +7767,7 @@ def _render_portfolio_unified_analysis_panel(
                 holdings_path=holdings_path,
                 stock_code=stock_code,
                 readonly=readonly,
+                agentic_decision=(agentic_decisions or {}).get(position.holding.code),
             )
             for position in sorted(
                 portfolio.positions,
@@ -7599,6 +7797,7 @@ def _render_portfolio_unified_analysis_row(
     holdings_path: str,
     stock_code: str,
     readonly: bool,
+    agentic_decision: StockAgentDecision | None = None,
 ) -> str:
     actions = _render_open_stock_form(position.holding.code, provider_name, holdings_path)
     if not readonly:
@@ -7619,7 +7818,7 @@ def _render_portfolio_unified_analysis_row(
         f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong>"
         f"<span>{escape(position.holding.code)} · {escape(localize_sector_name(position.holding.sector or '未识别主题'))}</span>"
         f"<span>{_format_form_number(position.holding.shares)} 股 · 成本 {position.holding.cost_price:.2f}</span></td>"
-        f"<td>{_render_portfolio_multidimensional_analysis(position, advice, market, sectors)}</td>"
+        f"<td>{_render_portfolio_multidimensional_analysis(position, advice, market, sectors, agentic_decision=agentic_decision)}</td>"
         f"<td class='action-cell'>{actions}</td>"
         "</tr>"
     )
@@ -7630,6 +7829,8 @@ def _render_portfolio_multidimensional_analysis(
     advice: PositionAdvice | None,
     market: MarketSnapshot,
     sectors: SectorAnalysisReport,
+    *,
+    agentic_decision: StockAgentDecision | None = None,
 ) -> str:
     sector_name = localize_sector_name(position.holding.sector or "未识别主题")
     sector_state = _holding_sector_state(position.holding.sector, sectors)
@@ -7637,7 +7838,11 @@ def _render_portfolio_multidimensional_analysis(
     reason = _clean_position_reason(advice.reason, action) if advice else "等待更多数据确认"
     next_check = advice.next_check if advice else "复核趋势、公告和资金变化。"
     lines = [
-        ("统一个股分析", "按个股分析同一口径：先看趋势/量价，再看资金、基本面、消息、板块，最后落到仓位成本。"),
+        ("统一个股分析", "按 daily_stock_analysis + TradingAgents 同一口径：上下文包、信号归因、分析师团队、多空审议、交易员和组合经理。"),
+        ("方法链", _agentic_signal_text(agentic_decision)),
+        ("分析师团队", _agentic_team_text(agentic_decision)),
+        ("多空审议", _agentic_debate_text(agentic_decision)),
+        ("交易员/组合经理", _agentic_trader_text(agentic_decision)),
         ("趋势/量价原因", _portfolio_trend_dimension(position)),
         ("资金/成交原因", _portfolio_fund_dimension(position, market)),
         ("基本面/估值原因", _portfolio_fundamental_dimension(position)),
