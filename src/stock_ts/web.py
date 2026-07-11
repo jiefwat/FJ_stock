@@ -602,6 +602,9 @@ h1 {
 .section-subtitle { margin:0; color:var(--muted); font-size:13px; line-height:1.55; }
 .portfolio-list-meta { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
 .portfolio-chip { border:1px solid var(--line); background:#fff; border-radius:999px; padding:7px 10px; color:var(--muted); font-size:12px; }
+.portfolio-analysis-stack { display:grid; gap:8px; min-width:360px; }
+.portfolio-analysis-line { margin:0; color:var(--ink-soft); line-height:1.55; }
+.portfolio-analysis-line strong { display:inline-block; min-width:64px; color:var(--ink); }
 .portfolio-action-bar {
   display:flex;
   flex-wrap:wrap;
@@ -5731,25 +5734,196 @@ def _render_compact_portfolio_module(
         transactions_path="data/portfolio/transactions.csv",
     )
     advice_by_code = {item.code: item for item in advice.position_advices}
-    stock_analysis = _render_portfolio_stock_analysis_panel(
+    editing_position = next(
+        (position for position in portfolio.positions if position.holding.code == edit_code),
+        None,
+    )
+    readonly = _is_public_readonly()
+    editor = ""
+    if not readonly:
+        editor = _render_portfolio_editor_panel(
+            portfolio=portfolio,
+            advice_by_code=advice_by_code,
+            stock_code=stock_code,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            editing_position=editing_position,
+        )
+    analysis_list = _render_portfolio_unified_analysis_panel(
         portfolio,
         advice_by_code,
         market,
         sectors,
         provider_name=provider_name,
         holdings_path=holdings_path,
+        stock_code=stock_code,
+        readonly=readonly,
     )
-    sector_analysis = _render_portfolio_sector_analysis_panel(portfolio, sectors)
-    cost_analysis = _render_portfolio_cost_analysis_panel(portfolio, advice_by_code)
     notice_html = _render_portfolio_notice(notice)
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只展示真实持仓股票、对应板块、仓位和成本分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
       {notice_html}
-      {stock_analysis}
-      {sector_analysis}
-      {cost_analysis}
+      {editor}
+      {analysis_list}
     </section>"""
+
+
+def _render_portfolio_editor_panel(
+    *,
+    portfolio: PortfolioAnalysisReport,
+    advice_by_code: dict[str, PositionAdvice],
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+    editing_position: PositionAnalysis | None,
+) -> str:
+    advice = advice_by_code.get(editing_position.holding.code) if editing_position else None
+    open_attr = " open" if editing_position else ""
+    title = "编辑持仓" if editing_position else "新增持仓"
+    form = _render_add_holding_form(
+        stock_code,
+        provider_name,
+        holdings_path,
+        editing_position,
+        advice,
+    )
+    clear_link = _render_clear_edit_link(
+        stock_code,
+        provider_name,
+        holdings_path,
+        editing_position.holding.code if editing_position else "",
+    )
+    return f"""
+      <details class="panel portfolio-editor" id="portfolio-form"{open_attr} style="margin-top:16px">
+        <summary class="portfolio-inline-button primary">{title}</summary>
+        <div class="portfolio-list-meta" style="margin-top:12px">
+          <span class="portfolio-chip">可改股数</span>
+          <span class="portfolio-chip">可改成本价</span>
+          <span class="portfolio-chip">当前 {len(portfolio.positions)} 只</span>
+          {clear_link}
+        </div>
+        {form}
+      </details>"""
+
+
+def _render_portfolio_unified_analysis_panel(
+    portfolio: PortfolioAnalysisReport,
+    advice_by_code: dict[str, PositionAdvice],
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
+    stock_code: str,
+    readonly: bool = False,
+) -> str:
+    if not portfolio.positions:
+        rows = """
+        <tr><td colspan="3"><div class="empty-state"><strong>还没有持仓</strong><p>先新增股票、股数和成本价，再生成多维持仓分析。</p></div></td></tr>
+        """
+    else:
+        rows = "".join(
+            _render_portfolio_unified_analysis_row(
+                position,
+                advice_by_code.get(position.holding.code),
+                market,
+                sectors,
+                provider_name=provider_name,
+                holdings_path=holdings_path,
+                stock_code=stock_code,
+                readonly=readonly,
+            )
+            for position in sorted(
+                portfolio.positions,
+                key=lambda item: (item.risk_level != "高", item.pnl_ratio >= 0, -item.weight),
+            )
+        )
+    return f"""
+      <div class="panel portfolio-stock-analysis" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>持仓分析</h3><p class="section-subtitle">一行看完技术、资金、基本面、消息、板块、仓位成本和结论。</p></div>
+          <span class="portfolio-chip">总市值 {portfolio.total_market_value:.2f} · 累计盈亏 {portfolio.total_pnl_ratio:.2f}%</span>
+        </div>
+        <table class="data-table portfolio-analysis-table">
+          <thead><tr><th>股票</th><th>分析</th><th>操作</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _render_portfolio_unified_analysis_row(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
+    stock_code: str,
+    readonly: bool,
+) -> str:
+    actions = _render_open_stock_form(position.holding.code, provider_name, holdings_path)
+    if not readonly:
+        actions += _render_edit_holding_form(
+            position.holding.code,
+            stock_code,
+            provider_name,
+            holdings_path,
+        )
+        actions += _render_delete_holding_form(
+            position.holding.code,
+            stock_code,
+            provider_name,
+            holdings_path,
+        )
+    return (
+        "<tr>"
+        f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong>"
+        f"<span>{escape(position.holding.code)} · {escape(localize_sector_name(position.holding.sector or '未识别主题'))}</span>"
+        f"<span>{_format_form_number(position.holding.shares)} 股 · 成本 {position.holding.cost_price:.2f}</span></td>"
+        f"<td>{_render_portfolio_multidimensional_analysis(position, advice, market, sectors)}</td>"
+        f"<td class='action-cell'>{actions}</td>"
+        "</tr>"
+    )
+
+
+def _render_portfolio_multidimensional_analysis(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+) -> str:
+    sector_name = localize_sector_name(position.holding.sector or "未识别主题")
+    sector_state = _holding_sector_state(position.holding.sector, sectors)
+    action = advice.action if advice else "观察"
+    reason = _clean_position_reason(advice.reason, action) if advice else "等待更多数据确认"
+    next_check = advice.next_check if advice else "复核趋势、公告和资金变化。"
+    lines = [
+        ("技术面", _portfolio_trend_dimension(position)),
+        ("资金面", _portfolio_fund_dimension(position, market)),
+        ("基本面", _portfolio_fundamental_dimension(position)),
+        ("消息面", _portfolio_news_dimension(position, market)),
+        ("板块情绪", f"{sector_name}；{sector_state}；组合占比 {position.weight:.1%}"),
+        ("仓位成本", _portfolio_holding_dimension(position, advice)),
+        ("结论", f"{action}：{reason}；后续看 {next_check}"),
+    ]
+    return (
+        "<div class='portfolio-analysis-stack'>"
+        + "".join(
+            f"<p class='portfolio-analysis-line'><strong>{escape(label)}</strong>{escape(text)}</p>"
+            for label, text in lines
+        )
+        + "</div>"
+    )
+
+
+def _clean_position_reason(reason: str, action: str) -> str:
+    cleaned = reason.strip().rstrip("。")
+    prefix = f"{action}原因："
+    if cleaned.startswith(prefix):
+        return cleaned.removeprefix(prefix)
+    return cleaned
 
 
 def _render_portfolio_stock_analysis_panel(

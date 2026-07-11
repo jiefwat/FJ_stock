@@ -86,25 +86,27 @@ def test_web_renders_portfolio_interaction_controls(tmp_path: Path) -> None:
         portfolio_notice=PortfolioNotice(level="success", message="已新增持仓"),
     )
 
-    assert "持仓股票分析" in html
-    assert "对应板块分析" in html
-    assert "仓位/成本分析" in html
-    assert "趋势/量价" in html
-    assert "资金/成交" in html
-    assert "基本面/估值" in html
-    assert "消息/公告" in html
-    assert "板块/主题" in html
-    assert "持仓/成本" in html
-    assert 'method="post" action="/holdings"' not in html
-    assert 'name="portfolio_action" value="upsert"' not in html
-    assert 'name="portfolio_action" value="delete"' not in html
-    assert "保存持仓" not in html
+    assert "持仓分析" in html
+    assert "对应板块分析" not in html
+    assert "仓位/成本分析" not in html
+    assert "技术面" in html
+    assert "资金面" in html
+    assert "基本面" in html
+    assert "消息面" in html
+    assert "板块情绪" in html
+    assert "仓位成本" in html
+    assert 'method="post" action="/holdings"' in html
+    assert 'name="portfolio_action" value="upsert"' in html
+    assert 'name="portfolio_action" value="delete"' in html
+    assert "保存持仓" in html
+    assert "编辑" in html
+    assert "删除" in html
     assert "添加持仓" not in html
     assert "已新增持仓" in html
     assert "持仓文件" not in html
     assert "CSV 表头" not in html
     assert "个股分析" in html
-    assert 'data-scroll="portfolio-form"' not in html
+    assert 'id="portfolio-form"' in html
     assert "编辑 data/portfolio/holdings.csv" not in html
     assert "transactions CSV" not in html
     assert "Web URL 可加 holdings" not in html
@@ -138,7 +140,7 @@ def test_web_forms_keep_user_in_target_modules(tmp_path: Path) -> None:
 
     assert 'action="/#module-stock"' in html
     assert 'class="stock-form" method="get" action="/#module-stock"' in html
-    assert "确认删除这条持仓记录？" not in html
+    assert "确认删除这条持仓记录？" in html
 
 
 def test_portfolio_redirect_url_returns_portfolio_anchor() -> None:

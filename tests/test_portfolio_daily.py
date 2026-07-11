@@ -225,4 +225,4 @@ def test_web_page_contains_market_portfolio_stock_and_report_sections() -> None:
     assert "我的持仓" in html
     assert "个股分析" in html
     assert "热点机会" in html
-    assert "持仓股票分析" in html
+    assert "持仓分析" in html

@@ -45,12 +45,14 @@ def test_web_renders_portfolio_advice_and_holding_entry() -> None:
     )
 
     assert "我的持仓" in html
-    assert "持仓股票分析" in html
-    assert "对应板块分析" in html
-    assert "仓位/成本分析" in html
+    assert "持仓分析" in html
+    assert "对应板块分析" not in html
+    assert "仓位/成本分析" not in html
     assert "总市值" in html
     assert "累计盈亏" in html
-    assert "保存持仓" not in html
+    assert "保存持仓" in html
+    assert "编辑" in html
+    assert "删除" in html
     assert "添加持仓" not in html
     assert "持仓文件" not in html
 

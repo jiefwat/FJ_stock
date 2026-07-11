@@ -44,7 +44,7 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
 
     assert "股票涨跌统计" in html
     assert "每日大盘" in html
-    assert "持仓股票分析" in html
+    assert "持仓分析" in html
     assert "分析内容" in html
     assert "推荐板块" in html
     assert "推荐股票" in html
@@ -447,26 +447,32 @@ def test_stock_module_shows_candidate_source_context_when_entered_from_opportuni
     assert "主线强势 + 放量突破" not in stock_html
 
 
-def test_portfolio_module_keeps_only_holding_sector_and_cost_analysis() -> None:
+def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
         "我的持仓",
-        "持仓股票分析",
-        "对应板块分析",
-        "仓位/成本分析",
+        "持仓分析",
+        "新增持仓",
+        "编辑",
+        "删除",
+        "保存持仓",
     ]:
         assert text in portfolio_html
 
     for text in [
-        "趋势/量价",
-        "资金/成交",
-        "基本面/估值",
-        "消息/公告",
-        "板块/主题",
-        "持仓/成本",
+        "技术面",
+        "资金面",
+        "基本面",
+        "消息面",
+        "板块情绪",
+        "仓位成本",
+        "结论",
     ]:
         assert text in portfolio_html
+
+    for old_section in ["对应板块分析", "仓位/成本分析"]:
+        assert old_section not in portfolio_html
 
 
 def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:
