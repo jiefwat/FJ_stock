@@ -4587,7 +4587,15 @@ def _candidate_volume_ratio(volumes: list[float]) -> float:
 
 
 def _opportunity_news_reason(raw: CandidateStockRawData) -> str:
-    del raw
+    if raw.news_items:
+        latest = raw.news_items[0]
+        source = latest.source or "新闻源"
+        title = _short_condition(latest.title or latest.summary or "未命名消息", 34)
+        return f"消息面：{source}最新消息“{title}”，需确认是否构成催化"
+    if raw.announcements:
+        latest = raw.announcements[0]
+        title = str(latest.get("title") or latest.get("公告标题") or "未命名公告")
+        return f"消息面：公告“{_short_condition(title, 34)}”，先排查风险/催化属性"
     return "消息面：未接入个股新闻，不作为推荐理由"
 
 

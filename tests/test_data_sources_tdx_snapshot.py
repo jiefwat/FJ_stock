@@ -772,3 +772,62 @@ def test_tdx_snapshot_provider_filters_zero_price_explicit_limit_down_details(
 
     assert market.limit_down == 1
     assert [item.code for item in market.limit_down_details] == ["600001"]
+
+
+def test_tdx_snapshot_candidates_inherit_stock_news_and_announcements(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "stocks": {
+                    "300111": {
+                        "news_items": [
+                            {
+                                "date": "2026-07-10",
+                                "source": "东方财富",
+                                "title": "机器人订单增长",
+                                "summary": "订单催化",
+                            }
+                        ],
+                        "announcements": [
+                            {"date": "2026-07-10", "title": "关于签订订单的公告"}
+                        ],
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "300111",
+                            "name": "趋势强股",
+                            "sector": "机器人",
+                            "bars": [
+                                {
+                                    "date": "2026-07-09",
+                                    "open": 10,
+                                    "high": 10.5,
+                                    "low": 9.8,
+                                    "close": 10.2,
+                                    "volume": 1000,
+                                },
+                                {
+                                    "date": "2026-07-10",
+                                    "open": 10.2,
+                                    "high": 11.5,
+                                    "low": 10.1,
+                                    "close": 11.2,
+                                    "volume": 2400,
+                                },
+                            ],
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    candidates = TdxSnapshotProvider(snapshot).fetch_candidate_universe()
+
+    assert candidates[0].news_items[0].title == "机器人订单增长"
+    assert candidates[0].announcements[0]["title"] == "关于签订订单的公告"

@@ -243,6 +243,8 @@ class CandidateStockRawData:
     amount: float = 0.0
     pe_ttm: float | None = None
     price_reliable: bool = True
+    news_items: list[NewsItem] = field(default_factory=list)
+    announcements: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

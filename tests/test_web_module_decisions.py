@@ -428,6 +428,15 @@ def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> N
                     turnover_rate=8.8,
                     amount=22.5,
                     pe_ttm=38,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="趋势强股获得机器人订单",
+                            summary="订单催化",
+                            sentiment="positive",
+                        )
+                    ],
                 ),
                 CandidateStockRawData(
                     code="300222",
@@ -461,6 +470,8 @@ def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> N
     assert "近5日转弱" in opportunity_html
     assert "净流入" in opportunity_html
     assert "净流出" in opportunity_html
+    assert "东方财富最新消息" in opportunity_html
+    assert "趋势强股获得机器人订单" in opportunity_html
     assert "消息面：未接入个股新闻" in opportunity_html
     assert opportunity_html.count("个股原因：所属板块强度靠前，具备主线筛选价值") <= 1
 

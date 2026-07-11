@@ -129,7 +129,7 @@ class TdxSnapshotProvider(StockDataProvider):
         universe_payload = payload.get("candidate_universe", payload.get("candidates"))
         if isinstance(universe_payload, dict):
             universe_payload = universe_payload.get("items")
-        candidates = [_candidate_from_dict(item) for item in _as_list(universe_payload)]
+        candidates = [_candidate_from_dict(item, payload) for item in _as_list(universe_payload)]
         if not candidates:
             raise DataProviderError(
                 f"TDX snapshot missing candidate universe: {self.snapshot_path}"
@@ -381,13 +381,17 @@ def _sector_from_dict(item: object) -> SectorRawData:
     )
 
 
-def _candidate_from_dict(item: object) -> CandidateStockRawData:
+def _candidate_from_dict(
+    item: object,
+    payload: dict[str, Any] | None = None,
+) -> CandidateStockRawData:
     if not isinstance(item, dict):
         raise DataProviderError("TDX snapshot candidate must be an object")
     bars = [_bar_from_dict(bar) for bar in _as_list(item.get("bars"))]
     if not bars:
         raise DataProviderError("TDX snapshot candidate has no bars")
     price_reliable = bool(item.get("price_reliable", _bars_have_explicit_dates(bars)))
+    stock_payload = _stock_payload_for_candidate(payload, str(item.get("code") or ""))
     return CandidateStockRawData(
         code=str(item.get("code") or ""),
         name=str(item.get("name") or item.get("code") or ""),
@@ -398,7 +402,30 @@ def _candidate_from_dict(item: object) -> CandidateStockRawData:
         amount=float(item.get("amount", 0.0)),
         pe_ttm=_optional_float(item.get("pe_ttm")),
         price_reliable=price_reliable,
+        news_items=[
+            _news_from_dict(row)
+            for row in _as_list(item.get("news_items") or stock_payload.get("news_items"))
+        ],
+        announcements=[
+            row
+            for row in (
+                _dict_object_from_payload(row)
+                for row in _as_list(item.get("announcements") or stock_payload.get("announcements"))
+            )
+            if row
+        ],
     )
+
+
+def _stock_payload_for_candidate(
+    payload: dict[str, Any] | None,
+    code: str,
+) -> dict[str, Any]:
+    if not payload:
+        return {}
+    stocks = payload.get("stocks")
+    stock_payload = stocks.get(code) if isinstance(stocks, dict) else None
+    return stock_payload if isinstance(stock_payload, dict) else {}
 
 
 def _candidate_stock_payload(payload: dict[str, Any], code: str) -> dict[str, Any] | None:
