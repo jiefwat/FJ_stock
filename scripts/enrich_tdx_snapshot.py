@@ -8,8 +8,11 @@ import signal
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 from stock_ts.data_quality import DataSourceAttempt, summarize_data_quality
 from stock_ts.news_intelligence import (
@@ -38,6 +41,7 @@ def enrich_snapshot(
     tushare_client: object | None = None,
     tushare_news_api: object | None = None,
     itick_client: object | None = None,
+    yahoo_opener: Callable[[str, float], bytes] | None = None,
     intelligence_urls: list[str] | None = None,
     intelligence_opener: Callable[[str, float], bytes] | None = None,
 ) -> dict[str, int | str]:
@@ -89,8 +93,10 @@ def enrich_snapshot(
                 field_timeout=field_timeout,
                 tushare_client=ts_client,
                 itick_client=itick,
+                yahoo_opener=yahoo_opener,
                 akshare_stock_fields=akshare_stock_fields,
                 tushare_moneyflow=tushare_moneyflow,
+                request_timeout=request_timeout,
             )
             stocks[code] = enriched
             _merge_candidate_payload(snapshot, code, enriched)
@@ -120,7 +126,12 @@ def enrich_snapshot(
 
     snapshot["external_enrichment"] = {
         "source": "multi-source",
-        "sources": _external_source_names(ak_client, ts_client, itick),
+        "sources": _external_source_names(
+            ak_client,
+            ts_client,
+            itick,
+            yahoo_enabled=any(_is_hk_code(code) for code in selected_codes),
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "requested_count": len(selected_codes),
         "enriched_stock_count": enriched_count,
@@ -152,15 +163,51 @@ def _enrich_stock_payload(
     field_timeout: int,
     tushare_client: object | None,
     itick_client: object | None,
+    yahoo_opener: Callable[[str, float], bytes] | None,
     akshare_stock_fields: bool,
     tushare_moneyflow: bool,
+    request_timeout: float,
 ) -> dict[str, Any]:
     payload = dict(current)
     payload["code"] = code
     payload.setdefault("name", code)
     field_errors: dict[str, str] = {}
+    is_hk_stock = _is_hk_code(code)
 
-    if tushare_client is not None:
+    if is_hk_stock:
+        opener = yahoo_opener or _open_url_bytes
+        try:
+            with _time_limit(field_timeout):
+                bars = _fetch_yahoo_hk_daily_bars(
+                    opener, code, limit=bar_count, timeout=request_timeout
+                )
+            if bars:
+                payload["bars"] = bars
+                payload["bar_source"] = "yahoo.chart"
+                payload["price_reliable"] = True
+                payload["currency"] = "HKD"
+        except Exception as exc:
+            field_errors["yahoo_chart"] = str(exc)[:180]
+        try:
+            with _time_limit(field_timeout):
+                news_items = _fetch_yahoo_hk_news(
+                    opener, code, limit=news_limit, timeout=request_timeout
+                )
+            if news_items:
+                payload["news_items"] = news_items
+        except Exception as exc:
+            field_errors["yahoo_news"] = str(exc)[:180]
+        try:
+            with _time_limit(field_timeout):
+                fundamentals = _fetch_yahoo_hk_fundamentals(
+                    opener, code, timeout=request_timeout
+                )
+            if fundamentals:
+                payload["fundamental_metrics"] = fundamentals
+        except Exception as exc:
+            field_errors["yahoo_fundamentals"] = str(exc)[:180]
+
+    if tushare_client is not None and not is_hk_stock:
         try:
             with _time_limit(field_timeout):
                 bars = _fetch_tushare_daily_bars(tushare_client, code, limit=bar_count)
@@ -199,7 +246,10 @@ def _enrich_stock_payload(
         else:
             field_errors["tushare_moneyflow"] = "skipped"
 
-    if itick_client is not None and payload.get("bar_source") != "tushare.daily":
+    if itick_client is not None and payload.get("bar_source") not in {
+        "tushare.daily",
+        "yahoo.chart",
+    }:
         try:
             with _time_limit(field_timeout):
                 bars = _fetch_itick_daily_bars(itick_client, code, limit=bar_count)
@@ -217,7 +267,7 @@ def _enrich_stock_payload(
         except Exception as exc:
             field_errors["itick_tick"] = str(exc)[:180]
 
-    if akshare_stock_fields:
+    if akshare_stock_fields and not is_hk_stock:
         if not payload.get("fundamental_metrics"):
             try:
                 with _time_limit(field_timeout):
@@ -271,8 +321,10 @@ def _enrich_stock_payload(
                 payload["news_items"] = news_items
         except Exception as exc:
             field_errors["stock_news"] = str(exc)[:180]
-    else:
+    elif not akshare_stock_fields:
         field_errors["akshare_stock_fields"] = "skipped"
+    elif is_hk_stock:
+        field_errors["akshare_stock_fields"] = "skipped:hk-stock"
 
     if not payload.get("fund_flow_detail"):
         derived_fund = _derive_turnover_fund_flow(payload)
@@ -284,10 +336,16 @@ def _enrich_stock_payload(
         payload.get("bar_source") == "itick.stock_kline" or payload.get("latest_quote")
     ):
         sources.add("itick")
-    if akshare_stock_fields:
+    if akshare_stock_fields and not is_hk_stock:
         sources.add("akshare")
-    if tushare_client is not None:
+    if tushare_client is not None and not is_hk_stock:
         sources.add("tushare")
+    if is_hk_stock and (
+        payload.get("bar_source") == "yahoo.chart"
+        or payload.get("news_items")
+        or payload.get("fundamental_metrics", {}).get("source") == "yahoo.timeseries"
+    ):
+        sources.add("yahoo")
     payload["data_sources"] = sorted(str(item) for item in sources if item)
     payload["enriched_at"] = datetime.now(timezone.utc).isoformat()
     payload["data_quality"] = _stock_data_quality_payload(payload, field_errors)
@@ -352,6 +410,117 @@ def _fetch_itick_daily_bars(itick_client: object, code: str, *, limit: int) -> l
 def _fetch_itick_tick(itick_client: object, code: str) -> dict[str, Any]:
     quote = itick_client.fetch_tick(code)  # type: ignore[attr-defined]
     return quote if isinstance(quote, dict) else {}
+
+
+def _fetch_yahoo_hk_daily_bars(
+    opener: Callable[[str, float], bytes],
+    code: str,
+    *,
+    limit: int,
+    timeout: float,
+) -> list[dict[str, Any]]:
+    symbol = _yahoo_hk_symbol(code)
+    raw = opener(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        f"?range=1y&interval=1d",
+        timeout,
+    )
+    payload = json.loads(raw.decode("utf-8"))
+    result = ((payload.get("chart") or {}).get("result") or [{}])[0]
+    timestamps = result.get("timestamp") or []
+    quote = (((result.get("indicators") or {}).get("quote") or [{}])[0]) or {}
+    bars: list[dict[str, Any]] = []
+    for index, ts_value in enumerate(timestamps):
+        close = _optional_float(_safe_index(quote.get("close"), index))
+        if close is None or close <= 0:
+            continue
+        volume = _optional_float(_safe_index(quote.get("volume"), index))
+        bars.append(
+            {
+                "date": datetime.fromtimestamp(int(ts_value), timezone.utc).date().isoformat(),
+                "open": _float(_safe_index(quote.get("open"), index)),
+                "high": _float(_safe_index(quote.get("high"), index)),
+                "low": _float(_safe_index(quote.get("low"), index)),
+                "close": close,
+                "volume": volume or 0.0,
+            }
+        )
+    return bars[-limit:]
+
+
+def _fetch_yahoo_hk_news(
+    opener: Callable[[str, float], bytes],
+    code: str,
+    *,
+    limit: int,
+    timeout: float,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    symbol = _yahoo_hk_symbol(code)
+    raw = opener(
+        f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US",
+        timeout,
+    )
+    root = ElementTree.fromstring(raw)
+    items: list[dict[str, Any]] = []
+    for item_node in root.findall(".//item")[:limit]:
+        title = _xml_text(item_node, "title")
+        summary = _xml_text(item_node, "description")
+        classification = classify_news_item(title, summary)
+        pub_date = _format_rss_datetime(_xml_text(item_node, "pubDate"))
+        if not title:
+            continue
+        items.append(
+            {
+                "date": pub_date,
+                "source": "Yahoo Finance",
+                "title": title,
+                "summary": summary,
+                "url": _xml_text(item_node, "link"),
+                "sentiment": classification.sentiment,
+                "risk_tags": classification.risk_tags,
+                "catalyst_tags": classification.catalyst_tags,
+            }
+        )
+    return items
+
+
+def _fetch_yahoo_hk_fundamentals(
+    opener: Callable[[str, float], bytes],
+    code: str,
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    symbol = _yahoo_hk_symbol(code)
+    raw = opener(
+        "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/"
+        f"timeseries/{symbol}?type=annualTotalRevenue,annualNetIncome"
+        "&merge=false&period1=1704067200&period2=1893456000",
+        timeout,
+    )
+    payload = json.loads(raw.decode("utf-8"))
+    rows = ((payload.get("timeseries") or {}).get("result") or [])
+    metrics: dict[str, Any] = {"source": "yahoo.timeseries"}
+    latest_date = ""
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if "annualTotalRevenue" in row:
+            value, as_of_date = _latest_yahoo_timeseries_value(row.get("annualTotalRevenue"))
+            if value is not None:
+                metrics["operating_revenue"] = value
+                latest_date = max(latest_date, as_of_date)
+        if "annualNetIncome" in row:
+            value, as_of_date = _latest_yahoo_timeseries_value(row.get("annualNetIncome"))
+            if value is not None:
+                metrics["net_profit"] = value
+                latest_date = max(latest_date, as_of_date)
+    if len(metrics) == 1:
+        return {}
+    if latest_date:
+        metrics["date"] = latest_date
+    return metrics
 
 
 def _fetch_tushare_daily_basic(ts_client: object, code: str) -> dict[str, Any]:
@@ -733,6 +902,7 @@ def _merge_candidate_payload(snapshot: dict[str, Any], code: str, enriched: dict
                 "fund_flow",
                 "fund_flow_detail",
                 "news_items",
+                "fundamental_metrics",
                 "data_sources",
                 "enriched_at",
             ]:
@@ -759,7 +929,20 @@ def _ak_market(code: str) -> str:
 
 def _normalize_code(code: str) -> str:
     digits = "".join(ch for ch in str(code).strip() if ch.isdigit())
-    return digits[:6] if len(digits) >= 6 else ""
+    if len(digits) >= 6:
+        return digits[:6]
+    return digits.zfill(5) if len(digits) in {4, 5} else ""
+
+
+def _is_hk_code(code: str) -> bool:
+    return len(_normalize_code(code)) == 5
+
+
+def _yahoo_hk_symbol(code: str) -> str:
+    normalized = _normalize_code(code)
+    if not _is_hk_code(normalized):
+        raise ValueError(f"not a Hong Kong stock code: {code}")
+    return f"{int(normalized)}.HK"
 
 
 def _tushare_code(code: str) -> str:
@@ -785,6 +968,16 @@ def _format_report_date(value: str) -> str:
     return _format_tushare_date(text[:8])
 
 
+def _format_rss_datetime(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    try:
+        return parsedate_to_datetime(text).astimezone(timezone.utc).isoformat()
+    except (TypeError, ValueError):
+        return text
+
+
 def _akshare_em_symbol(code: str) -> str:
     normalized = _normalize_code(code)
     if normalized.startswith(("6", "9")):
@@ -799,6 +992,12 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def _open_url_bytes(url: str, timeout: float) -> bytes:
+    request = Request(url, headers={"User-Agent": "stock-ts/1.0"})
+    with urlopen(request, timeout=timeout) as response:  # nosec B310 - configured finance URLs only
+        return response.read()
 
 
 def _load_akshare() -> object:
@@ -870,6 +1069,13 @@ def _stock_data_quality_payload(
                 ),
             )
         )
+    if "yahoo" in sources:
+        attempts.append(
+            DataSourceAttempt(
+                "yahoo",
+                ok=not any(key.startswith("yahoo") for key in active_errors),
+            )
+        )
     for key, reason in active_errors.items():
         source = key.split("_", 1)[0]
         if source in {"daily", "valuation", "fund", "stock"}:
@@ -888,13 +1094,19 @@ def _stock_data_quality_payload(
 
 
 def _external_source_names(
-    ak: object, tushare_client: object | None, itick_client: object | None
+    ak: object,
+    tushare_client: object | None,
+    itick_client: object | None,
+    *,
+    yahoo_enabled: bool = False,
 ) -> list[str]:
     names = ["akshare"] if ak is not None else []
     if tushare_client is not None:
         names.append("tushare")
     if itick_client is not None:
         names.append("itick")
+    if yahoo_enabled:
+        names.append("yahoo")
     return names
 
 
@@ -919,6 +1131,27 @@ def _patch_requests_timeout(timeout: float) -> None:
 
 def _as_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _safe_index(value: object, index: int) -> object:
+    if not isinstance(value, list) or index >= len(value):
+        return None
+    return value[index]
+
+
+def _xml_text(node: ElementTree.Element, tag: str) -> str:
+    child = node.find(tag)
+    return (child.text or "").strip() if child is not None else ""
+
+
+def _latest_yahoo_timeseries_value(value: object) -> tuple[float | None, str]:
+    entries = [item for item in _as_list(value) if isinstance(item, dict)]
+    if not entries:
+        return None, ""
+    latest = sorted(entries, key=lambda item: str(item.get("asOfDate") or ""))[-1]
+    reported = latest.get("reportedValue")
+    raw_value = reported.get("raw") if isinstance(reported, dict) else None
+    return _optional_float(raw_value), str(latest.get("asOfDate") or "")
 
 
 def _float(value: object) -> float:

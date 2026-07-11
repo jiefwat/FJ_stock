@@ -159,6 +159,73 @@ class TushareNewsApi:
         )
 
 
+def _fake_hk_yahoo_open(url: str, timeout: float) -> bytes:
+    if "/chart/" in url:
+        return json.dumps(
+            {
+                "chart": {
+                    "result": [
+                        {
+                            "meta": {"currency": "HKD", "symbol": "6088.HK"},
+                            "timestamp": [1783618200, 1783704600],
+                            "indicators": {
+                                "quote": [
+                                    {
+                                        "open": [6.23, 6.47],
+                                        "high": [6.43, 6.70],
+                                        "low": [6.07, 6.02],
+                                        "close": [6.39, 6.07],
+                                        "volume": [42942150, 35326209],
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
+            },
+            ensure_ascii=False,
+        ).encode()
+    if "headline" in url:
+        return (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b"<rss><channel><item>"
+            b"<title>FIT HON TENG AI server demand grows</title>"
+            b"<description>AI data center connectivity demand remains active.</description>"
+            b"<link>https://finance.yahoo.com/news/6088</link>"
+            b"<pubDate>Fri, 10 Jul 2026 08:00:00 GMT</pubDate>"
+            b"</item></channel></rss>"
+        )
+    if "fundamentals-timeseries" in url:
+        return json.dumps(
+            {
+                "timeseries": {
+                    "result": [
+                        {
+                            "timestamp": [1767139200],
+                            "annualTotalRevenue": [
+                                {
+                                    "asOfDate": "2025-12-31",
+                                    "reportedValue": {"raw": 5003000000},
+                                }
+                            ],
+                        },
+                        {
+                            "timestamp": [1767139200],
+                            "annualNetIncome": [
+                                {
+                                    "asOfDate": "2025-12-31",
+                                    "reportedValue": {"raw": 157000000},
+                                }
+                            ],
+                        },
+                    ]
+                }
+            },
+            ensure_ascii=False,
+        ).encode()
+    raise AssertionError(url)
+
+
 class TushareOnlyAk(PartialAk):
     def stock_value_em(self, symbol: str) -> MiniFrame:
         raise RuntimeError("ak valuation unavailable")
@@ -633,6 +700,46 @@ def test_enrich_tdx_snapshot_imports_tushare_news_events_into_market_news(
     assert "美元指数波动" not in titles
     assert data["external_enrichment"]["intelligence_statuses"]["tushare-news"] == "ok:2"
     assert summary["market_news_count"] >= 2
+
+
+def test_enrich_tdx_snapshot_updates_hk_stock_from_yahoo_sources(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    payload["stocks"]["06088"] = {
+        "code": "06088",
+        "name": "FIT HON TENG",
+        "bars": [
+            {
+                "date": "2026-07-09",
+                "open": 6.23,
+                "high": 6.43,
+                "low": 6.07,
+                "close": 6.39,
+                "volume": 42942150,
+            }
+        ],
+    }
+    snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    module.enrich_snapshot(
+        snapshot,
+        codes=["06088"],
+        ak=RichAk(),
+        yahoo_opener=_fake_hk_yahoo_open,
+        market_news_limit=0,
+    )
+
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    stock = data["stocks"]["06088"]
+    assert stock["bars"][-1]["date"] == "2026-07-10"
+    assert stock["bar_source"] == "yahoo.chart"
+    assert stock["news_items"][0]["source"] == "Yahoo Finance"
+    assert stock["fundamental_metrics"]["source"] == "yahoo.timeseries"
+    assert stock["fundamental_metrics"]["operating_revenue"] == 5003000000.0
+    assert stock["fund_flow_detail"]["source"] == "derived.kline_turnover"
+    assert "yahoo" in stock["data_sources"]
 
 
 def test_daily_report_uses_snapshot_market_news_when_no_news_csv(tmp_path: Path) -> None:
