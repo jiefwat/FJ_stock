@@ -5421,10 +5421,21 @@ def _market_environment_dimension(market: MarketSnapshot) -> dict[str, object]:
         score += 5
     elif market.breadth_ratio >= 0.75:
         score += 3
+    if market.limit_up_count >= 80:
+        score += 6
+    elif market.limit_up_count >= 40:
+        score += 4
+    elif market.limit_up_count >= 15:
+        score += 2
+    if market.limit_down_count <= 10:
+        score += 3
+    elif market.limit_down_count >= 30:
+        score -= 5
     judgement = "偏强" if score >= 22 else "中性" if score >= 15 else "偏弱"
     evidence = (
         f"热度 {market.heat_score}/100，涨跌家数比 {market.breadth_ratio:.2f}，"
-        f"上涨/下跌/平盘 {market.advancing_count}/{market.declining_count}/{market.unchanged_count}"
+        f"上涨/下跌/平盘 {market.advancing_count}/{market.declining_count}/{market.unchanged_count}，"
+        f"涨停/跌停 {market.limit_up_count}/{market.limit_down_count}"
     )
     return {"score": min(score, 25), "judgement": judgement, "evidence": evidence}
 
