@@ -384,7 +384,16 @@ def test_daily_market_uses_professional_market_diagnosis_not_shallow_summary() -
 def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐板块", "推荐股票", "推荐原因"]:
+    for text in [
+        "推荐板块",
+        "推荐股票",
+        "趋势/强度",
+        "技术/位置",
+        "资金/成交",
+        "消息/公告",
+        "基本面/估值",
+        "入选/风险",
+    ]:
         assert text in opportunity_html
 
     for noisy_text in [
@@ -407,7 +416,7 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
 def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐原因", "板块原因", "入选原因", "个股原因", "风险原因"]:
+    for text in ["推荐维度", "板块原因", "入选原因", "个股原因", "风险原因"]:
         assert text in opportunity_html
 
     for shallow_text in [
@@ -493,7 +502,7 @@ def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐原因",
+        "推荐维度",
     ]:
         assert text in opportunity_html
 
@@ -517,7 +526,7 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
 def test_opportunity_module_removes_strategy_funnel_noise() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐板块", "推荐股票", "推荐原因"]:
+    for text in ["推荐板块", "推荐股票", "趋势/强度", "资金/成交"]:
         assert text in opportunity_html
     for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明", "进入个股分析"]:
         assert removed not in opportunity_html
@@ -529,7 +538,7 @@ def test_opportunity_module_renders_candidate_rows_with_research_links() -> None
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐原因",
+        "推荐维度",
     ]:
         assert text in opportunity_html
     for removed in ["策略：", "入选证据", "主要风险", "候选列表"]:
@@ -543,6 +552,24 @@ def test_opportunity_candidate_links_carry_source_strategy_and_evidence() -> Non
     assert "candidate_source=opportunity" not in opportunity_html
     assert "candidate_strategy_label=" not in opportunity_html
     assert "candidate_evidence=" not in opportunity_html
+
+
+def test_opportunity_recommendation_table_uses_dimension_columns_not_one_long_reason() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    assert "<th>推荐原因</th>" not in opportunity_html
+    for header in [
+        "<th>推荐板块</th>",
+        "<th>推荐股票</th>",
+        "<th>趋势/强度</th>",
+        "<th>技术/位置</th>",
+        "<th>资金/成交</th>",
+        "<th>消息/公告</th>",
+        "<th>基本面/估值</th>",
+        "<th>入选/风险</th>",
+    ]:
+        assert header in opportunity_html
+    assert "opportunity-dimension-table" in opportunity_html
 
 
 def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:

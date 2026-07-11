@@ -338,6 +338,11 @@ h1 {
 .data-table td:last-child { border-right:1px solid var(--line); border-radius:0 14px 14px 0; }
 .name-cell strong { display:block; font-size:15px; }
 .name-cell span { color:var(--muted); font-size:12px; }
+.opportunity-table-scroll { overflow-x:auto; padding-bottom:2px; }
+.opportunity-dimension-table { min-width:1180px; }
+.opportunity-dimension-table th:nth-child(n+3),
+.opportunity-dimension-table td:nth-child(n+3) { width:150px; }
+.opportunity-focus-panel .data-table td { line-height:1.55; }
 .reason-list { margin:0; padding-left:16px; color:var(--muted); line-height:1.55; }
 .report-copy {
   width:100%;
@@ -4599,16 +4604,18 @@ def _render_hot_opportunity_module(
         quality=quality,
     )
     if not rows:
-        rows = "<tr><td colspan='3'>暂无推荐；等待板块和候选股票刷新。</td></tr>"
+        rows = "<tr><td colspan='8'>暂无推荐；等待板块和候选股票刷新。</td></tr>"
     mainline = "、".join(sectors.market_mainline[:3]) or (
         sectors.sectors[0].name if sectors.sectors else "待确认"
     )
     candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"推荐 {min(len(candidates.candidates), 10)} 只"
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐原因。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐维度。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
       <div class="panel opportunity-focus-panel">
-        <table class="data-table candidates-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>推荐原因</th></tr></thead><tbody>{rows}</tbody></table>
+        <div class="opportunity-table-scroll">
+          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>趋势/强度</th><th>技术/位置</th><th>资金/成交</th><th>消息/公告</th><th>基本面/估值</th><th>入选/风险</th></tr></thead><tbody>{rows}</tbody></table>
+        </div>
       </div>
     </section>"""
 
@@ -4641,6 +4648,16 @@ def _render_opportunity_recommendation_rows(
     return sector_rows + candidate_rows
 
 
+@dataclass(frozen=True)
+class OpportunityRecommendationDimensions:
+    trend_strength: str
+    technical_position: str
+    fund_flow: str
+    news_event: str
+    fundamental: str
+    selection_risk: str
+
+
 def _render_opportunity_recommendation_candidate_row(
     item: CandidateStockAnalysis,
     *,
@@ -4650,23 +4667,61 @@ def _render_opportunity_recommendation_candidate_row(
     pool_price_reliable: bool,
     quality: DataQualityView | None = None,
 ) -> str:
-    reason = _opportunity_candidate_cause(item, raw=raw)
-    reason = f"个股原因：{reason}"
-    stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
-    if stale:
-        reason = f"{reason}；风险原因：数据质量：已滞后，不能排到前列"
-    elif not (pool_price_reliable and item.price_reliable):
-        reason = f"{reason}；风险原因：待补数据"
-    else:
-        reason = f"{reason}；入选原因：价格可靠"
+    dimensions = _opportunity_candidate_dimensions(
+        item,
+        raw=raw,
+        pool_price_reliable=pool_price_reliable,
+        quality=quality,
+    )
     query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
     stock_link = f'<a href="/?{query}#stock">{escape(item.name)}<span>{escape(item.code)}</span></a>'
     return (
         "<tr>"
         f"<td>{escape(localize_sector_name(item.sector) or '未识别主题')}</td>"
         f"<td class='name-cell'><strong>{stock_link}</strong></td>"
-        f"<td>{escape(reason)}</td>"
+        f"<td>{escape(dimensions.trend_strength)}</td>"
+        f"<td>{escape(dimensions.technical_position)}</td>"
+        f"<td>{escape(dimensions.fund_flow)}</td>"
+        f"<td>{escape(dimensions.news_event)}</td>"
+        f"<td>{escape(dimensions.fundamental)}</td>"
+        f"<td>{escape(dimensions.selection_risk)}</td>"
         "</tr>"
+    )
+
+
+def _opportunity_candidate_dimensions(
+    item: CandidateStockAnalysis,
+    *,
+    raw: CandidateStockRawData | None,
+    pool_price_reliable: bool,
+    quality: DataQualityView | None,
+) -> OpportunityRecommendationDimensions:
+    if raw is not None and raw.bars:
+        trend_strength = f"个股原因：{_opportunity_week_trend_reason(raw)}"
+        technical_position = _opportunity_technical_reason(raw)
+        fund_flow = _opportunity_fund_reason(raw)
+        news_event = _opportunity_news_reason(raw)
+        fundamental = _opportunity_valuation_reason(raw)
+    else:
+        trend_strength = f"个股原因：{_opportunity_candidate_cause(item, raw=raw)}"
+        technical_position = "技术面：K线待补，不能确认短线位置"
+        fund_flow = "资金面：资金和成交待补"
+        news_event = "消息面：未接入个股新闻，不作为推荐理由"
+        fundamental = "基本面：估值待补，不能用低估值解释机会"
+    stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
+    if stale:
+        selection_risk = "风险原因：数据质量：已滞后，不能排到前列"
+    elif not (pool_price_reliable and item.price_reliable):
+        selection_risk = "风险原因：价格或候选数据待补"
+    else:
+        selection_risk = "入选原因：价格可靠，进入复核名单"
+    return OpportunityRecommendationDimensions(
+        trend_strength=trend_strength,
+        technical_position=technical_position,
+        fund_flow=fund_flow,
+        news_event=news_event,
+        fundamental=fundamental,
+        selection_risk=selection_risk,
     )
 
 
@@ -4810,19 +4865,59 @@ def _render_opportunity_recommendation_sector_row(
     item,
     candidate_universe: list[CandidateStockRawData],
 ) -> str:
-    risk = _sector_risk_text(item)
-    reason_parts = [
-        f"板块原因：{_opportunity_sector_cause(item, candidate_universe)}",
-        f"入选原因：{_opportunity_sector_entry_reason(item)}",
-    ]
-    if risk:
-        reason_parts.append(f"风险原因：{risk}")
+    dimensions = _opportunity_sector_dimensions(item, candidate_universe)
     return (
         "<tr>"
         f"<td>{escape(localize_sector_name(item.name))}</td>"
         f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
-        f"<td>{escape('；'.join(part for part in reason_parts if part))}</td>"
+        f"<td>{escape(dimensions.trend_strength)}</td>"
+        f"<td>{escape(dimensions.technical_position)}</td>"
+        f"<td>{escape(dimensions.fund_flow)}</td>"
+        f"<td>{escape(dimensions.news_event)}</td>"
+        f"<td>{escape(dimensions.fundamental)}</td>"
+        f"<td>{escape(dimensions.selection_risk)}</td>"
         "</tr>"
+    )
+
+
+def _opportunity_sector_dimensions(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+) -> OpportunityRecommendationDimensions:
+    risk = _sector_risk_text(item)
+    causal_evidence = _sector_causal_evidence(item.name, candidate_universe)
+    event_evidence = [
+        evidence for evidence in causal_evidence if evidence.startswith(("消息面", "公告"))
+    ]
+    event_text = (
+        "消息/公告：" + "；".join(event_evidence[:2])
+        if event_evidence
+        else "消息/公告：未识别明确催化，不把涨跌当原因"
+    )
+    fundamental_evidence = [
+        evidence for evidence in causal_evidence if evidence.startswith("基本面")
+    ]
+    fundamental_text = (
+        "基本面/估值：" + "；".join(fundamental_evidence[:2])
+        if fundamental_evidence
+        else "基本面/估值：需用代表个股财报和估值继续确认"
+    )
+    selection_risk = f"入选原因：{_opportunity_sector_entry_reason(item)}"
+    if risk:
+        selection_risk = f"{selection_risk}；风险原因：{risk}"
+    return OpportunityRecommendationDimensions(
+        trend_strength=(
+            f"板块原因：覆盖 {item.advancing_ratio:.0%}，"
+            f"涨停 {item.limit_up_count}，{item.continuity}"
+        ),
+        technical_position=f"技术/位置：{item.rotation_status}，热度 {item.heat_score}/100",
+        fund_flow=(
+            f"资金/成交：{item.fund_status}，"
+            f"成交额变化 {item.amount_change:+.1f} 亿"
+        ),
+        news_event=event_text,
+        fundamental=fundamental_text,
+        selection_risk=selection_risk,
     )
 
 

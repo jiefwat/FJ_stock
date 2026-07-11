@@ -3263,8 +3263,20 @@ body {
   grid-template-columns:1fr;
   gap:16px;
 }
+.opportunity-table-scroll {
+  overflow-x:auto;
+  padding-bottom:2px;
+}
+.opportunity-dimension-table {
+  min-width:1180px;
+}
+.opportunity-dimension-table th:nth-child(n+3),
+.opportunity-dimension-table td:nth-child(n+3) {
+  width:150px;
+}
 .opportunity-focus-panel .data-table td {
   vertical-align:top;
+  line-height:1.55;
 }
 .opportunity-focus-panel .name-cell strong {
   font-size:15px;

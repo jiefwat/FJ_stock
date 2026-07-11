@@ -95,7 +95,7 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐原因",
+        "推荐维度",
     ]:
         assert text in opportunity_html
 
