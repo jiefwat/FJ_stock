@@ -88,15 +88,13 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 
 ## 服务器刷新时间
 
-`stock-ts-daily-analysis.timer` 使用交易研究检查点刷新数据：
+`stock-ts-daily-analysis.timer` 使用固定刷新点：
 
 - 00:00：盘后/夜间归档，补齐前一交易日 K 线、资金、公告和新闻。
-- 06:00：早间预刷新，供盘前查看数据中台状态。
 - 09:00：开盘前刷新候选池、市场新闻和持仓数据。
-- 12:30：午间复核，更新上午盘面后的候选和异动。
-- 14:00：尾盘前复核，供收盘前人工决策。
+- 13:00：午间后复核，更新上午盘面后的候选和异动。
 
-模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。
+模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。公网开放账号注册时，把 `deploy/systemd/stock-ts-auth-open.conf` 放到 `/etc/systemd/system/stock-ts.service.d/auth.conf`，真实管理员密码和 session secret 仍只放服务器环境或 `.env`。
 注意：`--python` 指项目运行环境；TDX 桥接会自动选择能 `import eltdx` 的 Python（优先项目环境，再尝试 `python3.11` / `python3.12` / `python3`），必要时可用 `--tdx-bridge-python` 显式指定。
 ## 早间邮件
 
@@ -111,4 +109,4 @@ PYTHONPATH=src python3 scripts/send_morning_report.py \
   --style digest
 ```
 
-依赖 `.env` 中的 `EMAIL_SENDER`、`EMAIL_PASSWORD` 和 `EMAIL_RECEIVERS`。缺少邮箱授权码时只能 dry-run，不能真实发送。
+依赖 `.env` 中的 `EMAIL_SENDER`、`EMAIL_PASSWORD` 和 `EMAIL_RECEIVERS`。缺少邮箱授权码时只能 dry-run，不能真实发送。定时模板位于 `deploy/systemd/stock-ts-morning-email.service` 和 `deploy/systemd/stock-ts-morning-email.timer`，默认每天 08:30 发送。

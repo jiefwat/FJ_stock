@@ -9303,6 +9303,16 @@ def _user_portfolio_dir(user: AuthUser) -> Path:
     return base_dir / str(user.id)
 
 
+def _can_manage_global_settings(
+    user: AuthUser | None,
+    *,
+    config: AuthConfig | None = None,
+) -> bool:
+    if not is_auth_enabled(config):
+        return True
+    return bool(user and user.role == "owner")
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -9432,6 +9442,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path not in {"/holdings", "/settings", "/notification-test", "/dispatch-daily"}:
             self.send_error(404)
+            return
+        current_user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+        if parsed.path in {"/settings", "/notification-test", "/dispatch-daily"} and not _can_manage_global_settings(
+            current_user,
+            config=config,
+        ):
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Only owner accounts can change global settings.")
             return
         length = int(self.headers.get("Content-Length", "0"))
         payload = self.rfile.read(length).decode("utf-8")

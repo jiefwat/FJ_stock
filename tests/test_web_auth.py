@@ -405,3 +405,41 @@ def test_effective_holdings_path_keeps_explicit_path_when_auth_disabled(tmp_path
     explicit = str(tmp_path / "holdings.csv")
 
     assert _effective_holdings_path(None, explicit) == explicit
+
+
+def test_member_cannot_update_global_settings(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_USER_DATA_DIR", str(tmp_path / "user-data"))
+    server = _serve_once(monkeypatch, tmp_path)
+    opener = urllib.request.build_opener(_NoRedirect)
+    store = UserStore(tmp_path / "users.sqlite3")
+    member = store.register_user("member@example.com", "member-secret")
+    token = SessionManager("session-secret").issue_session(
+        user_id=member.id,
+        username=member.username,
+    )
+    payload = urllib.parse.urlencode(
+        {
+            "page_code": "600519",
+            "settings_provider": "sample",
+            "email_sender": "member@example.com",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/settings",
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": f"stock_ts_session={token}",
+        },
+    )
+    try:
+        try:
+            opener.open(request, timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 403
+        else:  # pragma: no cover - defensive
+            raise AssertionError("expected member settings request to be forbidden")
+    finally:
+        server.shutdown()
+        server.server_close()
