@@ -3247,6 +3247,20 @@ body {
 .opportunity-candidate-card {
   box-shadow:none;
 }
+.opportunity-focus-grid {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:16px;
+}
+.opportunity-focus-panel .data-table td {
+  vertical-align:top;
+}
+.opportunity-focus-panel .name-cell strong {
+  font-size:15px;
+}
+.opportunity-focus-panel .name-cell span {
+  margin-top:3px;
+}
 
 
 .stock-data-audit-panel {

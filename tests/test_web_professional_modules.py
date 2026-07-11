@@ -15,10 +15,10 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "个股分析" in html
     assert "个股三面复核" in html
     assert "热点机会" in html
-    assert "主题雷达" in html
-    assert "板块热度" in html
-    assert "情绪温度" in html
-    assert "候选观察池" in html
+    assert "热门主题" in html
+    assert "热门板块主题" in html
+    assert "股票机会" in html
+    assert "股票机会" in html
     assert "主要数据源" not in html
 
 
@@ -32,7 +32,7 @@ def test_web_keeps_professional_modules_connected_to_existing_data() -> None:
     assert "市场" in html
     assert "持仓健康度" in html
     assert "贵州茅台" in html
-    assert "href='/?code=" in html
+    assert 'href="/?code=' in html
     assert "不构成投资建议" not in html
 
 
@@ -43,10 +43,10 @@ def test_web_candidate_workspace_uses_observation_actions() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "候选观察池" in html
-    assert "入选理由" in html
-    assert "下一步" in html
-    assert "href='/?code=" in html
+    assert "股票机会" in html
+    assert "原因" in html
+    assert "进入个股分析" in html
+    assert 'href="/?code=' in html
 
 
 def test_limit_modules_do_not_present_tencent_zero_as_real_count() -> None:

@@ -110,8 +110,8 @@ def test_web_pauses_candidate_ranking_when_tdx_snapshot_uses_synthetic_bars(
     )
 
     assert "涨停 134 / 跌停 35" in html
-    assert "候选观察池" in html
-    assert "仅观察" in html or "价格可靠" in html
+    assert "股票机会" in html
+    assert "待补数据" in html or "价格可靠" in html
     assert "最强上涨" not in html
     assert "最弱下跌" not in html
 
@@ -195,7 +195,7 @@ def test_web_quality_gate_marks_candidate_prices_available_when_dates_are_real(
         holdings_path=str(holdings),
     )
 
-    assert "候选观察池" in html
+    assert "股票机会" in html
     assert "价格可靠" in html
     assert "排序暂停" not in html
 

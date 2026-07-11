@@ -69,8 +69,8 @@ def test_four_modules_keep_module_owned_actions() -> None:
         'data-action="add-holding"',
         'class="stock-form" method="get"',
         "个股三面复核",
-        "候选观察池",
-        "href='/?code=",
+        "股票机会",
+        'href="/?code=',
     ]:
         assert text in html
 
@@ -92,13 +92,12 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     opportunity_html = html[opportunity_start:]
 
     for text in [
-        "机会状态",
+        "热门板块主题",
         "板块方向",
-        "情绪温度",
+        "股票机会",
         "候选列表",
-        "赚钱效应",
-        "亏钱效应",
-        "入选理由",
+        "原因",
+        "进入个股分析",
     ]:
         assert text in opportunity_html
 

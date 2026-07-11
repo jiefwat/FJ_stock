@@ -46,9 +46,9 @@ def test_four_modules_explain_professional_data_flow() -> None:
     assert "每日大盘" in html
     assert "持仓明细" in html
     assert "股票摘要" in html
-    assert "机会状态" in html
+    assert "热门板块主题" in html
     assert "板块方向" in html
-    assert "情绪温度" in html
+    assert "股票机会" in html
     assert "候选列表" in html
 
 

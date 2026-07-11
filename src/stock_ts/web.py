@@ -4092,78 +4092,47 @@ def _render_hot_opportunity_module(
     candidate_universe_metadata: dict[str, str] | None = None,
     quality: DataQualityView | None = None,
 ) -> str:
-    del candidate_code, candidate_group, candidate_strategy
+    del stock_code, candidate_code, candidate_group, candidate_strategy
     metadata = candidate_universe_metadata or {}
-    top_sector = sectors.sectors[0] if sectors.sectors else None
-    top_candidate = candidates.candidates[0] if candidates.candidates else None
-    sector_rows = "".join(_render_opportunity_sector_row(item, candidate_universe) for item in sectors.sectors[:6])
+    sector_rows = "".join(
+        _render_opportunity_theme_row(item, candidate_universe) for item in sectors.sectors[:5]
+    )
     if not sector_rows:
-        sector_rows = "<tr><td colspan='5'>当前数据源未返回板块热度，先等待快照刷新。</td></tr>"
+        sector_rows = "<tr><td colspan='4'>当前数据源未返回热门板块主题，先等待快照刷新。</td></tr>"
     candidate_rows = "".join(
-        _render_opportunity_candidate_row(
+        _render_opportunity_focused_candidate_row(
             item,
             provider_name=provider_name,
             holdings_path=holdings_path,
-            stock_code=stock_code,
+            pool_price_reliable=candidates.price_reliable,
+            quality=quality,
         )
         for item in candidates.candidates[:8]
     )
     if not candidate_rows:
-        candidate_rows = "<tr><td colspan='6'>暂无候选观察池；先看大盘和板块是否转强。</td></tr>"
-    mainline = "、".join(sectors.market_mainline[:3]) or (top_sector.name if top_sector else "待确认")
+        candidate_rows = "<tr><td colspan='4'>暂无股票机会；先等候选池和热门板块主题刷新。</td></tr>"
+    mainline = "、".join(sectors.market_mainline[:3]) or (
+        sectors.sectors[0].name if sectors.sectors else "待确认"
+    )
     candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"候选 {len(candidates.candidates)} 只"
-    sentiment_state = _limit_up_state_label(market)
-    downside_state = _limit_down_state_label(market)
     universe_text = str(len(candidate_universe) or len(candidates.candidates))
     generated_at = metadata.get("generated_at") or metadata.get("trade_date") or market.trade_date
-    opportunity_action = _opportunity_action(market, top_sector, top_candidate)
-    candidate_cards = _render_opportunity_candidate_cards(
-        candidates, provider_name, holdings_path, quality=quality
-    )
-    method_notes = _li_join(
-        (
-            candidates.method_notes
-            or [
-                "先看板块是否连续，再看候选是否有技术、资金和消息三面共振。",
-                "候选名单只代表观察优先级，不等于买入建议。",
-            ]
-        )[:3]
+    freshness_note = (
+        f"样本 {universe_text}；生成 {generated_at}；价格"
+        f"{'可靠' if candidates.price_reliable else '待补数据'}。"
     )
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">先看机会状态和策略通道，再进入候选列表；只输出观察优先级。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
-      {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、涨跌停情绪、候选 K 线、资金和消息标签", "主题雷达 -> 候选观察池 -> 个股分析入口")}
-      {_render_opportunity_strategy_funnel(market, top_sector, top_candidate, candidates, metadata)}
-      {candidate_cards}
-      <div class="panel">
-        <div class="editor-toolbar"><div><h3>机会状态</h3><p class="section-subtitle">先判断热点是否可持续，再决定哪些股票值得进入个股分析。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
-        <div class="summary-grid">
-          <div class="summary-card"><span>板块热度</span><strong>{escape(top_sector.name if top_sector else "待确认")}</strong><p class="kpi-foot">{escape(top_sector.continuity if top_sector else "等待板块快照")}</p></div>
-          <div class="summary-card"><span>情绪温度</span><strong>{escape(sentiment_state)}</strong><p class="kpi-foot">涨停 {market.limit_up_count} / 跌停 {market.limit_down_count}；{escape(downside_state)}</p></div>
-          <div class="summary-card"><span>候选观察池</span><strong>{escape(top_candidate.name if top_candidate else "待刷新")}</strong><p class="kpi-foot">样本 {escape(universe_text)}；生成 {escape(generated_at)}</p></div>
-          <div class="summary-card"><span>今日策略</span><strong>{escape(opportunity_action)}</strong><p class="kpi-foot">只在大盘、板块和个股条件共振时升级研究。</p></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只看热门板块主题、股票和原因；不展示复杂筛选过程。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
+      {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、候选 K 线、资金和消息标签", "热门主题 -> 股票 -> 原因")}
+      <div class="opportunity-focus-grid">
+        <div class="panel opportunity-focus-panel">
+          <div class="editor-toolbar"><div><h3>热门板块主题 / 板块方向</h3><p class="section-subtitle">只列当前最值得关注的主题、代表股票和原因。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
+          <table class="data-table"><thead><tr><th>主题</th><th>热度</th><th>股票</th><th>原因</th></tr></thead><tbody>{sector_rows}</tbody></table>
         </div>
-      </div>
-      <div class="grid-2" style="margin-top:16px">
-        <div class="panel">
-          <h3>板块方向</h3>
-          <table class="data-table"><thead><tr><th>主题</th><th>强度</th><th>扩散</th><th>代表样本</th><th>下一步</th></tr></thead><tbody>{sector_rows}</tbody></table>
-        </div>
-        <div class="panel">
-          <h3>情绪温度</h3>
-          <div class="compact-note-grid">
-            <div class="compact-note-card"><strong>赚钱效应</strong><p>{escape(sentiment_state)}</p></div>
-            <div class="compact-note-card"><strong>亏钱效应</strong><p>{escape(downside_state)}</p></div>
-            <div class="compact-note-card"><strong>验证规则</strong><p>热点不扩散、跌停扩散或指数走弱时，候选只观察不执行。</p></div>
-          </div>
-        </div>
-        <div class="panel" style="grid-column:1 / -1">
-          <div class="editor-toolbar"><div><h3>候选列表</h3><p class="section-subtitle">每个候选都要继续进入个股分析，复核 K 线、资金面和消息面。</p></div><span class="portfolio-chip">{escape("价格可靠" if candidates.price_reliable else "仅观察")}</span></div>
-          <table class="data-table candidates-table"><thead><tr><th>#</th><th>股票</th><th>分数</th><th>方向</th><th>入选理由</th><th>下一步</th></tr></thead><tbody>{candidate_rows}</tbody></table>
-        </div>
-        <div class="panel" style="grid-column:1 / -1">
-          <h3>方法说明</h3>
-          <ul>{method_notes}</ul>
+        <div class="panel opportunity-focus-panel">
+          <div class="editor-toolbar"><div><h3>股票机会 / 候选列表</h3><p class="section-subtitle">股票、所属主题和入选原因放在同一行，点击后进入个股分析复核。</p></div><span class="portfolio-chip">{escape(freshness_note)}</span></div>
+          <table class="data-table candidates-table"><thead><tr><th>股票</th><th>主题</th><th>原因</th><th>复核</th></tr></thead><tbody>{candidate_rows}</tbody></table>
         </div>
       </div>
     </section>"""
@@ -4333,6 +4302,58 @@ def _render_opportunity_sector_row(item, candidate_universe: list[CandidateStock
         f"<td>{item.advancing_ratio:.0%}</td>"
         f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
         f"<td>{escape(_sector_next_check(item))}<span>{escape(risk)}</span></td></tr>"
+    )
+
+
+def _render_opportunity_theme_row(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    risk = _sector_risk_text(item)
+    reason_parts = [
+        _sector_strength_reason(item),
+        f"扩散 {item.advancing_ratio:.0%}",
+        item.continuity,
+    ]
+    if risk:
+        reason_parts.append(risk)
+    reason = "；".join(part for part in reason_parts if part)
+    return (
+        f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
+        f"<span>{escape(item.rotation_status)}</span></td>"
+        f"<td>{item.heat_score}/100</td>"
+        f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
+        f"<td>{escape(reason)}</td></tr>"
+    )
+
+
+def _render_opportunity_focused_candidate_row(
+    item: CandidateStockAnalysis,
+    *,
+    provider_name: str,
+    holdings_path: str,
+    pool_price_reliable: bool,
+    quality: DataQualityView | None = None,
+) -> str:
+    reason = "；".join(item.reasons[:2]) if item.reasons else "等待补充技术、资金或消息证据"
+    stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
+    if stale:
+        reason = f"{reason}；数据质量：已滞后，不能排到前列"
+    elif not (pool_price_reliable and item.price_reliable):
+        reason = f"{reason}；数据质量：待补数据"
+    query = urlencode(
+        {
+            "code": item.code,
+            "provider": provider_name,
+            "holdings": holdings_path,
+            "candidate_source": "opportunity",
+            "candidate_strategy_label": _candidate_card_strategy(item),
+            "candidate_evidence": reason,
+        }
+    )
+    return (
+        f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
+        f"<span>{escape(item.code)}</span></td>"
+        f"<td>{escape(item.sector)}</td>"
+        f"<td>{escape(reason)}</td>"
+        f'<td><a class="primary-button" href="/?{query}#stock" data-jump="stock">进入个股分析</a></td></tr>'
     )
 
 
