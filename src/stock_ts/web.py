@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -6688,7 +6689,13 @@ def _map_market_event_to_theme_or_stock(
         return None
     if not theme and not matched_stocks and not extracted_stock:
         return None
-    stock_text = _event_stock_text(matched_stocks, extracted_stock, theme, candidate_universe)
+    stock_text = _event_stock_text(
+        matched_stocks,
+        extracted_stock,
+        theme,
+        candidate_universe,
+        event_text=text,
+    )
     if not stock_text and not theme:
         return None
     reason = _event_reason_text(item, theme, stock_text)
@@ -6769,23 +6776,34 @@ def _event_stock_text(
     extracted_stock: str,
     theme: str,
     candidate_universe: list[CandidateStockRawData],
+    *,
+    event_text: str = "",
 ) -> str:
     if matched_stocks:
         return "、".join(
             f"{stock.name}{_event_pct_text(stock)}" for stock in matched_stocks[:5]
         )
     if extracted_stock:
-        return extracted_stock
+        pct_text = _extract_event_pct_text(event_text)
+        return f"{extracted_stock} {pct_text}" if pct_text else f"{extracted_stock}（涨跌待补）"
     if theme:
         theme_rows = [
             row
             for row in _build_limit_board_rows(candidate_universe)
             if localize_sector_name(row.sector) == theme
         ]
-        theme_rows = sorted(theme_rows, key=lambda row: abs(row.pct_change), reverse=True)[:5]
+        theme_rows = sorted(theme_rows, key=lambda row: row.pct_change, reverse=True)[:3]
         if theme_rows:
             return "、".join(f"{row.name} {row.pct_change:.2f}%" for row in theme_rows)
     return ""
+
+
+def _extract_event_pct_text(text: str) -> str:
+    match = re.search(r"(?:涨跌幅|涨幅|跌幅|涨跌|涨跌幅度)\s*[:：]?\s*([+-]?\d+(?:\.\d+)?)\s*%", text)
+    if not match:
+        return ""
+    value = float(match.group(1))
+    return f"{value:.2f}%"
 
 
 def _event_pct_text(stock: CandidateStockRawData) -> str:

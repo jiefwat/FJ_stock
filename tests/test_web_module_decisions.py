@@ -1929,3 +1929,99 @@ def test_market_event_panel_uses_compact_card_layout_not_wide_table() -> None:
     assert 'class="market-event-card-list"' in market_html
     assert 'class="market-event-card"' in market_html
     assert "market-event-summary-list" not in html
+
+
+def test_market_event_theme_level_events_show_top3_stock_moves() -> None:
+    from stock_ts.models import NewsItem
+
+    class ThemeEventProvider(SampleDataProvider):
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date="2026-07-11 10:15",
+                    source="longbridge.mcp.新闻",
+                    title="半导体板块盘中走强",
+                    summary="先进制程与存储方向活跃",
+                    sentiment="positive",
+                )
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300111",
+                    name="强芯一号",
+                    sector="半导体",
+                    bars=[
+                        DailyBar("2026-07-10", 10.0, 10.1, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-11", 10.1, 11.0, 10.0, 10.8, 2400),
+                    ],
+                    amount=12.0,
+                ),
+                CandidateStockRawData(
+                    code="300222",
+                    name="强芯二号",
+                    sector="半导体",
+                    bars=[
+                        DailyBar("2026-07-10", 20.0, 20.2, 19.8, 20.0, 1000),
+                        DailyBar("2026-07-11", 20.1, 21.5, 20.0, 21.0, 2200),
+                    ],
+                    amount=10.0,
+                ),
+                CandidateStockRawData(
+                    code="300333",
+                    name="强芯三号",
+                    sector="半导体",
+                    bars=[
+                        DailyBar("2026-07-10", 30.0, 30.2, 29.8, 30.0, 1000),
+                        DailyBar("2026-07-11", 30.1, 31.0, 30.0, 30.9, 1800),
+                    ],
+                    amount=8.0,
+                ),
+                CandidateStockRawData(
+                    code="300444",
+                    name="强芯四号",
+                    sector="半导体",
+                    bars=[
+                        DailyBar("2026-07-10", 40.0, 40.2, 39.8, 40.0, 1000),
+                        DailyBar("2026-07-11", 40.1, 40.8, 40.0, 40.4, 1600),
+                    ],
+                    amount=6.0,
+                ),
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=ThemeEventProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+    event_html = market_html[market_html.index("异动事件") :]
+
+    assert "异动事件" in event_html
+    assert "对应主题：半导体" in event_html
+    assert "强芯一号 8.00%" in event_html
+    assert "强芯二号 5.00%" in event_html
+    assert "强芯三号 3.00%" in event_html
+    assert "强芯四号" not in event_html
+
+
+def test_market_event_extracted_stock_uses_event_pct_when_quote_missing() -> None:
+    from stock_ts.models import NewsItem
+
+    class ExtractedStockProvider(SampleDataProvider):
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date="2026-07-11 10:18",
+                    source="longbridge.mcp.市场异动",
+                    title="中芯国际异动：波动超 20 日均值",
+                    summary="半导体厂商；涨跌幅 -5.62%",
+                    sentiment="neutral",
+                )
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=ExtractedStockProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+
+    assert "中芯国际 -5.62%" in market_html
