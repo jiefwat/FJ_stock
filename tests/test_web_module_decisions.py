@@ -1497,6 +1497,36 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "弱势；扩散" not in market_html
 
 
+def test_daily_market_explains_mainline_and_lists_top6_strongest_stocks() -> None:
+    def stock_news_fetcher(symbol: str, limit: int) -> list[NewsItem]:
+        return [
+            NewsItem(
+                date="2026-07-10",
+                source="东方财富",
+                title=f"{symbol}主线强股消息",
+                summary="主线方向存在产业催化",
+                sentiment="positive",
+            )
+        ][:limit]
+
+    market_html = _workspace(_sample_html(stock_news_fetcher=stock_news_fetcher), "market")
+
+    assert "主线介绍" in market_html
+    assert "最强股票Top6" in market_html
+    assert "主线逻辑" in market_html
+    assert "一周趋势" in market_html
+    assert "资金面" in market_html
+    assert "主线强股消息" in market_html
+    assert "半导体" in market_html
+    assert "机器人" in market_html
+    assert "人工智能" in market_html
+    assert "兆易创新" in market_html
+    assert "寒武纪" in market_html
+    assert "中信证券" in market_html
+    assert market_html.count("mainline-stock-row") >= 6
+    assert "主线在哪里" not in market_html
+
+
 def test_market_sector_and_wide_move_causes_use_news_fundamental_not_price_only() -> None:
     class CausalProvider(SampleDataProvider):
         def fetch_sectors(self) -> list[SectorRawData]:

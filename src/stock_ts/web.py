@@ -979,10 +979,15 @@ def render_page(
             "未生成持仓分析，请检查 holdings 参数", provider_name=provider_name
         )
     candidate_universe = _safe_fetch_candidate_universe(active_provider)
+    preferred_news_codes = _dedupe_texts(
+        [resolved.code]
+        + [item.code for item in candidates.candidates[:7]]
+        + _mainline_preferred_codes(candidate_universe, sectors)
+    )
     candidate_universe = _enrich_candidate_universe_news(
         candidate_universe,
         live_news_fetcher=live_news_fetcher,
-        preferred_codes=[item.code for item in candidates.candidates[:7]],
+        preferred_codes=preferred_news_codes,
         limit_per_stock=3,
     )
     candidate_universe_metadata = _safe_fetch_candidate_universe_metadata(active_provider)
@@ -5530,6 +5535,12 @@ def _render_compact_market_module(
     del portfolio
     candidate_universe = candidate_universe or []
     distribution = _render_market_distribution_chart(market, candidate_universe, candidates)
+    mainline_panel = _render_market_mainline_intro_panel(
+        sectors,
+        candidate_universe,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+    )
     strong_sectors = _render_market_strength_sector_panel(
         "强势板块Top5", sectors, candidate_universe, reverse=True
     )
@@ -5557,6 +5568,7 @@ def _render_compact_market_module(
         </div>
       </div>
       {distribution}
+      {mainline_panel}
       {wide_move_panel}
       <div class="market-sector-duo">
         {strong_sectors}
@@ -5844,6 +5856,157 @@ def _render_market_strength_sector_panel(
           <tbody>{rows}</tbody>
         </table>
       </div>"""
+
+
+def _render_market_mainline_intro_panel(
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+    *,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    mainline_sectors = _market_mainline_sector_items(sectors)
+    sector_cards = "".join(
+        _render_mainline_intro_card(item, candidate_universe) for item in mainline_sectors[:3]
+    )
+    if not sector_cards:
+        sector_cards = "<div class='empty-state'><strong>主线待确认</strong><p>当前板块强度不足，先等涨停、扩散和成交额同时改善。</p></div>"
+    stock_rows = "".join(
+        _render_mainline_top_stock_row(
+            stock,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+        )
+        for stock in _mainline_top_stocks(candidate_universe, mainline_sectors, limit=6)
+    )
+    if not stock_rows:
+        stock_rows = "<tr><td colspan='4'>候选池暂无主线股票样本。</td></tr>"
+    return f"""
+      <div class="panel market-mainline-panel">
+        <div class="editor-toolbar">
+          <div><h3>主线介绍</h3><p class="section-subtitle">板块逻辑、强度指标与同方向最强股票。</p></div>
+          <span class="portfolio-chip">最强股票Top6</span>
+        </div>
+        <div class="summary-grid compact-summary-grid">{sector_cards}</div>
+        <table class="data-table compact-sector-table">
+          <thead><tr><th>股票</th><th>主题</th><th>涨跌</th><th>强势原因</th></tr></thead>
+          <tbody>{stock_rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _market_mainline_sector_items(sectors: SectorAnalysisReport) -> list:
+    mainline_names = [localize_sector_name(name) for name in sectors.market_mainline]
+    items = [
+        item
+        for item in sectors.sectors
+        if localize_sector_name(item.name) in mainline_names
+    ]
+    if items:
+        return sorted(items, key=lambda item: item.heat_score, reverse=True)
+    return sorted(sectors.sectors, key=lambda item: item.heat_score, reverse=True)[:3]
+
+
+def _mainline_preferred_codes(
+    candidate_universe: list[CandidateStockRawData],
+    sectors: SectorAnalysisReport,
+) -> list[str]:
+    mainline_sectors = _market_mainline_sector_items(sectors)
+    return [item.code for item in _mainline_top_stocks(candidate_universe, mainline_sectors, limit=6)]
+
+
+def _render_mainline_intro_card(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    reason = _mainline_intro_reason(item, candidate_universe)
+    return (
+        f"<div class='summary-card'><span>{escape(item.name)}</span>"
+        f"<strong>{item.pct_chg:.2f}% · 热度 {item.heat_score}</strong>"
+        f"<p class='kpi-foot'>{escape(reason)}</p></div>"
+    )
+
+
+def _mainline_intro_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    evidence = _sector_causal_evidence(item.name, candidate_universe)
+    if evidence:
+        logic = "主线逻辑：" + "；".join(evidence[:2])
+    else:
+        logic = "主线逻辑：消息/公告/基本面催化待确认"
+    strength = [
+        f"扩散 {item.advancing_ratio:.0%}",
+        f"涨停 {item.limit_up_count}",
+        f"成交变化 {item.amount_change:.1f}亿",
+    ]
+    if item.fund_status:
+        strength.append(item.fund_status)
+    if item.rotation_status:
+        strength.append(item.rotation_status)
+    return f"{logic}；强度：{'，'.join(strength)}"
+
+
+def _mainline_top_stocks(
+    candidate_universe: list[CandidateStockRawData],
+    mainline_sectors: list,
+    *,
+    limit: int,
+) -> list[CandidateStockRawData]:
+    mainline_names = {localize_sector_name(item.name) for item in mainline_sectors}
+    rows = [
+        item
+        for item in candidate_universe
+        if len(item.bars) >= 2
+        and (not mainline_names or localize_sector_name(item.sector) in mainline_names)
+    ]
+    return sorted(rows, key=_mainline_stock_score, reverse=True)[:limit]
+
+
+def _render_mainline_top_stock_row(
+    stock: CandidateStockRawData,
+    *,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    query = urlencode({"code": stock.code, "provider": provider_name, "holdings": holdings_path})
+    link = f'<a href="/?{query}#stock">{escape(stock.name)}<span>{escape(stock.code)}</span></a>'
+    reason = _mainline_stock_reason(stock)
+    pct = _candidate_raw_pct_change(stock) or 0.0
+    return (
+        "<tr class='mainline-stock-row'>"
+        f"<td class='name-cell'><strong>{link}</strong></td>"
+        f"<td>{escape(localize_sector_name(stock.sector))}</td>"
+        f"<td>{pct:.2f}%</td>"
+        f"<td>{escape(reason)}</td>"
+        "</tr>"
+    )
+
+
+def _mainline_stock_reason(stock: CandidateStockRawData) -> str:
+    reason_parts = [
+        _opportunity_week_trend_reason(stock),
+        _opportunity_fund_reason(stock),
+        _opportunity_news_reason(stock),
+    ]
+    evidence = _candidate_causal_evidence(stock)
+    if evidence:
+        reason_parts.append(_opportunity_valuation_reason(stock))
+    return "；".join(reason_parts[:4])
+
+
+def _mainline_stock_score(stock: CandidateStockRawData) -> float:
+    latest_pct = _candidate_raw_pct_change(stock) or -100.0
+    week_pct = _candidate_week_pct_change(stock)
+    fund_bonus = (stock.fund_flow or 0.0) * 0.4
+    liquidity_bonus = min(stock.amount, 50.0) * 0.03 + min(stock.turnover_rate, 20.0) * 0.08
+    event_bonus = 1.5 if stock.news_items or stock.announcements else 0.0
+    return latest_pct * 0.5 + week_pct * 0.35 + fund_bonus + liquidity_bonus + event_bonus
+
+
+def _candidate_week_pct_change(stock: CandidateStockRawData) -> float:
+    bars = stock.bars[-5:]
+    if len(bars) < 2:
+        return 0.0
+    return pct_change(bars[0].close, bars[-1].close)
 
 
 def _render_market_strength_sector_row(
