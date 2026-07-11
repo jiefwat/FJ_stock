@@ -740,6 +740,8 @@ def test_enrich_tdx_snapshot_updates_hk_stock_from_yahoo_sources(tmp_path: Path)
     assert stock["fundamental_metrics"]["operating_revenue"] == 5003000000.0
     assert stock["fund_flow_detail"]["source"] == "derived.kline_turnover"
     assert "yahoo" in stock["data_sources"]
+    assert "valuation" not in stock["data_quality"]["missing_fields"]
+    assert "akshare" not in stock["data_quality"]["fallback_from"]
 
 
 def test_daily_report_uses_snapshot_market_news_when_no_news_csv(tmp_path: Path) -> None:

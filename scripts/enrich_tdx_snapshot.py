@@ -1047,7 +1047,11 @@ def _stock_data_quality_payload(
     payload: dict[str, Any], field_errors: dict[str, str]
 ) -> dict[str, Any]:
     attempts: list[DataSourceAttempt] = []
-    active_errors = {key: value for key, value in field_errors.items() if value != "skipped"}
+    active_errors = {
+        key: value
+        for key, value in field_errors.items()
+        if not str(value).startswith("skipped")
+    }
     sources = set(_as_list(payload.get("data_sources")))
     if "tushare" in sources:
         attempts.append(
@@ -1084,10 +1088,15 @@ def _stock_data_quality_payload(
             continue
         attempts.append(DataSourceAttempt(source, ok=False, reason=reason))
     primary_source = str(payload.get("bar_source") or "multi-source")
+    required_fields = (
+        ["bars", "fundamental_metrics", "fund_flow_detail", "news_items"]
+        if "yahoo" in sources
+        else ["bars", "valuation", "fund_flow_detail", "news_items"]
+    )
     summary = summarize_data_quality(
         primary_source=primary_source,
         payload=payload,
-        required_fields=["bars", "valuation", "fund_flow_detail", "news_items"],
+        required_fields=required_fields,
         attempts=attempts,
     )
     return summary.to_payload()
