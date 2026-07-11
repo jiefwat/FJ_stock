@@ -27,6 +27,7 @@ from .models import (
     DailyBar,
     Holding,
     MarketSnapshot,
+    NewsItem,
     NewsSentimentReport,
     PortfolioAnalysisReport,
     PositionAnalysis,
@@ -984,7 +985,12 @@ def render_page(
     )
     section_map = {
         "market": _render_compact_market_module(
-            market, sectors, portfolio, candidates, news=daily.news
+            market,
+            sectors,
+            portfolio,
+            candidates,
+            candidate_universe=candidate_universe,
+            news=daily.news,
         ),
         "portfolio": _render_compact_portfolio_module(
             portfolio,
@@ -4570,6 +4576,7 @@ def _render_compact_market_module(
     portfolio: PortfolioAnalysisReport,
     candidates: CandidatePoolReport,
     *,
+    candidate_universe: list[CandidateStockRawData] | None = None,
     news: NewsSentimentReport | None = None,
 ) -> str:
     top_sector = sectors.sectors[0] if sectors.sectors else None
@@ -4584,7 +4591,9 @@ def _render_compact_market_module(
     risk_tone = _market_risk_tone(market)
     index_spine = _render_market_index_spine(market)
     breadth_lamps = _render_market_breadth_lamps(market, portfolio)
+    candidate_universe = candidate_universe or []
     sector_heatmap = _render_market_sector_heatmap(sectors)
+    sector_top5 = _render_market_sector_top5_panel(sectors, candidate_universe)
     risk_items = _render_market_risk_cards(market)
     dimension_rows = "".join(
         f"<tr><td>{escape(item.name)}</td><td>{item.score}</td><td>{escape(item.status)}</td></tr>"
@@ -4648,11 +4657,12 @@ def _render_compact_market_module(
           <div class="market-risk-stack">{risk_items}</div>
         </div>
       </div>
-      {_render_market_sentiment_panel(news)}
+      {_render_market_sentiment_panel(news, candidate_universe=candidate_universe)}
       <div class="market-radar-grid wide-left">
         <div class="panel market-panel market-sector-panel" style="grid-column:1 / -1">
           <div class="editor-toolbar"><div><h3>板块方向</h3><p class="section-subtitle">行业 / 概念主线只作为机会入口；大盘页不直接给买入结论。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
           <div class="market-sector-heatmap">{sector_heatmap}</div>
+          {sector_top5}
           <div class="portfolio-action-bar market-action-bar">{quick_actions}</div>
         </div>
       </div>
@@ -4701,14 +4711,25 @@ def _render_market_barometer_strip(
       </div>"""
 
 
-def _render_market_sentiment_panel(news: NewsSentimentReport | None) -> str:
+def _render_market_sentiment_panel(
+    news: NewsSentimentReport | None,
+    *,
+    candidate_universe: list[CandidateStockRawData] | None = None,
+) -> str:
+    candidate_universe = candidate_universe or []
     if news is None or not news.items:
-        return """
+        mover_panel = _render_market_mover_events([], candidate_universe=candidate_universe)
+        return f"""
       <div class="panel market-panel" style="margin-top:16px">
         <h3>市场异动</h3>
-        <div class="empty-state"><strong>市场新闻未接入</strong><p>缺少市场新闻/舆情源时，不把消息面当作交易理由。</p></div>
+        <div class="empty-state"><strong>市场新闻未接入</strong><p>缺少市场新闻/舆情源时，不把消息面当作交易理由；价格异动只做复核入口。</p></div>
+        {mover_panel}
       </div>"""
     latest = news.items[0]
+    mover_events = _market_mover_events(news.items)
+    mover_panel = _render_market_mover_events(
+        mover_events, candidate_universe=candidate_universe
+    )
     rows = "".join(
         f"<tr><td>{escape(item.date[:10])}</td><td>{escape(item.source)}</td><td>{escape(_sentiment_label(item.sentiment))}</td><td>{escape(item.title)}</td></tr>"
         for item in news.items[:5]
@@ -4722,8 +4743,81 @@ def _render_market_sentiment_panel(news: NewsSentimentReport | None) -> str:
           <div class="summary-card"><span>最新消息</span><strong>{escape(latest.title)}</strong><p class="kpi-foot">{escape(latest.source)}</p></div>
           <div class="summary-card"><span>风险提示</span><strong>{escape(risk)}</strong></div>
         </div>
+        {mover_panel}
         <table class="data-table" style="margin-top:12px"><thead><tr><th>日期</th><th>来源</th><th>情绪</th><th>标题</th></tr></thead><tbody>{rows}</tbody></table>
       </div>"""
+
+
+def _market_mover_events(items: list[NewsItem]) -> list[NewsItem]:
+    return [
+        item
+        for item in items
+        if "市场异动" in item.source or item.title.endswith("异动") or "异动：" in item.title
+    ][:5]
+
+
+def _render_market_mover_events(
+    items: list[NewsItem],
+    *,
+    candidate_universe: list[CandidateStockRawData] | None = None,
+) -> str:
+    candidate_universe = candidate_universe or []
+    if items:
+        events = "".join(
+            f"""
+        <div class="market-mover-card">
+          <span>{escape(item.date[:10])} · {escape(item.source)}</span>
+          <strong>{escape(item.title)}</strong>
+          <p>{escape(item.summary or "等待补充异动原因")}</p>
+        </div>"""
+            for item in items
+        )
+    else:
+        price_movers = _candidate_price_mover_events(candidate_universe)
+        if not price_movers:
+            return """
+        <div class="market-mover-strip">
+          <strong>异动事件</strong><span>暂未导入 MCP/行情异动事件，先看价格和板块强弱。</span>
+        </div>"""
+        events = "".join(
+            f"""
+        <div class="market-mover-card">
+          <span>{escape(item.date[:10])} · {escape(item.source)}</span>
+          <strong>{escape(item.title)}</strong>
+          <p>{escape(item.summary)}</p>
+        </div>"""
+            for item in price_movers
+        )
+    return f"""
+        <div class="market-mover-panel">
+          <div class="sector-top5-head"><strong>异动事件</strong><span>来自 MCP/行情异动源，只做风险偏好和事件复核。</span></div>
+          <div class="market-mover-grid">{events}</div>
+        </div>"""
+
+
+
+
+def _candidate_price_mover_events(
+    candidate_universe: list[CandidateStockRawData],
+) -> list[NewsItem]:
+    rows = sorted(
+        _build_limit_board_rows(candidate_universe),
+        key=lambda item: (abs(item.pct_change), item.amount),
+        reverse=True,
+    )[:5]
+    return [
+        NewsItem(
+            date="",
+            source="TDX候选池.价格异动",
+            title=f"{row.name}价格异动：{row.pct_change:.2f}%",
+            summary=(
+                f"{row.sector}；成交额 {row.amount:.1f} 亿；"
+                f"换手 {row.turnover_rate:.2f}%；只作为异动复核入口"
+            ),
+            sentiment="neutral",
+        )
+        for row in rows
+    ]
 
 
 def _sentiment_label(value: str) -> str:
@@ -4838,6 +4932,50 @@ def _render_market_sector_heatmap(sectors: SectorAnalysisReport) -> str:
             </button>"""
         )
     return "".join(cards)
+
+
+def _render_market_sector_top5_panel(
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    if not sectors.sectors:
+        return ""
+    rows = "".join(
+        _render_market_sector_top5_row(item, candidate_universe)
+        for item in sectors.sectors[:6]
+    )
+    return f"""
+          <div class="sector-top5-panel">
+            <div class="sector-top5-head"><strong>板块Top5</strong><span>每个方向只给代表股票和分析结果，不直接当买点。</span></div>
+            <table class="data-table compact-sector-table">
+              <thead><tr><th>板块</th><th>代表股票</th><th>分析结果</th><th>下一步验证</th></tr></thead>
+              <tbody>{rows}</tbody>
+            </table>
+          </div>"""
+
+
+def _render_market_sector_top5_row(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    stocks = _strong_stocks_for_theme(candidate_universe, item.name)
+    if stocks:
+        stock_text = "、".join(
+            f"{stock.name} {stock.pct_change:.2f}%" for stock in stocks[:5]
+        )
+    else:
+        stock_text = "候选池暂无同主题样本"
+    analysis = (
+        f"{_sector_state_label(item)}；{_sector_strength_reason(item)}；"
+        f"{_sector_strategy(item)}"
+    )
+    return (
+        f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
+        f"<span>热度 {item.heat_score}/100 · {escape(item.rotation_status)}</span></td>"
+        f"<td>{escape(stock_text)}</td>"
+        f"<td>{escape(analysis)}</td>"
+        f"<td>{escape(_sector_next_check(item))}</td></tr>"
+    )
 
 
 def _render_market_watch_stack(market: MarketSnapshot) -> str:
@@ -5053,7 +5191,7 @@ def _strong_stocks_for_theme(
         for row in _build_limit_board_rows(candidate_universe)
         if row.sector.strip() == normalized_theme
     ]
-    return sorted(rows, key=lambda item: item.pct_change, reverse=True)[:3]
+    return sorted(rows, key=lambda item: item.pct_change, reverse=True)[:5]
 
 
 def _render_limit_table_rows(

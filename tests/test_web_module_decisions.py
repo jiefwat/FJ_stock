@@ -579,3 +579,52 @@ def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() 
     assert full_panel_start > html.index('data-workspace="opportunity"')
     assert 'data-workspace="data-center"' in html
     assert 'href="#data-center"' in html
+
+
+def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    assert "板块Top5" in market_html
+    assert "代表股票" in market_html
+    assert "分析结果" in market_html
+    assert "兆易创新" in market_html
+    assert "北方华创" in market_html
+
+
+def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
+    from stock_ts.models import NewsItem
+
+    class MoverProvider(SampleDataProvider):
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.市场异动",
+                    title="中芯国际异动：波动超 20 日均值",
+                    summary="半导体厂商；涨跌幅 -5.62%",
+                    sentiment="neutral",
+                ),
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.新闻",
+                    title="A股半导体板块走强",
+                    summary="硬科技方向活跃",
+                    sentiment="positive",
+                ),
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=MoverProvider(), provider_name="tdx-snapshot"), "market"
+    )
+
+    assert "异动事件" in market_html
+    assert "中芯国际异动：波动超 20 日均值" in market_html
+    assert "longbridge.mcp.市场异动" in market_html
+
+
+def test_market_module_builds_price_movers_from_candidate_scan_without_news() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    assert "异动事件" in market_html
+    assert "价格异动" in market_html
+    assert "兆易创新" in market_html or "北方华创" in market_html

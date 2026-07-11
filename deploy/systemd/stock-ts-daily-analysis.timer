@@ -1,0 +1,15 @@
+[Unit]
+Description=Run StockTS data pipeline at market research checkpoints
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+OnCalendar=*-*-* 06:00:00
+OnCalendar=*-*-* 09:00:00
+OnCalendar=*-*-* 12:30:00
+OnCalendar=*-*-* 14:00:00
+Persistent=true
+AccuracySec=5m
+Unit=stock-ts-daily-analysis.service
+
+[Install]
+WantedBy=timers.target
