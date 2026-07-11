@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from html import escape
 from http.cookies import SimpleCookie
@@ -45,6 +45,7 @@ from .models import (
     StockRawData,
 )
 from .news import analyze_news
+from .news_fetcher import fetch_akshare_stock_news
 from .notification import dispatch_report
 from .portfolio import delete_holding_csv, load_holdings_csv, upsert_holding_csv
 from .portfolio_advice import PortfolioAdvice, PositionAdvice, build_portfolio_advice
@@ -906,6 +907,7 @@ class SettingsNotice:
 
 
 AnnouncementFetcher = Callable[..., AnnouncementReport]
+StockNewsFetcher = Callable[[str, int], list[NewsItem]]
 
 
 def render_page(
@@ -925,12 +927,24 @@ def render_page(
     candidate_evidence: str = "",
     current_user: AuthUser | None = None,
     refresh: bool = False,
+    stock_news_fetcher: StockNewsFetcher | None = None,
 ) -> str:
     try:
+        provider_injected = provider is not None
         active_provider = provider or create_provider(provider_name)
+        live_news_fetcher = _resolve_live_stock_news_fetcher(
+            provider_name=provider_name,
+            provider_injected=provider_injected,
+            stock_news_fetcher=stock_news_fetcher,
+        )
         selected_stock_code = _default_stock_query(stock_code, holdings_path)
         resolved = resolve_stock_query(selected_stock_code)
         stock_raw = active_provider.fetch_stock(resolved.code)
+        stock_raw = _enrich_stock_raw_news(
+            stock_raw,
+            live_news_fetcher=live_news_fetcher,
+            limit=8,
+        )
         stock_report = analyze_stock(stock_raw)
         technical = build_technical_profile(stock_raw)
         daily = build_daily_report(
@@ -964,6 +978,12 @@ def render_page(
             "未生成持仓分析，请检查 holdings 参数", provider_name=provider_name
         )
     candidate_universe = _safe_fetch_candidate_universe(active_provider)
+    candidate_universe = _enrich_candidate_universe_news(
+        candidate_universe,
+        live_news_fetcher=live_news_fetcher,
+        preferred_codes=[item.code for item in candidates.candidates[:7]],
+        limit_per_stock=3,
+    )
     candidate_universe_metadata = _safe_fetch_candidate_universe_metadata(active_provider)
     screener_candidates = _build_screener_candidate_report(
         candidates,
@@ -1179,6 +1199,78 @@ def _safe_fetch_candidate_universe(provider: StockDataProvider) -> list[Candidat
         return provider.fetch_candidate_universe()
     except Exception:
         return []
+
+
+def _resolve_live_stock_news_fetcher(
+    *,
+    provider_name: str,
+    provider_injected: bool,
+    stock_news_fetcher: StockNewsFetcher | None,
+) -> StockNewsFetcher | None:
+    if stock_news_fetcher is not None:
+        return stock_news_fetcher
+    if provider_injected or provider_name == "sample":
+        return None
+    return _fetch_live_stock_news
+
+
+def _fetch_live_stock_news(symbol: str, limit: int) -> list[NewsItem]:
+    try:
+        import akshare as ak  # type: ignore[import-not-found]
+    except Exception:
+        return []
+    try:
+        return fetch_akshare_stock_news(ak, symbol=symbol, limit=limit)
+    except Exception:
+        return []
+
+
+def _enrich_stock_raw_news(
+    stock_raw: StockRawData,
+    *,
+    live_news_fetcher: StockNewsFetcher | None,
+    limit: int,
+) -> StockRawData:
+    if stock_raw.news_items or live_news_fetcher is None:
+        return stock_raw
+    news_items = _usable_live_news_items(live_news_fetcher(stock_raw.code, limit))
+    if not news_items:
+        return stock_raw
+    sources = list(stock_raw.data_sources)
+    if "akshare.stock_news_em" not in sources:
+        sources.append("akshare.stock_news_em")
+    return replace(stock_raw, news_items=news_items, data_sources=sources)
+
+
+def _enrich_candidate_universe_news(
+    candidate_universe: list[CandidateStockRawData],
+    *,
+    live_news_fetcher: StockNewsFetcher | None,
+    preferred_codes: list[str],
+    limit_per_stock: int,
+) -> list[CandidateStockRawData]:
+    if live_news_fetcher is None or not candidate_universe:
+        return candidate_universe
+    preferred = set(preferred_codes)
+    enriched: list[CandidateStockRawData] = []
+    for item in candidate_universe:
+        if item.news_items or item.code not in preferred:
+            enriched.append(item)
+            continue
+        news_items = _usable_live_news_items(live_news_fetcher(item.code, limit_per_stock))
+        enriched.append(replace(item, news_items=news_items) if news_items else item)
+    return enriched
+
+
+def _usable_live_news_items(items: list[NewsItem]) -> list[NewsItem]:
+    blocked_titles = ("接口不可用", "未获取到相关新闻", "暂无可用新闻")
+    usable: list[NewsItem] = []
+    for item in items:
+        title = item.title or item.summary
+        if not title or any(blocked in title for blocked in blocked_titles):
+            continue
+        usable.append(item)
+    return usable
 
 
 def _safe_fetch_candidate_universe_metadata(provider: StockDataProvider) -> dict[str, str]:

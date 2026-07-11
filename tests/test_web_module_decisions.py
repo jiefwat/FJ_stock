@@ -608,6 +608,68 @@ def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
     assert "完整方法链" not in stock_html
 
 
+def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_missing() -> None:
+    class MissingNewsProvider(SampleDataProvider):
+        def fetch_stock(self, code: str) -> StockRawData:
+            raw = super().fetch_stock(code)
+            return StockRawData(
+                code=raw.code,
+                name=raw.name,
+                bars=raw.bars,
+                fund_flow=raw.fund_flow,
+                pe_ttm=raw.pe_ttm,
+                valuation=raw.valuation,
+                fundamental_metrics=raw.fundamental_metrics,
+                fund_flow_detail=raw.fund_flow_detail,
+                data_sources=raw.data_sources,
+            )
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300222",
+                    name="联网候选",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 20.0, 20.5, 19.8, 20.2, 2000),
+                        DailyBar("2026-07-07", 20.3, 22.5, 20.1, 22.0, 4200),
+                        DailyBar("2026-07-08", 22.2, 23.0, 21.6, 21.8, 3900),
+                        DailyBar("2026-07-09", 21.7, 22.1, 20.9, 21.1, 3600),
+                        DailyBar("2026-07-10", 21.0, 22.2, 20.0, 22.0, 4300),
+                    ],
+                    fund_flow=1.1,
+                    turnover_rate=7.2,
+                    amount=16.8,
+                    pe_ttm=32,
+                )
+            ]
+
+    def fake_news_fetcher(symbol: str, limit: int) -> list[NewsItem]:
+        return [
+            NewsItem(
+                date="2026-07-11",
+                source="联网新闻",
+                title=f"{symbol} 签订机器人订单",
+                summary="订单催化",
+                sentiment="positive",
+            )
+        ][:limit]
+
+    html = _sample_html(
+        stock_code="603278",
+        provider=MissingNewsProvider(),
+        provider_name="tdx-snapshot",
+        stock_news_fetcher=fake_news_fetcher,
+    )
+    stock_html = _workspace(html, "stock")
+    opportunity_html = _workspace(html, "opportunity")
+
+    assert "联网新闻：603278 签订机器人订单" in stock_html
+    assert "消息面：联网新闻最新消息" in opportunity_html
+    assert "300222 签订机器人订单" in opportunity_html
+    assert "消息面：未接入个股新闻" not in opportunity_html
+
+
 def test_stock_forecast_outputs_prediction_not_only_scenarios() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
