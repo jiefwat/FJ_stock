@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from stock_ts.config import get_settings
 from stock_ts.daily_decisions import read_decision_artifact
 from stock_ts.notification import dispatch_report
 from stock_ts.symbols import stock_name_for_code
@@ -1268,6 +1269,11 @@ def _announcement_summary(markdown: str) -> str:
     return "\n".join(lines) if lines else "- 公告摘要为空。"
 
 
+def _email_delivery_configured() -> bool:
+    settings = get_settings()
+    return bool(settings.email_sender.strip() and settings.email_password.strip())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Send StockTS morning recap email from latest artifacts."
@@ -1279,12 +1285,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--channels", default="email")
     parser.add_argument("--style", default="digest")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-if-email-missing", action="store_true")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     channels = [item.strip() for item in args.channels.split(",") if item.strip()]
+    if args.skip_if_email_missing and "email" in channels and not _email_delivery_configured():
+        print(
+            "# StockTS 晨报跳过\n"
+            "- 邮箱未配置：缺少 EMAIL_SENDER 或 EMAIL_PASSWORD，已跳过本次发送。"
+        )
+        return 0
     result = send_morning_report(
         daily_dir=args.daily_dir,
         html_dir=args.html_dir,

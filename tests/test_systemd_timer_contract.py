@@ -36,6 +36,7 @@ def test_stock_ts_morning_email_timer_sends_at_0830() -> None:
     assert "scripts/send_morning_report.py" in service_text
     assert "--channels email" in service_text
     assert "--style digest" in service_text
+    assert "--skip-if-email-missing" in service_text
 
 
 def test_public_auth_dropin_opens_registration_without_readonly_mode() -> None:

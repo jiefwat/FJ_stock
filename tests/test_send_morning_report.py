@@ -314,6 +314,40 @@ def test_send_morning_report_uses_dispatcher_with_email_channel(tmp_path: Path) 
     assert "StockTS 早间复盘与机会" in calls[0][2]
 
 
+def test_main_skips_successfully_when_email_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+
+    class MissingEmailSettings:
+        email_sender = ""
+        email_password = ""
+
+    monkeypatch.setattr(module, "get_settings", lambda: MissingEmailSettings())
+
+    code = module.main(
+        [
+            "--daily-dir",
+            str(daily_dir),
+            "--html-dir",
+            str(html_dir),
+            "--announcement-dir",
+            str(announcement_dir),
+            "--channels",
+            "email",
+            "--skip-if-email-missing",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "邮箱未配置" in output
+
+
 def test_morning_report_prioritizes_professional_actions_over_generic_summary(
     tmp_path: Path,
 ) -> None:

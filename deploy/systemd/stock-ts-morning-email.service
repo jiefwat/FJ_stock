@@ -8,4 +8,4 @@ Type=oneshot
 User=admin
 WorkingDirectory=/opt/stock-ts
 Environment=PYTHONPATH=/opt/stock-ts/src
-ExecStart=/opt/stock-ts/.venv/bin/python scripts/send_morning_report.py --daily-dir reports/daily --html-dir reports/html --announcement-dir reports/announcements --channels email --style digest
+ExecStart=/opt/stock-ts/.venv/bin/python scripts/send_morning_report.py --daily-dir reports/daily --html-dir reports/html --announcement-dir reports/announcements --channels email --style digest --skip-if-email-missing
