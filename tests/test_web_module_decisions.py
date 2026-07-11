@@ -129,7 +129,7 @@ def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
 
 
 
-def test_daily_market_only_shows_distribution_sector_top5_and_analysis() -> None:
+def test_daily_market_shows_concise_data_sector_analysis_and_mapped_events() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     for text in [
@@ -141,6 +141,9 @@ def test_daily_market_only_shows_distribution_sector_top5_and_analysis() -> None
         "弱势板块Top5",
         "对应股票",
         "分析",
+        "异动事件",
+        "事件原因",
+        "价格异动",
     ]:
         assert text in market_html
 
@@ -152,7 +155,6 @@ def test_daily_market_only_shows_distribution_sector_top5_and_analysis() -> None
         "风险项",
         "市场总闸门",
         "数据源",
-        "异动事件",
         "指数表现",
         "市场宽度",
         "展开指数",
@@ -808,12 +810,12 @@ def test_data_center_does_not_warn_for_complete_hk_yahoo_and_hkex_context(
 
 
 
-def test_daily_market_does_not_show_event_sections() -> None:
+def test_daily_market_does_not_show_unmapped_event_noise() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     assert "下一步验证" not in market_html
-    assert "异动事件" not in market_html
-    assert "market-event-summary" not in market_html
+    assert "ETF行情" not in market_html
+    assert "美联储" not in market_html
 
 def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:
     market_html = _workspace(_sample_html(), "market")
@@ -846,20 +848,44 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
                     summary="硬科技方向活跃",
                     sentiment="positive",
                 ),
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.新闻",
+                    title="商业航天板块引爆ETF行情 有ETF单日净申购近21亿元",
+                    summary="泛ETF新闻，没有对应个股",
+                    sentiment="neutral",
+                ),
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.新闻",
+                    title="美联储半年度政策报告：关税和中东推高通胀",
+                    summary="宏观新闻，没有对应A股主题或个股",
+                    sentiment="neutral",
+                ),
             ]
 
     market_html = _workspace(
         _sample_html(provider=MoverProvider(), provider_name="tdx-snapshot"), "market"
     )
 
-    assert "异动事件" not in market_html
-    assert "半导体厂商" not in market_html
-    assert "中芯国际异动：波动超 20 日均值" not in market_html
+    assert "异动事件" in market_html
+    assert "对应主题" in market_html
+    assert "对应股票" in market_html
+    assert "事件原因" in market_html
+    assert "半导体" in market_html
+    assert "中芯国际" in market_html
+    assert "波动超 20 日均值" in market_html
+    assert "商业航天" not in market_html
+    assert "ETF单日净申购" not in market_html
+    assert "美联储半年度政策报告" not in market_html
     assert "longbridge.mcp.市场异动" not in market_html
+    assert "需要看对应股票承接" not in market_html
 
 
 def test_market_module_builds_price_movers_from_candidate_scan_without_news() -> None:
     market_html = _workspace(_sample_html(), "market")
 
-    assert "异动事件" not in market_html
-    assert "价格异动" not in market_html
+    assert "异动事件" in market_html
+    assert "对应主题" in market_html
+    assert "对应股票" in market_html
+    assert "价格异动" in market_html

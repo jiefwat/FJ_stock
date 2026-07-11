@@ -4788,7 +4788,7 @@ def _render_compact_market_module(
     candidate_universe: list[CandidateStockRawData] | None = None,
     news: NewsSentimentReport | None = None,
 ) -> str:
-    del portfolio, news
+    del portfolio
     candidate_universe = candidate_universe or []
     distribution = _render_market_distribution_chart(market, candidate_universe, candidates)
     strong_sectors = _render_market_strength_sector_panel(
@@ -4798,6 +4798,7 @@ def _render_compact_market_module(
         "弱势板块Top5", sectors, candidate_universe, reverse=False
     )
     analysis = _market_minimal_analysis(market, sectors, candidate_universe)
+    event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
     return f"""
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
@@ -4816,6 +4817,7 @@ def _render_compact_market_module(
         <h3>分析</h3>
         <p>{escape(analysis)}</p>
       </div>
+      {event_panel}
     </section>"""
 
 
@@ -5017,19 +5019,182 @@ def _render_market_sentiment_panel(
     candidate_universe: list[CandidateStockRawData] | None = None,
 ) -> str:
     candidate_universe = candidate_universe or []
-    if news is None or not news.items:
-        event_summaries = _market_event_summaries([], candidate_universe=candidate_universe)
-        return f"""
-      <div class="panel market-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>异动事件</h3></div><span class="portfolio-chip">{len(event_summaries)} 条摘要</span></div>
-        {_render_market_event_summary_list(event_summaries)}
-      </div>"""
-    event_summaries = _market_event_summaries(news.items, candidate_universe=candidate_universe)
+    event_rows = _market_event_rows(
+        news.items if news else [], candidate_universe=candidate_universe
+    )
+    if not event_rows:
+        return ""
     return f"""
       <div class="panel market-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>异动事件</h3></div><span class="portfolio-chip">{len(event_summaries)} 条摘要</span></div>
-        {_render_market_event_summary_list(event_summaries)}
+        <div class="editor-toolbar"><div><h3>异动事件</h3></div><span class="portfolio-chip">{len(event_rows)} 条映射</span></div>
+        {_render_market_event_summary_list(event_rows)}
       </div>"""
+
+
+def _market_event_rows(
+    items: list[NewsItem],
+    *,
+    candidate_universe: list[CandidateStockRawData] | None = None,
+) -> list[dict[str, str]]:
+    candidate_universe = candidate_universe or []
+    mapped = [
+        row
+        for item in items
+        if (row := _map_market_event_to_theme_or_stock(item, candidate_universe)) is not None
+    ]
+    if not mapped:
+        mapped = [
+            row
+            for item in _candidate_price_mover_events(candidate_universe)
+            if (row := _map_market_event_to_theme_or_stock(item, candidate_universe)) is not None
+        ]
+    return mapped[:20]
+
+
+def _map_market_event_to_theme_or_stock(
+    item: NewsItem,
+    candidate_universe: list[CandidateStockRawData],
+) -> dict[str, str] | None:
+    text = f"{item.title} {item.summary}".strip()
+    if not text:
+        return None
+    matched_stocks = _event_matched_candidate_stocks(text, candidate_universe)
+    extracted_stock = _extract_stock_name_from_event_title(item.title)
+    theme = _event_theme_from_candidates(matched_stocks) or _infer_event_theme(text)
+    if not matched_stocks and not extracted_stock and _is_fund_flow_noise(text):
+        return None
+    if not theme and not matched_stocks and not extracted_stock:
+        return None
+    stock_text = _event_stock_text(matched_stocks, extracted_stock, theme, candidate_universe)
+    if not stock_text and not theme:
+        return None
+    reason = _event_reason_text(item, theme, stock_text)
+    return {
+        "theme": theme or "个股异动",
+        "stocks": stock_text or "主题级事件",
+        "reason": reason,
+    }
+
+
+def _event_matched_candidate_stocks(
+    text: str,
+    candidate_universe: list[CandidateStockRawData],
+) -> list[CandidateStockRawData]:
+    matched: list[CandidateStockRawData] = []
+    for item in candidate_universe:
+        if item.name and item.name in text:
+            matched.append(item)
+        elif item.code and item.code in text:
+            matched.append(item)
+    return matched[:5]
+
+
+def _event_theme_from_candidates(stocks: list[CandidateStockRawData]) -> str:
+    for stock in stocks:
+        if stock.sector:
+            return localize_sector_name(stock.sector)
+    return ""
+
+
+def _extract_stock_name_from_event_title(title: str) -> str:
+    cleaned = title.strip().strip("【】[]")
+    for marker in ["异动", "涨停", "跌停", "大涨", "大跌", "拉升", "跳水"]:
+        if marker in cleaned:
+            candidate = cleaned.split(marker, 1)[0].strip(" ：:｜|【】[]")
+            if 2 <= len(candidate) <= 8 and not _looks_like_generic_event_topic(candidate):
+                return candidate
+    return ""
+
+
+def _looks_like_generic_event_topic(text: str) -> bool:
+    generic_words = ["ETF", "LOF", "基金", "美联储", "港股", "A股", "市场", "政策", "关税"]
+    return any(word in text for word in generic_words)
+
+
+def _is_fund_flow_noise(text: str) -> bool:
+    return any(word in text for word in ["ETF", "LOF", "基金"])
+
+
+def _infer_event_theme(text: str) -> str:
+    theme_keywords = [
+        ("半导体", ["半导体", "芯片", "存储", "晶圆", "光刻", "中芯"]),
+        ("商业航天", ["商业航天", "航天", "卫星", "火箭"]),
+        ("机器人", ["机器人", "人形机器人", "减速器"]),
+        ("人工智能", ["AI", "算力", "人工智能", "大模型"]),
+        ("新能源", ["光伏", "风电", "锂电", "储能", "新能源"]),
+        ("汽车", ["汽车", "智能驾驶", "整车", "零部件"]),
+        ("钢铁", ["钢铁", "螺纹", "铁矿"]),
+        ("氢能", ["氢气", "氢能", "燃料电池"]),
+        ("港口航运", ["航运", "港口", "集装箱"]),
+        ("地产", ["地产", "房地产", "物业"]),
+        ("消费电子", ["AMOLED", "面板", "消费电子", "光电"]),
+    ]
+    for theme, keywords in theme_keywords:
+        if any(keyword in text for keyword in keywords):
+            return theme
+    return ""
+
+
+def _event_stock_text(
+    matched_stocks: list[CandidateStockRawData],
+    extracted_stock: str,
+    theme: str,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    if matched_stocks:
+        return "、".join(
+            f"{stock.name}{_event_pct_text(stock)}" for stock in matched_stocks[:5]
+        )
+    if extracted_stock:
+        return extracted_stock
+    if theme:
+        theme_rows = [
+            row
+            for row in _build_limit_board_rows(candidate_universe)
+            if localize_sector_name(row.sector) == theme
+        ]
+        theme_rows = sorted(theme_rows, key=lambda row: abs(row.pct_change), reverse=True)[:5]
+        if theme_rows:
+            return "、".join(f"{row.name} {row.pct_change:.2f}%" for row in theme_rows)
+    return ""
+
+
+def _event_pct_text(stock: CandidateStockRawData) -> str:
+    if len(stock.bars) < 2:
+        return ""
+    previous = stock.bars[-2].close
+    if not previous:
+        return ""
+    pct = (stock.bars[-1].close - previous) / previous * 100
+    return f" {pct:.2f}%"
+
+
+def _event_reason_text(item: NewsItem, theme: str, stock_text: str) -> str:
+    title = item.title.strip("【】[]")
+    summary = item.summary.strip()
+    if "价格异动" in title:
+        reason = title
+        if summary:
+            reason = f"{reason}；{summary}"
+    elif "波动超" in title:
+        reason = title.split("：", 1)[-1]
+    elif "板块" in title and theme:
+        reason = summary or title
+    elif summary:
+        reason = summary
+    else:
+        reason = title
+    reason = reason.replace("longbridge.mcp.", "")
+    if theme and theme not in reason:
+        reason = f"{theme}：{reason}"
+    if stock_text and stock_text not in reason:
+        reason = f"{reason}；对应 {stock_text}"
+    return _compact_event_reason(reason, 120)
+
+
+def _compact_event_reason(text: str, limit: int = 120) -> str:
+    cleaned = " ".join(str(text).split())
+    return cleaned if len(cleaned) <= limit else cleaned[:limit] + "..."
 
 
 def _market_event_summaries(
@@ -5037,27 +5202,25 @@ def _market_event_summaries(
     *,
     candidate_universe: list[CandidateStockRawData] | None = None,
 ) -> list[str]:
-    summaries = [
-        _short_condition(item.summary or item.title, 120)
-        for item in items
-        if (item.summary or item.title).strip()
-    ]
-    if not summaries:
-        summaries = [
-            _short_condition(item.summary or item.title, 120)
-            for item in _candidate_price_mover_events(candidate_universe or [])
-        ]
-    return summaries[:20]
+    return [row["reason"] for row in _market_event_rows(items, candidate_universe=candidate_universe)]
 
 
-def _render_market_event_summary_list(summaries: list[str]) -> str:
-    if not summaries:
-        return "<div class='empty-state'><strong>暂无异动摘要</strong></div>"
-    rows = "".join(
-        f'<li class="market-event-summary">{escape(summary)}</li>' for summary in summaries
+def _render_market_event_summary_list(rows: list[dict[str, str]]) -> str:
+    if not rows:
+        return "<div class='empty-state'><strong>暂无可映射异动</strong></div>"
+    body = "".join(
+        "<tr>"
+        f"<td>{escape(row['theme'])}</td>"
+        f"<td>{escape(row['stocks'])}</td>"
+        f"<td>{escape(row['reason'])}</td>"
+        "</tr>"
+        for row in rows
     )
-    return f"<ol class='market-event-summary-list'>{rows}</ol>"
-
+    return (
+        "<table class='data-table market-event-summary-list'>"
+        "<thead><tr><th>对应主题</th><th>对应股票</th><th>事件原因</th></tr></thead>"
+        f"<tbody>{body}</tbody></table>"
+    )
 
 
 def _candidate_price_mover_events(
@@ -5081,7 +5244,6 @@ def _candidate_price_mover_events(
         )
         for row in rows
     ]
-
 
 def _sentiment_label(value: str) -> str:
     return {"positive": "正面", "negative": "负面", "neutral": "中性"}.get(value, value)

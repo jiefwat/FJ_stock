@@ -786,7 +786,9 @@ def test_web_consumes_real_news_announcement_financial_and_sentiment_snapshot(
         holdings_path=str(holdings),
     )
 
-    assert "异动事件" not in html
+    assert "异动事件" in html
+    assert "机器人" in html
+    assert "对应主题" in html
     assert "正面 1 / 负面 1" not in html
     assert "多家公司提示减持风险" not in html
     assert "贵州茅台2026年半年度业绩预告公告" in html
