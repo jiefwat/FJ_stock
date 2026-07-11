@@ -26,17 +26,80 @@ run_daily_pipeline = pipeline_module.run_daily_pipeline
 
 def _write_snapshot(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    bars = [
+        {"date": "2026-07-10", "open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 1000}
+    ]
     path.write_text(
         json.dumps(
             {
-                "market": {"trade_date": "2026-06-26"},
+                "market": {
+                    "trade_date": "2026-07-10",
+                    "indices": [
+                        {
+                            "code": "000001",
+                            "name": "上证指数",
+                            "close": 3500,
+                            "pct_chg": 0.5,
+                        }
+                    ],
+                    "top_sectors": [["半导体", 2.5]],
+                },
+                "market_news": [
+                    {
+                        "date": "2026-07-10",
+                        "title": "半导体异动",
+                        "source": "longbridge.mcp.市场异动",
+                    }
+                ],
                 "candidate_universe": {
                     "items": [
-                        {"code": "688362", "name": "甬矽电子"},
-                        {"code": "600481", "name": "双良节能"},
+                        {
+                            "code": "688362",
+                            "name": "甬矽电子",
+                            "bars": bars,
+                            "theme": "半导体",
+                            "pct_chg": 6.0,
+                        },
+                        {
+                            "code": "600481",
+                            "name": "双良节能",
+                            "bars": bars,
+                            "theme": "光伏",
+                            "pct_chg": 1.0,
+                        },
                     ]
                 },
-                "stocks": {"603278": {"name": "大业股份"}},
+                "stocks": {
+                    "603278": {
+                        "name": "大业股份",
+                        "bars": bars,
+                        "valuation": {"source": "tushare.daily_basic"},
+                        "fundamental_metrics": {"source": "akshare", "date": "2026-03-31"},
+                        "fund_flow_detail": {
+                            "source": "derived.kline_turnover",
+                            "date": "2026-07-10",
+                        },
+                        "news_items": [
+                            {"date": "2026-07-10", "title": "订单增长", "source": "eastmoney"}
+                        ],
+                        "announcements": [
+                            {"date": "2026-07-10", "title": "业绩预告", "source": "cninfo"}
+                        ],
+                    },
+                    "688362": {
+                        "name": "甬矽电子",
+                        "bars": bars,
+                        "valuation": {"source": "tushare.daily_basic"},
+                        "fundamental_metrics": {"source": "akshare", "date": "2026-03-31"},
+                        "fund_flow_detail": {"source": "akshare", "date": "2026-07-10"},
+                        "news_items": [
+                            {"date": "2026-07-10", "title": "封测景气", "source": "eastmoney"}
+                        ],
+                        "announcements": [
+                            {"date": "2026-07-10", "title": "经营公告", "source": "cninfo"}
+                        ],
+                    },
+                },
             },
             ensure_ascii=False,
         ),
@@ -165,6 +228,33 @@ def test_daily_pipeline_writes_cninfo_announcements_back_to_snapshot(
     assert payload["announcement_refresh"]["updated_count"] == 1
 
 
+def test_daily_pipeline_refreshes_announcements_for_all_holdings_not_only_limit(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n"
+        "688362,甬矽电子,100,20,半导体,测试\n"
+        "300516,久之洋,100,30,军工,测试\n",
+        encoding="utf-8",
+    )
+    codes = ["603278", "688362", "300516", "600481"]
+
+    selected = pipeline_module._announcement_codes(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            announcement_limit=1,
+        ),
+        codes,
+    )
+
+    assert selected == ["603278", "688362", "300516"]
+
+
 def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path) -> None:
     snapshot = tmp_path / "tdx_snapshots.json"
     holdings = tmp_path / "holdings.csv"
@@ -230,8 +320,9 @@ def test_daily_pipeline_continues_when_external_enrichment_times_out(tmp_path: P
 
     assert result.ok is True
     status = result.status_path.read_text(encoding="utf-8")
-    assert "status=ok" in status
+    assert "status=degraded" in status
     assert "external_enrich=failed" in status
+    assert "data_chain=warn" in status
     assert "report=ok" in status
 
 
@@ -334,3 +425,60 @@ def test_daily_pipeline_enriches_holdings_with_news_before_broad_candidate_chunk
     assert "--skip-akshare-stock-fields" not in holdings_command
     assert holdings_command[holdings_command.index("--news-limit") + 1] == "3"
     assert any("--skip-akshare-stock-fields" in command for command in enrich_calls[1:])
+
+
+def test_daily_pipeline_uses_python311_for_tdx_bridge_by_default() -> None:
+    config = DailyPipelineConfig(python_executable=".venv/bin/python")
+
+    refresh_command = pipeline_module._refresh_command(config)
+    enrich_command = pipeline_module._tdx_enrich_command(config)
+
+    assert refresh_command[refresh_command.index("--python") + 1] == "python3.11"
+    assert enrich_command[enrich_command.index("--python") + 1] == "python3.11"
+
+
+def test_daily_pipeline_writes_data_chain_artifact_and_degrades_on_skipped_steps(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n603278,大业股份,100,10,高端装备,测试\n",
+        encoding="utf-8",
+    )
+    _write_snapshot(snapshot)
+
+    def runner(command: list[str], timeout_seconds: int) -> None:
+        if any("run_daily_analysis.py" in item for item in command):
+            out_dir = Path(command[command.index("--output-dir") + 1])
+            html_dir = Path(command[command.index("--html-dir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            html_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "latest.status").write_text("status=ok\n", encoding="utf-8")
+            (out_dir / "latest.md").write_text("# report", encoding="utf-8")
+            (html_dir / "latest.html").write_text("<html></html>", encoding="utf-8")
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=tmp_path / "reports" / "daily",
+            html_dir=tmp_path / "reports" / "html",
+            announcement_dir=tmp_path / "reports" / "announcements",
+            skip_refresh=True,
+            skip_tdx_enrich=True,
+            skip_a_share_kline=True,
+            skip_external_enrich=True,
+            skip_announcements=True,
+        ),
+        runner=runner,
+    )
+
+    assert result.ok is True
+    status = result.status_path.read_text(encoding="utf-8")
+    assert "status=degraded" in status
+    assert "data_chain=warn" in status
+    artifact = tmp_path / "reports" / "daily" / "data_chain_status.json"
+    assert artifact.exists()
+    chain = json.loads(artifact.read_text(encoding="utf-8"))
+    assert chain["modules"]["automation"]["status"] == "warn"

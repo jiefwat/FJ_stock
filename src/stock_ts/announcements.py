@@ -43,13 +43,14 @@ def fetch_cninfo_announcements(
     limit: int = 10,
     post_form: PostForm | None = None,
 ) -> AnnouncementReport:
+    column, plate = _cninfo_exchange_params(query)
     form = {
         "tabName": "fulltext",
         "pageSize": str(limit),
         "pageNum": "1",
-        "column": "sse",
+        "column": column,
         "category": "",
-        "plate": "sh",
+        "plate": plate,
         "seDate": "",
         "searchkey": query.strip(),
         "secid": "",
@@ -72,6 +73,13 @@ def fetch_cninfo_announcements(
         items=items,
         risk_events=risk_events,
     )
+
+
+def _cninfo_exchange_params(query: str) -> tuple[str, str]:
+    code = "".join(ch for ch in query.strip() if ch.isdigit())
+    if code.startswith(("000", "001", "002", "003", "300", "301")):
+        return "szse", "sz"
+    return "sse", "sh"
 
 
 def render_announcement_markdown(report: AnnouncementReport) -> str:

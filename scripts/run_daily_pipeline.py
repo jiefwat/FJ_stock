@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from typing import Callable
 
 from stock_ts.announcements import fetch_cninfo_announcements, render_announcement_markdown
 from stock_ts.daily_decisions import write_decision_artifact
+from stock_ts.data_chain import validate_data_chain
 
 CommandRunner = Callable[[list[str], int], None]
 
@@ -34,6 +36,7 @@ class DailyPipelineConfig:
     external_enrich_timeout: int = 300
     announcement_limit: int = 5
     python_executable: str = sys.executable
+    tdx_bridge_python: str = ""
     skip_refresh: bool = False
     skip_tdx_enrich: bool = False
     skip_a_share_kline: bool = False
@@ -92,16 +95,20 @@ def run_daily_pipeline(
             steps["announcements"] = "skipped"
         else:
             try:
-                _write_announcements(config, codes[: max(config.announcement_limit, 0)])
+                _write_announcements(config, _announcement_codes(config, codes))
                 steps["announcements"] = "ok"
             except Exception as exc:
                 steps["announcements"] = f"failed:{_short_error(exc)}"
 
         command_runner(_report_command(config), 180)
         steps["report"] = "ok"
-        _write_pipeline_status(status_path, "ok", steps, codes, "")
+        data_chain = _write_data_chain_status(config, steps)
+        steps["data_chain"] = str(data_chain.get("status") or "unknown")
+        final_status = _pipeline_status_from_chain(data_chain)
+        error = _data_chain_error_summary(data_chain) if final_status == "failed" else ""
+        _write_pipeline_status(status_path, final_status, steps, codes, error, data_chain)
         _write_pipeline_decisions(config, status_path)
-        return DailyPipelineResult(ok=True, status_path=status_path)
+        return DailyPipelineResult(ok=final_status != "failed", status_path=status_path)
     except Exception as exc:
         error = "".join(format_exception_only(type(exc), exc)).strip()
         _write_pipeline_status(status_path, "failed", steps, _safe_pipeline_codes(config), error)
@@ -113,7 +120,7 @@ def _refresh_command(config: DailyPipelineConfig) -> list[str]:
         config.python_executable,
         "scripts/refresh_tdx_snapshot.py",
         "--python",
-        config.python_executable,
+        _tdx_bridge_python(config),
         "--output",
         str(config.snapshot_path),
         "--candidate-limit",
@@ -129,7 +136,7 @@ def _tdx_enrich_command(config: DailyPipelineConfig) -> list[str]:
         config.python_executable,
         "scripts/refresh_tdx_snapshot.py",
         "--python",
-        config.python_executable,
+        _tdx_bridge_python(config),
         "--output",
         str(config.snapshot_path),
         "--enrich-existing",
@@ -159,6 +166,14 @@ def _a_share_kline_command(config: DailyPipelineConfig) -> list[str]:
         "--retry-rate-limit",
         "1",
     ]
+
+
+def _tdx_bridge_python(config: DailyPipelineConfig) -> str:
+    return (
+        config.tdx_bridge_python
+        or os.getenv("STOCK_TS_TDX_BRIDGE_PYTHON", "").strip()
+        or "python3.11"
+    )
 
 
 def _run_external_enrichment(
@@ -310,6 +325,19 @@ def _candidate_codes(path: Path) -> list[str]:
     ]
 
 
+def _announcement_codes(config: DailyPipelineConfig, codes: list[str]) -> list[str]:
+    code_set = set(codes)
+    holdings = [
+        _normalize_code(code)
+        for code in _holding_codes(Path(config.holdings_path))
+        if _normalize_code(code)
+    ]
+    selected = [code for code in holdings if not code_set or code in code_set]
+    if selected:
+        return selected
+    return codes[: max(config.enrich_limit, 0)]
+
+
 def _write_announcements(config: DailyPipelineConfig, codes: list[str]) -> None:
     out_dir = Path(config.announcement_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -416,12 +444,38 @@ def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) ->
     )
 
 
+def _write_data_chain_status(config: DailyPipelineConfig, steps: dict[str, str]) -> dict:
+    return validate_data_chain(
+        snapshot_path=config.snapshot_path,
+        holdings_path=config.holdings_path,
+        output_path=Path(config.output_dir) / "data_chain_status.json",
+        pipeline_steps=steps,
+    )
+
+
+def _pipeline_status_from_chain(data_chain: dict) -> str:
+    status = str(data_chain.get("status") or "")
+    if status == "failed":
+        return "failed"
+    if status == "warn":
+        return "degraded"
+    return "ok"
+
+
+def _data_chain_error_summary(data_chain: dict) -> str:
+    blockers = data_chain.get("blockers")
+    if not isinstance(blockers, list) or not blockers:
+        return ""
+    return "; ".join(str(item) for item in blockers[:5])
+
+
 def _write_pipeline_status(
     path: Path,
     status: str,
     steps: dict[str, str],
     codes: list[str],
     error: str,
+    data_chain: dict | None = None,
 ) -> None:
     lines = [
         f"status={status}",
@@ -429,6 +483,13 @@ def _write_pipeline_status(
         f"codes={','.join(codes)}",
     ]
     lines.extend(f"{key}={value}" for key, value in steps.items())
+    if data_chain:
+        blockers = data_chain.get("blockers")
+        warnings = data_chain.get("warnings")
+        if isinstance(blockers, list) and blockers:
+            lines.append("data_chain_blockers=" + "; ".join(str(item) for item in blockers[:8]))
+        if isinstance(warnings, list) and warnings:
+            lines.append("data_chain_warnings=" + "; ".join(str(item) for item in warnings[:8]))
     if error:
         lines.append(f"error={error}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -465,6 +526,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--external-enrich-timeout", type=int, default=300)
     parser.add_argument("--announcement-limit", type=int, default=5)
     parser.add_argument("--python", default=sys.executable, dest="python_executable")
+    parser.add_argument(
+        "--tdx-bridge-python",
+        default=os.getenv("STOCK_TS_TDX_BRIDGE_PYTHON", "").strip(),
+        help="Python executable that has eltdx installed; defaults to python3.11.",
+    )
     parser.add_argument("--skip-refresh", action="store_true")
     parser.add_argument("--skip-tdx-enrich", action="store_true")
     parser.add_argument("--skip-a-share-kline", action="store_true")
@@ -491,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
             external_enrich_timeout=args.external_enrich_timeout,
             announcement_limit=args.announcement_limit,
             python_executable=args.python_executable,
+            tdx_bridge_python=args.tdx_bridge_python,
             skip_refresh=args.skip_refresh,
             skip_tdx_enrich=args.skip_tdx_enrich,
             skip_a_share_kline=args.skip_a_share_kline,

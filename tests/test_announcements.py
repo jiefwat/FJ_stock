@@ -36,6 +36,24 @@ def test_fetch_cninfo_announcements_parses_items_and_risk_flags() -> None:
     assert report.items[0].url.endswith("1225362611.PDF")
 
 
+def test_fetch_cninfo_announcements_uses_exchange_from_code_prefix() -> None:
+    captured: dict[str, str] = {}
+
+    def fake_post(_url: str, data: dict[str, str], _headers: dict[str, str]) -> dict:
+        captured.update(data)
+        return {"totalAnnouncement": 0, "announcements": []}
+
+    fetch_cninfo_announcements("300058", post_form=fake_post)
+
+    assert captured["column"] == "szse"
+    assert captured["plate"] == "sz"
+
+    fetch_cninfo_announcements("688362", post_form=fake_post)
+
+    assert captured["column"] == "sse"
+    assert captured["plate"] == "sh"
+
+
 def test_render_announcement_markdown_contains_professional_sections() -> None:
     report = fetch_cninfo_announcements(
         "603278",

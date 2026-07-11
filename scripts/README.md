@@ -72,11 +72,19 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 - `reports/daily/YYYY-MM-DD_decisions.json`
 - `reports/daily/latest.status`
 - `reports/daily/pipeline.status`
+- `reports/daily/data_chain_status.json`
 - `reports/html/latest.html`
 - `reports/html/YYYY-MM-DD.html`
 - `reports/announcements/latest.md`
 
-失败时返回非 0，并把错误写入 `reports/daily/latest.status`，Web 会读取这个状态提示。
+流水线会在报告生成后校验“采集 -> 校验 -> 大盘/持仓/个股/机会消费”的全链路：
+
+- `pipeline.status` 的 `status=ok` 表示关键链路可用。
+- `status=degraded` 表示报告已生成但存在跳过、部分失败或上下文缺口，Web 数据中台必须预警。
+- `status=failed` 表示存在阻断节点，例如关键行情/K 线缺失或刷新/报告步骤失败。
+- `data_chain_status.json` 保存每个模块的结构化状态，供 Web 底部“专业数据中台”展示。
+
+失败时返回非 0，并把错误写入 `reports/daily/latest.status` 或 `pipeline.status`，Web 会读取这个状态提示。
 
 ## 服务器刷新时间
 
@@ -89,6 +97,7 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 - 14:00：尾盘前复核，供收盘前人工决策。
 
 模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。
+注意：`--python` 指项目运行环境，`--tdx-bridge-python` 指安装了 `eltdx` 的桥接 Python，默认使用 `python3.11`。
 ## 早间邮件
 
 每天早上发送昨晚生成好的最新日报，不重新拉行情。邮件会优先读取 `reports/daily/latest_decisions.json`，输出红黄绿交易清单、今日交易限制、自动任务提醒和压缩版机会；JSON 缺失时再降级解析 Markdown。如果最新日报包含个股“决策摘要”，持仓建议会直接使用最终判断、核心矛盾、今日动作、禁忌、转强和离场条件，不再只提示去网页查看；当新闻、资金或 K 线补强不完整时，会在邮件里标注对应判断不可信。

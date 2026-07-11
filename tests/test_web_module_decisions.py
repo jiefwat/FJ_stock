@@ -635,6 +635,40 @@ def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() 
     assert 'href="#data-center"' in html
 
 
+def test_data_center_surfaces_full_chain_validation_artifact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(tmp_path))
+    (tmp_path / "data_chain_status.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "generated_at": "2026-07-11T09:00:00",
+                "blockers": ["持仓 688362 缺少K线"],
+                "warnings": ["自动任务未完整：external_enrich=skipped"],
+                "modules": {
+                    "market": {"status": "ok"},
+                    "portfolio": {"status": "failed"},
+                    "stock": {"status": "failed"},
+                    "opportunities": {"status": "ok"},
+                    "automation": {"status": "warn"},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    html = _sample_html()
+    data_center_html = _workspace(html, "data-center")
+
+    assert "全链路校验" in data_center_html
+    assert "持仓 688362 缺少K线" in data_center_html
+    assert "market:ok" in data_center_html
+    assert "portfolio:failed" in data_center_html
+    assert "数据中台预警：全链路校验影响分析" in html
+
+
 def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:
     market_html = _workspace(_sample_html(), "market")
 

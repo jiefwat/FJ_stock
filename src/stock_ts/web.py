@@ -2788,6 +2788,9 @@ def _build_data_center_view(
             sample_mode=sample_mode,
         ),
     ]
+    data_chain_row = _data_chain_center_row()
+    if data_chain_row is not None:
+        rows.append(data_chain_row)
     alerts = [
         f"数据中台预警：{row.category}{row.status}，{row.impact}。"
         for row in rows
@@ -2849,6 +2852,61 @@ def _data_center_row(
         impact=impact,
         level=level,
     )
+
+
+def _data_chain_center_row() -> DataCenterRow | None:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    payload = _read_json_file(report_dir / "data_chain_status.json")
+    if not payload:
+        return None
+    status = str(payload.get("status") or "unknown")
+    if status == "ok":
+        display_status = "可用"
+        level = "ok"
+        impact = "不影响分析"
+    elif status == "failed":
+        display_status = "影响分析"
+        level = "blocked"
+        impact = "全链路存在阻断节点，相关模块只允许补数据和人工复核"
+    else:
+        display_status = "需复核"
+        level = "warn"
+        impact = "全链路存在降级节点，强结论需暂停"
+    blockers = [str(item) for item in _json_list(payload.get("blockers")) if item]
+    warnings = [str(item) for item in _json_list(payload.get("warnings")) if item]
+    missing = "；".join((blockers or warnings)[:3]) or "无"
+    modules = payload.get("modules")
+    coverage = "五段链路"
+    if isinstance(modules, dict):
+        coverage = " / ".join(
+            f"{key}:{str(value.get('status') or 'unknown')}"
+            for key, value in modules.items()
+            if isinstance(value, dict)
+        )
+    return DataCenterRow(
+        category="全链路校验",
+        channel="reports/daily/data_chain_status.json",
+        status=display_status,
+        latest_at=str(payload.get("generated_at") or "待确认"),
+        coverage=coverage,
+        missing=missing,
+        impact=impact,
+        level=level,
+    )
+
+
+def _read_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _json_list(value: object) -> list:
+    return value if isinstance(value, list) else []
 
 
 def _coverage_ratio(
@@ -3392,6 +3450,7 @@ def _data_center_anchor(category: str) -> str:
         "新闻舆情": "data-domain-news",
         "公告": "data-domain-announcement",
         "基本面": "data-domain-fundamental",
+        "全链路校验": "data-domain-chain",
     }
     return mapping.get(category, f"data-domain-{category}")
 
