@@ -564,6 +564,23 @@ def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
     assert stock_html.index("后续建议") < stock_html.index("未来涨跌预测")
 
 
+def test_stock_analysis_uses_multi_day_theme_and_relative_comparison() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "多日趋势原因",
+        "最近5日",
+        "最近10日",
+        "多日收盘",
+        "主题板块对比",
+        "所属主题",
+        "主线板块",
+        "综合对比结论",
+    ]:
+        assert text in stock_html
+    assert "近一日 " not in stock_html
+
+
 def test_stock_forecast_outputs_prediction_not_only_scenarios() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 

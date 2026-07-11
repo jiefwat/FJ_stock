@@ -58,7 +58,7 @@ from .providers import create_provider
 from .providers.base import StockDataProvider
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
-from .symbols import ResolvedSymbol, resolve_stock_query
+from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
 from .trade_plan import TradePlan, build_trade_plan
 from .webapp import (
     app_script as render_shell_script,
@@ -7842,7 +7842,7 @@ def _stock_simple_analysis_rows(
     announcement_count = len(announcement_report.items) if announcement_report else 0
     rows = [
         (
-            "趋势/量价原因",
+            "趋势/量价原因 / 多日趋势原因",
             _stock_trend_cause(stock, stock_raw, technical),
             _stock_trend_validation(technical, invalid),
         ),
@@ -7862,9 +7862,14 @@ def _stock_simple_analysis_rows(
             _stock_event_validation(stock_raw, event_radar, announcement_report),
         ),
         (
-            "板块/主题原因",
+            "板块/主题原因 / 主题板块对比",
             _stock_theme_cause(stock, sectors),
             _stock_theme_validation(stock, sectors),
+        ),
+        (
+            "综合对比结论",
+            _stock_composite_comparison_cause(stock, stock_raw, sectors),
+            _stock_composite_comparison_validation(stock, stock_raw, sectors, trade_plan),
         ),
         (
             "持仓/成本原因",
@@ -7889,12 +7894,64 @@ def _stock_trend_cause(
 ) -> str:
     if not stock_raw.bars:
         return "技术原因：K线缺失，趋势判断降级为观察"
-    recent_pct = _stock_recent_pct(stock_raw)
+    multi_day = _stock_multi_day_trend_text(stock_raw)
     volume_text = _stock_volume_side_fund_text(stock_raw) or "量价承接待补"
     return (
-        f"技术原因：{stock.trend}来自{technical.structure}，近一日 {recent_pct:.2f}% "
-        f"用于确认短线承接；{volume_text}"
+        f"技术原因：{multi_day}；{stock.trend}来自{technical.structure}，"
+        f"用于确认连续性而不是只看单日涨跌；{volume_text}"
     )
+
+
+def _stock_multi_day_trend_text(stock_raw: StockRawData) -> str:
+    five_day = _stock_period_pct(stock_raw, 5)
+    ten_day = _stock_period_pct(stock_raw, 10)
+    up_days, total_days = _stock_recent_up_down_days(stock_raw, 10)
+    close_position = _stock_recent_close_position(stock_raw, 10)
+    return (
+        f"最近5日 {five_day} / 最近10日 {ten_day} / "
+        f"多日收盘 {up_days}/{total_days} 日上涨 / {close_position}"
+    )
+
+
+def _stock_period_pct(stock_raw: StockRawData, days: int) -> str:
+    if len(stock_raw.bars) < 2:
+        return "数据不足"
+    usable = min(days, len(stock_raw.bars) - 1)
+    start = stock_raw.bars[-usable - 1].close
+    end = stock_raw.bars[-1].close
+    if not start:
+        return "数据不足"
+    return f"{(end - start) / start * 100:.2f}%"
+
+
+def _stock_recent_up_down_days(stock_raw: StockRawData, days: int) -> tuple[int, int]:
+    if len(stock_raw.bars) < 2:
+        return 0, 0
+    recent = stock_raw.bars[-min(days + 1, len(stock_raw.bars)) :]
+    changes = [
+        (current.close - previous.close)
+        for previous, current in zip(recent, recent[1:])
+    ]
+    return sum(1 for change in changes if change > 0), len(changes)
+
+
+def _stock_recent_close_position(stock_raw: StockRawData, days: int) -> str:
+    if not stock_raw.bars:
+        return "区间位置不足"
+    recent = stock_raw.bars[-min(days, len(stock_raw.bars)) :]
+    low = min(bar.low for bar in recent)
+    high = max(bar.high for bar in recent)
+    close = recent[-1].close
+    if high <= low:
+        return "区间位置不足"
+    percentile = (close - low) / (high - low) * 100
+    if percentile >= 70:
+        position = "靠近区间上沿"
+    elif percentile <= 30:
+        position = "靠近区间下沿"
+    else:
+        position = "处于区间中部"
+    return f"{days}日区间 {low:.2f}-{high:.2f} 收盘{position}"
 
 
 def _stock_trend_validation(
@@ -7902,8 +7959,9 @@ def _stock_trend_validation(
     invalid: str,
 ) -> str:
     return (
-        f"影响/验证：站稳 {technical.support:.2f} 才保留趋势判断，"
-        f"放量突破 {technical.resistance:.2f} 才提高进攻优先级；失效看 {invalid}"
+        f"影响/验证：最近5日与最近10日方向一致，且站稳 {technical.support:.2f} "
+        f"才保留趋势判断；放量突破 {technical.resistance:.2f} 才提高进攻优先级；"
+        f"失效看 {invalid}"
     )
 
 
@@ -7952,17 +8010,47 @@ def _stock_event_validation(
 
 
 def _stock_theme_cause(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
-    sector_text = _stock_sector_strength_text(stock, sectors)
+    sector_text = _stock_sector_comparison_text(stock, sectors)
     if "主线未确认" in sector_text:
         return "板块原因：主线未确认，个股只能按自身量价和基本面复核"
-    if "在主线内" in sector_text:
+    if "在主线板块内" in sector_text:
         return f"板块原因：{sector_text}，上涨更可能获得主题扩散和资金关注"
     return f"板块原因：{sector_text}，未在前排主线时不提高追涨优先级"
 
 
 def _stock_theme_validation(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
-    note = _stock_sector_strength_note(stock, sectors)
-    return f"影响/验证：板块继续扩散且前排不断板，个股信号才更可靠；{note}"
+    note = _stock_sector_comparison_note(stock, sectors)
+    return f"影响/验证：先比较所属主题与主线板块强弱，再看个股是否跑赢主题；{note}"
+
+
+def _stock_composite_comparison_cause(
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    sectors: SectorAnalysisReport,
+) -> str:
+    trend = _stock_multi_day_trend_text(stock_raw)
+    theme = _stock_sector_comparison_text(stock, sectors)
+    fund = _stock_fund_flow_text(stock_raw)
+    return (
+        f"综合结论：先看多日期趋势，再看主题板块，再看资金/消息；"
+        f"{trend}；{theme}；资金面 {fund}"
+    )
+
+
+def _stock_composite_comparison_validation(
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    sectors: SectorAnalysisReport,
+    trade_plan: TradePlan,
+) -> str:
+    theme_note = _stock_sector_comparison_note(stock, sectors)
+    data_blocks = _stock_required_data_blocks(stock_raw)
+    missing = [item["name"] for item in data_blocks if item["tone"] == "missing"]
+    missing_text = "缺口：" + "、".join(missing) if missing else "K线、资金、消息、公告、基本面已纳入"
+    return (
+        f"影响/验证：若多日趋势、主题强弱和资金方向不一致，只做观察；"
+        f"{theme_note}；{missing_text}；动作边界：{trade_plan.verdict}"
+    )
 
 
 def _stock_holding_cost_cause(
@@ -8809,6 +8897,79 @@ def _stock_sector_strength_note(stock: DeepStockReport, sectors: SectorAnalysisR
     if sector is None:
         return "先看所属主题是否在主线，再看个股是否前排。"
     return f"热度 {sector.heat_score}/100，涨跌 {sector.pct_chg:.2f}%，{sector.rotation_status}。"
+
+
+def _stock_sector_comparison_text(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
+    stock_theme = _stock_theme_name(stock)
+    mainline = [localize_sector_name(item) for item in sectors.market_mainline[:3]]
+    mainline_text = "、".join(mainline) if mainline else "待确认"
+    if not stock_theme:
+        return f"所属主题未识别；主线板块 {mainline_text}"
+    localized_theme = localize_sector_name(stock_theme)
+    sector = _find_sector_analysis(sectors, localized_theme)
+    sector_text = (
+        f"热度 {sector.heat_score}/100，涨跌 {sector.pct_chg:.2f}%"
+        if sector is not None
+        else "板块强弱数据待补"
+    )
+    if localized_theme in mainline:
+        return (
+            f"所属主题 {localized_theme} 在主线板块内；主线板块 {mainline_text}；{sector_text}"
+        )
+    return (
+        f"所属主题 {localized_theme} 未进入主线板块；主线板块 {mainline_text}；{sector_text}"
+    )
+
+
+def _stock_sector_comparison_note(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
+    stock_theme = _stock_theme_name(stock)
+    if not stock_theme:
+        return "所属主题未识别，先用个股多日趋势和资金面判断。"
+    localized_theme = localize_sector_name(stock_theme)
+    sector = _find_sector_analysis(sectors, localized_theme)
+    if sector is None:
+        return f"所属主题 {localized_theme} 缺少板块强弱数据，不能确认是否跑赢主题。"
+    rank = _sector_rank(sectors, localized_theme)
+    rank_text = f"主题排名第 {rank}" if rank else "主题排名待确认"
+    return (
+        f"所属主题 {localized_theme}，{rank_text}，热度 {sector.heat_score}/100，"
+        f"涨跌 {sector.pct_chg:.2f}%，扩散 {sector.advancing_ratio:.0%}。"
+    )
+
+
+def _stock_theme_name(stock: DeepStockReport) -> str:
+    explicit = str(getattr(stock, "sector", "") or "").strip()
+    if explicit and explicit not in {"未分类", "未识别主题"}:
+        return explicit
+    mapped = sector_for_code(stock.code)
+    if mapped:
+        return mapped
+    if "茅台" in stock.name or "五粮液" in stock.name:
+        return "白酒"
+    if "银行" in stock.name:
+        return "银行"
+    if "宁德" in stock.name:
+        return "新能源车"
+    return ""
+
+
+def _find_sector_analysis(sectors: SectorAnalysisReport, theme: str):
+    return next(
+        (
+            item
+            for item in sectors.sectors
+            if localize_sector_name(item.name).strip() == theme.strip()
+        ),
+        None,
+    )
+
+
+def _sector_rank(sectors: SectorAnalysisReport, theme: str) -> int:
+    ranked = sorted(sectors.sectors, key=lambda item: item.heat_score, reverse=True)
+    for index, item in enumerate(ranked, start=1):
+        if localize_sector_name(item.name).strip() == theme.strip():
+            return index
+    return 0
 
 
 def _render_stock_compact_research_panel(
