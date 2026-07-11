@@ -427,7 +427,14 @@ def test_daily_pipeline_enriches_holdings_with_news_before_broad_candidate_chunk
     assert any("--skip-akshare-stock-fields" in command for command in enrich_calls[1:])
 
 
-def test_daily_pipeline_uses_python311_for_tdx_bridge_by_default() -> None:
+def test_daily_pipeline_uses_python311_for_tdx_bridge_when_runner_python_lacks_eltdx(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "_python_can_import_eltdx",
+        lambda executable: executable == "python3.11",
+    )
     config = DailyPipelineConfig(python_executable=".venv/bin/python")
 
     refresh_command = pipeline_module._refresh_command(config)
@@ -435,6 +442,23 @@ def test_daily_pipeline_uses_python311_for_tdx_bridge_by_default() -> None:
 
     assert refresh_command[refresh_command.index("--python") + 1] == "python3.11"
     assert enrich_command[enrich_command.index("--python") + 1] == "python3.11"
+
+
+def test_daily_pipeline_prefers_runner_python_for_tdx_bridge_when_eltdx_is_installed(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "_python_can_import_eltdx",
+        lambda executable: executable == "/opt/stock-ts/.venv/bin/python",
+    )
+    config = DailyPipelineConfig(python_executable="/opt/stock-ts/.venv/bin/python")
+
+    refresh_command = pipeline_module._refresh_command(config)
+
+    assert refresh_command[refresh_command.index("--python") + 1] == (
+        "/opt/stock-ts/.venv/bin/python"
+    )
 
 
 def test_daily_pipeline_writes_data_chain_artifact_and_degrades_on_skipped_steps(

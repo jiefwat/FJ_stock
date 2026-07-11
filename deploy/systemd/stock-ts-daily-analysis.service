@@ -9,4 +9,4 @@ User=admin
 WorkingDirectory=/opt/stock-ts
 Environment=PYTHONPATH=/opt/stock-ts/src
 TimeoutStartSec=3600
-ExecStart=/opt/stock-ts/.venv/bin/python scripts/run_daily_pipeline.py --python /opt/stock-ts/.venv/bin/python --tdx-bridge-python python3.11 --snapshot data/imports/tdx_snapshots.json --holdings data/portfolio/holdings.csv --provider tdx-snapshot --candidate-limit 300 --enrich-limit 50 --external-enrich-timeout 300 --announcement-limit 5 --output-dir reports/daily --html-dir reports/html --announcement-dir reports/announcements
+ExecStart=/opt/stock-ts/.venv/bin/python scripts/run_daily_pipeline.py --python /opt/stock-ts/.venv/bin/python --snapshot data/imports/tdx_snapshots.json --holdings data/portfolio/holdings.csv --provider tdx-snapshot --candidate-limit 300 --enrich-limit 50 --external-enrich-timeout 300 --announcement-limit 5 --output-dir reports/daily --html-dir reports/html --announcement-dir reports/announcements

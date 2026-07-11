@@ -169,11 +169,27 @@ def _a_share_kline_command(config: DailyPipelineConfig) -> list[str]:
 
 
 def _tdx_bridge_python(config: DailyPipelineConfig) -> str:
-    return (
-        config.tdx_bridge_python
-        or os.getenv("STOCK_TS_TDX_BRIDGE_PYTHON", "").strip()
-        or "python3.11"
-    )
+    explicit = config.tdx_bridge_python or os.getenv("STOCK_TS_TDX_BRIDGE_PYTHON", "").strip()
+    if explicit:
+        return explicit
+    for executable in [config.python_executable, "python3.11", "python3.12", "python3"]:
+        if executable and _python_can_import_eltdx(executable):
+            return executable
+    return "python3.11"
+
+
+def _python_can_import_eltdx(executable: str) -> bool:
+    try:
+        result = subprocess.run(
+            [executable, "-c", "import eltdx"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def _run_external_enrichment(
