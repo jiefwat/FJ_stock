@@ -7505,7 +7505,7 @@ def _render_compact_stock_module(
       {_render_stock_simple_kline_data(stock, stock_raw, technical, quality)}
       {analysis_content}
       {_render_stock_simple_next_advice(stock, trade_plan, driver, risk, invalid, event_radar)}
-      {_render_stock_simple_forecast(stock, technical, trade_plan, event_radar, quality)}
+      {_render_stock_simple_forecast(stock, technical, event_radar, quality)}
     </section>"""
 
 
@@ -7859,58 +7859,214 @@ def _render_stock_simple_next_advice(
 def _render_stock_simple_forecast(
     stock: DeepStockReport,
     technical: TechnicalProfile,
-    trade_plan: TradePlan,
     event_radar: EventRadar,
     quality: DataQualityView,
 ) -> str:
+    forecast = _stock_five_day_forecast(stock, technical, event_radar, quality)
     up_target = max(technical.resistance, stock.latest_close * 1.06)
     down_risk = min(technical.invalid_line, stock.latest_close * 0.95)
     rows = [
         (
-            "上涨",
-            f"放量站上 {technical.resistance:.2f}",
-            f"看 {up_target:.2f} 附近",
-            _short_condition(trade_plan.add_trigger, 72),
+            "5日方向",
+            forecast["direction"],
+            forecast["reason"],
+            forecast["validation"],
         ),
         (
-            "震荡",
-            f"{technical.support:.2f}-{technical.resistance:.2f}",
-            "区间内观察",
-            "不追涨，等方向选择。",
+            "预测区间",
+            forecast["range"],
+            forecast["range_reason"],
+            f"站稳 {technical.support:.2f} / 突破 {technical.resistance:.2f} 后重新校准",
         ),
         (
-            "下跌",
-            f"跌破 {technical.invalid_line:.2f}",
-            f"看 {down_risk:.2f} 风险位",
-            _short_condition(trade_plan.reduce_trigger, 72),
+            "上行空间",
+            f"突破 {technical.resistance:.2f} 后上看 {up_target:.2f}",
+            forecast["up_reason"],
+            f"放量突破 {technical.resistance:.2f} 且资金承接不转弱",
         ),
         (
-            "数据修正",
-            quality.status,
-            event_radar.gate,
-            "若 K 线、资金、消息或基本面补齐后变化，重新分析。",
+            "下行风险",
+            f"跌破 {technical.invalid_line:.2f} 后下看 {down_risk:.2f}",
+            forecast["down_reason"],
+            f"跌破 {technical.invalid_line:.2f} 或事件闸门转弱",
+        ),
+        (
+            "数据置信",
+            forecast["confidence"],
+            f"{quality.status}；{event_radar.gate}",
+            "K线、资金、消息、基本面任一补齐后，概率重新计算。",
         ),
     ]
+    cards = [
+        ("预测方向", forecast["direction"], forecast["bias"]),
+        ("上涨概率", f"{forecast['up_prob']}%", forecast["up_reason"]),
+        ("震荡概率", f"{forecast['flat_prob']}%", forecast["flat_reason"]),
+        ("下跌概率", f"{forecast['down_prob']}%", forecast["down_reason"]),
+    ]
+    card_html = "".join(
+        "<div class='summary-card'>"
+        f"<span>{escape(label)}</span><strong>{escape(value)}</strong>"
+        f"<p class='kpi-foot'>{escape(note)}</p></div>"
+        for label, value, note in cards
+    )
     forecast_rows = "".join(
         "<tr>"
-        f"<td>{escape(direction)}</td>"
-        f"<td>{escape(condition)}</td>"
-        f"<td>{escape(target)}</td>"
-        f"<td>{escape(action)}</td>"
+        f"<td>{escape(item)}</td>"
+        f"<td>{escape(result)}</td>"
+        f"<td>{escape(reason)}</td>"
+        f"<td>{escape(validation)}</td>"
         "</tr>"
-        for direction, condition, target, action in rows
+        for item, result, reason, validation in rows
     )
     return f"""
       <div class="panel stock-forecast-panel">
         <div class="editor-toolbar">
-          <div><h3>未来涨跌预测</h3><p class="section-subtitle">按条件给上涨、震荡、下跌三种情景，价格触发后再更新判断。</p></div>
-          <span class="portfolio-chip">未来5日情景</span>
+          <div><h3>未来涨跌预测</h3><p class="section-subtitle">基于当前 K 线、资金、事件和数据质量给未来 5 日方向概率；不是收益承诺。</p></div>
+          <span class="portfolio-chip">置信度：{escape(forecast["confidence"])}</span>
         </div>
-        <table class="data-table">
-          <thead><tr><th>方向</th><th>触发条件</th><th>目标/风险位</th><th>动作</th></tr></thead>
+        <div class="summary-grid">{card_html}</div>
+        <table class="data-table" style="margin-top:12px">
+          <thead><tr><th>预测项</th><th>结果</th><th>预测原因</th><th>验证条件</th></tr></thead>
           <tbody>{forecast_rows}</tbody>
         </table>
       </div>"""
+
+
+def _stock_five_day_forecast(
+    stock: DeepStockReport,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+    quality: DataQualityView,
+) -> dict[str, str | int]:
+    trend_up = "上升" in stock.trend
+    trend_down = "下降" in stock.trend
+    risk_high = stock.risk_level == "高" or event_radar.risk_score >= 70
+    risk_low = stock.risk_level == "低" and event_radar.risk_score < 55
+    data_blocked = quality.gate_level == "blocked"
+
+    up_weight = 1.0 + max(stock.upside.score - 50, 0) / 45
+    flat_weight = 1.1
+    down_weight = 0.9 + max(50 - stock.upside.score, 0) / 55
+    if trend_up:
+        up_weight += 0.55
+    if trend_down:
+        down_weight += 0.65
+    if risk_low:
+        up_weight += 0.25
+    if risk_high:
+        down_weight += 0.55
+        up_weight -= 0.2
+    if data_blocked:
+        flat_weight += 0.45
+        down_weight += 0.2
+        up_weight -= 0.2
+    if event_radar.gate in {"公告待补充", "事件需复核"}:
+        flat_weight += 0.25
+
+    up_prob, flat_prob, down_prob = _normalize_forecast_probabilities(
+        up_weight, flat_weight, down_weight
+    )
+    direction = _forecast_direction(up_prob, flat_prob, down_prob)
+    up_target = max(technical.resistance, stock.latest_close * 1.06)
+    down_risk = min(technical.invalid_line, stock.latest_close * 0.95)
+    forecast_low, forecast_high = _forecast_price_range(
+        direction, technical, up_target, down_risk
+    )
+    if data_blocked:
+        confidence = "低"
+    elif risk_high or event_radar.gate != "事件正常":
+        confidence = "中"
+    else:
+        confidence = "较高" if abs(up_prob - down_prob) >= 18 else "中"
+    return {
+        "direction": direction,
+        "bias": f"上涨 {up_prob}% / 震荡 {flat_prob}% / 下跌 {down_prob}%",
+        "up_prob": up_prob,
+        "flat_prob": flat_prob,
+        "down_prob": down_prob,
+        "range": f"{forecast_low:.2f} - {forecast_high:.2f}",
+        "confidence": confidence,
+        "reason": _stock_forecast_reason(stock, event_radar, quality),
+        "range_reason": f"下沿参考支撑/失效线，上沿参考压力位与 6% 潜在空间；现价 {stock.latest_close:.2f}",
+        "up_reason": _stock_forecast_up_reason(stock, technical),
+        "flat_reason": "多空概率接近或数据仍需确认时，先按区间震荡处理",
+        "down_reason": _stock_forecast_down_reason(stock, technical, event_radar),
+        "validation": _stock_forecast_validation(direction, technical, event_radar),
+    }
+
+
+def _normalize_forecast_probabilities(
+    up_weight: float, flat_weight: float, down_weight: float
+) -> tuple[int, int, int]:
+    weights = [max(up_weight, 0.2), max(flat_weight, 0.2), max(down_weight, 0.2)]
+    total = sum(weights)
+    up = round(weights[0] / total * 100)
+    flat = round(weights[1] / total * 100)
+    down = max(0, 100 - up - flat)
+    return up, flat, down
+
+
+def _forecast_direction(up_prob: int, flat_prob: int, down_prob: int) -> str:
+    if up_prob >= flat_prob and up_prob >= down_prob and up_prob - down_prob >= 8:
+        return "偏上涨"
+    if down_prob >= up_prob and down_prob >= flat_prob and down_prob - up_prob >= 8:
+        return "偏下跌"
+    return "偏震荡"
+
+
+def _forecast_price_range(
+    direction: str,
+    technical: TechnicalProfile,
+    up_target: float,
+    down_risk: float,
+) -> tuple[float, float]:
+    if direction == "偏上涨":
+        return max(down_risk, technical.support), up_target
+    if direction == "偏下跌":
+        return down_risk, min(up_target, technical.resistance)
+    return technical.support, technical.resistance
+
+
+def _stock_forecast_reason(
+    stock: DeepStockReport,
+    event_radar: EventRadar,
+    quality: DataQualityView,
+) -> str:
+    driver = stock.upside.drivers[0] if stock.upside.drivers else stock.upside.label
+    return (
+        f"{stock.trend}、机会分 {stock.upside.score}/100、风险 {stock.risk_level}；"
+        f"主因：{driver}；事件闸门 {event_radar.gate}；数据 {quality.signal}"
+    )
+
+
+def _stock_forecast_up_reason(stock: DeepStockReport, technical: TechnicalProfile) -> str:
+    if "上升" in stock.trend:
+        return f"趋势向上且靠近压力 {technical.resistance:.2f}，突破后上行概率提高"
+    return f"需要先站回压力 {technical.resistance:.2f}，否则上涨只按反弹看"
+
+
+def _stock_forecast_down_reason(
+    stock: DeepStockReport,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+) -> str:
+    if stock.risk_level == "高" or event_radar.risk_score >= 70:
+        return f"风险分较高，跌破 {technical.invalid_line:.2f} 后下行概率提高"
+    return f"当前下行主要看 {technical.invalid_line:.2f} 是否失守和事件风险是否升温"
+
+
+def _stock_forecast_validation(
+    direction: str,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+) -> str:
+    if direction == "偏上涨":
+        if event_radar.gate != "事件正常":
+            return f"先补齐事件/公告，再看是否放量突破 {technical.resistance:.2f}"
+        return f"放量突破 {technical.resistance:.2f} 且事件闸门维持 {event_radar.gate}"
+    if direction == "偏下跌":
+        return f"跌破 {technical.invalid_line:.2f} 或公告/资金出现新增负面"
+    return f"维持 {technical.support:.2f}-{technical.resistance:.2f} 区间内，等待方向选择"
 
 
 def _render_stock_professional_brief(

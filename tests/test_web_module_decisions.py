@@ -488,6 +488,24 @@ def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
     assert stock_html.index("后续建议") < stock_html.index("未来涨跌预测")
 
 
+def test_stock_forecast_outputs_prediction_not_only_scenarios() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "预测方向",
+        "上涨概率",
+        "震荡概率",
+        "下跌概率",
+        "预测区间",
+        "预测原因",
+        "置信度",
+    ]:
+        assert text in stock_html
+
+    for old_text in ["未来5日情景", "触发条件", "目标/风险位"]:
+        assert old_text not in stock_html
+
+
 def test_stock_module_removes_extra_research_panels() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
