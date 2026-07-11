@@ -107,7 +107,8 @@ def app_script() -> str:
       'status': 'market',
       'notify': 'market',
       'settings': 'market',
-      'data-quality': 'market'
+      'data-quality': 'data-center',
+      'data-center': 'data-center'
     }};
 
     function activatePanel(workspace, moduleKey) {{

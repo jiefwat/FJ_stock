@@ -10,15 +10,18 @@ def test_web_page_uses_structured_workbench_layout() -> None:
     assert 'id="module-portfolio"' in html
     assert 'id="module-stock"' in html
     assert 'id="module-opportunity"' in html
-    assert html.count('class="workspace-pane') == 4
+    assert 'id="module-data-center"' in html
+    assert html.count('class="workspace-pane') == 5
     assert 'data-workspace="market"' in html
     assert 'data-workspace="portfolio"' in html
     assert 'data-workspace="stock"' in html
     assert 'data-workspace="opportunity"' in html
+    assert 'data-workspace="data-center"' in html
     assert "每日大盘" in html
     assert "我的持仓" in html
     assert "个股分析" in html
     assert "热点机会" in html
+    assert "数据中台" in html
     for removed in [
         'id="module-home"',
         'id="module-sector"',

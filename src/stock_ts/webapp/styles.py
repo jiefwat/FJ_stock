@@ -990,6 +990,29 @@ h1 {
   overflow:hidden;
   text-overflow:ellipsis;
 }
+.data-center-summary {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:0 0 14px;
+  padding:10px 14px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:#fff;
+  color:var(--muted);
+  font-size:13px;
+}
+.data-center-summary strong {
+  color:var(--ink);
+  flex:1;
+}
+.data-center-summary a {
+  color:var(--accent);
+  font-weight:700;
+  text-decoration:none;
+}
+.data-center-summary.warn { border-color:#dfc28e; background:#fffaf0; }
+.data-center-summary.blocked { border-color:#e6aaa1; background:#fff3f0; }
 .data-center-panel {
   margin:0 0 16px;
   border-color:rgba(13,59,102,.18);

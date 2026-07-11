@@ -18,7 +18,7 @@ def _html() -> str:
     )
 
 
-def test_web_uses_four_module_app_shell() -> None:
+def test_web_uses_four_business_modules_and_data_center_shell() -> None:
     html = _html()
 
     assert "Jiewat Kaka FJ" in html
@@ -27,8 +27,8 @@ def test_web_uses_four_module_app_shell() -> None:
     assert "我的持仓" in html
     assert "个股分析" in html
     assert "热点机会" in html
-    assert html.count('class="workspace-pane') == 4
-    for workspace in ["market", "portfolio", "stock", "opportunity"]:
+    assert html.count('class="workspace-pane') == 5
+    for workspace in ["market", "portfolio", "stock", "opportunity", "data-center"]:
         assert f'id="{workspace}"' in html
         assert f'href="#{workspace}"' in html
     for removed in ["看主线", "看情绪", "看复盘", "收晨报", "检查系统"]:

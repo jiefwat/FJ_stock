@@ -27,6 +27,12 @@ WORKSPACES = [
         badge="04",
         description="合并板块热度、情绪温度和候选观察池。",
     ),
+    WorkspaceMeta(
+        key="data-center",
+        label="数据中台",
+        badge="05",
+        description="集中核对行情、K线、资金、新闻、公告和基本面状态。",
+    ),
 ]
 
 WORKSPACE_MODULES = {
@@ -34,6 +40,7 @@ WORKSPACE_MODULES = {
     "portfolio": ["portfolio"],
     "stock": ["stock"],
     "opportunity": ["opportunity"],
+    "data-center": ["data-center"],
 }
 
 MODULE_TO_WORKSPACE = {

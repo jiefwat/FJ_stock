@@ -19,15 +19,15 @@ def _render_sample_page() -> str:
     )
 
 
-def test_design_guide_shell_uses_four_clean_modules() -> None:
+def test_design_guide_shell_uses_four_business_modules_with_bottom_data_center() -> None:
     html = _render_sample_page()
 
-    for module_id in ["market", "portfolio", "stock", "opportunity"]:
+    for module_id in ["market", "portfolio", "stock", "opportunity", "data-center"]:
         assert f'id="{module_id}"' in html
         assert f'href="#{module_id}"' in html
-    for label in ["每日大盘", "我的持仓", "个股分析", "热点机会"]:
+    for label in ["每日大盘", "我的持仓", "个股分析", "热点机会", "数据中台"]:
         assert label in html
-    assert html.count('class="workspace-pane') == 4
+    assert html.count('class="workspace-pane') == 5
 
 
 def test_ui_skin_uses_professional_terminal_visual_system() -> None:

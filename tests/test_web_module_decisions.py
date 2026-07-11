@@ -565,3 +565,17 @@ def test_data_center_surfaces_mcp_market_news_channel_metadata() -> None:
 
     assert "longbridge.mcp" in html
     assert "2026-07-11T01:00:00Z" in html
+
+
+def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() -> None:
+    html = _sample_html()
+    workspace_start = html.index('<section class="workspace-pane')
+    summary_start = html.index('aria-label="数据中台摘要"')
+    full_panel_start = html.index('aria-label="专业数据中台"')
+
+    assert html.count('aria-label="专业数据中台"') == 1
+    assert html.count('aria-label="数据中台摘要"') == 1
+    assert summary_start < workspace_start
+    assert full_panel_start > html.index('data-workspace="opportunity"')
+    assert 'data-workspace="data-center"' in html
+    assert 'href="#data-center"' in html

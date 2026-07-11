@@ -1027,13 +1027,14 @@ def render_page(
             candidate_universe_metadata=candidate_universe_metadata,
             quality=quality,
         ),
+        "data-center": _render_data_center_panel(quality.data_center),
     }
     shell = f"""
   <div class="app-shell">
       {render_shell_sidebar(resolved.query, holdings_path)}
     <main class="workspace">
       {_render_global_freshness_bar(quality, market, provider_class, risk_gate)}
-      {_render_data_center_panel(quality.data_center)}
+      {_render_data_center_summary(quality.data_center)}
       {build_workspace_sections(section_map)}
     </main>
   </div>
@@ -3267,7 +3268,7 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
         ]
     )
     return f"""
-      <section class="panel data-center-panel" id="data-center" aria-label="专业数据中台">
+      <section class="module panel data-center-panel" id="module-data-center" aria-label="专业数据中台">
         <div class="editor-toolbar">
           <div><h3>专业数据中台</h3><p class="section-subtitle">先判断数据是否能用于分析；有缺口时只做人工复核，不输出强结论。</p></div>
           <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
@@ -3287,6 +3288,27 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
           <strong>影响分析预警：</strong><ul class="note-list">{alerts}</ul>
         </div>
       </section>"""
+
+
+def _render_data_center_summary(data_center: DataCenterView) -> str:
+    blocked_count = sum(1 for row in data_center.rows if row.level == "blocked")
+    warn_count = sum(1 for row in data_center.rows if row.level == "warn")
+    if blocked_count:
+        message = f"{blocked_count} 个数据域影响分析，先核对数据中台"
+        level = "blocked"
+    elif warn_count:
+        message = f"{warn_count} 个数据域需复核"
+        level = "warn"
+    else:
+        message = "数据可用"
+        level = "ok"
+    return f"""
+      <div class="data-center-summary {escape(level)}" aria-label="数据中台摘要">
+        <span>数据中台：{escape(data_center.status)}</span>
+        <strong>{escape(message)}</strong>
+        <span>更新 {escape(data_center.updated_at)}</span>
+        <a href="#data-center">查看完整状态</a>
+      </div>"""
 
 
 def _data_center_anchor(category: str) -> str:
@@ -5206,7 +5228,7 @@ def _render_compact_portfolio_module(
       {_render_portfolio_position_overview(advice)}
       {_render_portfolio_exposure_map(portfolio)}
       {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
-      <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页使用顶部专业数据中台的行情日期、资金面、公告和基本面状态；缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
+      <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页只看顶部数据摘要；完整行情日期、资金面、公告和基本面状态统一到底部数据中台核对。缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
       <div class="panel" style="margin-top:16px">
         <div class="editor-toolbar"><div><h3>持仓明细</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
         {action_bar}
