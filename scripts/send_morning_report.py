@@ -71,99 +71,54 @@ def build_morning_report(
         name_map=name_map,
         decision_map=stock_decisions,
     )
-    opportunity_actions = _opportunity_actions(daily, limit=10)
-    position_advice = _position_advice_lines(daily, pipeline)
-    portfolio_layers = _portfolio_layer_lines(daily)
-    opening_actions = _opening_action_checklist(daily, pipeline, limit=5)
+    opportunity_actions = _opportunity_actions(daily, limit=15)
     announcement_actions = _announcement_action_summary(announcements, name_map=name_map)
-    traffic_light_actions = _decision_traffic_light_actions(decisions) or _traffic_light_trade_list(
-        daily, limit=5
-    )
-    opportunity_actions = _decision_opportunity_actions(decisions, limit=10) or opportunity_actions
-    action_limit_lines = _decision_action_limit_lines(decisions)
-    automation_lines = _decision_automation_lines(decisions)
-    method_chain_lines = _method_chain_summary_lines(daily)
+    opportunity_actions = _decision_opportunity_actions(decisions, limit=15) or opportunity_actions
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
-    quick_reads = _quick_read_items(
-        conclusion=conclusion,
-        market=market,
-        sectors=sectors,
-        portfolio=portfolio,
-        opportunities="\n".join(opportunity_actions) if opportunity_actions else opportunities,
-    )
-    commuter_brief = _commuter_decision_brief(
+    execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
+    market_lines = _yesterday_market_lines(
         conclusion=first_conclusion,
         market=market,
-        portfolio_actions=portfolio_actions,
-        opportunity_actions=opportunity_actions,
-        pipeline=pipeline,
+        sectors=sectors,
+        execution_guard=execution_guard,
     )
-    execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
+    holding_lines = _subway_holding_lines(portfolio_actions, portfolio)
+    opportunity_lines = _subway_market_opportunity_lines(
+        sectors=sectors,
+        opportunity_actions=opportunity_actions,
+        opportunities=opportunities,
+    )
+    action_limit_lines = _decision_action_limit_lines(decisions)
+    automation_lines = _decision_automation_lines(decisions)
+    data_lines = _subway_data_risk_lines(
+        trade_date=trade_date,
+        report_date=generated_at[:10],
+        pipeline=pipeline,
+        announcements=announcement_actions,
+        extra_limits=action_limit_lines + automation_lines,
+    )
     lines = [
-        f"# StockTS 早间复盘与机会｜今日操作（{generated_at[:10]}，基于交易日：{trade_date}）",
+        f"# StockTS 早间简报（地铁版｜{generated_at[:10]}，基于交易日：{trade_date}）",
         "",
-        "## 一句话结论",
-        _bullet(first_conclusion),
+        "## 昨天大盘总结",
+        "\n".join(market_lines),
         "",
-        "## 先确认能不能执行",
-        *execution_guard,
+        "## 我的持仓",
+        "\n".join(holding_lines),
         "",
-        "## 手机决策版",
-        *(_bullet(item) for item in commuter_brief),
+        "## 今日市场机会",
+        "\n".join(opportunity_lines),
         "",
-        "## 红黄绿交易清单",
-        "\n".join(traffic_light_actions),
-        "",
-        "## 今日交易限制",
-        "\n".join(action_limit_lines),
-        "",
-        "## 自动任务提醒",
-        "\n".join(automation_lines),
-        "",
-        "## 分析方法校验",
-        "\n".join(method_chain_lines),
-        "",
-        "## 地铁上先看这 5 条",
-        *(_bullet(item) for item in quick_reads),
-        "",
-        "## 今日仓位建议",
-        "\n".join(position_advice),
-        "",
-        "## 持仓四象限",
-        "\n".join(portfolio_layers),
-        "",
-        "## 开盘前操作清单",
-        "\n".join(opening_actions),
-        "",
-        f"## 昨日大盘（{trade_date}）",
-        _compact_block(market, fallback="未读取到大盘摘要，请检查最新日报。", max_items=4),
-        "",
-        "## 昨日板块",
-        _compact_block(sectors, fallback="未读取到板块摘要，请检查最新日报。", max_items=4),
-        "",
-        "## 今天持仓怎么做",
-        "\n".join(portfolio_actions)
-        if portfolio_actions
-        else _compact_block(
-            portfolio, fallback="未读取到持仓摘要，请检查持仓文件和日报生成状态。", max_items=5
-        ),
-        "",
-        "## 今日机会 10 条",
+        "## 投资建议 15只票",
         "\n".join(opportunity_actions)
         if opportunity_actions
         else _compact_block(
-            opportunities, fallback="未读取到候选摘要，请检查日报生成状态。", max_items=10
+            opportunities, fallback="未读取到候选摘要，请检查日报生成状态。", max_items=15
         ),
         "",
-        "## 数据状态",
-        _pipeline_summary(pipeline),
-        "",
-        "## 公告风险怎么处理",
-        announcement_actions,
-        "",
-        "## 数据提示",
-        "\n".join(_data_notice_lines(trade_date, generated_at[:10], pipeline)),
+        "## 数据与风险提示",
+        "\n".join(data_lines),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -188,7 +143,7 @@ def send_morning_report(
         holdings_path=holdings_path,
         site_url=site_url,
     )
-    subject = f"StockTS 早间复盘与机会 {datetime.now().date().isoformat()}"
+    subject = f"StockTS 早间简报 {datetime.now().date().isoformat()}"
     previous_receivers = os.environ.get("EMAIL_RECEIVERS")
     if email_receivers is not None:
         os.environ["EMAIL_RECEIVERS"] = ",".join(email_receivers)
@@ -1173,6 +1128,95 @@ def _compact_block(content: str, *, fallback: str, max_items: int) -> str:
     if not items:
         items = [fallback]
     return "\n".join(_bullet(item) for item in items)
+
+
+def _yesterday_market_lines(
+    *,
+    conclusion: str,
+    market: str,
+    sectors: str,
+    execution_guard: list[str],
+) -> list[str]:
+    lines = [
+        _bullet(f"结论：{_strip_bullet(conclusion)}"),
+    ]
+    for item in _content_items(market)[:2]:
+        lines.append(_bullet(f"盘面：{item}"))
+    first_sector = _first_content_line(sectors)
+    if first_sector:
+        lines.append(_bullet(f"主线：{_strip_bullet(first_sector)}"))
+    if execution_guard:
+        lines.append(_bullet(f"执行：{_strip_bullet(execution_guard[0])}"))
+    return [_short_bullet(line, limit=190) for line in lines[:5]]
+
+
+def _subway_holding_lines(portfolio_actions: list[str], portfolio: str) -> list[str]:
+    if portfolio_actions:
+        return [_short_bullet(item, limit=190) for item in portfolio_actions[:8]]
+    items = _content_items(portfolio)[:5]
+    if not items:
+        items = ["未读取到持仓摘要，请检查持仓文件和日报生成状态。"]
+    return [_short_bullet(item, limit=190) for item in items]
+
+
+def _subway_market_opportunity_lines(
+    *,
+    sectors: str,
+    opportunity_actions: list[str],
+    opportunities: str,
+) -> list[str]:
+    lines: list[str] = []
+    first_sector = _first_content_line(sectors)
+    if first_sector:
+        lines.append(_bullet(f"方向：{_strip_bullet(first_sector)}"))
+    top_names = _opportunity_names(opportunity_actions, limit=5)
+    if top_names:
+        lines.append(_bullet(f"先看：{'、'.join(top_names)}"))
+    else:
+        first_opportunity = _first_content_line(opportunities)
+        if first_opportunity:
+            lines.append(_bullet(f"先看：{_strip_bullet(first_opportunity)}"))
+    lines.append(_bullet("原则：只看板块延续、资金承接和个股触发位，不追高。"))
+    return [_short_bullet(line, limit=190) for line in lines[:4]]
+
+
+def _subway_data_risk_lines(
+    *,
+    trade_date: str,
+    report_date: str,
+    pipeline: str,
+    announcements: str,
+    extra_limits: list[str] | None = None,
+) -> list[str]:
+    notice = _data_notice_lines(trade_date, report_date, pipeline)
+    lines = [_short_bullet(item, limit=190) for item in notice[:2]]
+    for item in extra_limits or []:
+        clean = _strip_bullet(item)
+        if clean and not clean.startswith(("未读取到", "未触发", "自动更新未发现")):
+            lines.append(_short_bullet(clean, limit=190))
+    gap = _data_gap_sentence(pipeline)
+    if gap:
+        lines.append(_short_bullet(gap, limit=190))
+    announcement_line = _first_content_line(announcements)
+    if announcement_line:
+        lines.append(_short_bullet(f"公告：{_strip_bullet(announcement_line)}", limit=190))
+    return lines[:5]
+
+
+def _opportunity_names(opportunity_actions: list[str], *, limit: int) -> list[str]:
+    names: list[str] = []
+    for item in opportunity_actions:
+        text = _strip_number_prefix(_strip_bullet(item))
+        name = text.split("｜", 1)[0].split("：", 1)[0].strip()
+        if name:
+            names.append(name)
+        if len(names) >= limit:
+            break
+    return names
+
+
+def _short_bullet(text: str, *, limit: int) -> str:
+    return _bullet(_shorten_line(_strip_bullet(text), limit=limit))
 
 
 def _method_chain_summary_lines(markdown: str) -> list[str]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def _section_lines(content: str, start_heading: str, end_heading: str) -> list[s
     return [
         line
         for line in content[start:end].splitlines()
-        if line.startswith(("- ", "1. ", "2. ", "3. "))
+        if line.startswith("- ") or re.match(r"^\d+[.、]\s", line)
     ]
 
 
@@ -60,18 +61,18 @@ def test_build_morning_report_combines_latest_artifacts(tmp_path: Path) -> None:
         site_url="https://stock.example.com",
     )
 
-    assert "早间复盘与机会" in content
+    assert "早间简报（地铁版" in content
     assert "市场防守" in content
-    assert "昨日大盘（2026-06-26）" in content
+    assert "昨天大盘总结" in content
     assert "上证指数震荡" in content
-    assert "昨日板块" in content
+    assert "今日市场机会" in content
     assert "商业航天" in content
-    assert "今天持仓怎么做" in content
+    assert "我的持仓" in content
     assert "持仓先控风险" in content
     assert "测试股票" in content
-    assert "数据状态" in content
-    assert "新闻/资金补强超时" in content
-    assert "公告风险怎么处理" in content
+    assert "数据与风险提示" in content
+    assert "新闻/资金仍需补强" in content
+    assert "公告：" in content
     assert "内容仅用于研究复盘" in content
 
 
@@ -121,9 +122,9 @@ def test_build_morning_report_is_commuter_readable_not_ops_log(tmp_path: Path) -
         site_url="https://stock.example.com",
     )
 
-    assert "## 一句话结论" in content
-    assert "## 地铁上先看这 5 条" in content
-    assert "## 今日机会" in content
+    assert "## 昨天大盘总结" in content
+    assert "## 我的持仓" in content
+    assert "## 投资建议 15只票" in content
     assert "测试股票" in content
     assert "免责声明：这部分不应该" not in content
     assert "网站：" not in content
@@ -132,7 +133,7 @@ def test_build_morning_report_is_commuter_readable_not_ops_log(tmp_path: Path) -
     assert "codes=" not in content
     assert "subprocess." not in content
     assert "Command '['" not in content
-    assert "K线部分更新失败" in content
+    assert "部分K线失败" in content
     assert all(len(line) <= 220 for line in content.splitlines())
 
 
@@ -225,18 +226,18 @@ def test_morning_report_names_stocks_risks_and_today_actions(tmp_path: Path) -> 
         site_url="https://stock.example.com",
     )
 
-    assert "## 昨日大盘（2026-06-26）" in content
-    assert "## 今天持仓怎么做" in content
+    assert "## 昨天大盘总结" in content
+    assert "## 我的持仓" in content
     assert "大业股份：判断：锁利润" in content
     assert "甬矽电子：判断：锁利润" in content
     assert "蓝色光标：判断：持有观察" in content
     assert "风险：趋势 下降趋势，风险 高" in content
     assert "动作：不加仓" in content
     assert "禁忌：不补仓摊低" in content
-    assert "## 今日机会 10 条" in content
+    assert "## 投资建议 15只票" in content
     assert "1. 兆易创新" in content
     assert "10. 中信证券" in content
-    assert "## 公告风险怎么处理" in content
+    assert "## 数据与风险提示" in content
     assert "大业股份：风险：公告风险 2 条" in content
     assert "返回公告" not in content
     assert "风险事件" not in content
@@ -311,7 +312,7 @@ def test_send_morning_report_uses_dispatcher_with_email_channel(tmp_path: Path) 
     assert calls[0][1] == ["email"]
     assert calls[0][3] is True
     assert calls[0][4] == "digest"
-    assert "StockTS 早间复盘与机会" in calls[0][2]
+    assert "StockTS 早间简报" in calls[0][2]
 
 
 def test_send_morning_report_passes_personal_holdings_path(monkeypatch, tmp_path: Path) -> None:
@@ -436,11 +437,14 @@ def test_morning_report_prioritizes_professional_actions_over_generic_summary(
         announcement_dir=announcement_dir,
     )
 
-    assert "## 开盘前操作清单" in content
-    assert "保护利润：甬矽电子" in content
-    assert "问题仓：润建股份、双良节能" in content
+    assert "## 我的持仓" in content
+    assert "甬矽电子" in content
+    assert "润建股份" in content
+    assert "双良节能" in content
     assert "不加仓；反弹先降仓/锁利润" in content
-    assert "今日只观察不追高：迈赫股份、泰胜风能" in content
+    assert "## 投资建议 15只票" in content
+    assert "迈赫股份" in content
+    assert "泰胜风能" in content
     assert "网页" not in content
     assert "去系统" not in content
     assert "数据缺口：新闻/资金仍需补强" in content
@@ -489,16 +493,12 @@ def test_morning_report_adds_portfolio_layers_and_position_advice(tmp_path: Path
     assert "## 研究运行卡" not in content
     assert "Shadow Account" not in content
     assert "P0｜持仓风险处置" not in content
-    assert "## 今日仓位建议" in content
-    assert "组合健康度 46/100" in content
-    assert "建议仓位：5成以内" in content
-    assert "## 持仓四象限" in content
-    assert "保护利润仓：甬矽电子" in content
-    assert "问题仓：润建股份" in content
-    assert "修复观察仓：蓝色光标" in content
-    assert "趋势持有仓：大业股份" in content
-    assert "资金面判断：不可信" in content
-    assert "消息催化判断：不可信" in content
+    assert "## 我的持仓" in content
+    assert "甬矽电子" in content
+    assert "润建股份" in content
+    assert "蓝色光标" in content
+    assert "大业股份" in content
+    assert "新闻/资金仍需补强" in content
 
 
 def test_morning_report_compresses_opportunities_for_phone_reading(tmp_path: Path) -> None:
@@ -592,7 +592,7 @@ def test_morning_report_uses_stock_decision_summary_for_holdings(tmp_path: Path)
     assert "离场：跌破 30.88" in content
     assert "润建股份：判断：防守观察" in content
     assert "趋势 下降趋势、风险 高" not in content
-    holding_lines = _section_lines(content, "## 今天持仓怎么做", "## 今日机会")
+    holding_lines = _section_lines(content, "## 我的持仓", "## 今日市场机会")
     assert holding_lines
     assert all(len(line) <= 170 for line in holding_lines)
 
@@ -636,7 +636,7 @@ def test_morning_report_falls_back_to_deep_stock_observation_for_holdings(tmp_pa
     assert "禁忌：不补仓摊低" in content
     assert "当前信号不足或风险约束较多" not in content
     assert "。；" not in content
-    holding_lines = _section_lines(content, "## 今天持仓怎么做", "## 今日机会")
+    holding_lines = _section_lines(content, "## 我的持仓", "## 今日市场机会")
     assert holding_lines
     assert all(len(line) <= 170 for line in holding_lines)
 
@@ -681,13 +681,13 @@ def test_morning_report_starts_with_commuter_decision_brief(tmp_path: Path) -> N
         announcement_dir=announcement_dir,
     )
 
-    first_block = content.split("## 地铁上先看这 5 条", 1)[0]
-    assert "## 手机决策版" in first_block
-    assert "大盘：" in first_block
-    assert "风险：" in first_block
-    assert "持仓：" in first_block
-    assert "机会：" in first_block
-    assert "今天不要做：" in first_block
+    first_block = content.split("## 投资建议 15只票", 1)[0]
+    assert "## 昨天大盘总结" in first_block
+    assert "## 我的持仓" in first_block
+    assert "## 今日市场机会" in first_block
+    assert "结论：" in first_block
+    assert "盘面：" in first_block
+    assert "原则：" in first_block
     assert "甬矽电子" in first_block
     assert "航天科技" in first_block
     assert "网页" not in first_block
@@ -737,13 +737,13 @@ def test_morning_report_adds_traffic_light_trade_list_without_duplicate_holdings
         announcement_dir=announcement_dir,
     )
 
-    assert "## 红黄绿交易清单" in content
-    trade_lines = _section_lines(content, "## 红黄绿交易清单", "## 地铁上先看这 5 条")
+    assert "## 我的持仓" in content
+    trade_lines = _section_lines(content, "## 我的持仓", "## 今日市场机会")
     joined = "\n".join(trade_lines)
-    assert "红灯：甬矽电子" in joined
-    assert "黄灯：润建股份、蓝色光标" in joined
-    assert "绿灯：大业股份" in joined
-    assert "机会：航天科技" in joined
+    assert "甬矽电子" in joined
+    assert "润建股份" in joined
+    assert "蓝色光标" in joined
+    assert "大业股份" in joined
     assert joined.count("甬矽电子") == 1
     assert joined.count("润建股份") == 1
     assert joined.count("蓝色光标") == 1
@@ -782,10 +782,10 @@ def test_morning_report_traffic_light_uses_weak_holding_summary_when_details_mis
         announcement_dir=announcement_dir,
     )
 
-    trade_lines = _section_lines(content, "## 红黄绿交易清单", "## 地铁上先看这 5 条")
+    trade_lines = _section_lines(content, "## 我的持仓", "## 今日市场机会")
     joined = "\n".join(trade_lines)
-    assert "红灯：甬矽电子、润建股份、大业股份" in joined
-    assert "红灯：暂无" not in joined
+    assert "甬矽电子、润建股份、大业股份" in joined
+    assert "暂无" not in joined
 
 
 def test_morning_report_prefers_structured_decisions_json(tmp_path: Path) -> None:
@@ -848,11 +848,8 @@ def test_morning_report_prefers_structured_decisions_json(tmp_path: Path) -> Non
     )
 
     assert "结构化大盘：防守优先" in content
-    assert "红灯：甬矽电子；动作：不加仓；反弹降风险" in content
-    assert "黄灯：蓝色光标；动作：等待修复" in content
-    assert "绿灯：大业股份；动作：持有跟踪" in content
     assert "1. 济民健康｜医药｜机会：量能放大；风险：追高风险；动作：回踩承接" in content
-    assert "Markdown 旧摘要" not in content.split("## 昨日大盘", 1)[0]
+    assert "Markdown 旧摘要" not in content.split("## 昨天大盘总结", 1)[0]
 
 
 def test_morning_report_surfaces_structured_action_limits_and_automation(tmp_path: Path) -> None:
@@ -895,9 +892,8 @@ def test_morning_report_surfaces_structured_action_limits_and_automation(tmp_pat
         announcement_dir=announcement_dir,
     )
 
-    assert "## 今日交易限制" in content
+    assert "## 数据与风险提示" in content
     assert "资金面不可用：不把资金作为买入理由" in content
-    assert "## 自动任务提醒" in content
     assert "外部补强失败，新闻资金只观察" in content
 
 
@@ -937,8 +933,79 @@ def test_morning_report_surfaces_dual_git_method_chain_from_daily_artifact(tmp_p
         announcement_dir=announcement_dir,
     )
 
-    assert "## 分析方法校验" in content
-    assert "daily_stock_analysis 信号归因" in content
-    assert "TradingAgents" in content
-    assert "板块方法链" in content
-    assert "组合经理最终意见" in content
+    assert "## 分析方法校验" not in content
+    assert "daily_stock_analysis 信号归因" not in content
+    assert "TradingAgents" not in content
+    assert "## 数据与风险提示" in content
+
+
+def test_morning_report_is_subway_brief_with_market_holdings_opportunities_and_15_stocks(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    candidate_lines: list[str] = []
+    for index in range(1, 16):
+        candidate_line = (
+            f"{index}. 测试股票{index}（600{index:03d}，测试板块{index % 3}）："
+            f"观察分 {90 - index}/100，最新价 {10 + index:.2f}，"
+            f"日涨跌 {index / 10:.2f}%"
+        )
+        candidate_lines.extend(
+            [
+                candidate_line,
+                f"   - 入选理由：主题强度靠前，资金承接第{index}名",
+                "   - 风险提示：追高风险，低开需放弃",
+                "   - 观察条件：回踩不破且成交额维持",
+            ]
+        )
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-10）\n\n"
+        "## 深度结论\n- 市场震荡，主线集中，今天只做强势方向低吸\n\n"
+        "## 每日大盘情况\n"
+        "- 上涨 2100，下跌 2800，涨停 45，跌停 12\n"
+        "- 成交额缩量，指数震荡但题材局部活跃\n\n"
+        "## 板块情况\n- CXO概念、海洋经济、国防军工相对强\n\n"
+        "## 每日持仓分析\n"
+        "## 持仓明细\n"
+        "- 大业股份（603278）：市值 50160.00，仓位 10.7%，"
+        "盈亏 12015.20（31.50%），趋势 下降趋势，风险 高\n"
+        "- 蓝色光标（300058）：市值 53375.00，仓位 11.3%，"
+        "盈亏 -3302.95（-5.83%），趋势 上升趋势，风险 低\n\n"
+        "## 候选股票池摘要\n## 候选股票\n"
+        + "\n".join(candidate_lines),
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-10T18:30:00+08:00\nreport=ok\n",
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert "## 昨天大盘总结" in content
+    assert "## 我的持仓" in content
+    assert "## 今日市场机会" in content
+    assert "## 投资建议 15只票" in content
+    assert content.index("## 昨天大盘总结") < content.index("## 我的持仓")
+    assert content.index("## 我的持仓") < content.index("## 今日市场机会")
+    assert content.index("## 今日市场机会") < content.index("## 投资建议 15只票")
+    suggestion_lines = _section_lines(content, "## 投资建议 15只票", "## 数据与风险提示")
+    assert len([line for line in suggestion_lines if line[0].isdigit()]) == 15
+    assert "1. 测试股票1" in content
+    assert "15. 测试股票15" in content
+    assert "红黄绿交易清单" not in content
+    assert "分析方法校验" not in content
+    assert "自动任务提醒" not in content
+    assert "今日交易限制" not in content
+    assert all(len(line) <= 220 for line in content.splitlines())

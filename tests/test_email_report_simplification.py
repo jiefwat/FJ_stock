@@ -37,12 +37,12 @@ def test_morning_report_hides_ops_run_card_and_keeps_actionable_sections(tmp_pat
     assert "## 研究运行卡" not in content
     assert "Shadow Account" not in content
     assert "## 使用边界" not in content
-    assert "## 今日仓位建议" in content
-    assert "今天持仓怎么做" in content
+    assert "## 昨天大盘总结" in content
+    assert "## 我的持仓" in content
+    assert "## 今日市场机会" in content
+    assert "## 投资建议 15只票" in content
     assert "测试股票" in content
-    assert "动作：不追高" in content
-    assert "股东拟减持" in content
-    assert "数据提示" in content
+    assert "## 数据与风险提示" in content
 
 
 def test_morning_report_marks_trade_date_and_stale_data(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_morning_report_deduplicates_repeated_opportunities(tmp_path: Path) -> N
         html_dir=html_dir,
         announcement_dir=announcement_dir,
     )
-    opportunity_lines = _lines_between(content, "## 今日机会 10 条", "## 数据状态")
+    opportunity_lines = _lines_between(content, "## 投资建议 15只票", "## 数据与风险提示")
 
     assert sum("迈赫股份" in line for line in opportunity_lines) == 1
     assert sum("泰胜风能" in line for line in opportunity_lines) == 1
@@ -148,6 +148,5 @@ def test_morning_report_frontloads_execution_guard_for_stale_artifacts(tmp_path:
     )
     first_block = "\n".join(content.splitlines()[:18])
 
-    assert "## 先确认能不能执行" in first_block
     assert "先别按今天盘面执行" in first_block
-    assert first_block.index("先确认能不能执行") < content.index("手机决策版")
+    assert first_block.index("先别按今天盘面执行") < content.index("## 我的持仓")
