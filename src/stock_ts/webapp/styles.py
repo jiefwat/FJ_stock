@@ -1360,6 +1360,89 @@ h1 {
 .market-state-pill.hot { border-color:#b8d4c8; background:#e7f4ee; color:#245b47; }
 .market-state-pill.cold { border-color:#efb9b2; background:#fff0ee; color:#973b31; }
 .market-state-pill.balanced { border-color:#ddc7a2; background:#fbf3e5; color:#7b5b26; }
+.market-focus-board {
+  display:grid;
+  grid-template-columns:minmax(260px,1.15fr) repeat(3,minmax(0,.95fr));
+  gap:12px;
+  margin:14px 0 16px;
+}
+.market-focus-main,
+.market-focus-card {
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:16px;
+  background:#fff;
+}
+.market-focus-main {
+  color:#edf5fb;
+  background:linear-gradient(135deg, #102a43, #174565);
+}
+.market-focus-board.hot .market-focus-main {
+  background:linear-gradient(135deg, #123329, #176047);
+}
+.market-focus-board.cold .market-focus-main {
+  background:linear-gradient(135deg, #4a2020, #183049);
+}
+.market-focus-main span,
+.market-focus-card span {
+  display:block;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:900;
+}
+.market-focus-main span,
+.market-focus-main p {
+  color:rgba(237,245,251,.76);
+}
+.market-focus-main strong,
+.market-focus-card strong {
+  display:block;
+  margin-top:9px;
+  font-family:var(--display);
+  font-size:24px;
+  line-height:1.12;
+  letter-spacing:-.04em;
+}
+.market-focus-main strong {
+  color:#fff;
+  font-size:34px;
+}
+.market-focus-main p,
+.market-focus-card p {
+  margin:10px 0 0;
+  color:var(--muted);
+  line-height:1.55;
+  font-size:13px;
+}
+.market-focus-main .market-action-snapshot {
+  margin-top:12px;
+}
+.market-focus-main .score-bar {
+  margin-top:12px;
+  background:rgba(255,255,255,.20);
+}
+.market-focus-main .score-fill {
+  background:#d9b26f;
+}
+.market-focus-facts {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:-4px 0 16px;
+}
+.market-focus-facts span,
+.market-focus-facts a {
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:7px 10px;
+  color:var(--muted);
+  background:rgba(255,255,255,.78);
+  font-size:12px;
+}
+.market-focus-facts a {
+  color:var(--brand);
+  font-weight:900;
+}
 .market-command-grid {
   display:grid;
   grid-template-columns:minmax(0,1.04fr) minmax(340px,.96fr);
@@ -1712,6 +1795,7 @@ h1 {
   .action-desk,
   .command-deck,
   .portfolio-command-console,
+  .market-focus-board,
   .market-command-grid,
   .market-radar-grid,
   .market-radar-grid.wide-left { grid-template-columns: 1fr; }

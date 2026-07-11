@@ -87,6 +87,7 @@ def app_script() -> str:
     const moduleToWorkspace = {MODULE_TO_WORKSPACE!r};
     const workspaceLabels = {labels!r};
     const workspaceModules = {WORKSPACE_MODULES!r};
+    const workspaceKeys = new Set(Object.keys(workspaceLabels));
       const legacyWorkspaces = {{
       'home': 'market',
       'sector': 'opportunity',
@@ -163,11 +164,16 @@ def app_script() -> str:
         return;
       }}
       let moduleKey = normalized.replace(/^module-/, '');
-      moduleKey = legacyWorkspaces[moduleKey] || moduleKey;
+      const legacyTarget = legacyWorkspaces[moduleKey];
+      if (legacyTarget && workspaceKeys.has(legacyTarget)) {{
+        activateWorkspace(legacyTarget);
+        return;
+      }}
+      moduleKey = legacyTarget || moduleKey;
       const workspace = moduleToWorkspace[moduleKey] || 'home';
       activateWorkspace(workspace, false);
       activatePanel(workspace, moduleKey);
-      history.replaceState(null, '', `#module-${{moduleKey}}`);
+      history.replaceState(null, '', workspaceKeys.has(moduleKey) ? `#${{moduleKey}}` : `#module-${{moduleKey}}`);
     }}
 
     function keepTop() {{

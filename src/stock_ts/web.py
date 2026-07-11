@@ -996,6 +996,7 @@ def render_page(
         "portfolio": _render_compact_portfolio_module(
             portfolio,
             market,
+            sectors,
             holdings_path,
             resolved.query,
             provider_name,
@@ -1401,7 +1402,7 @@ def _render_add_holding_form(
 
 
 def _render_portfolio_new_button() -> str:
-    return '<button class="portfolio-inline-button primary" type="button" data-action="add-holding" data-scroll="portfolio-form">添加持仓</button>'
+    return '<a class="portfolio-inline-button primary" href="#portfolio-form" data-action="add-holding" data-scroll="portfolio-form">添加持仓</a>'
 
 
 def _render_portfolio_action_deck(
@@ -1512,7 +1513,7 @@ def _render_portfolio_priority_queue(
     )
     return f"""
       <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>持仓处理队列</h3><p class="section-subtitle">按今天先处理什么排序，不按股票代码排序。</p></div></div>
+        <div class="editor-toolbar"><div><h3>持仓处理队列</h3><p class="section-subtitle">持仓风险处置按今天先处理什么排序，不按股票代码排序。</p></div></div>
         <div class="portfolio-queue-grid">{lane_html}</div>
       </div>"""
 
@@ -1616,13 +1617,10 @@ def _render_open_stock_form(
     provider_name: str,
     holdings_path: str,
 ) -> str:
-    return f"""
-      <form class="inline-form" method="get" action="{workspace_action("module-stock")}" style="display:inline-flex;margin-right:8px">
-        <input type="hidden" name="code" value="{escape(holding_code)}" />
-        <input type="hidden" name="provider" value="{escape(provider_name)}" />
-        <input type="hidden" name="holdings" value="{escape(holdings_path)}" />
-        <button class="ghost-button" type="submit">个股分析</button>
-      </form>"""
+    return (
+        f'<a class="ghost-button" href="{escape(_stock_chart_url(holding_code, provider_name, holdings_path), quote=True)}">'
+        "个股分析</a>"
+    )
 
 
 def _render_clear_edit_link(
@@ -1633,13 +1631,14 @@ def _render_clear_edit_link(
 ) -> str:
     if not edit_code:
         return ""
-    return f"""
-      <form class="inline-form" method="get" action="{workspace_action("workspace-portfolio")}">
-        <input type="hidden" name="code" value="{escape(stock_code)}" />
-        <input type="hidden" name="provider" value="{escape(provider_name)}" />
-        <input type="hidden" name="holdings" value="{escape(holdings_path)}" />
-        <button class="ghost-button" type="submit">结束编辑</button>
-      </form>"""
+    query = urlencode(
+        {
+            "code": stock_code,
+            "provider": provider_name,
+            "holdings": holdings_path,
+        }
+    )
+    return f'<a class="ghost-button" href="/?{query}#portfolio">结束编辑</a>'
 
 
 def _render_portfolio_notice(notice: PortfolioNotice | None) -> str:
@@ -4726,86 +4725,89 @@ def _render_compact_market_module(
     )
     opportunity_count = len(candidates.candidates) if candidates.price_reliable else 0
     risk_tone = _market_risk_tone(market)
-    index_spine = _render_market_index_spine(market)
-    breadth_lamps = _render_market_breadth_lamps(market, portfolio)
     candidate_universe = candidate_universe or []
-    sector_heatmap = _render_market_sector_heatmap(sectors)
     sector_top5 = _render_market_sector_top5_panel(sectors, candidate_universe)
-    risk_items = _render_market_risk_cards(market)
     dimension_rows = "".join(
         f"<tr><td>{escape(item.name)}</td><td>{item.score}</td><td>{escape(item.status)}</td></tr>"
         for item in market.dimensions[:4]
-    )
-    quick_actions = "".join(
-        f'<button class="portfolio-inline-button" type="button" data-jump="{target}">{escape(label)}</button>'
-        for target, label in [
-            ("opportunity", "看热点机会"),
-            ("portfolio", "按闸门校准持仓"),
-            ("stock", "复核单股证据链"),
-        ]
     )
     flow_summary = (
         f"{market.regime} · 热度 {market.heat_score}/100 · "
         f"上涨/下跌/平盘 {breadth_card}"
     )
+    top_sector_name = top_sector.name if top_sector is not None else "暂无清晰主线"
+    top_sector_note = (
+        f"热度 {top_sector.heat_score}/100，{top_sector.rotation_status}，{top_sector.fund_status}"
+        if top_sector is not None
+        else "先等板块和成交额给出方向"
+    )
+    main_risk = market.risks[0] if market.risks else "未触发硬风险，仍按仓位纪律执行"
+    validation = market.tomorrow_watch[0] if market.tomorrow_watch else "成交额放大，主线前排不破分时均线。"
+    invalidation = market.risks[0] if market.risks else "数据过期、跌停扩散或主线资金转弱时，机会降级为只观察。"
+    event_text = market.tomorrow_watch[1] if len(market.tomorrow_watch) > 1 else "无重大事件时仍按交易日和公告窗口复核。"
+    mover_text = market.opportunities[0] if market.opportunities else "异动清单等待候选池和板块热力补充。"
+    index_spine = _render_market_index_spine(market)
+    breadth_lamps = _render_market_breadth_lamps(market, portfolio)
     return f"""
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
         <div>
           <h2 class="module-title">每日大盘</h2>
-          <p class="module-desc">市场摘要、风险项、指数表现和市场宽度先给出能否继续分析的判断。</p>
+          <p class="module-desc">只回答四件事：今天能不能做、仓位怎么放、主线在哪里、风险是什么。</p>
         </div>
         <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
       </div>
       {_render_research_data_flow_panel("每日大盘", "指数 K 线、涨跌家数、涨跌停情绪、成交额、资金与板块主线", "市场环境 -> 仓位闸门 -> 持仓/机会/个股复核")}
-      {_render_market_barometer_strip(market, market_action, market_reason)}
-      <div class="market-command-grid">
-        <div class="market-gate-card {risk_tone}">
-          <div class="market-gate-copy">
-            <span class="market-kicker">今日先看这盏灯</span>
-            <h3>{escape(market_action)}</h3>
-            <p>{escape(market_reason)}</p>
-            <div class="market-action-snapshot"><span>仓位动作</span><strong>{escape(market_action)}</strong></div>
-          </div>
-          <div class="market-heat-dial" style="--heat:{market.heat_score}%" aria-label="市场热度 {market.heat_score}/100">
-            <span>{market.heat_score}</span>
-            <small>heat</small>
-          </div>
-          <div class="market-score-wrap"><div class="score-bar"><div class="score-fill" style="width:{market.heat_score}%"></div></div></div>
-          <div class="market-gate-footer">
-            <span>{escape(market.trade_date)}</span>
-            <strong>{escape(flow_summary)}</strong>
-          </div>
+      <div class="market-focus-board {risk_tone}">
+        <div class="market-focus-main">
+          <span>市场摘要</span>
+          <strong>{escape(market_action)}</strong>
+          <p>{escape(market_reason)}</p>
+          <div class="market-action-snapshot"><span>仓位动作</span><strong>{escape(market_action)}</strong></div>
+          <div class="score-bar"><div class="score-fill" style="width:{market.heat_score}%"></div></div>
         </div>
-        <div class="market-tape-card">
-          <div class="market-tape-head"><span>指数表现</span><strong>先看风格共振，不只看一根指数</strong></div>
-          <div class="market-index-spine">{index_spine}</div>
+        <div class="market-focus-card">
+          <span>仓位闸门</span>
+          <strong>{escape(_market_target_cash(market))}</strong>
+          <p>{escape(flow_summary)}</p>
+        </div>
+        <div class="market-focus-card">
+          <span>最强方向</span>
+          <strong>{escape(top_sector_name)}</strong>
+          <p>{escape(top_sector_note)}</p>
+        </div>
+        <div class="market-focus-card">
+          <span>风险项</span>
+          <strong>{escape(_short_condition(main_risk, 28))}</strong>
+          <p>跌停 {market.limit_down_count}；持仓健康度 {portfolio.health_score}/100。</p>
         </div>
       </div>
-      <div class="market-radar-grid">
-        <div class="panel market-panel">
-          <h3>市场宽度</h3>
-          <p class="section-subtitle">指数上涨但下跌家数更多时，仓位闸门不能直接放开。</p>
-          <div class="market-lamp-grid">{breadth_lamps}</div>
-        </div>
-        <div class="panel market-panel">
-          <h3>风险项</h3>
-          <p class="section-subtitle">把跌停、资金、热度和持仓健康度提前放在大盘页，不等个股页才发现风险。</p>
-          <div class="market-risk-stack">{risk_items}</div>
-        </div>
+      <div class="market-focus-facts">
+        <span>市场总闸门：{escape(market_action)}</span>
+        <span>市场状态：{escape(_market_display_status(market, market_action))}</span>
+        <span>风险暴露：目标现金 {escape(_market_target_cash(market))}</span>
+        <span>主线：{escape(top_sector_name)}</span>
+        <a href="#portfolio" data-jump="portfolio">下一步：看我的持仓</a>
+        <a href="#opportunity" data-jump="opportunity">看热点机会，只观察触发条件</a>
+        <span>交易日：{escape(market.trade_date)}</span>
+        <span>数据源：顶部 Provider 和底部数据中台</span>
+        <span>验证条件：{escape(_short_condition(validation, 42))}</span>
+        <span>失效条件：{escape(_short_condition(invalidation, 42))}</span>
+        <span>异动清单：{escape(_short_condition(mover_text, 42))}</span>
+        <span>事件日历：{escape(_short_condition(event_text, 42))}</span>
       </div>
       {_render_market_sentiment_panel(news, candidate_universe=candidate_universe)}
-      <div class="market-radar-grid wide-left">
-        <div class="panel market-panel market-sector-panel" style="grid-column:1 / -1">
-          <div class="editor-toolbar"><div><h3>板块方向</h3><p class="section-subtitle">行业 / 概念主线只作为机会入口；大盘页不直接给买入结论。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
-          <div class="market-sector-heatmap">{sector_heatmap}</div>
+      <div class="panel market-panel market-sector-panel" style="margin-top:16px">
+          <div class="editor-toolbar"><div><h3>板块方向</h3><p class="section-subtitle">每个方向只看前排代表股和结论；不展示无关装饰。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
           {sector_top5}
-          <div class="portfolio-action-bar market-action-bar">{quick_actions}</div>
-        </div>
       </div>
       <details class="detail-shell compact-detail">
-        <summary>市场异动与数据质量</summary>
+        <summary>展开指数、宽度和评分明细</summary>
         <div class="detail-body">
+          <h3>指数表现</h3>
+          <div class="market-index-spine">{index_spine}</div>
+          <h3 style="margin-top:14px">市场宽度</h3>
+          <div class="market-lamp-grid" style="margin-top:12px">{breadth_lamps}</div>
           <table class="data-table"><thead><tr><th>维度</th><th>评分</th><th>状态</th></tr></thead><tbody>{dimension_rows}</tbody></table>
         </div>
       </details>
@@ -5428,6 +5430,7 @@ def _candidate_universe_prices_reliable(universe: list[CandidateStockRawData]) -
 def _render_compact_portfolio_module(
     portfolio: PortfolioAnalysisReport,
     market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
     holdings_path: str,
     stock_code: str,
     provider_name: str,
@@ -5462,6 +5465,14 @@ def _render_compact_portfolio_module(
             "<p>点击添加持仓，录入股票代码、成本价和持仓数后，系统会自动计算当日盈亏、累计盈亏和组合风险。</p>"
             "</div></td></tr>"
         )
+    stock_analysis = _render_portfolio_stock_analysis_panel(
+        portfolio,
+        advice_by_code,
+        market,
+        sectors,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+    )
     notice_html = _render_portfolio_notice(notice)
     action_bar = (
         '<div class="portfolio-action-bar"><span class="portfolio-chip">线上安全模式：持仓数据只展示，不改服务器文件</span></div>'
@@ -5485,9 +5496,8 @@ def _render_compact_portfolio_module(
     )
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">以组合经理视角处理：先风险处置，再利润保护，最后才考虑加仓。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
-      {_render_portfolio_command_panel(portfolio, market, advice, holdings_path, public_readonly)}
-      {_render_research_data_flow_panel("我的持仓", "持仓成本、实时/收盘价、行业暴露、个股趋势和大盘风险", "持仓风险处置 -> 目标仓位 -> 下一步动作")}
+      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只分析你持有的股票：当前动作、主题概念、市场情绪、成本位置和下一步触发。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
+      {_render_research_data_flow_panel("我的持仓", "持仓成本、实时/收盘价、行业暴露、个股趋势和大盘风险", "持仓分析 -> 主题情绪 -> 下一步动作")}
       {notice_html}
       <div class="portfolio-kpis">
         {_kpi("总成本", f"{portfolio.total_cost:.2f}", "")}
@@ -5496,21 +5506,136 @@ def _render_compact_portfolio_module(
         {_kpi("累计盈亏", f"{portfolio.total_pnl:.2f}", f"{portfolio.total_pnl_ratio:.2f}%")}
         {_kpi("第一大仓位", f"{portfolio.top_position_weight:.1%}", "")}
       </div>
-      {_render_portfolio_risk_budget_panel(portfolio, advice, holdings_path, public_readonly)}
-      {_render_portfolio_priority_queue(portfolio, advice_by_code)}
-      {_render_portfolio_four_lane_board(portfolio, advice)}
-      {_render_portfolio_execution_boundaries(advice)}
-      {_render_portfolio_position_overview(advice)}
-      {_render_portfolio_exposure_map(portfolio)}
-      {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
-      <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页只看顶部数据摘要；完整行情日期、资金面、公告和基本面状态统一到底部数据中台核对。缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
-      <div class="panel" style="margin-top:16px">
+      {stock_analysis}
+      <details class="detail-shell compact-detail">
+        <summary>展开组合风险预算、处理队列和行业暴露</summary>
+        <div class="detail-body">
+          {_render_portfolio_command_panel(portfolio, market, advice, holdings_path, public_readonly)}
+          {_render_portfolio_risk_budget_panel(portfolio, advice, holdings_path, public_readonly)}
+          {_render_portfolio_priority_queue(portfolio, advice_by_code)}
+          {_render_portfolio_four_lane_board(
+              portfolio, advice, provider_name=provider_name, holdings_path=holdings_path
+          )}
+          {_render_portfolio_execution_boundaries(advice)}
+          {_render_portfolio_position_overview(advice)}
+          {_render_portfolio_exposure_map(portfolio)}
+          {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
+          <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页只看顶部数据摘要；完整行情日期、资金面、公告和基本面状态统一到底部数据中台核对。缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
+        </div>
+      </details>
+      <details class="detail-shell compact-detail">
+        <summary>持仓明细和维护</summary>
+        <div class="detail-body">
         <div class="editor-toolbar"><div><h3>持仓明细</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
         {action_bar}
         <table class="data-table portfolio-table"><thead><tr><th>股票</th><th>数量</th><th>成本</th><th>现价</th><th>当日盈亏</th><th>总盈亏</th><th>仓位</th><th>趋势</th><th>建议</th><th>操作</th></tr></thead><tbody>{positions}</tbody></table>
-      </div>
+        </div>
+      </details>
       {edit_panel}
     </section>"""
+
+
+def _render_portfolio_stock_analysis_panel(
+    portfolio: PortfolioAnalysisReport,
+    advice_by_code: dict[str, PositionAdvice],
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    if not portfolio.positions:
+        rows = """
+        <tr><td colspan="6"><div class="empty-state"><strong>还没有持仓</strong><p>先录入股票，再生成主题、情绪和成本位置分析。</p></div></td></tr>
+        """
+    else:
+        rows = "".join(
+            _render_portfolio_stock_analysis_row(
+                position,
+                advice_by_code.get(position.holding.code),
+                market,
+                sectors,
+                provider_name=provider_name,
+                holdings_path=holdings_path,
+            )
+            for position in sorted(
+                portfolio.positions,
+                key=lambda item: (item.risk_level != "高", item.pnl_ratio >= 0, -item.weight),
+            )
+        )
+    return f"""
+      <div class="panel portfolio-stock-analysis" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>我的股票分析</h3><p class="section-subtitle">重点看你真实持有的股票；主题、概念和市场情绪只作为持仓复核，不扩散成无关信息。</p></div>
+          <span class="portfolio-chip">市场情绪 {escape(market.regime)} · 热度 {market.heat_score}/100</span>
+        </div>
+        <table class="data-table portfolio-analysis-table">
+          <thead><tr><th>股票</th><th>主题 / 概念</th><th>市场情绪</th><th>持仓状态</th><th>分析结论</th><th>操作</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _render_portfolio_stock_analysis_row(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    sector_name = localize_sector_name(position.holding.sector or "未识别主题")
+    sector_state = _holding_sector_state(position.holding.sector, sectors)
+    mood = _holding_market_mood(position, market, sector_state)
+    action = advice.action if advice else "观察"
+    next_check = advice.next_check if advice else "等待趋势、资金和公告补齐后再处理。"
+    reason = advice.reason if advice else "先按成本位置和趋势复核，不做临时加仓。"
+    conclusion = (
+        f"{action}：{reason} "
+        f"下一步看 {next_check}"
+    )
+    holding_state = (
+        f"{_stock_cost_position_text(position)}；仓位 {position.weight:.1%}；"
+        f"{position.trend}/{position.risk_level}"
+    )
+    actions = _render_open_stock_form(position.holding.code, provider_name, holdings_path)
+    return (
+        "<tr>"
+        f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong><span>{escape(position.holding.code)}</span></td>"
+        f"<td><strong>{escape(sector_name)}</strong><span>{escape(sector_state)}</span></td>"
+        f"<td>{escape(mood)}</td>"
+        f"<td>{escape(holding_state)}</td>"
+        f"<td>{escape(_short_condition(conclusion, 96))}</td>"
+        f"<td class='action-cell'>{actions}</td>"
+        "</tr>"
+    )
+
+
+def _holding_sector_state(sector: str, sectors: SectorAnalysisReport) -> str:
+    normalized = localize_sector_name(sector or "")
+    if not normalized:
+        return "主题未补充，先按个股独立分析"
+    for item in sectors.sectors:
+        item_name = localize_sector_name(item.name)
+        if item_name == normalized or normalized in item_name or item_name in normalized:
+            return f"{item.rotation_status}；热度 {item.heat_score}/100；{item.fund_status}"
+    mainline = "、".join(sectors.market_mainline[:3]) if sectors.market_mainline else "主线未明确"
+    return f"未进入前排主线；当前主线：{mainline}"
+
+
+def _holding_market_mood(
+    position: PositionAnalysis,
+    market: MarketSnapshot,
+    sector_state: str,
+) -> str:
+    if market.heat_score < 45 or market.limit_down_count >= 20:
+        return "市场偏防守，亏损/弱势股不补仓"
+    if "热度" in sector_state and position.trend == "上升趋势":
+        return "情绪支持，但只按触发线加减仓"
+    if position.risk_level == "高":
+        return "个股风险优先级高于市场情绪"
+    return "市场中性，按个股证据和成本位置处理"
 
 
 def _render_portfolio_command_panel(
@@ -5654,6 +5779,9 @@ def _render_portfolio_risk_budget_panel(
 def _render_portfolio_four_lane_board(
     portfolio: PortfolioAnalysisReport,
     advice: PortfolioAdvice,
+    *,
+    provider_name: str,
+    holdings_path: str,
 ) -> str:
     advice_by_code = {item.code: item for item in advice.position_advices}
     lanes = [
@@ -5663,7 +5791,14 @@ def _render_portfolio_four_lane_board(
         ("待补数据", "补数据"),
     ]
     lane_html = "".join(
-        _portfolio_lane(label, action, portfolio, advice_by_code)
+        _portfolio_lane(
+            label,
+            action,
+            portfolio,
+            advice_by_code,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+        )
         for label, action in lanes
     )
     return f"""
@@ -5710,6 +5845,9 @@ def _portfolio_lane(
     action: str,
     portfolio: PortfolioAnalysisReport,
     advice_by_code: dict[str, PositionAdvice],
+    *,
+    provider_name: str,
+    holdings_path: str,
 ) -> str:
     cards = []
     if action == "补数据":
@@ -5728,9 +5866,10 @@ def _portfolio_lane(
     for position in positions[:3]:
         advice = advice_by_code.get(position.holding.code)
         note = advice.next_check if advice else "补齐行情日期和报价后再复核。"
+        stock_url = _stock_chart_url(position.holding.code, provider_name, holdings_path)
         cards.append(
             f"""
-            <a class="portfolio-lane-card" href="#stock" data-jump="stock">
+            <a class="portfolio-lane-card" href="{escape(stock_url, quote=True)}">
               <strong>{escape(position.holding.name)}</strong>
               <span>{escape(position.holding.code)} · 成本位置 {escape(_stock_cost_position_text(position))}</span>
               <p>{escape(_short_condition(note, 52))}</p>
