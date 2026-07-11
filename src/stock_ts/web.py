@@ -4294,14 +4294,15 @@ def _render_opportunity_recommendation_candidate_row(
     pool_price_reliable: bool,
     quality: DataQualityView | None = None,
 ) -> str:
-    reason = "；".join(item.reasons[:3]) if item.reasons else "等待补充技术、资金或消息证据"
+    reason = _opportunity_candidate_cause(item)
+    reason = f"个股原因：{reason}"
     stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
     if stale:
-        reason = f"{reason}；数据质量：已滞后，不能排到前列"
+        reason = f"{reason}；风险原因：数据质量：已滞后，不能排到前列"
     elif not (pool_price_reliable and item.price_reliable):
-        reason = f"{reason}；待补数据"
+        reason = f"{reason}；风险原因：待补数据"
     else:
-        reason = f"{reason}；价格可靠"
+        reason = f"{reason}；入选原因：价格可靠"
     query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
     stock_link = f'<a href="/?{query}#stock">{escape(item.name)}<span>{escape(item.code)}</span></a>'
     return (
@@ -4313,18 +4314,35 @@ def _render_opportunity_recommendation_candidate_row(
     )
 
 
+def _opportunity_candidate_cause(item: CandidateStockAnalysis) -> str:
+    causes: list[str] = []
+    raw_reasons = item.reasons[:4]
+    if any("强度" in reason for reason in raw_reasons):
+        causes.append("所属板块强度靠前，具备主线筛选价值")
+    if any("短期均线" in reason for reason in raw_reasons):
+        causes.append("价格站上短期均线，趋势结构未破")
+    if any("市场主线" in reason for reason in raw_reasons):
+        causes.append("与当前主线同向，优先进入复核名单")
+    if any("资金净流入" in reason for reason in raw_reasons):
+        causes.append("资金流入提供承接线索")
+    if any("量能放大" in reason for reason in raw_reasons):
+        causes.append("量能放大，说明有新增资金关注")
+    if not causes:
+        causes = raw_reasons or ["等待补充技术、资金或消息证据"]
+    return "；".join(causes[:3])
+
+
 def _render_opportunity_recommendation_sector_row(
     item,
     candidate_universe: list[CandidateStockRawData],
 ) -> str:
     risk = _sector_risk_text(item)
     reason_parts = [
-        _sector_strength_reason(item),
-        f"扩散 {item.advancing_ratio:.0%}",
-        item.continuity,
+        f"板块原因：{_opportunity_sector_cause(item)}",
+        f"入选原因：{_opportunity_sector_entry_reason(item)}",
     ]
     if risk:
-        reason_parts.append(risk)
+        reason_parts.append(f"风险原因：{risk}")
     return (
         "<tr>"
         f"<td>{escape(localize_sector_name(item.name))}</td>"
@@ -4332,6 +4350,33 @@ def _render_opportunity_recommendation_sector_row(
         f"<td>{escape('；'.join(part for part in reason_parts if part))}</td>"
         "</tr>"
     )
+
+
+def _opportunity_sector_cause(item) -> str:
+    if item.advancing_ratio >= 0.65 and item.limit_up_count >= 2:
+        return "板块内上涨扩散充分，并有涨停前排带动"
+    if item.advancing_ratio >= 0.65:
+        return "多数成份同步上涨，说明不是单只股票孤立拉升"
+    if item.limit_up_count >= 2:
+        return "涨停前排提供热度，但还需要扩散确认"
+    if item.fund_status == "资金活跃" or item.amount_change > 0:
+        return "成交或资金改善带来轮动机会"
+    return "相对强度靠前，但原因仍需结合龙头承接复核"
+
+
+def _opportunity_sector_entry_reason(item) -> str:
+    parts: list[str] = []
+    if item.rotation_status == "市场主线":
+        parts.append("处在市场主线")
+    elif item.rotation_status == "轮动增强":
+        parts.append("轮动强度提升")
+    if item.continuity in {"持续性强", "持续性观察"}:
+        parts.append(item.continuity)
+    if item.fund_status == "资金活跃":
+        parts.append("资金流入配合")
+    elif item.amount_change > 0:
+        parts.append("成交额改善")
+    return "；".join(parts) if parts else "仅作观察，等待资金和扩散继续确认"
 
 
 def _render_opportunity_candidate_cards(
@@ -6598,12 +6643,12 @@ def _render_portfolio_multidimensional_analysis(
     reason = _clean_position_reason(advice.reason, action) if advice else "等待更多数据确认"
     next_check = advice.next_check if advice else "复核趋势、公告和资金变化。"
     lines = [
-        ("技术面", _portfolio_trend_dimension(position)),
-        ("资金面", _portfolio_fund_dimension(position, market)),
-        ("基本面", _portfolio_fundamental_dimension(position)),
-        ("消息面", _portfolio_news_dimension(position, market)),
-        ("板块情绪", f"{sector_name}；{sector_state}；组合占比 {position.weight:.1%}"),
-        ("仓位成本", _portfolio_holding_dimension(position, advice)),
+        ("技术面原因", _portfolio_trend_dimension(position)),
+        ("资金面原因", _portfolio_fund_dimension(position, market)),
+        ("基本面原因", _portfolio_fundamental_dimension(position)),
+        ("消息面原因", _portfolio_news_dimension(position, market)),
+        ("板块情绪原因", _portfolio_sector_dimension(sector_name, sector_state, position)),
+        ("仓位原因", _portfolio_holding_dimension(position, advice)),
         ("结论", f"{action}：{reason}；后续看 {next_check}"),
     ]
     return (
@@ -6700,7 +6745,11 @@ def _render_portfolio_stock_analysis_row(
 
 
 def _portfolio_trend_dimension(position: PositionAnalysis) -> str:
-    return f"{position.trend}；日内 {position.daily_pnl_ratio:.2f}%；风险 {position.risk_level}"
+    if position.trend == "上升趋势" and position.risk_level == "低":
+        return f"趋势向上且风险低，日内 {position.daily_pnl_ratio:.2f}% 用于确认承接"
+    if position.trend == "下降趋势":
+        return f"趋势向下，日内 {position.daily_pnl_ratio:.2f}% 不能单独改变防守判断"
+    return f"{position.trend}，风险 {position.risk_level}，需要用量价延续确认"
 
 
 def _portfolio_fund_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
@@ -6713,22 +6762,34 @@ def _portfolio_fund_dimension(position: PositionAnalysis, market: MarketSnapshot
         market_liquidity = "市场成交一般"
     else:
         market_liquidity = "成交额待补"
-    return f"{market_liquidity}；个股资金看个股页明细"
+    if total_amount > 0:
+        return f"{market_liquidity}，持仓动作仍要等个股资金明细确认"
+    return f"{market_liquidity}，当前不能把资金面作为动作理由"
 
 
 def _portfolio_fundamental_dimension(position: PositionAnalysis) -> str:
     sector = localize_sector_name(position.holding.sector or "")
     if sector:
-        return f"{sector} 基本面与估值在个股页复核"
+        return f"{sector} 决定估值和盈利弹性口径，财务质量在个股页复核"
     return "未标注板块，基本面口径待补"
 
 
 def _portfolio_news_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
     if market.heat_score >= 70 and position.risk_level != "高":
-        return "市场情绪偏强，公告风险仍以个股页为准"
+        return "市场情绪偏强，但公告未确认前不把消息面作为加仓理由"
     if market.heat_score < 45 or position.risk_level == "高":
-        return "情绪偏弱或个股风险高，公告风险优先复核"
+        return "情绪偏弱或个股风险高，先排查公告和事件风险"
     return "情绪中性，消息公告不单独构成动作理由"
+
+
+def _portfolio_sector_dimension(
+    sector_name: str,
+    sector_state: str,
+    position: PositionAnalysis,
+) -> str:
+    if "市场主线" in sector_state or "热度" in sector_state:
+        return f"{sector_name}有板块支撑，组合占比 {position.weight:.1%} 决定是否需要控制集中度"
+    return f"{sector_name}未进入前排主线，组合占比 {position.weight:.1%}，动作主要看个股自身承接"
 
 
 def _portfolio_holding_dimension(
@@ -6737,8 +6798,8 @@ def _portfolio_holding_dimension(
 ) -> str:
     action = advice.action if advice else "观察"
     return (
-        f"{_stock_cost_position_text(position)}；仓位 {position.weight:.1%}；"
-        f"成本 {position.holding.cost_price:.2f} / 现价 {position.latest_price:.2f}；{action}"
+        f"{_stock_cost_position_text(position)}，仓位 {position.weight:.1%} 决定处理优先级；"
+        f"成本 {position.holding.cost_price:.2f} / 现价 {position.latest_price:.2f}，当前动作为{action}"
     )
 
 
@@ -7392,7 +7453,7 @@ def _render_stock_simple_analysis_content(
         </div>
         {warning_html}
         <table class="data-table">
-          <thead><tr><th>维度</th><th>结论</th><th>依据</th></tr></thead>
+          <thead><tr><th>维度</th><th>原因分析</th><th>影响/验证</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
         <table class="data-table" style="margin-top:12px">
@@ -7429,32 +7490,149 @@ def _stock_simple_analysis_rows(
     announcement_count = len(announcement_report.items) if announcement_report else 0
     rows = [
         (
-            "趋势/量价",
-            f"{stock.trend}，近一日 {_stock_recent_pct(stock_raw):.2f}%",
-            f"{technical.structure}；{_stock_volume_side_fund_text(stock_raw) or '量价待补'}",
+            "趋势/量价原因",
+            _stock_trend_cause(stock, stock_raw, technical),
+            _stock_trend_validation(technical, invalid),
         ),
-        ("资金/成交", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
-        ("基本面/估值", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
         (
-            "消息/公告",
-            _stock_news_text(event_radar, announcement_count, len(stock_raw.news_items)),
-            _stock_simple_news_evidence(stock_raw, event_radar, announcement_report),
+            "资金/成交原因",
+            _stock_fund_cause(stock_raw),
+            _stock_fund_validation(stock_raw),
         ),
-        ("板块/主题", _stock_sector_strength_text(stock, sectors), _stock_sector_strength_note(stock, sectors)),
         (
-            "持仓/成本",
-            _stock_holding_state(position) if position else "未持仓",
-            _stock_cost_position_note(position, trade_plan, invalid),
+            "基本面/估值原因",
+            _stock_fundamental_cause(stock_raw),
+            _stock_fundamental_validation(stock_raw),
+        ),
+        (
+            "消息/公告原因",
+            _stock_event_cause(stock_raw, event_radar, announcement_count),
+            _stock_event_validation(stock_raw, event_radar, announcement_report),
+        ),
+        (
+            "板块/主题原因",
+            _stock_theme_cause(stock, sectors),
+            _stock_theme_validation(stock, sectors),
+        ),
+        (
+            "持仓/成本原因",
+            _stock_holding_cost_cause(position, trade_plan),
+            _stock_holding_cost_validation(position, trade_plan, invalid),
         ),
     ]
     return "".join(
         "<tr>"
         f"<td>{escape(label)}</td>"
-        f"<td>{escape(_short_condition(verdict, 72))}</td>"
+        f"<td>{escape(_short_condition(verdict, 96))}</td>"
         f"<td>{escape(evidence)}</td>"
         "</tr>"
         for label, verdict, evidence in rows
     )
+
+
+def _stock_trend_cause(
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    technical: TechnicalProfile,
+) -> str:
+    if not stock_raw.bars:
+        return "技术原因：K线缺失，趋势判断降级为观察"
+    recent_pct = _stock_recent_pct(stock_raw)
+    volume_text = _stock_volume_side_fund_text(stock_raw) or "量价承接待补"
+    return (
+        f"技术原因：{stock.trend}来自{technical.structure}，近一日 {recent_pct:.2f}% "
+        f"用于确认短线承接；{volume_text}"
+    )
+
+
+def _stock_trend_validation(
+    technical: TechnicalProfile,
+    invalid: str,
+) -> str:
+    return (
+        f"影响/验证：站稳 {technical.support:.2f} 才保留趋势判断，"
+        f"放量突破 {technical.resistance:.2f} 才提高进攻优先级；失效看 {invalid}"
+    )
+
+
+def _stock_fund_cause(stock_raw: StockRawData) -> str:
+    fund_text = _stock_fund_flow_text(stock_raw)
+    if "未接入" in fund_text or "不明确" in fund_text:
+        return f"资金原因：{fund_text}，资金面不能单独作为交易理由"
+    return f"资金原因：{fund_text}，说明当前承接或分歧方向，但仍需价格确认"
+
+
+def _stock_fund_validation(stock_raw: StockRawData) -> str:
+    note = _stock_fund_flow_note(stock_raw)
+    return f"影响/验证：继续看成交额、换手率和价格方向是否同向；{note}"
+
+
+def _stock_fundamental_cause(stock_raw: StockRawData) -> str:
+    valuation = _stock_valuation_text(stock_raw)
+    if valuation == "估值未接入":
+        return "估值原因：财务和估值缺失，基本面不能支持加仓或抄底"
+    return f"估值原因：{valuation} 决定安全边际和盈利弹性，不能只看短线涨跌"
+
+
+def _stock_fundamental_validation(stock_raw: StockRawData) -> str:
+    return f"影响/验证：用估值分位、营收利润和现金流复核是否支撑当前价格；{_stock_valuation_note(stock_raw)}"
+
+
+def _stock_event_cause(
+    stock_raw: StockRawData,
+    event_radar: EventRadar,
+    announcement_count: int,
+) -> str:
+    news_count = len(stock_raw.news_items)
+    if announcement_count == 0 and news_count == 0:
+        return "事件原因：公告和新闻未补齐，消息面不能作为交易理由"
+    event_text = _stock_news_text(event_radar, announcement_count, news_count)
+    return f"事件原因：{event_text} 影响风险闸门和催化确认，需先判断利好还是风险"
+
+
+def _stock_event_validation(
+    stock_raw: StockRawData,
+    event_radar: EventRadar,
+    announcement_report: AnnouncementReport | None,
+) -> str:
+    evidence = _stock_simple_news_evidence(stock_raw, event_radar, announcement_report)
+    return f"影响/验证：先读标题和原文，再看事件是否改变业绩、订单、监管或减持风险；{evidence}"
+
+
+def _stock_theme_cause(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
+    sector_text = _stock_sector_strength_text(stock, sectors)
+    if "主线未确认" in sector_text:
+        return "板块原因：主线未确认，个股只能按自身量价和基本面复核"
+    if "在主线内" in sector_text:
+        return f"板块原因：{sector_text}，上涨更可能获得主题扩散和资金关注"
+    return f"板块原因：{sector_text}，未在前排主线时不提高追涨优先级"
+
+
+def _stock_theme_validation(stock: DeepStockReport, sectors: SectorAnalysisReport) -> str:
+    note = _stock_sector_strength_note(stock, sectors)
+    return f"影响/验证：板块继续扩散且前排不断板，个股信号才更可靠；{note}"
+
+
+def _stock_holding_cost_cause(
+    position: PositionAnalysis | None,
+    trade_plan: TradePlan,
+) -> str:
+    if position is None:
+        return "成本原因：当前账号未持仓，不能用成本线做买卖理由"
+    state = _stock_holding_state(position)
+    cost_text = _stock_cost_position_text(position)
+    return (
+        f"成本原因：{state}来自{cost_text}和仓位 {position.weight:.1%}，"
+        f"处理顺序必须受止损线约束；{_short_condition(trade_plan.verdict, 24)}"
+    )
+
+
+def _stock_holding_cost_validation(
+    position: PositionAnalysis | None,
+    trade_plan: TradePlan,
+    invalid: str,
+) -> str:
+    return f"影响/验证：{_stock_cost_position_note(position, trade_plan, invalid)}"
 
 
 def _stock_simple_news_evidence(

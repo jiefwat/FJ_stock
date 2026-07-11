@@ -392,6 +392,22 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
     ]:
         assert noisy_text not in opportunity_html
 
+
+def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in ["推荐原因", "板块原因", "入选原因", "个股原因", "风险原因"]:
+        assert text in opportunity_html
+
+    for shallow_text in [
+        "涨跌 3.80%；扩散",
+        "成交变化 22.5亿",
+        "扩散 78%；持续性强",
+        "强度 100/100",
+    ]:
+        assert shallow_text not in opportunity_html
+
+
 def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     html = _sample_html()
     opportunity_html = _workspace(html, "opportunity")
@@ -506,6 +522,37 @@ def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
         assert text in stock_html
 
 
+def test_stock_module_explains_causes_not_only_indicator_states() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "原因分析",
+        "影响/验证",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "基本面/估值原因",
+        "消息/公告原因",
+        "板块/主题原因",
+        "持仓/成本原因",
+        "技术原因",
+        "资金原因",
+        "估值原因",
+        "事件原因",
+        "板块原因",
+        "成本原因",
+    ]:
+        assert text in stock_html
+
+    for shallow_text in [
+        "趋势/量价</td><td>上升趋势",
+        "资金/成交</td><td>主力净流入",
+        "基本面/估值</td><td>PE(TTM)",
+        "消息/公告</td><td>公告待补充",
+        "板块/主题</td><td>主线：",
+    ]:
+        assert shallow_text not in stock_html
+
+
 def test_stock_module_requires_kline_fund_news_and_fundamental_blocks() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
@@ -614,18 +661,39 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
         assert text in portfolio_html
 
     for text in [
-        "技术面",
-        "资金面",
-        "基本面",
-        "消息面",
-        "板块情绪",
-        "仓位成本",
+        "技术面原因",
+        "资金面原因",
+        "基本面原因",
+        "消息面原因",
+        "板块情绪原因",
+        "仓位原因",
         "结论",
     ]:
         assert text in portfolio_html
 
     for old_section in ["对应板块分析", "仓位/成本分析"]:
         assert old_section not in portfolio_html
+
+
+def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "技术面原因",
+        "资金面原因",
+        "基本面原因",
+        "消息面原因",
+        "板块情绪原因",
+        "仓位原因",
+    ]:
+        assert text in portfolio_html
+
+    for shallow_text in [
+        "技术面</strong>上升趋势；日内",
+        "资金面</strong>市场成交一般",
+        "仓位成本</strong>亏损",
+    ]:
+        assert shallow_text not in portfolio_html
 
 
 def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:
