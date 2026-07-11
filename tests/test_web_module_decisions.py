@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from stock_ts.models import DailyBar, SectorRawData, StockRawData
+from stock_ts.models import DailyBar, NewsItem, SectorRawData, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 from stock_ts.web import render_page
@@ -667,6 +667,79 @@ def test_data_center_surfaces_full_chain_validation_artifact(
     assert "market:ok" in data_center_html
     assert "portfolio:failed" in data_center_html
     assert "数据中台预警：全链路校验影响分析" in html
+
+
+def test_data_center_does_not_warn_for_complete_hk_yahoo_and_hkex_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(tmp_path))
+    (tmp_path / "data_chain_status.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "generated_at": "2026-07-11T12:37:57",
+                "blockers": [],
+                "warnings": [],
+                "modules": {"stock": {"status": "ok"}, "portfolio": {"status": "ok"}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class CompleteHkProvider(SampleDataProvider):
+        def fetch_stock(self, code: str) -> StockRawData:
+            return StockRawData(
+                code="06088",
+                name="FIT HON TENG",
+                bars=[
+                    DailyBar(
+                        date="2026-07-10",
+                        open=6.47,
+                        high=6.70,
+                        low=6.02,
+                        close=6.07,
+                        volume=35326209,
+                    )
+                ],
+                fund_flow_detail={
+                    "source": "derived.kline_turnover",
+                    "date": "2026-07-10",
+                    "amount_yuan": 214430094.69,
+                },
+                news_items=[
+                    NewsItem(
+                        date="2026-07-10T08:00:00+00:00",
+                        source="Yahoo Finance",
+                        title="FIT HON TENG AI server demand grows",
+                        summary="AI data center connectivity demand remains active.",
+                    )
+                ],
+                announcements=[
+                    {
+                        "date": "2026-07-07",
+                        "source": "hkexnews",
+                        "title": "Monthly Return of Equity Issuer",
+                    }
+                ],
+                fundamental_metrics={
+                    "source": "yahoo.timeseries",
+                    "date": "2025-12-31",
+                    "operating_revenue": 5002827000.0,
+                    "net_profit": 156060000.0,
+                },
+                data_sources=["yahoo", "hkexnews.announcement"],
+            )
+
+    html = _sample_html(
+        stock_code="06088", provider=CompleteHkProvider(), provider_name="tdx-snapshot"
+    )
+    data_center_html = _workspace(html, "data-center")
+
+    assert "数据中台预警：公告" not in data_center_html
+    assert "数据中台预警：基本面" not in data_center_html
+    assert "公告已滞后" not in data_center_html
+    assert "基本面缺字段" not in data_center_html
 
 
 def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:

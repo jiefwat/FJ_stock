@@ -2767,6 +2767,7 @@ def _build_data_center_view(
             expected=expected,
             critical=False,
             sample_mode=sample_mode,
+            freshness_required=False,
         ),
         _data_center_row(
             category="基本面",
@@ -2786,6 +2787,7 @@ def _build_data_center_view(
             expected=expected,
             critical=False,
             sample_mode=sample_mode,
+            freshness_required=False,
         ),
     ]
     data_chain_row = _data_chain_center_row()
@@ -2822,12 +2824,15 @@ def _data_center_row(
     expected: str,
     critical: bool,
     sample_mode: bool,
+    freshness_required: bool = True,
 ) -> DataCenterRow:
     missing = [item for item in missing if item]
     latest_text = latest_date or "未采集"
     if updated_at:
         latest_text = f"{latest_text} / 更新 {updated_at}"
-    is_stale = bool(latest_date) and _iso_date_is_before(latest_date, expected)
+    is_stale = (
+        freshness_required and bool(latest_date) and _iso_date_is_before(latest_date, expected)
+    )
     if sample_mode:
         status = "样例"
         level = "warn"
@@ -2993,7 +2998,14 @@ def _news_missing_parts(
 
 def _fundamental_missing_parts(stock_raw: StockRawData) -> list[str]:
     missing: list[str] = []
-    if stock_raw.pe_ttm is None and not stock_raw.valuation:
+    has_hk_yahoo_fundamental = (
+        str(stock_raw.fundamental_metrics.get("source") or "") == "yahoo.timeseries"
+        and (
+            stock_raw.fundamental_metrics.get("operating_revenue") is not None
+            or stock_raw.fundamental_metrics.get("net_profit") is not None
+        )
+    )
+    if stock_raw.pe_ttm is None and not stock_raw.valuation and not has_hk_yahoo_fundamental:
         missing.append("估值")
     if not stock_raw.fundamental_metrics:
         missing.append("财务指标")
