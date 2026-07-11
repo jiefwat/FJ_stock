@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from .deep_models import BatchAnalysisReport, DailyDeepReport, DebateRound, DeepStockReport
-from .report import render_candidate_pool_markdown
+from .report import (
+    render_candidate_pool_markdown,
+    render_portfolio_markdown,
+    render_sector_markdown,
+)
 
 
 def render_deep_stock_markdown(report: DeepStockReport) -> str:
@@ -112,11 +116,28 @@ def render_daily_deep_markdown(report: DailyDeepReport) -> str:
         ]
     )
     lines.extend(f"- {name}" for name in report.sectors.market_mainline)
+    lines.extend(
+        [
+            "",
+            "## 板块统一方法链",
+            _extract_embedded_section(render_sector_markdown(report.sectors), "## 板块统一方法链"),
+        ]
+    )
     lines.extend(["", "## 持仓分析"])
     if report.portfolio is None:
         lines.append("- 未提供持仓，本次不生成组合暴露分析。")
     else:
         lines.extend(f"- {item}" for item in report.portfolio.risk_alerts)
+        lines.extend(
+            [
+                "",
+                "## 持仓股票统一方法链",
+                _extract_embedded_section(
+                    render_portfolio_markdown(report.portfolio),
+                    "## 持仓股票统一方法链",
+                ),
+            ]
+        )
     lines.extend(["", "## 新闻舆情"])
     if report.news is None:
         lines.append("- 未提供新闻舆情输入。")
@@ -152,6 +173,22 @@ def _strip_embedded_disclaimers(markdown: str) -> str:
             continue
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+def _extract_embedded_section(markdown: str, heading: str) -> str:
+    lines = markdown.splitlines()
+    capture = False
+    captured: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped == heading:
+            capture = True
+            continue
+        if capture and stripped.startswith("## "):
+            break
+        if capture:
+            captured.append(line)
+    return _strip_embedded_disclaimers("\n".join(captured)).strip()
 
 
 def _daily_focus_lines(report: DailyDeepReport) -> list[str]:

@@ -77,3 +77,29 @@ def test_daily_markdown_uses_dual_git_method_chain_for_all_surfaces(
     assert "## 板块统一方法链" in markdown
     assert "板块方法链" in markdown
     assert "TradingAgents 板块审议" in markdown
+
+
+def test_daily_deep_markdown_uses_dual_git_method_chain_for_sectors_and_portfolio(
+    tmp_path: Path,
+) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心持仓\n",
+        encoding="utf-8",
+    )
+
+    report = build_daily_deep_report(
+        SampleDataProvider(),
+        holdings_path=holdings,
+        candidate_limit=2,
+    )
+    markdown = render_daily_deep_markdown(report)
+
+    assert "## 板块统一方法链" in markdown
+    assert "板块方法链" in markdown
+    assert "TradingAgents 板块审议" in markdown
+    assert "## 持仓股票统一方法链" in markdown
+    assert "贵州茅台（600519）" in markdown
+    assert "daily_stock_analysis 信号归因" in markdown
+    assert "组合经理最终意见" in markdown
