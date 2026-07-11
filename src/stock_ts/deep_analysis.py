@@ -153,12 +153,13 @@ def _build_upside(
     risks: list[str],
     invalid_conditions: list[str],
 ) -> UpsidePotential:
-    weighted = sum(angle.score for angle in angles) / max(len(angles), 1)
+    directional_angles = _directional_stock_angles(angles)
+    weighted = sum(angle.score for angle in directional_angles) / max(len(directional_angles), 1)
     if stock.risk_level == "高":
         weighted -= 8
     score = max(0, min(100, int(round(weighted))))
     label = "高潜力观察" if score >= 75 else "中性偏强观察" if score >= 60 else "谨慎观察"
-    drivers = [angle.evidence for angle in angles if angle.score >= 65][:4]
+    drivers = [angle.evidence for angle in directional_angles if angle.score >= 65][:4]
     if not drivers:
         drivers = ["缺少强驱动信号，等待量价、板块或舆情进一步确认"]
     return UpsidePotential(
@@ -174,8 +175,9 @@ def _build_upside(
 
 def _build_debate_from_inputs(report: DeepStockReport) -> list[DebateRound]:
     angles = {angle.name: angle for angle in report.angles}
-    strong = [angle for angle in report.angles if angle.score >= 65]
-    weak = [angle for angle in report.angles if angle.score < 55]
+    debate_angles = _directional_stock_angles(report.angles)
+    strong = [angle for angle in debate_angles if angle.score >= 65]
+    weak = [angle for angle in debate_angles if angle.score < 55]
     bull_evidence = _angle_lines(strong[:3]) or ["暂无压倒性强信号，仅适合保持观察"]
     bear_evidence = _angle_lines(weak[:3]) or report.risks[:2] or ["短线一致性过强时仍需防范回撤"]
     technical = angles.get("价格趋势")
@@ -245,6 +247,11 @@ def _build_debate_from_inputs(report: DeepStockReport) -> list[DebateRound]:
 
 def _angle_lines(angles: list[AnalysisAngle | None]) -> list[str]:
     return [f"{angle.name}：{angle.score}/100，{angle.evidence}" for angle in angles if angle]
+
+
+def _directional_stock_angles(angles: list[AnalysisAngle]) -> list[AnalysisAngle]:
+    directional = [angle for angle in angles if angle.name != "持仓影响"]
+    return directional or angles
 
 
 def _trade_trigger(report: DeepStockReport) -> str:
@@ -372,12 +379,12 @@ def _portfolio_angle(
         None,
     )
     if position is None:
-        return AnalysisAngle("持仓影响", 55, "中性", "当前未持仓，不产生组合集中度影响")
+        return AnalysisAngle("持仓影响", 55, "未持仓", "当前未持仓，不产生组合集中度影响")
     score = 72 if position.pnl_ratio >= 0 and position.weight < 0.35 else 48
     return AnalysisAngle(
         "持仓影响",
         score,
-        _stance(score),
+        "执行参考",
         f"仓位 {position.weight:.1%}，浮动盈亏 {position.pnl_ratio:.2f}%",
     )
 
@@ -423,7 +430,7 @@ def _final_conclusion(
     stock_specific = [
         angle
         for angle in angles
-        if angle.name in {"价格趋势", "量能结构", "板块主线", "风险约束", "持仓影响"}
+        if angle.name in {"价格趋势", "量能结构", "板块主线", "风险约束"}
     ] or angles
     weak_candidates = [
         angle

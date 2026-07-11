@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from stock_ts.deep_analysis import (
     analyze_batch_stocks,
     analyze_deep_stock,
@@ -5,14 +7,10 @@ from stock_ts.deep_analysis import (
     render_batch_markdown,
     render_deep_stock_markdown,
 )
-from stock_ts.models import NewsItem
+from stock_ts.models import Holding, NewsItem, PortfolioAnalysisReport, PositionAnalysis
 from stock_ts.news import analyze_news
 from stock_ts.providers.sample import SampleDataProvider
-from stock_ts.workflows import (
-    build_market_report,
-    build_sector_report,
-    build_stock_report,
-)
+from stock_ts.workflows import build_market_report, build_sector_report, build_stock_report
 
 
 def test_deep_stock_analysis_has_multi_angles_debate_and_potential() -> None:
@@ -163,8 +161,86 @@ def test_deep_stock_conclusion_prioritizes_stock_specific_evidence_over_market_c
         assert "优势是市场环境" not in report.final_conclusion
         assert any(
             f"优势是{name}" in report.final_conclusion
-            for name in ["价格趋势", "量能结构", "板块主线", "风险约束", "持仓影响"]
+            for name in ["价格趋势", "量能结构", "板块主线", "风险约束"]
         )
+
+
+def test_portfolio_position_is_not_bullish_stock_evidence() -> None:
+    provider = SampleDataProvider()
+    market = replace(
+        build_market_report(provider),
+        heat_score=40,
+        summary="市场偏弱，赚钱效应不足",
+    )
+    stock = replace(
+        build_stock_report(provider, "603278"),
+        trend="下降趋势",
+        risk_level="高",
+        pct_change=-2.5,
+        observations=["量能收缩，承接不足"],
+    )
+    portfolio = PortfolioAnalysisReport(
+        trade_date=market.trade_date,
+        total_market_value=120000,
+        total_cost=100000,
+        total_pnl=20000,
+        total_pnl_ratio=20,
+        daily_pnl=0,
+        health_score=70,
+        cash_position_note="测试组合",
+        top_position_weight=0.088,
+        sector_weights=[("高端装备", 0.088)],
+        positions=[
+            PositionAnalysis(
+                holding=Holding("603278", "大业股份", 1000, 10, "高端装备"),
+                latest_price=12,
+                previous_close=12.3,
+                market_value=10560,
+                cost_value=10000,
+                daily_pnl=-300,
+                daily_pnl_ratio=-2.5,
+                pnl=560,
+                pnl_ratio=5.6,
+                weight=0.088,
+                trend="下降趋势",
+                risk_level="高",
+                observations=[],
+            )
+        ],
+        risk_alerts=[],
+        market_alignment=[],
+        action_checklist=[],
+    )
+    report = analyze_deep_stock(
+        stock,
+        market=market,
+        sectors=None,
+        portfolio=portfolio,
+    )
+
+    bullish_text = "\n".join(
+        [
+            *report.upside.drivers,
+            report.final_conclusion,
+            *(
+                item
+                for round_ in report.debate_rounds
+                if round_.role == "多头研究员"
+                for item in round_.evidence
+            ),
+        ]
+    )
+    portfolio_text = "\n".join(
+        item
+        for round_ in report.debate_rounds
+        if round_.role == "组合经理"
+        for item in round_.evidence
+    )
+
+    assert "持仓影响" in {angle.name for angle in report.angles}
+    assert "仓位" not in bullish_text
+    assert "浮动盈亏" not in bullish_text
+    assert "仓位" in portfolio_text
 
 
 def test_deep_stock_conclusion_never_uses_unknown_evidence_as_advantage() -> None:

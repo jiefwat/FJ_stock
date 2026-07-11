@@ -609,6 +609,19 @@ def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
     assert "完整方法链" not in stock_html
 
 
+def test_stock_bull_bear_debate_does_not_use_user_position_as_bullish_reason() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    debate_start = stock_html.index("多空辩论")
+    debate_end = stock_html.index("交易员", debate_start)
+    debate_html = stock_html[debate_start:debate_end]
+
+    assert "看多依据：仓位" not in debate_html
+    assert "看多依据：持仓影响" not in debate_html
+    assert "浮动盈亏" not in debate_html
+    assert "仓位" in stock_html
+
+
 def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_missing() -> None:
     class MissingNewsProvider(SampleDataProvider):
         def fetch_stock(self, code: str) -> StockRawData:
