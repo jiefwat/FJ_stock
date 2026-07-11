@@ -345,6 +345,15 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
         "&lt;-6%下跌 1",
     ]:
         assert text in market_html
+    assert (
+        "/?code=300001&amp;provider=tdx-snapshot"
+        "&amp;holdings=data%2Fportfolio%2Fholdings.csv#stock"
+    ) in market_html
+    assert (
+        "/?code=600003&amp;provider=tdx-snapshot"
+        "&amp;holdings=data%2Fportfolio%2Fholdings.csv#stock"
+    ) in market_html
+    assert 'aria-label="查看 强势机器人A 个股分析"' in market_html
     assert "未识别主题：1只大涨" not in market_html
 
 

@@ -5352,7 +5352,12 @@ def _render_compact_market_module(
         "弱势板块Top5", sectors, candidate_universe, reverse=False
     )
     analysis_panel = _render_professional_market_diagnosis(market, sectors, candidate_universe)
-    wide_move_panel = _render_market_wide_move_panel(candidate_universe, candidates)
+    wide_move_panel = _render_market_wide_move_panel(
+        candidate_universe,
+        candidates,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+    )
     event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
     return f"""
     <section class="module market-console" id="module-market">
@@ -5418,6 +5423,9 @@ def _render_market_distribution_chart(
 def _render_market_wide_move_panel(
     candidate_universe: list[CandidateStockRawData],
     candidates: CandidatePoolReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
 ) -> str:
     rows = _market_wide_move_rows(candidate_universe, candidates)
     all_up_rows = [item for item in rows if item.pct_change > 6]
@@ -5430,8 +5438,20 @@ def _render_market_wide_move_panel(
         <div class="editor-toolbar"><div><h3>大涨大跌分析</h3></div><span class="portfolio-chip">暂无 &gt;6% / &lt;-6% 样本</span></div>
         <p class="section-subtitle">当前候选池没有返回大幅波动股票，先看涨跌统计和强弱板块。</p>
       </div>"""
-    table_rows = _render_market_wide_move_rows(up_rows, direction=">6%上涨", up=True)
-    table_rows += _render_market_wide_move_rows(down_rows, direction="<-6%下跌", up=False)
+    table_rows = _render_market_wide_move_rows(
+        up_rows,
+        direction=">6%上涨",
+        up=True,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+    )
+    table_rows += _render_market_wide_move_rows(
+        down_rows,
+        direction="<-6%下跌",
+        up=False,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+    )
     theme_summary = _render_wide_move_theme_summary(all_up_rows, all_down_rows)
     return f"""
       <div class="panel market-wide-move-panel">
@@ -5534,6 +5554,8 @@ def _render_market_wide_move_rows(
     *,
     direction: str,
     up: bool,
+    provider_name: str,
+    holdings_path: str,
 ) -> str:
     if not rows:
         return (
@@ -5545,12 +5567,26 @@ def _render_market_wide_move_rows(
     return "".join(
         "<tr>"
         f"<td>{escape(direction)}</td>"
-        f"<td class='name-cell'><strong>{escape(item.name)} {item.pct_change:.2f}%</strong>"
-        f"<span>{escape(item.code)}</span></td>"
+        f"<td class='name-cell'><strong>{_render_wide_move_stock_link(item, provider_name=provider_name, holdings_path=holdings_path)}</strong></td>"
         f"<td>{escape(item.sector)}</td>"
         f"<td>{escape(_wide_move_analysis(item, up=up))}</td>"
         "</tr>"
         for item in rows
+    )
+
+
+def _render_wide_move_stock_link(
+    item: LimitBoardRow,
+    *,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
+    label = f"{item.name} {item.pct_change:.2f}%"
+    return (
+        f'<a href="/?{escape(query)}#stock" data-jump="stock" '
+        f'aria-label="查看 {escape(item.name)} 个股分析">'
+        f"{escape(label)}<span>{escape(item.code)}</span></a>"
     )
 
 
