@@ -228,6 +228,34 @@ def test_daily_pipeline_writes_cninfo_announcements_back_to_snapshot(
     assert payload["announcement_refresh"]["updated_count"] == 1
 
 
+def test_daily_pipeline_preserves_hkex_announcement_source_in_snapshot(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    _write_snapshot(snapshot)
+    report = AnnouncementReport(
+        query="06088",
+        total=1,
+        items=[
+            AnnouncementItem(
+                code="06088",
+                name="FIT HON TENG",
+                title="Monthly Return of Equity Issuer",
+                date="2026-07-07",
+                url="https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0707/x.pdf",
+                risk_flags=[],
+            )
+        ],
+        risk_events=[],
+        source="hkexnews",
+    )
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    pipeline_module._write_announcement_report_to_snapshot(payload, "06088", report)
+
+    sources = payload["stocks"]["06088"]["data_sources"]
+    assert "hkexnews.announcement" in sources
+    assert "cninfo.announcement" not in sources
+
+
 def test_daily_pipeline_refreshes_announcements_for_all_holdings_not_only_limit(
     tmp_path: Path,
 ) -> None:

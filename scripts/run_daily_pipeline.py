@@ -421,8 +421,12 @@ def _write_announcement_report_to_snapshot(snapshot: dict, code: str, report) ->
         }
         for item in report.items
     ]
-    sources = set(str(item) for item in stock.get("data_sources", []) if item)
-    sources.add("cninfo.announcement")
+    sources = {
+        str(item)
+        for item in stock.get("data_sources", [])
+        if item and not str(item).endswith(".announcement")
+    }
+    sources.add(f"{report.source}.announcement")
     stock["data_sources"] = sorted(sources)
 
 
@@ -436,8 +440,18 @@ def _write_announcement_refresh_metadata(snapshot: dict, codes: list[str]) -> No
             stock = stocks.get(code)
             if isinstance(stock, dict) and stock.get("announcements"):
                 updated_count += 1
+    sources = {
+        str(row.get("source") or "")
+        for code in codes
+        for row in (
+            stocks.get(code, {}).get("announcements", [])
+            if isinstance(stocks, dict) and isinstance(stocks.get(code), dict)
+            else []
+        )
+        if isinstance(row, dict) and row.get("source")
+    }
     snapshot["announcement_refresh"] = {
-        "source": "cninfo",
+        "source": ",".join(sorted(sources)) if sources else "none",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "requested_count": len(codes),
         "updated_count": updated_count,
