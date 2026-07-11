@@ -862,6 +862,13 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
                     summary="宏观新闻，没有对应A股主题或个股",
                     sentiment="neutral",
                 ),
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.新闻",
+                    title="美联储半年度政策报告：关税和中东推高通胀 AI成双刃剑",
+                    summary="宏观政策新闻，不应因 AI 关键词进入股票异动",
+                    sentiment="neutral",
+                ),
             ]
 
     market_html = _workspace(
@@ -878,6 +885,7 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
     assert "商业航天" not in market_html
     assert "ETF单日净申购" not in market_html
     assert "美联储半年度政策报告" not in market_html
+    assert "宏观政策新闻" not in market_html
     assert "longbridge.mcp.市场异动" not in market_html
     assert "需要看对应股票承接" not in market_html
 

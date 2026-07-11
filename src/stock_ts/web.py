@@ -5063,6 +5063,8 @@ def _map_market_event_to_theme_or_stock(
     theme = _event_theme_from_candidates(matched_stocks) or _infer_event_theme(text)
     if not matched_stocks and not extracted_stock and _is_fund_flow_noise(text):
         return None
+    if not matched_stocks and not extracted_stock and _is_macro_policy_noise(text):
+        return None
     if not theme and not matched_stocks and not extracted_stock:
         return None
     stock_text = _event_stock_text(matched_stocks, extracted_stock, theme, candidate_universe)
@@ -5113,6 +5115,11 @@ def _looks_like_generic_event_topic(text: str) -> bool:
 
 def _is_fund_flow_noise(text: str) -> bool:
     return any(word in text for word in ["ETF", "LOF", "基金"])
+
+
+def _is_macro_policy_noise(text: str) -> bool:
+    macro_words = ["美联储", "关税", "中东", "通胀", "FOMC", "央行", "国会"]
+    return any(word in text for word in macro_words)
 
 
 def _infer_event_theme(text: str) -> str:
