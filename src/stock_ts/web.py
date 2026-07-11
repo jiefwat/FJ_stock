@@ -6248,10 +6248,10 @@ def _dedupe_texts(items: list[str]) -> list[str]:
 
 def _sector_fund_context(item) -> str:
     if item.fund_status == "资金活跃":
-        return "资金活跃，消息/公告/基本面用于确认催化"
+        return "资金活跃，增强板块延续性"
     if item.fund_status == "资金流出":
-        return "资金流出，只能说明压力，不能解释根因"
-    return "资金配合一般，等待新闻、公告和基本面形成交叉验证"
+        return "资金流出，说明承接压力偏大"
+    return "资金配合一般，作为持续性扣分项"
 
 
 def _sector_market_context(item) -> str:
@@ -6264,8 +6264,8 @@ def _sector_market_context(item) -> str:
 
 def _sector_missing_event_context(*, strong: bool) -> str:
     event = "可验证新增催化" if strong else "可验证新增利空"
-    action = "不把上涨本身当原因" if strong else "不把下跌本身当原因"
-    return f"消息/公告：联网核验未见{event}；判断：{action}"
+    weight = "消息面不加分，按技术和资金证据定级" if strong else "消息面不加重，按技术和资金证据定级"
+    return f"消息/公告：联网核验未见{event}；权重：{weight}"
 
 
 def _render_professional_market_diagnosis(

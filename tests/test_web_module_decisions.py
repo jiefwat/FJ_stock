@@ -1608,6 +1608,7 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "走弱原因" in market_html or "相对弱势原因" in market_html
     assert "强势；扩散" not in market_html
     assert "弱势；扩散" not in market_html
+    assert "等待新闻、公告和基本面形成交叉验证" not in market_html
 
 
 def test_market_sector_top5_representatives_use_live_news_when_snapshot_missing() -> None:
