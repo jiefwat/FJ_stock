@@ -4607,7 +4607,7 @@ def _render_hot_opportunity_module(
         quality=quality,
     )
     if not rows:
-        rows = "<tr><td colspan='8'>暂无推荐；等待板块和候选股票刷新。</td></tr>"
+        rows = "<tr><td colspan='9'>暂无推荐；等待板块和候选股票刷新。</td></tr>"
     mainline = "、".join(sectors.market_mainline[:3]) or (
         sectors.sectors[0].name if sectors.sectors else "待确认"
     )
@@ -4617,7 +4617,7 @@ def _render_hot_opportunity_module(
       <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐维度。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
       <div class="panel opportunity-focus-panel">
         <div class="opportunity-table-scroll">
-          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>趋势/强度</th><th>技术/位置</th><th>资金/成交</th><th>消息/公告</th><th>基本面/估值</th><th>入选/风险</th></tr></thead><tbody>{rows}</tbody></table>
+          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>统一个股分析</th><th>趋势/量价原因</th><th>资金/成交原因</th><th>基本面/估值原因</th><th>消息/公告原因</th><th>板块/主题原因</th><th>未来趋势</th></tr></thead><tbody>{rows}</tbody></table>
         </div>
       </div>
     </section>"""
@@ -4653,12 +4653,13 @@ def _render_opportunity_recommendation_rows(
 
 @dataclass(frozen=True)
 class OpportunityRecommendationDimensions:
-    trend_strength: str
-    technical_position: str
-    fund_flow: str
-    news_event: str
-    fundamental: str
-    selection_risk: str
+    current_trend: str
+    trend_reason: str
+    fund_reason: str
+    fundamental_reason: str
+    news_reason: str
+    theme_reason: str
+    future_trend: str
 
 
 def _render_opportunity_recommendation_candidate_row(
@@ -4682,12 +4683,13 @@ def _render_opportunity_recommendation_candidate_row(
         "<tr>"
         f"<td>{escape(localize_sector_name(item.sector) or '未识别主题')}</td>"
         f"<td class='name-cell'><strong>{stock_link}</strong></td>"
-        f"<td>{escape(dimensions.trend_strength)}</td>"
-        f"<td>{escape(dimensions.technical_position)}</td>"
-        f"<td>{escape(dimensions.fund_flow)}</td>"
-        f"<td>{escape(dimensions.news_event)}</td>"
-        f"<td>{escape(dimensions.fundamental)}</td>"
-        f"<td>{escape(dimensions.selection_risk)}</td>"
+        f"<td>{escape(dimensions.current_trend)}</td>"
+        f"<td>{escape(dimensions.trend_reason)}</td>"
+        f"<td>{escape(dimensions.fund_reason)}</td>"
+        f"<td>{escape(dimensions.fundamental_reason)}</td>"
+        f"<td>{escape(dimensions.news_reason)}</td>"
+        f"<td>{escape(dimensions.theme_reason)}</td>"
+        f"<td>{escape(dimensions.future_trend)}</td>"
         "</tr>"
     )
 
@@ -4700,43 +4702,46 @@ def _opportunity_candidate_dimensions(
     quality: DataQualityView | None,
 ) -> OpportunityRecommendationDimensions:
     if raw is not None and raw.bars:
-        trend_strength = f"个股原因：{_opportunity_week_trend_reason(raw)}"
-        technical_position = _opportunity_technical_reason(raw)
-        fund_flow = _opportunity_fund_reason(raw)
-        news_event = _opportunity_news_reason(raw)
-        fundamental = _opportunity_valuation_reason(raw)
+        current_trend = f"统一个股分析：当前趋势：{_candidate_current_trend_state(raw)}"
+        trend_reason = f"趋势/量价原因：{_opportunity_week_trend_reason(raw)}；{_opportunity_technical_reason(raw)}"
+        fund_reason = _opportunity_fund_reason(raw).replace("资金面：", "资金/成交原因：", 1)
+        news_reason = _opportunity_news_reason(raw).replace("消息面：", "消息/公告原因：", 1)
+        fundamental_reason = _opportunity_valuation_reason(raw).replace("基本面：", "基本面/估值原因：", 1)
+        theme_reason = _opportunity_theme_reason(item, raw)
+        future_trend = _opportunity_future_trend_reason(item, raw, quality)
     else:
-        trend_strength = f"个股原因：{_opportunity_candidate_cause(item, raw=raw)}"
-        technical_position = (
-            f"技术面：{item.name}K线字段缺口，先用候选涨跌 {item.pct_change:.2f}% "
-            f"和评分 {item.score}/100 做低权重观察"
-        )
-        fund_flow = f"资金面：{item.name}资金字段缺口，暂看{localize_sector_name(item.sector)}板块承接"
-        news_event = (
-            f"消息面：{item.name}暂无可验证个股事件，"
+        current_trend = f"统一个股分析：当前趋势：候选涨跌 {item.pct_change:.2f}%，评分 {item.score}/100"
+        trend_reason = f"趋势/量价原因：{_opportunity_candidate_cause(item, raw=raw)}"
+        fund_reason = f"资金/成交原因：{item.name}资金字段缺口，暂看{localize_sector_name(item.sector)}板块承接"
+        news_reason = (
+            f"消息/公告原因：{item.name}暂无可验证个股事件，"
             f"不把{item.pct_change:.2f}%涨跌直接写成催化"
         )
-        fundamental = (
-            f"基本面：{item.name}估值字段缺口，"
+        fundamental_reason = (
+            f"基本面/估值原因：{item.name}估值字段缺口，"
             f"按{localize_sector_name(item.sector)}景气度和后续财报复核"
         )
+        theme_reason = f"板块/主题原因：{localize_sector_name(item.sector)}主题，先按候选评分和板块强度复核"
+        future_trend = _opportunity_future_trend_from_candidate(item, quality)
     stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
     if stale:
-        selection_risk = "风险原因：数据质量：已滞后，不能排到前列"
+        risk_text = "风险原因：数据质量：已滞后，不能排到前列"
     elif not (pool_price_reliable and item.price_reliable):
-        selection_risk = f"风险原因：{item.name}价格链路待补，评分 {item.score}/100 暂不前置"
+        risk_text = f"风险原因：{item.name}价格链路待补，评分 {item.score}/100 暂不前置"
     else:
-        selection_risk = (
+        risk_text = (
             f"入选原因：{item.name}价格链路可靠，"
             f"评分 {item.score}/100，日涨跌 {item.pct_change:.2f}%"
         )
+    theme_reason = f"{theme_reason}；{risk_text}"
     return OpportunityRecommendationDimensions(
-        trend_strength=trend_strength,
-        technical_position=technical_position,
-        fund_flow=fund_flow,
-        news_event=news_event,
-        fundamental=fundamental,
-        selection_risk=selection_risk,
+        current_trend=current_trend,
+        trend_reason=trend_reason,
+        fund_reason=fund_reason,
+        fundamental_reason=fundamental_reason,
+        news_reason=news_reason,
+        theme_reason=theme_reason,
+        future_trend=future_trend,
     )
 
 
@@ -4882,6 +4887,91 @@ def _opportunity_valuation_reason(raw: CandidateStockRawData) -> str:
     return f"基本面：{raw.name}PE(TTM) {raw.pe_ttm:.1f}，重点看业绩与题材是否匹配"
 
 
+def _candidate_current_trend_state(raw: CandidateStockRawData) -> str:
+    bars = raw.bars[-5:]
+    if len(bars) < 2:
+        return f"{raw.name}K线不足，当前趋势低权重"
+    week_pct = pct_change(bars[0].close, bars[-1].close)
+    latest_pct = pct_change(bars[-2].close, bars[-1].close)
+    if week_pct >= 8:
+        state = "强趋势"
+    elif week_pct >= 3:
+        state = "上行趋势"
+    elif week_pct <= -5:
+        state = "转弱趋势"
+    elif latest_pct <= -2:
+        state = "短线回落"
+    else:
+        state = "震荡观察"
+    return f"{raw.name}{state}，近5日 {week_pct:.2f}%，最新 {latest_pct:.2f}%"
+
+
+def _opportunity_theme_reason(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData,
+) -> str:
+    return (
+        f"板块/主题原因：{localize_sector_name(raw.sector)}主题，"
+        f"候选评分 {item.score}/100，日涨跌 {item.pct_change:.2f}%；"
+        "按个股页同一口径继续核对主题强弱、资金和消息"
+    )
+
+
+def _opportunity_future_trend_reason(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData,
+    quality: DataQualityView | None,
+) -> str:
+    bars = raw.bars[-5:]
+    if len(bars) < 2:
+        return f"未来趋势：{raw.name}K线不足，先不做前置排序"
+    week_pct = pct_change(bars[0].close, bars[-1].close)
+    latest_pct = pct_change(bars[-2].close, bars[-1].close)
+    fund_flow = raw.fund_flow or 0.0
+    event_bonus = 1 if raw.news_items or raw.announcements else 0
+    score = item.score + week_pct * 1.2 + latest_pct * 0.8 + fund_flow * 3 + event_bonus * 4
+    if quality and quality.gate_level == "blocked":
+        direction = "偏震荡"
+        reason = "数据闸门降级，未来趋势不前置"
+    elif score >= 82:
+        direction = "偏上涨"
+        reason = "当前趋势、资金或事件证据共振"
+    elif week_pct <= -5 or latest_pct <= -3 or fund_flow < -1:
+        direction = "偏下跌/回撤"
+        reason = "短线转弱或资金流出，需要等止跌"
+    else:
+        direction = "偏震荡"
+        reason = "趋势强度不够单边，等待放量确认"
+    return f"未来趋势：{direction}；{reason}；当前趋势 {week_pct:.2f}% / 最新 {latest_pct:.2f}%"
+
+
+def _opportunity_future_trend_from_candidate(
+    item: CandidateStockAnalysis,
+    quality: DataQualityView | None,
+) -> str:
+    if quality and quality.gate_level == "blocked":
+        return f"未来趋势：偏震荡；{item.name}数据闸门降级，先不前置"
+    if item.score >= 80 and item.pct_change >= 0:
+        return f"未来趋势：偏上涨；评分 {item.score}/100，当前涨跌 {item.pct_change:.2f}%"
+    if item.pct_change <= -3:
+        return f"未来趋势：偏下跌/回撤；当前涨跌 {item.pct_change:.2f}%"
+    return f"未来趋势：偏震荡；评分 {item.score}/100，等待K线和资金补齐"
+
+
+def _opportunity_sector_future_trend(item) -> str:
+    if item.rotation_status == "市场主线" and item.advancing_ratio >= 0.7:
+        return (
+            f"未来趋势：主题延续概率较高；{localize_sector_name(item.name)}扩散 "
+            f"{item.advancing_ratio:.0%}，涨停 {item.limit_up_count}"
+        )
+    if item.fund_status == "资金流出" or item.advancing_ratio < 0.45:
+        return (
+            f"未来趋势：主题分歧偏大；扩散 {item.advancing_ratio:.0%}，"
+            f"{item.fund_status}"
+        )
+    return f"未来趋势：主题偏震荡；热度 {item.heat_score}/100，等待代表股确认"
+
+
 def _render_opportunity_recommendation_sector_row(
     item,
     candidate_universe: list[CandidateStockRawData],
@@ -4891,12 +4981,13 @@ def _render_opportunity_recommendation_sector_row(
         "<tr>"
         f"<td>{escape(localize_sector_name(item.name))}</td>"
         f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
-        f"<td>{escape(dimensions.trend_strength)}</td>"
-        f"<td>{escape(dimensions.technical_position)}</td>"
-        f"<td>{escape(dimensions.fund_flow)}</td>"
-        f"<td>{escape(dimensions.news_event)}</td>"
-        f"<td>{escape(dimensions.fundamental)}</td>"
-        f"<td>{escape(dimensions.selection_risk)}</td>"
+        f"<td>{escape(dimensions.current_trend)}</td>"
+        f"<td>{escape(dimensions.trend_reason)}</td>"
+        f"<td>{escape(dimensions.fund_reason)}</td>"
+        f"<td>{escape(dimensions.fundamental_reason)}</td>"
+        f"<td>{escape(dimensions.news_reason)}</td>"
+        f"<td>{escape(dimensions.theme_reason)}</td>"
+        f"<td>{escape(dimensions.future_trend)}</td>"
         "</tr>"
     )
 
@@ -4933,18 +5024,22 @@ def _opportunity_sector_dimensions(
     if risk:
         selection_risk = f"{selection_risk}；风险原因：{risk}"
     return OpportunityRecommendationDimensions(
-        trend_strength=(
-            f"板块原因：覆盖 {item.advancing_ratio:.0%}，"
-            f"涨停 {item.limit_up_count}，{item.continuity}"
+        current_trend=(
+            f"统一个股分析：当前趋势：主题级事件，{localize_sector_name(item.name)}"
+            f"热度 {item.heat_score}/100"
         ),
-        technical_position=f"技术/位置：{item.rotation_status}，热度 {item.heat_score}/100",
-        fund_flow=(
-            f"资金/成交：{item.fund_status}，"
+        trend_reason=(
+            f"趋势/量价原因：板块原因：覆盖 {item.advancing_ratio:.0%}，"
+            f"涨停 {item.limit_up_count}，{item.continuity}，{item.rotation_status}"
+        ),
+        fund_reason=(
+            f"资金/成交原因：{item.fund_status}，"
             f"成交额变化 {item.amount_change:+.1f} 亿"
         ),
-        news_event=event_text,
-        fundamental=fundamental_text,
-        selection_risk=selection_risk,
+        fundamental_reason=fundamental_text.replace("基本面/估值：", "基本面/估值原因：", 1),
+        news_reason=event_text.replace("消息/公告：", "消息/公告原因：", 1),
+        theme_reason=f"板块/主题原因：{selection_risk}",
+        future_trend=_opportunity_sector_future_trend(item),
     )
 
 
@@ -7540,11 +7635,13 @@ def _render_portfolio_multidimensional_analysis(
     reason = _clean_position_reason(advice.reason, action) if advice else "等待更多数据确认"
     next_check = advice.next_check if advice else "复核趋势、公告和资金变化。"
     lines = [
-        ("技术面原因", _portfolio_trend_dimension(position)),
-        ("资金面原因", _portfolio_fund_dimension(position, market)),
-        ("基本面原因", _portfolio_fundamental_dimension(position)),
-        ("消息面原因", _portfolio_news_dimension(position, market)),
-        ("板块情绪原因", _portfolio_sector_dimension(sector_name, sector_state, position)),
+        ("统一个股分析", "按个股分析同一口径：先看趋势/量价，再看资金、基本面、消息、板块，最后落到仓位成本。"),
+        ("趋势/量价原因", _portfolio_trend_dimension(position)),
+        ("资金/成交原因", _portfolio_fund_dimension(position, market)),
+        ("基本面/估值原因", _portfolio_fundamental_dimension(position)),
+        ("消息/公告原因", _portfolio_news_dimension(position, market)),
+        ("板块/主题原因", _portfolio_sector_dimension(sector_name, sector_state, position)),
+        ("未来趋势预测", _portfolio_future_trend_dimension(position, market, sector_state)),
         ("仓位原因", _portfolio_holding_dimension(position, advice)),
         ("结论", f"{action}：{reason}；后续看 {next_check}"),
     ]
@@ -7720,6 +7817,30 @@ def _portfolio_holding_dimension(
     return (
         f"{_stock_cost_position_text(position)}，仓位 {position.weight:.1%} 决定处理优先级；"
         f"成本 {position.holding.cost_price:.2f} / 现价 {position.latest_price:.2f}，当前动作为{action}"
+    )
+
+
+def _portfolio_future_trend_dimension(
+    position: PositionAnalysis,
+    market: MarketSnapshot,
+    sector_state: str,
+) -> str:
+    if position.risk_level == "高" or "下降" in position.trend:
+        direction = "偏下跌/回撤"
+        reason = "风险等级或趋势结构不支持主动进攻"
+    elif "上升" in position.trend and market.heat_score >= 60:
+        direction = "偏上涨"
+        reason = "个股趋势与市场热度同向"
+    else:
+        direction = "偏震荡"
+        reason = "趋势或市场环境未形成单边共振"
+    if "市场主线" in sector_state or "热度" in sector_state:
+        theme_note = "板块仍需继续确认强度"
+    else:
+        theme_note = "板块不在前排时降低未来趋势权重"
+    return (
+        f"{position.holding.name}未来趋势：{direction}；{reason}；"
+        f"日内 {position.daily_pnl_ratio:.2f}%，累计 {position.pnl_ratio:.2f}%；{theme_note}"
     )
 
 

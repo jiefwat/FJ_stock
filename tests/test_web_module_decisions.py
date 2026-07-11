@@ -459,12 +459,12 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "趋势/强度",
-        "技术/位置",
-        "资金/成交",
-        "消息/公告",
-        "基本面/估值",
-        "入选/风险",
+        "统一个股分析",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "消息/公告原因",
+        "基本面/估值原因",
+        "未来趋势",
     ]:
         assert text in opportunity_html
 
@@ -488,7 +488,7 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
 def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐维度", "板块原因", "入选原因", "个股原因", "风险原因"]:
+    for text in ["推荐维度", "板块原因", "入选原因", "趋势/量价原因", "风险原因"]:
         assert text in opportunity_html
 
     for shallow_text in [
@@ -611,7 +611,7 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
 def test_opportunity_module_removes_strategy_funnel_noise() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐板块", "推荐股票", "趋势/强度", "资金/成交"]:
+    for text in ["推荐板块", "推荐股票", "统一个股分析", "资金/成交原因"]:
         assert text in opportunity_html
     for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明", "进入个股分析"]:
         assert removed not in opportunity_html
@@ -646,15 +646,35 @@ def test_opportunity_recommendation_table_uses_dimension_columns_not_one_long_re
     for header in [
         "<th>推荐板块</th>",
         "<th>推荐股票</th>",
-        "<th>趋势/强度</th>",
-        "<th>技术/位置</th>",
-        "<th>资金/成交</th>",
-        "<th>消息/公告</th>",
-        "<th>基本面/估值</th>",
-        "<th>入选/风险</th>",
+        "<th>统一个股分析</th>",
+        "<th>趋势/量价原因</th>",
+        "<th>资金/成交原因</th>",
+        "<th>基本面/估值原因</th>",
+        "<th>消息/公告原因</th>",
+        "<th>板块/主题原因</th>",
+        "<th>未来趋势</th>",
     ]:
         assert header in opportunity_html
     assert "opportunity-dimension-table" in opportunity_html
+
+
+def test_opportunity_uses_stock_analysis_method_and_current_future_trend() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in [
+        "统一个股分析",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "基本面/估值原因",
+        "消息/公告原因",
+        "板块/主题原因",
+        "当前趋势",
+        "未来趋势",
+    ]:
+        assert text in opportunity_html
+
+    for old_header in ["<th>趋势/强度</th>", "<th>技术/位置</th>"]:
+        assert old_header not in opportunity_html
 
 
 def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
@@ -791,7 +811,7 @@ def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_miss
     opportunity_html = _workspace(html, "opportunity")
 
     assert "联网新闻：603278 签订机器人订单" in stock_html
-    assert "消息面：联网新闻最新消息" in opportunity_html
+    assert "消息/公告原因：联网新闻最新消息" in opportunity_html
     assert "300222 签订机器人订单" in opportunity_html
     assert "消息面：未接入个股新闻" not in opportunity_html
 
@@ -988,11 +1008,11 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
         assert text in portfolio_html
 
     for text in [
-        "技术面原因",
-        "资金面原因",
-        "基本面原因",
-        "消息面原因",
-        "板块情绪原因",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "基本面/估值原因",
+        "消息/公告原因",
+        "板块/主题原因",
         "仓位原因",
         "结论",
     ]:
@@ -1006,11 +1026,11 @@ def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "技术面原因",
-        "资金面原因",
-        "基本面原因",
-        "消息面原因",
-        "板块情绪原因",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "基本面/估值原因",
+        "消息/公告原因",
+        "板块/主题原因",
         "仓位原因",
     ]:
         assert text in portfolio_html
@@ -1031,6 +1051,24 @@ def test_portfolio_reasons_are_stock_specific_not_repeated_market_copy() -> None
         "市场情绪偏强，但公告未确认前不把消息面作为加仓理由",
     ]:
         assert portfolio_html.count(repeated_copy) <= 1
+
+
+def test_portfolio_uses_same_stock_analysis_method_as_stock_module() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in [
+        "统一个股分析",
+        "趋势/量价原因",
+        "资金/成交原因",
+        "基本面/估值原因",
+        "消息/公告原因",
+        "板块/主题原因",
+        "未来趋势预测",
+    ]:
+        assert text in portfolio_html
+
+    for old_label in ["技术面原因", "板块情绪原因"]:
+        assert old_label not in portfolio_html
 
 
 def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:

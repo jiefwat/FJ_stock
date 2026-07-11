@@ -93,7 +93,7 @@ def test_web_renders_portfolio_interaction_controls(tmp_path: Path) -> None:
     assert "资金面" in html
     assert "基本面" in html
     assert "消息面" in html
-    assert "板块情绪" in html
+    assert "板块/主题" in html
     assert "仓位成本" in html
     assert 'method="post" action="/holdings"' in html
     assert 'name="portfolio_action" value="upsert"' in html

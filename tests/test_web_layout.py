@@ -73,7 +73,7 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     assert "资金面" in html
     assert "基本面" in html
     assert "消息面" in html
-    assert "板块情绪" in html
+    assert "板块/主题" in html
     assert "仓位成本" in html
     assert "分析入口" in html
     assert "综合结论" in html
