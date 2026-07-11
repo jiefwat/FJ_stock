@@ -346,6 +346,8 @@ def test_enrich_tdx_snapshot_keeps_partial_fields_when_some_interfaces_fail(tmp_
     assert summary["enriched_stock_count"] == 1
     assert stock["pe_ttm"] == 36.5
     assert stock["news_items"][0]["title"] == "公司产品放量"
+    assert stock["fund_flow_detail"]["source"] == "derived.kline_turnover"
+    assert stock["fund_flow_detail"]["amount_yuan"] == 10500.0
     assert stock["enrichment_errors"]["daily_bars"] == "kline unavailable"
     assert stock["enrichment_errors"]["fund_flow"] == "fund unavailable"
 

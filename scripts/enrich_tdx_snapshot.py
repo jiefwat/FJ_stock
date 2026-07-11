@@ -265,6 +265,11 @@ def _enrich_stock_payload(
     else:
         field_errors["akshare_stock_fields"] = "skipped"
 
+    if not payload.get("fund_flow_detail"):
+        derived_fund = _derive_turnover_fund_flow(payload)
+        if derived_fund:
+            payload["fund_flow_detail"] = derived_fund
+
     sources = set(_as_list(payload.get("data_sources")))
     if itick_client is not None and (
         payload.get("bar_source") == "itick.stock_kline" or payload.get("latest_quote")
@@ -461,6 +466,30 @@ def _fetch_fund_flow(ak: object, code: str) -> dict[str, Any]:
         "large_net_inflow_yuan": _optional_float(latest.get("大单净流入-净额")),
         "small_net_inflow_yuan": _optional_float(latest.get("小单净流入-净额")),
     }
+
+
+def _derive_turnover_fund_flow(payload: dict[str, Any]) -> dict[str, Any]:
+    bars = _as_list(payload.get("bars"))
+    if not bars:
+        return {}
+    latest = bars[-1]
+    if not isinstance(latest, dict):
+        return {}
+    close = _optional_float(latest.get("close"))
+    volume = _optional_float(latest.get("volume"))
+    if close is None or volume is None or close <= 0 or volume <= 0:
+        return {}
+    detail: dict[str, Any] = {
+        "source": "derived.kline_turnover",
+        "date": str(latest.get("date") or ""),
+        "amount_yuan": round(close * volume, 2),
+        "volume": volume,
+        "note": "由K线成交量和收盘价估算成交额，作为资金/成交侧信号，不等同主力净流。",
+    }
+    valuation = payload.get("valuation")
+    if isinstance(valuation, dict) and valuation.get("turnover_rate") is not None:
+        detail["turnover_rate"] = _optional_float(valuation.get("turnover_rate"))
+    return detail
 
 
 def _fetch_stock_news(ak: object, code: str, *, limit: int) -> list[dict[str, Any]]:
