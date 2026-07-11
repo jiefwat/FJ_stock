@@ -198,6 +198,30 @@ def test_data_chain_validator_blocks_when_holding_kline_missing(tmp_path: Path) 
     assert any("688362" in blocker and "K线" in blocker for blocker in result["blockers"])
 
 
+def test_data_chain_validator_warns_not_blocks_when_hk_holding_kline_is_stale(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    payload["stocks"]["06088"] = _stock("06088", with_context=False, with_bars=True)
+    payload["stocks"]["06088"]["bars"] = [_bar("2026-07-09")]
+    snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_holdings(holdings, ["06088"])
+
+    result = validate_data_chain(
+        snapshot_path=snapshot,
+        holdings_path=holdings,
+        pipeline_steps=OK_STEPS,
+        now=datetime(2026, 7, 11, 9, 0, 0),
+    )
+
+    assert result["status"] == "warn"
+    assert not result["blockers"]
+    assert any("港股 06088 K线滞后" in warning for warning in result["warnings"])
+
+
 def test_data_chain_validator_treats_skipped_pipeline_steps_as_incomplete(tmp_path: Path) -> None:
     snapshot = tmp_path / "tdx_snapshots.json"
     holdings = tmp_path / "holdings.csv"

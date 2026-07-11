@@ -133,11 +133,13 @@ def _validate_portfolio(
             blockers.append(f"持仓 {code} 未进入快照")
             continue
         available += 1
-        blockers.extend(_blocking_stock_gaps(payload, code, expected, prefix="持仓"))
+        kline_blockers, kline_warnings = _stock_kline_gaps(payload, code, expected, prefix="持仓")
+        blockers.extend(kline_blockers)
+        warnings.extend(kline_warnings)
         context_gaps = _context_gaps(payload)
         if context_gaps:
             warnings.append(f"持仓 {code} 缺少{'、'.join(context_gaps)}")
-        elif not _blocking_stock_gaps(payload, code, expected, prefix="持仓"):
+        elif not kline_blockers and not kline_warnings:
             complete += 1
     if not holdings:
         warnings.append("未读取到持仓账本")
@@ -163,12 +165,15 @@ def _validate_stock(
         if not payload:
             blockers.append(f"个股分析 {code} 未进入快照")
             continue
-        stock_blockers = _blocking_stock_gaps(payload, code, expected, prefix="个股分析")
+        stock_blockers, stock_warnings = _stock_kline_gaps(
+            payload, code, expected, prefix="个股分析"
+        )
         blockers.extend(stock_blockers)
+        warnings.extend(stock_warnings)
         context_gaps = _context_gaps(payload)
         if context_gaps:
             warnings.append(f"个股分析 {code} 缺少{'、'.join(context_gaps)}")
-        elif not stock_blockers:
+        elif not stock_blockers and not stock_warnings:
             complete += 1
     return _module_result(
         "stock",
@@ -230,15 +235,21 @@ def _module_result(
     }
 
 
-def _blocking_stock_gaps(
+def _stock_kline_gaps(
     payload: dict[str, Any], code: str, expected: str, *, prefix: str
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     latest = _latest_bar_date(payload)
     if not latest:
-        return [f"{prefix} {code} 缺少K线"]
+        return [f"{prefix} {code} 缺少K线"], []
     if _is_before(latest, expected):
-        return [f"{prefix} {code} K线滞后：最新 {latest}，应至少 {expected}"]
-    return []
+        if _is_hk_code(code):
+            return [], [f"{prefix} 港股 {code} K线滞后：最新 {latest}，应至少 {expected}"]
+        return [f"{prefix} {code} K线滞后：最新 {latest}，应至少 {expected}"], []
+    return [], []
+
+
+def _is_hk_code(code: str) -> bool:
+    return len(_normalize_code(code)) == 5
 
 
 def _context_gaps(payload: dict[str, Any]) -> list[str]:
