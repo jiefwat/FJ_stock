@@ -36,6 +36,7 @@ def enrich_snapshot(
     tushare_moneyflow: bool = False,
     ak: object | None = None,
     tushare_client: object | None = None,
+    tushare_news_api: object | None = None,
     itick_client: object | None = None,
     intelligence_urls: list[str] | None = None,
     intelligence_opener: Callable[[str, float], bytes] | None = None,
@@ -51,6 +52,13 @@ def enrich_snapshot(
         else None
         if ak is not None
         else _load_tushare_optional(timeout=request_timeout)
+    )
+    ts_news_api = (
+        tushare_news_api
+        if tushare_news_api is not None
+        else None
+        if ak is not None
+        else _load_tushare_news_optional()
     )
     itick = (
         itick_client
@@ -101,6 +109,7 @@ def enrich_snapshot(
         opener=intelligence_opener,
         timeout=request_timeout,
         field_timeout=field_timeout,
+        tushare_news_api=ts_news_api,
     )
     market_news = intelligence_result["items"]
     if market_news:
@@ -526,6 +535,7 @@ def _fetch_market_intelligence(
     opener: Callable[[str, float], bytes] | None,
     timeout: float,
     field_timeout: int,
+    tushare_news_api: object | None = None,
 ) -> dict[str, Any]:
     try:
         with _time_limit(field_timeout):
@@ -536,12 +546,17 @@ def _fetch_market_intelligence(
         builtin = []
         builtin_status = f"failed:{type(exc).__name__}:{str(exc)[:120]}"
         warnings = [f"AKShare 市场新闻抓取失败：{type(exc).__name__}"]
+    tushare_items, tushare_status, tushare_warnings = _fetch_tushare_news_events(
+        tushare_news_api,
+        limit=limit,
+        field_timeout=field_timeout,
+    )
     external_sources = _intelligence_sources(urls)
     if not external_sources:
         return {
-            "items": _dedupe_news_payloads(builtin),
-            "statuses": {"akshare-global": builtin_status},
-            "warnings": warnings,
+            "items": _dedupe_news_payloads(builtin + tushare_items),
+            "statuses": {"akshare-global": builtin_status, "tushare-news": tushare_status},
+            "warnings": warnings + tushare_warnings,
         }
     external = fetch_json_intelligence_sources(
         external_sources,
@@ -549,12 +564,63 @@ def _fetch_market_intelligence(
         timeout=timeout,
         limit_per_source=limit,
     )
-    items = builtin + [item.to_payload() for item in external.items]
-    statuses = {"akshare-global": builtin_status, **external.source_statuses}
+    items = builtin + tushare_items + [item.to_payload() for item in external.items]
+    statuses = {
+        "akshare-global": builtin_status,
+        "tushare-news": tushare_status,
+        **external.source_statuses,
+    }
     return {
         "items": _dedupe_news_payloads(items),
         "statuses": statuses,
         "warnings": warnings + external.warnings,
+    }
+
+
+def _fetch_tushare_news_events(
+    api: object | None,
+    *,
+    limit: int,
+    field_timeout: int,
+) -> tuple[list[dict[str, Any]], str, list[str]]:
+    if api is None or limit <= 0:
+        return [], "skipped", []
+    try:
+        with _time_limit(field_timeout):
+            latest = _records(api.get_latest_news(top=limit, show_content=False))  # type: ignore[attr-defined]
+        with _time_limit(field_timeout):
+            guba = _records(api.guba_sina(show_content=False))  # type: ignore[attr-defined]
+    except Exception as exc:
+        return [], f"failed:{type(exc).__name__}:{str(exc)[:120]}", [
+            f"Tushare 新闻事件抓取失败：{type(exc).__name__}"
+        ]
+    items: list[dict[str, Any]] = []
+    for row in latest[:limit]:
+        items.append(_tushare_news_from_row(row, source_default="Tushare即时新闻"))
+    for row in guba[:limit]:
+        items.append(_tushare_news_from_row(row, source_default="Tushare新浪股吧"))
+    items = [
+        item
+        for item in items
+        if item.get("title")
+        and is_market_relevant_news(str(item.get("title") or ""), str(item.get("summary") or ""))
+    ]
+    return items, f"ok:{len(items)}", []
+
+
+def _tushare_news_from_row(row: dict[str, Any], *, source_default: str) -> dict[str, Any]:
+    title = str(row.get("title") or row.get("新闻标题") or "").strip()
+    summary = str(row.get("content") or row.get("summary") or "").strip()
+    classification = classify_news_item(title, summary)
+    return {
+        "date": str(row.get("time") or row.get("ptime") or row.get("date") or ""),
+        "source": str(row.get("classify") or row.get("source") or source_default),
+        "title": title,
+        "summary": summary,
+        "url": str(row.get("url") or ""),
+        "sentiment": classification.sentiment,
+        "risk_tags": classification.risk_tags,
+        "catalyst_tags": classification.catalyst_tags,
     }
 
 
@@ -756,6 +822,14 @@ def _load_tushare_optional(*, timeout: float = 8.0) -> object | None:
     except ImportError:
         return None
     return ts.pro_api(token, timeout=timeout)
+
+
+def _load_tushare_news_optional() -> object | None:
+    try:
+        import tushare as ts  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return ts
 
 
 def _load_itick_optional(*, timeout: float = 8.0) -> object | None:

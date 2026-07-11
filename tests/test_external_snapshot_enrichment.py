@@ -124,6 +124,41 @@ class PartialAk(RichAk):
         raise RuntimeError("fund unavailable")
 
 
+class TushareNewsApi:
+    def get_latest_news(self, top=None, show_content=False) -> MiniFrame:
+        assert top == 2
+        assert show_content is False
+        return MiniFrame(
+            [
+                {
+                    "classify": "证券",
+                    "title": "A股机器人板块走强",
+                    "time": "2026-07-11 09:30",
+                    "url": "https://tushare.example/news-1",
+                    "content": "机器人、AI方向活跃",
+                },
+                {
+                    "classify": "外汇",
+                    "title": "美元指数波动",
+                    "time": "2026-07-11 09:31",
+                    "url": "https://tushare.example/news-2",
+                    "content": "海外市场波动",
+                },
+            ]
+        )
+
+    def guba_sina(self, show_content=False) -> MiniFrame:
+        return MiniFrame(
+            [
+                {
+                    "title": "A股市场情绪回暖",
+                    "ptime": "2026-07-11 10:00",
+                    "content": "成交活跃，涨停数量增加",
+                }
+            ]
+        )
+
+
 class TushareOnlyAk(PartialAk):
     def stock_value_em(self, symbol: str) -> MiniFrame:
         raise RuntimeError("ak valuation unavailable")
@@ -574,6 +609,30 @@ def test_enrich_tdx_snapshot_accepts_fail_open_external_intelligence_urls(tmp_pa
     assert any(item["title"] == "机器人订单增长" for item in data["market_news"])
     assert data["external_enrichment"]["intelligence_statuses"]["env-1"].startswith("failed:")
     assert data["external_enrichment"]["intelligence_statuses"]["env-2"] == "ok:1"
+
+
+def test_enrich_tdx_snapshot_imports_tushare_news_events_into_market_news(
+    tmp_path: Path,
+) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+
+    summary = module.enrich_snapshot(
+        snapshot,
+        codes=[],
+        ak=RichAk(),
+        tushare_news_api=TushareNewsApi(),
+        market_news_limit=2,
+    )
+
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    titles = [item["title"] for item in data["market_news"]]
+    assert "A股机器人板块走强" in titles
+    assert "A股市场情绪回暖" in titles
+    assert "美元指数波动" not in titles
+    assert data["external_enrichment"]["intelligence_statuses"]["tushare-news"] == "ok:2"
+    assert summary["market_news_count"] >= 2
 
 
 def test_daily_report_uses_snapshot_market_news_when_no_news_csv(tmp_path: Path) -> None:

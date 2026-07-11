@@ -90,10 +90,18 @@ def build_data_source_matrix(
         DataSourceCapability(
             name="Tushare Pro",
             status="active" if provider_class == "TushareProvider" else "available",
-            coverage="A股日线、指数、财务、资金流、交易日历",
-            best_for="Token 稳定兜底、历史回补和中长期基本面",
-            limitation="需要 TUSHARE_TOKEN，字段口径需和 TDX/AKShare 交叉校验",
-            integration="provider=tushare / TUSHARE_TOKEN",
+            coverage="A股日线、指数、财务、资金流、交易日历、即时新闻、信息地雷、股吧重点消息",
+            best_for="Token 稳定兜底、历史回补、中长期基本面和市场新闻事件补强",
+            limitation="Pro 字段需要 TUSHARE_TOKEN；旧版新闻事件无需作为强交易理由，需过滤噪声",
+            integration="provider=tushare / TUSHARE_TOKEN / scripts/enrich_tdx_snapshot.py",
+        ),
+        DataSourceCapability(
+            name="黑狼 FXYZ",
+            status="planned",
+            coverage="实时股票行情、买卖五档、分钟数据、实时 K 线",
+            best_for="后续补盘口、实时行情和高频刷新，作为 TDX/iTick 的备选实时源",
+            limitation="公开文档页未暴露可无凭证调用的接口细节，接入前需配置授权并做字段校验",
+            integration="未来 FXYZ_API_KEY / provider=fxyz",
         ),
         DataSourceCapability(
             name="iTick",
