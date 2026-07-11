@@ -3241,7 +3241,7 @@ def _render_global_freshness_bar(
 def _render_data_center_panel(data_center: DataCenterView) -> str:
     rows = "".join(
         f"""
-        <tr class="data-center-row {escape(row.level)}">
+        <tr id="{escape(_data_center_anchor(row.category))}" class="data-center-row {escape(row.level)}">
           <td>{escape(row.category)}</td>
           <td>{escape(row.channel)}</td>
           <td>{escape(row.status)}</td>
@@ -3252,20 +3252,52 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
         for row in data_center.rows
     )
     alerts = _li_join(data_center.alerts or ["暂无影响分析的采集预警"])
+    blocked_count = sum(1 for row in data_center.rows if row.level == "blocked")
+    warn_count = sum(1 for row in data_center.rows if row.level == "warn")
+    available_count = sum(1 for row in data_center.rows if row.level == "ok")
+    review_links = "".join(
+        f'<a class="manual-action-card" href="#{escape(anchor)}"><strong>{escape(label)}</strong><span>{escape(note)}</span></a>'
+        for label, anchor, note in [
+            ("核对K线", "data-domain-kline", "影响技术面和候选排序"),
+            ("核对资金面", "data-domain-fund", "影响承接和分歧判断"),
+            ("核对公告", "data-domain-announcement", "影响事件风险"),
+            ("核对基本面", "data-domain-fundamental", "影响估值和财务质量"),
+        ]
+    )
     return f"""
-      <section class="panel data-center-panel" id="data-center" aria-label="数据中台">
+      <section class="panel data-center-panel" id="data-center" aria-label="专业数据中台">
         <div class="editor-toolbar">
-          <div><h3>数据中台</h3><p class="section-subtitle">展示当前采集状态、采集渠道、更新时间、未采集字段和分析影响预警。</p></div>
+          <div><h3>专业数据中台</h3><p class="section-subtitle">先判断数据是否能用于分析；有缺口时只做人工复核，不输出强结论。</p></div>
           <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
+        </div>
+        <div class="data-center-kpi-grid">
+          <div class="data-center-kpi"><span>可用数据域</span><strong>{available_count}</strong></div>
+          <div class="data-center-kpi warn"><span>需复核</span><strong>{warn_count}</strong></div>
+          <div class="data-center-kpi blocked"><span>影响分析</span><strong>{blocked_count}</strong></div>
+          <div class="data-center-kpi"><span>更新时间</span><strong>{escape(data_center.updated_at)}</strong></div>
         </div>
         <table class="data-table">
           <thead><tr><th>数据域</th><th>采集渠道</th><th>采集状态</th><th>更新时间</th><th>未采集/缺失</th><th>影响分析预警</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
+        <div class="manual-action-grid" aria-label="人工复核入口">{review_links}</div>
         <div class="quality-banner {'high' if data_center.status == '影响分析' else ''}" style="margin-top:12px">
           <strong>影响分析预警：</strong><ul class="note-list">{alerts}</ul>
         </div>
       </section>"""
+
+
+def _data_center_anchor(category: str) -> str:
+    mapping = {
+        "大盘行情": "data-domain-market",
+        "K线行情": "data-domain-kline",
+        "候选池": "data-domain-candidates",
+        "资金面": "data-domain-fund",
+        "新闻舆情": "data-domain-news",
+        "公告": "data-domain-announcement",
+        "基本面": "data-domain-fundamental",
+    }
+    return mapping.get(category, f"data-domain-{category}")
 
 
 def _freshness_detail(quality: DataQualityView) -> str:
@@ -3933,12 +3965,12 @@ def _render_hot_opportunity_module(
     )
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">把板块、情绪和候选池放在一张雷达图里，只筛观察对象，不直接给买点。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">先看机会状态和策略通道，再进入候选列表；只输出观察优先级。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
       {_render_research_data_flow_panel("热点机会", "板块涨跌、扩散率、涨跌停情绪、候选 K 线、资金和消息标签", "主题雷达 -> 候选观察池 -> 个股分析入口")}
       {_render_opportunity_strategy_funnel(market, top_sector, top_candidate, candidates, metadata)}
       {candidate_cards}
       <div class="panel">
-        <div class="editor-toolbar"><div><h3>热点机会 · 主题雷达</h3><p class="section-subtitle">先判断热点是否可持续，再决定哪些股票值得进入个股分析。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
+        <div class="editor-toolbar"><div><h3>机会状态</h3><p class="section-subtitle">先判断热点是否可持续，再决定哪些股票值得进入个股分析。</p></div><span class="portfolio-chip">{escape(market.trade_date)}</span></div>
         <div class="summary-grid">
           <div class="summary-card"><span>板块热度</span><strong>{escape(top_sector.name if top_sector else "待确认")}</strong><p class="kpi-foot">{escape(top_sector.continuity if top_sector else "等待板块快照")}</p></div>
           <div class="summary-card"><span>情绪温度</span><strong>{escape(sentiment_state)}</strong><p class="kpi-foot">涨停 {market.limit_up_count} / 跌停 {market.limit_down_count}；{escape(downside_state)}</p></div>
@@ -3948,7 +3980,7 @@ def _render_hot_opportunity_module(
       </div>
       <div class="grid-2" style="margin-top:16px">
         <div class="panel">
-          <h3>板块热度</h3>
+          <h3>板块方向</h3>
           <table class="data-table"><thead><tr><th>主题</th><th>强度</th><th>扩散</th><th>代表样本</th><th>下一步</th></tr></thead><tbody>{sector_rows}</tbody></table>
         </div>
         <div class="panel">
@@ -3960,7 +3992,7 @@ def _render_hot_opportunity_module(
           </div>
         </div>
         <div class="panel" style="grid-column:1 / -1">
-          <div class="editor-toolbar"><div><h3>候选观察池</h3><p class="section-subtitle">每个候选都要继续进入个股分析，复核 K 线、资金面和消息面。</p></div><span class="portfolio-chip">{escape("价格可靠" if candidates.price_reliable else "仅观察")}</span></div>
+          <div class="editor-toolbar"><div><h3>候选列表</h3><p class="section-subtitle">每个候选都要继续进入个股分析，复核 K 线、资金面和消息面。</p></div><span class="portfolio-chip">{escape("价格可靠" if candidates.price_reliable else "仅观察")}</span></div>
           <table class="data-table candidates-table"><thead><tr><th>#</th><th>股票</th><th>分数</th><th>方向</th><th>入选理由</th><th>下一步</th></tr></thead><tbody>{candidate_rows}</tbody></table>
         </div>
         <div class="panel" style="grid-column:1 / -1">
@@ -3981,7 +4013,7 @@ def _render_opportunity_candidate_cards(
     if not candidates.candidates:
         body = """
           <div class="empty-state">
-            <strong>候选卡列表暂无</strong>
+            <strong>候选列表暂无</strong>
             <p>候选池为空时不做机会排序，先刷新快照或补充候选源。</p>
           </div>"""
     else:
@@ -3998,7 +4030,7 @@ def _render_opportunity_candidate_cards(
     return f"""
       <div class="panel opportunity-cards-panel">
         <div class="editor-toolbar">
-          <div><h3>候选卡列表</h3><p class="section-subtitle">每张卡只回答策略、证据、风险、数据质量和下一步，不把观察优先级写成买入评级。</p></div>
+          <div><h3>候选列表</h3><p class="section-subtitle">每张卡只回答策略、证据、风险、数据质量和下一步，不把观察优先级写成买入评级。</p></div>
           <span class="portfolio-chip">可验证 / 只观察 / 风险排除 / 待补数据</span>
         </div>
         <div class="opportunity-card-grid">{body}</div>
@@ -4090,15 +4122,15 @@ def _render_opportunity_strategy_funnel(
     return f"""
       <div class="opportunity-funnel-panel">
         <div class="opportunity-funnel-hero simple-panel">
-          <h3>策略漏斗</h3>
+          <h3>机会状态</h3>
           <p>先看闸门，再按策略筛选，最后进入个股分析。</p>
           <div class="market-action-snapshot"><span>机会总闸门</span><strong>{escape(gate)}</strong></div>
         </div>
-        <div class="opportunity-channel-grid">{channel_html}</div>
+        <div class="panel opportunity-channel-panel"><h3>策略通道</h3><div class="opportunity-channel-grid">{channel_html}</div></div>
         <div class="opportunity-filter-box">
           <h3>筛选条件</h3>
           <p>扫描范围 {escape(scan_total)}；Provider 与交易日见全局状态条；价格质量：{escape("可靠" if candidates.price_reliable else "待补数据")}。</p>
-          <strong>风险排除栏</strong>
+          <h3>风险排除</h3>
           <ul>{_li_join(excluded)}</ul>
           <a class="primary-button" href="#stock" data-jump="stock">进入股票分析</a>
         </div>
@@ -4550,8 +4582,8 @@ def _render_compact_market_module(
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
         <div>
-          <h2 class="module-title">每日大盘 · 仓位闸门</h2>
-          <p class="module-desc">先判断今天能不能做，再确认方向、风险和下一步。</p>
+          <h2 class="module-title">每日大盘</h2>
+          <p class="module-desc">市场摘要、风险项、指数表现和市场宽度先给出能否继续分析的判断。</p>
         </div>
         <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
       </div>
@@ -4576,18 +4608,18 @@ def _render_compact_market_module(
           </div>
         </div>
         <div class="market-tape-card">
-          <div class="market-tape-head"><span>指数脊柱</span><strong>先看风格共振，不只看一根指数</strong></div>
+          <div class="market-tape-head"><span>指数表现</span><strong>先看风格共振，不只看一根指数</strong></div>
           <div class="market-index-spine">{index_spine}</div>
         </div>
       </div>
       <div class="market-radar-grid">
         <div class="panel market-panel">
-          <h3>市场宽度温度计</h3>
+          <h3>市场宽度</h3>
           <p class="section-subtitle">指数上涨但下跌家数更多时，仓位闸门不能直接放开。</p>
           <div class="market-lamp-grid">{breadth_lamps}</div>
         </div>
         <div class="panel market-panel">
-          <h3>风险红灯 · 机会与风险</h3>
+          <h3>风险项</h3>
           <p class="section-subtitle">把跌停、资金、热度和持仓健康度提前放在大盘页，不等个股页才发现风险。</p>
           <div class="market-risk-stack">{risk_items}</div>
         </div>
@@ -4595,13 +4627,13 @@ def _render_compact_market_module(
       {_render_market_sentiment_panel(news)}
       <div class="market-radar-grid wide-left">
         <div class="panel market-panel market-sector-panel" style="grid-column:1 / -1">
-          <div class="editor-toolbar"><div><h3>板块主线热力地图</h3><p class="section-subtitle">行业 / 概念主线只作为机会入口；大盘页不直接给买入结论。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
+          <div class="editor-toolbar"><div><h3>板块方向</h3><p class="section-subtitle">行业 / 概念主线只作为机会入口；大盘页不直接给买入结论。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
           <div class="market-sector-heatmap">{sector_heatmap}</div>
           <div class="portfolio-action-bar market-action-bar">{quick_actions}</div>
         </div>
       </div>
       <details class="detail-shell compact-detail">
-        <summary>查看关键证据原始评分表</summary>
+        <summary>市场异动与数据质量</summary>
         <div class="detail-body">
           <table class="data-table"><thead><tr><th>维度</th><th>评分</th><th>状态</th></tr></thead><tbody>{dimension_rows}</tbody></table>
         </div>
@@ -4623,8 +4655,8 @@ def _render_market_barometer_strip(
     return f"""
       <div class="market-barometer-strip">
         <div class="market-barometer-title">
-          <span>市场气压计</span>
-          <strong>市场结论卡 · 市场总闸门：{escape(action)}</strong>
+          <span>市场摘要</span>
+          <strong>市场总闸门：{escape(action)}</strong>
           <p>{escape(reason)}</p>
         </div>
         <div class="market-barometer-rail" aria-label="防守到进攻压力带">
@@ -4633,7 +4665,7 @@ def _render_market_barometer_strip(
         <div class="market-barometer-facts">
           <span>市场状态：{escape(market_status)}</span>
           <span>风险暴露：目标现金 {escape(target_cash)}，数据降级时自动只观察。</span>
-          <span>主线：见板块主线热力地图，不用交易板兜底。</span>
+          <span>主线：见板块方向，不用交易板兜底。</span>
           <span>下一步：去股市机会验证候选；去我的持仓处理高风险仓位。</span>
           <span>交易日：{escape(market.trade_date)}</span>
           <span>数据源：顶部全局状态条 / Provider</span>
@@ -4649,7 +4681,7 @@ def _render_market_sentiment_panel(news: NewsSentimentReport | None) -> str:
     if news is None or not news.items:
         return """
       <div class="panel market-panel" style="margin-top:16px">
-        <h3>市场舆情分析</h3>
+        <h3>市场异动</h3>
         <div class="empty-state"><strong>市场新闻未接入</strong><p>缺少市场新闻/舆情源时，不把消息面当作交易理由。</p></div>
       </div>"""
     latest = news.items[0]
@@ -4660,7 +4692,7 @@ def _render_market_sentiment_panel(news: NewsSentimentReport | None) -> str:
     risk = news.risks[0] if news.risks else "未识别明显负面"
     return f"""
       <div class="panel market-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>市场舆情分析</h3><p class="section-subtitle">新闻只做风险偏好和催化验证，不替代价格、成交和公告。</p></div><span class="portfolio-chip">正面 {news.positive_count} / 负面 {news.negative_count}</span></div>
+        <div class="editor-toolbar"><div><h3>市场异动</h3><p class="section-subtitle">新闻只做风险偏好和催化验证，不替代价格、成交和公告。</p></div><span class="portfolio-chip">正面 {news.positive_count} / 负面 {news.negative_count}</span></div>
         <div class="summary-grid">
           <div class="summary-card"><span>舆情结论</span><strong>{escape(news.summary)}</strong></div>
           <div class="summary-card"><span>最新消息</span><strong>{escape(latest.title)}</strong><p class="kpi-foot">{escape(latest.source)}</p></div>
@@ -5172,8 +5204,9 @@ def _render_compact_portfolio_module(
       {_render_portfolio_position_overview(advice)}
       {_render_portfolio_exposure_map(portfolio)}
       {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
+      <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页使用顶部专业数据中台的行情日期、资金面、公告和基本面状态；缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
       <div class="panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>持仓风险处置</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
+        <div class="editor-toolbar"><div><h3>持仓明细</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
         {action_bar}
         <table class="data-table portfolio-table"><thead><tr><th>股票</th><th>数量</th><th>成本</th><th>现价</th><th>当日盈亏</th><th>总盈亏</th><th>仓位</th><th>趋势</th><th>建议</th><th>操作</th></tr></thead><tbody>{positions}</tbody></table>
       </div>
@@ -5198,8 +5231,8 @@ def _render_portfolio_command_panel(
     return f"""
       <div class="portfolio-command-console {tone}">
         <div class="portfolio-command-hero simple-panel">
-          <h3>组合健康灯 · 组合处置台</h3>
-          <strong>组合处置摘要：组合状态 {escape(portfolio_state)}，现金比例按“{escape(advice.target_cash)}”执行。</strong>
+          <h3>组合摘要</h3>
+          <strong>组合状态 {escape(portfolio_state)}，现金比例按“{escape(advice.target_cash)}”执行。</strong>
           <p>{escape(headline)}</p>
           <div class="portfolio-command-meta">
             <span>交易日 {escape(portfolio.trade_date)}</span>
@@ -5299,7 +5332,7 @@ def _render_portfolio_risk_budget_panel(
     return f"""
       <div class="panel portfolio-budget-panel" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>风险预算条</h3><p class="section-subtitle">新增或减仓前，先看单股、行业和现金目标是否越过预算线。</p></div>
+          <div><h3>风险预算</h3><p class="section-subtitle">新增或减仓前，先看单股、行业和现金目标是否越过预算线。</p></div>
           <span class="portfolio-chip">持仓账本来源：{escape(holdings_path)}</span>
         </div>
         <div class="portfolio-budget-grid">
@@ -5337,7 +5370,7 @@ def _render_portfolio_four_lane_board(
     return f"""
       <div class="panel portfolio-lane-panel" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>处置队列四车道</h3><p class="section-subtitle">先处理风险，再观察修复，最后才考虑可继续持有的仓位。</p></div>
+          <div><h3>处理队列</h3><p class="section-subtitle">先处理风险，再观察修复，最后才考虑可继续持有的仓位。</p></div>
           <span class="portfolio-chip">成本位置 / 下一步动作</span>
         </div>
         <div class="portfolio-lane-grid">{lane_html}</div>
@@ -5347,7 +5380,7 @@ def _render_portfolio_four_lane_board(
 def _render_portfolio_execution_boundaries(advice: PortfolioAdvice) -> str:
     if not advice.position_advices:
         rows = """
-        <tr><td colspan="5">暂无持仓，先补齐账本后生成执行边界。</td></tr>
+        <tr><td colspan="5">暂无持仓，先补齐账本后生成操作边界。</td></tr>
         """
     else:
         rows = "".join(
@@ -5363,7 +5396,7 @@ def _render_portfolio_execution_boundaries(advice: PortfolioAdvice) -> str:
     return f"""
       <div class="panel portfolio-boundary-panel" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>执行边界</h3><p class="section-subtitle">每只持仓都要有动作、仓位上限、失效线和禁止动作；亏损股不默认补仓。</p></div>
+          <div><h3>操作边界</h3><p class="section-subtitle">每只持仓都要有动作、仓位上限、失效线和禁止动作；亏损股不默认补仓。</p></div>
           <span class="portfolio-chip">禁止动作：未触发前不加仓，不摊薄问题仓</span>
         </div>
         <table class="data-table">
@@ -5423,7 +5456,7 @@ def _portfolio_lane(
 def _render_portfolio_position_overview(advice: PortfolioAdvice) -> str:
     return f"""
       <div class="panel" style="margin-top:16px">
-        <h3>整体仓位情况</h3>
+        <h3>账本状态</h3>
         <div class="summary-grid">
           <div class="summary-card"><span>记录内股票仓位</span><strong>100%</strong><p class="kpi-foot">现金未录入，仅代表已录入股票篮子</p></div>
           <div class="summary-card"><span>目标现金/低风险</span><strong>{escape(advice.target_cash)}</strong><p class="kpi-foot">按市场和组合风险自动给出</p></div>
@@ -5436,7 +5469,7 @@ def _render_portfolio_exposure_map(portfolio: PortfolioAnalysisReport) -> str:
     if not portfolio.sector_weights:
         return """
       <div class="panel portfolio-exposure-panel" style="margin-top:16px">
-        <h3>行业暴露地图</h3>
+        <h3>行业暴露</h3>
         <div class="empty-state"><strong>暂无行业暴露</strong><p>持仓行业为空时，只能先按单股集中度做风险预算。</p></div>
       </div>"""
     bars = "".join(
@@ -5446,7 +5479,7 @@ def _render_portfolio_exposure_map(portfolio: PortfolioAnalysisReport) -> str:
     top_positions = "".join(_portfolio_weight_tile(position) for position in sorted(portfolio.positions, key=lambda item: item.weight, reverse=True)[:4])
     return f"""
       <div class="panel portfolio-exposure-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>行业暴露地图</h3><p class="section-subtitle">先看组合是不是押在同一条线，再决定能否新增同主题股票。</p></div><span class="portfolio-chip">下一步复核</span></div>
+        <div class="editor-toolbar"><div><h3>行业暴露</h3><p class="section-subtitle">先看组合是不是押在同一条线，再决定能否新增同主题股票。</p></div><span class="portfolio-chip">下一步复核</span></div>
         <div class="portfolio-exposure-layout">
           <div class="portfolio-exposure-bars">{bars}</div>
           <div class="portfolio-weight-tiles">{top_positions}</div>
@@ -5572,14 +5605,14 @@ def _render_compact_stock_module(
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">把单股拆成技术趋势、资金量能、消息公告和组合成本四条证据链。</p></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先看当前结论，再核对技术面、基本面、资金面、消息公告、板块主题和成本位置。</p></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
       {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
       {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
       {_render_stock_verdict_wall(stock, stock_raw, portfolio, quality, technical, event_radar, trade_plan, sectors, driver, risk, invalid)}
       {_render_stock_candidate_context(candidate_source, candidate_strategy_label, candidate_evidence)}
       {_render_stock_required_data_audit(stock_raw)}
       <div class="panel" style="margin-bottom:16px">
-        <div class="editor-toolbar"><div><h3>个股三面复核</h3><p class="section-subtitle">技术面看趋势位置，资金面看量能和净流，消息面看新闻公告；三面不共振时只观察。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
+        <div class="editor-toolbar"><div><h3>股票摘要</h3><p class="section-subtitle">价格、交易日、趋势和风险用于人工确认当前标的是否正确。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
       </div>
       <div class="stock-workspace-drawer">
         <div>
@@ -5616,7 +5649,7 @@ def _render_stock_candidate_context(
     return f"""
       <div class="panel stock-candidate-context-panel">
         <div class="editor-toolbar">
-          <div><h3>候选来源</h3><p class="section-subtitle">从机会进入个股分析时，保留来源、策略和命中证据，避免脱离筛选上下文。</p></div>
+          <div><h3>来源上下文</h3><p class="section-subtitle">从机会进入个股分析时，保留来源、策略和命中证据，避免脱离筛选上下文。</p></div>
           <span class="portfolio-chip">{escape(source_label)}</span>
         </div>
         <div class="summary-grid compact-summary-grid">
@@ -5644,7 +5677,7 @@ def _render_stock_required_data_audit(stock_raw: StockRawData) -> str:
     return f"""
       <div class="panel stock-data-audit-panel">
         <div class="editor-toolbar">
-          <div><h3>数据源核验</h3><p class="section-subtitle">K线数据、资金面、消息面、公告、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
+          <div><h3>数据质量</h3><p class="section-subtitle">K线数据、资金面、消息面、公告、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
           <span class="portfolio-chip">{escape(summary)}</span>
         </div>
         <div class="stock-data-block-grid">{rows}</div>
@@ -5824,8 +5857,8 @@ def _render_stock_verdict_wall(
         ("技术面", technical.structure, f"趋势 {stock.trend}；失效 {invalid}"),
         ("基本面", _stock_valuation_text(stock_raw), _stock_valuation_note(stock_raw)),
         ("资金面", _stock_fund_flow_text(stock_raw), _stock_fund_flow_note(stock_raw)),
-        ("消息/公告", _stock_news_text(event_radar, 0, len(stock_raw.news_items)), event_radar.gate),
-        ("概念板块", _stock_sector_strength_text(stock, sectors), _stock_sector_strength_note(stock, sectors)),
+        ("消息公告", _stock_news_text(event_radar, 0, len(stock_raw.news_items)), event_radar.gate),
+        ("板块主题", _stock_sector_strength_text(stock, sectors), _stock_sector_strength_note(stock, sectors)),
         ("成本位置", _stock_cost_position_text(position), _stock_cost_position_note(position, trade_plan, invalid)),
     ]
     dimension_html = "".join(
@@ -5838,8 +5871,8 @@ def _render_stock_verdict_wall(
     return f"""
       <div class="stock-verdict-wall">
         <div class="stock-verdict-card simple-panel">
-          <h3>单股判决卡</h3>
-          <strong>最终判决卡 · 最终动作：{escape(trade_plan.verdict)}</strong>
+          <h3>当前结论</h3>
+          <strong>当前动作：{escape(trade_plan.verdict)}</strong>
           <p>{escape(getattr(trade_plan, "today_action", trade_plan.reason))}</p>
           <div class="metric-list">
             <div class="metric-line"><span>最强证据</span><strong>{escape(_short_condition(driver, 68))}</strong></div>
@@ -5853,7 +5886,7 @@ def _render_stock_verdict_wall(
           </div>
         </div>
         <div class="stock-six-wall">
-          <div class="editor-toolbar"><div><h3>六维证据墙</h3><p class="section-subtitle">每个维度都拆成支持、反对和缺口；缺口会降低置信度。</p></div><span class="portfolio-chip">{escape(quality.status)}</span></div>
+          <div class="editor-toolbar"><div><h3>六类证据</h3><p class="section-subtitle">每个维度都拆成支持、反对和缺口；缺口会降低置信度。</p></div><span class="portfolio-chip">{escape(quality.status)}</span></div>
           <div class="stock-six-grid">{dimension_html}</div>
         </div>
         <div class="stock-bull-bear">
@@ -5912,7 +5945,7 @@ def _render_stock_switcher(
     return f"""
       <div class="panel stock-switch-panel">
         <div class="editor-toolbar">
-          <div><h3>股票筛选</h3><p class="section-subtitle">输入代码或名称，K线和分析会一起切换。</p></div>
+          <div><h3>股票输入</h3><p class="section-subtitle">输入代码或名称，K线和分析会一起切换。</p></div>
         </div>
         <form class="stock-form" method="get" action="{workspace_action("module-stock")}">
           <input type="hidden" name="provider" value="{escape(provider_name)}" />

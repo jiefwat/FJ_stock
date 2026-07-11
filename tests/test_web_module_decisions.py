@@ -42,11 +42,11 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     html = _sample_html()
 
     assert "仓位动作</span><strong>可以进攻</strong>" in html
-    assert "每日大盘 · 仓位闸门" in html
-    assert "持仓风险处置" in html
-    assert "个股三面复核" in html
-    assert "热点机会 · 主题雷达" in html
-    assert "候选观察池" in html
+    assert "每日大盘" in html
+    assert "持仓明细" in html
+    assert "股票摘要" in html
+    assert "机会状态" in html
+    assert "候选列表" in html
 
 
 def test_four_modules_keep_copy_functional_and_simple() -> None:
@@ -78,12 +78,14 @@ def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
     html = _sample_html()
 
     for text in [
-        "数据中台",
+        "专业数据中台",
         "采集渠道",
         "采集状态",
         "更新时间",
         "未采集/缺失",
         "影响分析预警",
+        "人工复核入口",
+        "核对K线",
         "K线行情",
         "资金面",
         "新闻舆情",
@@ -98,7 +100,7 @@ def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
 
     assert "上涨/下跌/平盘" in market_html
     assert "未返回" not in market_html
-    assert "机会与风险" in market_html
+    assert "风险项" in market_html
     assert "看热点机会" in market_html
 
 
@@ -106,12 +108,12 @@ def test_daily_market_module_matches_market_gate_design_doc() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     for text in [
-        "市场气压计",
+        "市场摘要",
         "市场总闸门",
-        "指数脊柱",
-        "宽度温度计",
-        "板块主线热力地图",
-        "风险红灯",
+        "指数表现",
+        "市场宽度",
+        "板块方向",
+        "风险项",
         "数据源",
         "交易日",
         "验证条件",
@@ -124,7 +126,7 @@ def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     for text in [
-        "市场结论卡",
+        "市场摘要",
         "市场状态",
         "风险暴露",
         "目标现金",
@@ -173,7 +175,8 @@ def test_opportunity_module_uses_strategy_funnel_and_risk_exclusion() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     for text in [
-        "策略漏斗",
+        "机会状态",
+        "策略通道",
         "机会总闸门",
         "主线强势",
         "资金抱团",
@@ -191,7 +194,7 @@ def test_opportunity_module_renders_candidate_cards_with_quality_and_actions() -
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     for text in [
-        "候选卡列表",
+        "候选列表",
         "策略：",
         "入选证据",
         "主要风险",
@@ -232,13 +235,13 @@ def test_stock_module_uses_six_dimension_evidence_wall() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "最终判决卡",
-        "六维证据墙",
+        "当前结论",
+        "六类证据",
         "技术面",
         "基本面",
         "资金面",
-        "消息/公告",
-        "概念板块",
+        "消息公告",
+        "板块主题",
         "成本位置",
         "多空反证",
         "禁止动作",
@@ -250,8 +253,8 @@ def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "单股判决卡",
-        "最终动作",
+        "当前结论",
+        "当前动作",
         "最强证据",
         "最大反证",
         "组合影响",
@@ -265,7 +268,7 @@ def test_stock_module_requires_kline_fund_news_and_fundamental_blocks() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "数据源核验",
+        "数据质量",
         "K线数据",
         "资金面",
         "消息面",
@@ -348,7 +351,7 @@ def test_stock_module_shows_candidate_source_context_when_entered_from_opportuni
         candidate_evidence="所属主题排名前 5，成交额放大",
     )
 
-    assert "候选来源" in stock_html
+    assert "来源上下文" in stock_html
     assert "股市机会" in stock_html
     assert "主线强势 + 放量突破" in stock_html
     assert "所属主题排名前 5，成交额放大" in stock_html
@@ -359,9 +362,9 @@ def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> 
 
     for text in [
         "我的持仓",
-        "持仓风险处置",
-        "持仓处理队列",
-        "整体仓位情况",
+        "持仓明细",
+        "处理队列",
+        "账本状态",
         "组合整体诊断",
         "处理优先级",
         "目标现金/低风险",
@@ -373,10 +376,10 @@ def test_portfolio_module_reads_like_disposal_console_before_table() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "组合处置台",
+        "组合摘要",
         "今日先处理",
         "最大风险",
-        "行业暴露地图",
+        "行业暴露",
         "账本状态",
         "下一步复核",
     ]:
@@ -389,12 +392,12 @@ def test_portfolio_module_uses_four_lane_disposal_queue() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "处置队列四车道",
+        "处理队列",
         "必须处理",
         "观察",
         "可继续",
         "待补数据",
-        "风险预算条",
+        "风险预算",
         "成本位置",
         "持仓账本来源",
         "公开只读",
@@ -406,11 +409,10 @@ def test_portfolio_module_surfaces_health_light_and_execution_boundaries() -> No
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "组合健康灯",
-        "组合处置摘要",
+        "组合摘要",
         "组合状态",
         "现金比例",
-        "执行边界",
+        "操作边界",
         "失效线",
         "仓位上限",
         "禁止动作",

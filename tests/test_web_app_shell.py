@@ -88,10 +88,10 @@ def test_each_workspace_contains_its_own_core_module_content() -> None:
     html = _html()
 
     expected = {
-        "market": "每日大盘 · 仓位闸门",
-        "portfolio": "持仓风险处置",
-        "stock": "个股三面复核",
-        "opportunity": "热点机会 · 主题雷达",
+        "market": "风险项",
+        "portfolio": "持仓明细",
+        "stock": "股票摘要",
+        "opportunity": "候选列表",
     }
     for workspace, marker in expected.items():
         id_pos = html.index(f'id="{workspace}"')

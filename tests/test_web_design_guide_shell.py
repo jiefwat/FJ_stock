@@ -81,7 +81,7 @@ def test_market_page_owns_market_decision_flow() -> None:
     portfolio_start = html.index('id="portfolio"')
     market_html = html[market_start:portfolio_start]
 
-    for text in ["每日大盘", "仓位闸门", "关键证据", "上涨/下跌", "指数", "机会与风险"]:
+    for text in ["每日大盘", "市场摘要", "风险项", "上涨/下跌", "指数表现", "板块方向"]:
         assert text in market_html
     assert 'data-jump="opportunity"' in market_html
 
@@ -92,10 +92,10 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     opportunity_html = html[opportunity_start:]
 
     for text in [
-        "热点机会 · 主题雷达",
-        "板块热度",
+        "机会状态",
+        "板块方向",
         "情绪温度",
-        "候选观察池",
+        "候选列表",
         "赚钱效应",
         "亏钱效应",
         "入选理由",

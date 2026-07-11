@@ -40,13 +40,13 @@ def test_four_modules_explain_professional_data_flow() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
     assert "数据链路：K线 / 资金面 / 消息面" in html
-    assert "每日大盘 · 仓位闸门" in html
-    assert "持仓风险处置" in html
-    assert "个股三面复核" in html
-    assert "热点机会 · 主题雷达" in html
-    assert "板块热度" in html
+    assert "每日大盘" in html
+    assert "持仓明细" in html
+    assert "股票摘要" in html
+    assert "机会状态" in html
+    assert "板块方向" in html
     assert "情绪温度" in html
-    assert "候选观察池" in html
+    assert "候选列表" in html
 
 
 def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None:
