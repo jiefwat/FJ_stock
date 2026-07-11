@@ -285,6 +285,9 @@ h1 {
 @keyframes reveal { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .module-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom: 18px; }
 .module-header-meta { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; }
+.module-refresh-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; color:var(--muted); font-size:12px; }
+.module-refresh-tools form { margin:0; }
+.module-refresh-button { padding:7px 10px; font-size:12px; }
 .module-title { margin:0; font-size: 24px; letter-spacing:-.03em; font-family: var(--display); }
 .module-desc { margin:6px 0 0; color:var(--muted); line-height:1.6; }
 .kpi-grid { display:grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap:14px; }
@@ -313,6 +316,7 @@ h1 {
 .market-event-card-list { display:grid; gap:10px; margin-top:14px; }
 .market-event-card { border:1px solid var(--line); border-radius:16px; background:#fffdfa; padding:13px 15px; }
 .market-event-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:8px; }
+.market-event-time { border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:999px; padding:5px 9px; font-size:12px; font-weight:800; white-space:nowrap; }
 .market-event-theme { border:1px solid #dccba9; background:#f8f0df; color:#765622; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:900; white-space:nowrap; }
 .market-event-stocks { color:var(--ink); font-weight:800; line-height:1.45; }
 .market-event-reason { margin:0; color:var(--ink-soft); line-height:1.65; overflow-wrap:anywhere; }
@@ -911,6 +915,7 @@ def render_page(
     candidate_strategy_label: str = "",
     candidate_evidence: str = "",
     current_user: AuthUser | None = None,
+    refresh: bool = False,
 ) -> str:
     try:
         active_provider = provider or create_provider(provider_name)
@@ -925,6 +930,7 @@ def render_page(
             candidate_limit=20,
             provider_name=provider_name,
             allow_empty_portfolio=True,
+            refresh=refresh,
         )
         stock = build_deep_stock_report(
             active_provider,
@@ -993,6 +999,7 @@ def render_page(
         event_radar=event_radar,
         data_quality_warnings=_trade_blocking_warnings(quality.warnings),
     )
+    refresh_time = quality.data_center.updated_at
     section_map = {
         "market": _render_compact_market_module(
             market,
@@ -1001,6 +1008,10 @@ def render_page(
             candidates,
             candidate_universe=candidate_universe,
             news=daily.news,
+            refresh_time=refresh_time,
+            stock_code=resolved.query,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
         ),
         "portfolio": _render_compact_portfolio_module(
             portfolio,
@@ -1011,6 +1022,7 @@ def render_page(
             provider_name,
             portfolio_notice,
             edit_code,
+            refresh_time=refresh_time,
         ),
         "stock": _render_compact_stock_module(
             stock,
@@ -1029,6 +1041,7 @@ def render_page(
             candidate_evidence=candidate_evidence,
             provider_name=provider_name,
             holdings_path=holdings_path,
+            refresh_time=refresh_time,
         ),
         "opportunity": _render_hot_opportunity_module(
             sectors=sectors,
@@ -1043,8 +1056,14 @@ def render_page(
             candidate_strategy=candidate_strategy,
             candidate_universe_metadata=candidate_universe_metadata,
             quality=quality,
+            refresh_time=refresh_time,
         ),
-        "data-center": _render_data_center_panel(quality.data_center),
+        "data-center": _render_data_center_panel(
+            quality.data_center,
+            stock_code=resolved.query,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+        ),
     }
     shell = f"""
   <div class="app-shell">
@@ -1124,6 +1143,7 @@ class LimitBoardRow:
     pct_change: float
     amount: float = 0.0
     turnover_rate: float = 0.0
+    latest_date: str = ""
 
 
 def _safe_fetch_candidate_universe(provider: StockDataProvider) -> list[CandidateStockRawData]:
@@ -1196,6 +1216,7 @@ def _build_limit_board_rows(universe: list[CandidateStockRawData]) -> list[Limit
                 pct_change=round(pct, 2),
                 amount=item.amount,
                 turnover_rate=item.turnover_rate,
+                latest_date=item.bars[-1].date,
             )
         )
     return rows
@@ -3389,7 +3410,35 @@ def _render_global_freshness_bar(
       </div>"""
 
 
-def _render_data_center_panel(data_center: DataCenterView) -> str:
+def _render_module_refresh_tools(
+    *,
+    refresh_time: str,
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+    workspace: str,
+) -> str:
+    action = f"/#{workspace}"
+    return f"""
+      <div class="module-refresh-tools">
+        <span>数据刷新时间：{escape(refresh_time or "待确认")}</span>
+        <form method="get" action="{escape(action, quote=True)}">
+          <input type="hidden" name="code" value="{escape(stock_code)}" />
+          <input type="hidden" name="provider" value="{escape(provider_name)}" />
+          <input type="hidden" name="holdings" value="{escape(holdings_path)}" />
+          <input type="hidden" name="refresh" value="1" />
+          <button class="ghost-button module-refresh-button" type="submit">手动刷新数据</button>
+        </form>
+      </div>"""
+
+
+def _render_data_center_panel(
+    data_center: DataCenterView,
+    *,
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
     rows_to_show = _simple_data_center_rows(data_center.rows)
     rows = "".join(
         f"""
@@ -3410,7 +3459,10 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
       <section class="module panel data-center-panel" id="module-data-center" aria-label="数据中台">
         <div class="editor-toolbar">
           <div><h3>数据中台</h3><p class="section-subtitle">只看数据能不能用、哪里有问题、是否影响分析。</p></div>
-          <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
+          <div class="module-header-meta">
+            <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
+            {_render_module_refresh_tools(refresh_time=data_center.updated_at, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="data-center")}
+          </div>
         </div>
         <div class="data-center-brief">
           <span>数据状态：{escape(data_center.status)}</span>
@@ -4127,8 +4179,9 @@ def _render_hot_opportunity_module(
     candidate_strategy: str,
     candidate_universe_metadata: dict[str, str] | None = None,
     quality: DataQualityView | None = None,
+    refresh_time: str = "",
 ) -> str:
-    del stock_code, candidate_code, candidate_group, candidate_strategy, candidate_universe_metadata
+    del candidate_code, candidate_group, candidate_strategy, candidate_universe_metadata
     rows = _render_opportunity_recommendation_rows(
         sectors=sectors,
         candidates=candidates,
@@ -4145,7 +4198,7 @@ def _render_hot_opportunity_module(
     candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"推荐 {min(len(candidates.candidates), 10)} 只"
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐原因。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐原因。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
       <div class="panel opportunity-focus-panel">
         <table class="data-table candidates-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>推荐原因</th></tr></thead><tbody>{rows}</tbody></table>
       </div>
@@ -4823,6 +4876,10 @@ def _render_compact_market_module(
     *,
     candidate_universe: list[CandidateStockRawData] | None = None,
     news: NewsSentimentReport | None = None,
+    refresh_time: str,
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
 ) -> str:
     del portfolio
     candidate_universe = candidate_universe or []
@@ -4842,7 +4899,10 @@ def _render_compact_market_module(
           <h2 class="module-title">每日大盘</h2>
           <p class="module-desc">当前时刻股票涨跌统计、强弱板块与分析。</p>
         </div>
-        <span class="market-state-pill {_market_risk_tone(market)}">{escape(market.trade_date)}</span>
+        <div class="module-header-meta">
+          <span class="market-state-pill {_market_risk_tone(market)}">{escape(market.trade_date)}</span>
+          {_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="market")}
+        </div>
       </div>
       {distribution}
       <div class="market-sector-duo">
@@ -5108,6 +5168,7 @@ def _map_market_event_to_theme_or_stock(
         return None
     reason = _event_reason_text(item, theme, stock_text)
     return {
+        "time": item.date or "待确认",
         "theme": theme or "个股异动",
         "stocks": stock_text or "主题级事件",
         "reason": reason,
@@ -5254,6 +5315,7 @@ def _render_market_event_summary_list(rows: list[dict[str, str]]) -> str:
     cards = "".join(
         "<article class=\"market-event-card\">"
         "<div class=\"market-event-head\">"
+        f"<span class=\"market-event-time\">时间：{escape(row.get('time') or '待确认')}</span>"
         f"<span class=\"market-event-theme\">对应主题：{escape(row['theme'])}</span>"
         f"<strong class=\"market-event-stocks\">对应股票：{escape(row['stocks'])}</strong>"
         "</div>"
@@ -5274,7 +5336,7 @@ def _candidate_price_mover_events(
     )[:5]
     return [
         NewsItem(
-            date="",
+            date=row.latest_date,
             source="TDX候选池.价格异动",
             title=f"{row.name}价格异动：{row.pct_change:.2f}%",
             summary=(
@@ -5757,6 +5819,7 @@ def _render_compact_portfolio_module(
     provider_name: str,
     notice: PortfolioNotice | None,
     edit_code: str,
+    refresh_time: str,
 ) -> str:
     advice = build_portfolio_advice(
         portfolio,
@@ -5793,7 +5856,7 @@ def _render_compact_portfolio_module(
     notice_html = _render_portfolio_notice(notice)
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="portfolio")}</div></div>
       {notice_html}
       {editor}
       {analysis_list}
@@ -6597,6 +6660,7 @@ def _render_compact_stock_module(
     candidate_evidence: str = "",
     provider_name: str,
     holdings_path: str,
+    refresh_time: str,
 ) -> str:
     del candidates, candidate_source, candidate_strategy_label, candidate_evidence
     driver = stock.upside.drivers[0] if stock.upside.drivers else stock.final_conclusion
@@ -6616,7 +6680,7 @@ def _render_compact_stock_module(
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">一个入口选择股票，结果只保留 K 线、核心结论、建议和预测四块。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">一个入口选择股票，结果只保留 K 线、核心结论、建议和预测四块。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=resolved.query, provider_name=provider_name, holdings_path=holdings_path, workspace="stock")}</div></div>
       {_render_stock_simple_entry(resolved, provider_name, holdings_path)}
       {_render_stock_simple_kline_data(stock, stock_raw, technical, quality)}
       {analysis_content}
@@ -9287,6 +9351,7 @@ class Handler(BaseHTTPRequestHandler):
         candidate_source = query.get("candidate_source", [""])[0]
         candidate_strategy_label = query.get("candidate_strategy_label", [""])[0]
         candidate_evidence = query.get("candidate_evidence", [""])[0]
+        refresh = query.get("refresh", [""])[0] == "1"
         provider_name = WEB_DATA_PROVIDER
         requested_holdings_path = query.get("holdings", [DEFAULT_HOLDINGS_PATH])[0]
         holdings_path = _effective_holdings_path(current_user, requested_holdings_path)
@@ -9316,6 +9381,7 @@ class Handler(BaseHTTPRequestHandler):
             candidate_strategy_label=candidate_strategy_label,
             candidate_evidence=candidate_evidence,
             current_user=current_user,
+            refresh=refresh,
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

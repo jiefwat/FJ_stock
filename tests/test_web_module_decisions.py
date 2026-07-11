@@ -139,6 +139,16 @@ def test_global_data_center_is_simple_status_list() -> None:
         assert removed not in data_center_html
 
 
+def test_each_module_header_shows_refresh_time_and_manual_refresh_button() -> None:
+    html = _sample_html()
+
+    for workspace in ["market", "portfolio", "stock", "opportunity", "data-center"]:
+        section = _workspace(html, workspace)
+        assert "数据刷新时间" in section, workspace
+        assert 'name="refresh" value="1"' in section, workspace
+        assert "手动刷新数据" in section, workspace
+
+
 
 
 
@@ -910,6 +920,7 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
     assert "事件原因" in market_html
     assert "半导体" in market_html
     assert "中芯国际" in market_html
+    assert "2026-07-11" in market_html
     assert "波动超 20 日均值" in market_html
     assert "商业航天" not in market_html
     assert "ETF单日净申购" not in market_html

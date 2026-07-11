@@ -290,6 +290,9 @@ h1 {
 @keyframes reveal { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .module-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom: 10px; }
 .module-header-meta { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; }
+.module-refresh-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; color:var(--muted); font-size:12px; }
+.module-refresh-tools form { margin:0; }
+.module-refresh-button { padding:7px 10px; font-size:12px; }
 .module-title { margin:0; font-size: 19px; letter-spacing:-.03em; font-family: var(--display); }
 .module-desc {
   margin:4px 0 0;
@@ -3320,6 +3323,7 @@ body {
   gap:8px 10px;
   margin-bottom:8px;
 }
+.market-event-time { border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:999px; padding:5px 9px; font-size:12px; font-weight:800; white-space:nowrap; }
 .market-event-theme {
   border:1px solid #dccba9;
   background:#f8f0df;
