@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -173,7 +172,9 @@ def _is_rate_limit_message(message: str) -> bool:
     return "频率超限" in message or "rate limit" in lowered or "too many" in lowered
 
 
-def _merge_stock_payload(snapshot: dict[str, Any], code: str, bars: list[dict[str, Any]], now: str) -> None:
+def _merge_stock_payload(
+    snapshot: dict[str, Any], code: str, bars: list[dict[str, Any]], now: str
+) -> None:
     stocks = snapshot.setdefault("stocks", {})
     if not isinstance(stocks, dict):
         snapshot["stocks"] = stocks = {}
@@ -258,7 +259,25 @@ def _is_a_share_code(code: str) -> bool:
         return False
     if code.startswith(("200", "900")):
         return False
-    return code.startswith(("000", "001", "002", "003", "300", "301", "600", "601", "603", "605", "688", "689", "920", "4", "8"))
+    return code.startswith(
+        (
+            "000",
+            "001",
+            "002",
+            "003",
+            "300",
+            "301",
+            "600",
+            "601",
+            "603",
+            "605",
+            "688",
+            "689",
+            "920",
+            "4",
+            "8",
+        )
+    )
 
 
 def _tushare_code(code: str) -> str:
@@ -309,7 +328,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codes", default="")
     parser.add_argument("--candidate-limit", type=int, default=300)
     parser.add_argument("--bar-count", type=int, default=120)
-    parser.add_argument("--sleep", type=float, default=1.3, help="Seconds to sleep between Tushare calls.")
+    parser.add_argument(
+        "--sleep", type=float, default=1.3, help="Seconds to sleep between Tushare calls."
+    )
     parser.add_argument("--retry-rate-limit", type=int, default=1)
     return parser
 

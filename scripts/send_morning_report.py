@@ -263,8 +263,12 @@ def _decision_opportunity_actions(decisions: dict[str, object], *, limit: int) -
         reason = str(item.get("reason") or "入选理由待补充").strip()
         risk = str(item.get("risk") or "等待盘中确认").strip()
         action = str(item.get("action") or "只观察，不追高").strip()
+        detail = (
+            f"{name}｜{sector}｜机会：{reason}；"
+            f"风险：{risk}；动作：{action}"
+        )
         actions.append(
-            f"{len(actions) + 1}. {_shorten_line(f'{name}｜{sector}｜机会：{reason}；风险：{risk}；动作：{action}', limit=150)}"
+            f"{len(actions) + 1}. {_shorten_line(detail, limit=150)}"
         )
         if len(actions) >= limit:
             break
@@ -576,7 +580,6 @@ def _deep_observation_decision(score: int, summary: str) -> dict[str, str]:
 
 def _position_detail_decision(detail: str, *, trend: str, risk: str) -> dict[str, str]:
     is_profit = "盈亏 -" not in detail and re.search(r"盈亏 [0-9]", detail) is not None
-    is_loss = "盈亏 -" in detail
     action = _today_action_from_position(detail, trend=trend, risk=risk)
     if risk == "高" or trend == "下降趋势":
         verdict = "锁利润" if is_profit else "降风险"
@@ -893,7 +896,7 @@ def _weak_holding_names_from_summary(markdown: str) -> list[str]:
     names: list[str] = []
     for match in re.finditer(r"弱势或高风险持仓：([^\n。；]+)", markdown):
         for raw_name in re.split(r"[、,，]", match.group(1)):
-            name = raw_name.strip(" ：:。；; ")
+            name = re.sub(r"^[\s：:。；;]+|[\s：:。；;]+$", "", raw_name)
             if not name or _looks_like_summary_phrase(name):
                 continue
             names.append(name)
@@ -1138,7 +1141,8 @@ def _data_notice_lines(trade_date: str, report_date: str, pipeline_status: str) 
     if trade_date != report_date or (generated_date and generated_date != report_date):
         lines.append(
             _bullet(
-                f"数据可能滞后：最新交易日 {trade_date}，流水线生成 {known_date}，今天 {report_date}。"
+                "数据可能滞后："
+                f"最新交易日 {trade_date}，流水线生成 {known_date}，今天 {report_date}。"
             )
         )
     lines.append(_bullet("数据缺口会在上方状态里标明；缺口项只做观察，不作为买入理由。"))

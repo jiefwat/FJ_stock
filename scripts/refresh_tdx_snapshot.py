@@ -173,7 +173,9 @@ def _candidate_universe_dict(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def _candidate_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = payload.get("items", [])
-    return [dict(item) for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+    if not isinstance(items, list):
+        return []
+    return [dict(item) for item in items if isinstance(item, dict)]
 
 
 def _merge_enriched_items(
@@ -211,8 +213,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python", default=default_bridge_python(), dest="python_executable")
     parser.add_argument("--candidate-limit", type=int, default=300)
     parser.add_argument("--bar-count", type=int, default=20)
-    parser.add_argument("--quote-only", action="store_true", help="Use full-market quote snapshot without per-stock kline/topic enrichment.")
-    parser.add_argument("--enrich-existing", action="store_true", help="Enrich the existing candidate snapshot instead of refreshing market/sector data.")
+    parser.add_argument(
+        "--quote-only",
+        action="store_true",
+        help="Use full-market quote snapshot without per-stock kline/topic enrichment.",
+    )
+    parser.add_argument(
+        "--enrich-existing",
+        action="store_true",
+        help="Enrich the existing candidate snapshot instead of refreshing market/sector data.",
+    )
     parser.add_argument("--enrich-limit", type=int, default=30)
     parser.add_argument("--enrich-start", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=20.0)
