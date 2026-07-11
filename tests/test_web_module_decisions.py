@@ -1144,6 +1144,10 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "分析" in market_html
     assert "兆易创新" in market_html
     assert "北方华创" in market_html
+    assert "走强原因" in market_html
+    assert "走弱原因" in market_html or "相对弱势原因" in market_html
+    assert "强势；扩散" not in market_html
+    assert "弱势；扩散" not in market_html
 
 
 def test_market_module_surfaces_mcp_market_movers_as_events() -> None:

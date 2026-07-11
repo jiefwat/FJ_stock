@@ -5314,11 +5314,68 @@ def _theme_stocks_by_move(
 
 
 def _sector_strength_analysis(item, *, reverse: bool) -> str:
-    direction = "强势" if reverse else "弱势"
-    return (
-        f"{direction}；扩散 {item.advancing_ratio:.0%}；"
-        f"涨停 {item.limit_up_count}；{item.fund_status}"
-    )
+    if reverse:
+        return _sector_strong_reason(item)
+    return _sector_weak_reason(item)
+
+
+def _sector_strong_reason(item) -> str:
+    reasons: list[str] = []
+    if item.advancing_ratio >= 0.65 and item.limit_up_count >= 2:
+        reasons.append("上涨扩散充分，且有涨停前排形成梯队")
+    elif item.advancing_ratio >= 0.65:
+        reasons.append("板块内多数个股同步上涨，不是单票拉升")
+    elif item.limit_up_count >= 2:
+        reasons.append("涨停前排带动板块热度，但仍需看扩散")
+    elif item.pct_chg > 0:
+        reasons.append("板块涨幅靠前，但内部扩散还不充分")
+    else:
+        reasons.append("相对排名靠前，绝对强度仍需复核")
+
+    if item.fund_status == "资金活跃":
+        reasons.append("资金流入配合")
+    elif item.amount_change > 0:
+        reasons.append("成交额改善")
+    elif item.fund_status == "资金流出":
+        reasons.append("资金流出，强度可能只是短线脉冲")
+    else:
+        reasons.append("资金配合一般，持续性要看后续放量")
+
+    if item.continuity in {"持续性强", "持续性观察"}:
+        reasons.append(item.continuity)
+    elif item.rotation_status == "市场主线":
+        reasons.append("已进入市场主线候选")
+
+    return f"走强原因：{'；'.join(reasons[:3])}"
+
+
+def _sector_weak_reason(item) -> str:
+    reasons: list[str] = []
+    if item.pct_chg < 0 and item.advancing_ratio < 0.45:
+        reasons.append("板块下跌且内部多数个股走弱")
+    elif item.pct_chg < 0:
+        reasons.append("板块价格转弱")
+    elif item.advancing_ratio < 0.45:
+        reasons.append("内部上涨家数不足，承接不强")
+    else:
+        reasons.append("在当前市场里涨幅落后，资金优先级偏低")
+
+    if item.fund_status == "资金流出":
+        reasons.append("资金流出压制反弹")
+    elif item.amount_change < 0:
+        reasons.append("成交额收缩，说明跟进资金不足")
+    elif item.limit_up_count == 0:
+        reasons.append("缺少涨停前排带动")
+    else:
+        reasons.append("仍有局部活跃，先看能否扩散")
+
+    if item.risk != "风险可控":
+        reasons.append(item.risk)
+    elif item.rotation_status == "退潮方向":
+        reasons.append("处在退潮方向")
+
+    label = "走弱原因" if item.pct_chg < 0 or item.advancing_ratio < 0.5 else "相对弱势原因"
+    return f"{label}：{'；'.join(reasons[:3])}"
 
 
 def _render_professional_market_diagnosis(
@@ -5566,7 +5623,7 @@ def _fund_continuity_dimension(
         score -= 5
     elif outflow_rows >= 4:
         score -= 3
-    judgement = "资金支持" if score >= 11 else "资金一般" if score >= 5 else "持续性不足"
+    judgement = "资金支持" if score >= 11 else "资金配合一般" if score >= 5 else "持续性不足"
     evidence = (
         f"强势板块成交改善 {len(leading_sectors)} 个，"
         f">6%资金流入样本 {inflow_rows}，<-6%资金流出样本 {outflow_rows}"
