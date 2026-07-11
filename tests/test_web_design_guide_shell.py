@@ -27,7 +27,8 @@ def test_design_guide_shell_uses_four_business_modules_with_bottom_data_center()
         assert f'href="#{module_id}"' in html
     for label in ["每日大盘", "我的持仓", "个股分析", "热点机会", "数据中台"]:
         assert label in html
-    assert html.count('class="workspace-pane') == 5
+    assert "账户管理" in html
+    assert html.count('class="workspace-pane') == 6
 
 
 def test_ui_skin_uses_professional_terminal_visual_system() -> None:

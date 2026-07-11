@@ -33,6 +33,12 @@ WORKSPACES = [
         badge="05",
         description="集中核对行情、K线、资金、新闻、公告和基本面状态。",
     ),
+    WorkspaceMeta(
+        key="account",
+        label="账户管理",
+        badge="用户",
+        description="登录、退出、密码和个人持仓账本。",
+    ),
 ]
 
 WORKSPACE_MODULES = {
@@ -41,6 +47,7 @@ WORKSPACE_MODULES = {
     "stock": ["stock"],
     "opportunity": ["opportunity"],
     "data-center": ["data-center"],
+    "account": ["account"],
 }
 
 MODULE_TO_WORKSPACE = {

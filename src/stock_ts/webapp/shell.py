@@ -15,7 +15,14 @@ WEB_DATA_PROVIDER = "tdx-snapshot"
 WORKSPACE_PANEL_LABELS = {meta.key: meta.label for meta in WORKSPACES}
 
 
-def render_sidebar(stock_code: str = "", holdings_path: str = "") -> str:
+def render_sidebar(
+    stock_code: str = "",
+    holdings_path: str = "",
+    *,
+    current_username: str = "",
+    current_role: str = "",
+    auth_enabled: bool = False,
+) -> str:
     nav = "".join(
         f'<a class="nav-item" href="#{meta.key}" data-workspace="{meta.key}">{meta.label}<span>{meta.badge}</span></a>'
         for meta in WORKSPACES
@@ -25,9 +32,15 @@ def render_sidebar(stock_code: str = "", holdings_path: str = "") -> str:
         if holdings_path
         else ""
     )
+    account_html = render_account_card(
+        current_username=current_username,
+        current_role=current_role,
+        auth_enabled=auth_enabled,
+    )
     return f"""
     <aside class="sidebar">
       <div class="brand-mark"><div class="logo">{PUBLIC_SITE_LOGO}</div><div><div class="brand-title">{PUBLIC_SITE_NAME}</div><div class="brand-subtitle">{PUBLIC_SITE_DOMAIN} · {PUBLIC_SITE_TAGLINE}</div></div></div>
+      {account_html}
       <form class="quick-stock-search" method="get" action="/#stock" aria-label="快速分析个股" data-remember-stock-form>
         <input name="code" value="{escape(stock_code)}" placeholder="代码 / 名称" autocomplete="off" data-stock-query />
         <input type="hidden" name="provider" value="{WEB_DATA_PROVIDER}" />
@@ -37,6 +50,35 @@ def render_sidebar(stock_code: str = "", holdings_path: str = "") -> str:
       <nav class="nav-group">{nav}</nav>
       <div class="sidebar-note">研究、观察、条件、风险；不做收益承诺。</div>
     </aside>"""
+
+
+def render_account_card(
+    *,
+    current_username: str = "",
+    current_role: str = "",
+    auth_enabled: bool = False,
+) -> str:
+    if not auth_enabled:
+        return ""
+    if not current_username:
+        return """
+      <div class="sidebar-account-card">
+        <span>账户</span>
+        <strong>未登录</strong>
+        <a class="ghost-button sidebar-account-link" href="/login">登录 / 注册</a>
+      </div>"""
+    return f"""
+      <div class="sidebar-account-card">
+        <span>当前账号</span>
+        <strong>{escape(current_username)}</strong>
+        <small>角色：{escape(current_role or 'member')}</small>
+        <div class="sidebar-account-actions">
+          <a class="ghost-button sidebar-account-link" href="#account">账户管理</a>
+          <form method="post" action="/logout">
+            <button class="ghost-button sidebar-account-link" type="submit">退出登录</button>
+          </form>
+        </div>
+      </div>"""
 
 
 def render_app_toolbar(stock_code: str, provider_name: str, holdings_path: str) -> str:
@@ -107,7 +149,8 @@ def app_script() -> str:
       'watchlist': 'stock',
       'status': 'market',
       'notify': 'market',
-      'settings': 'market',
+      'settings': 'account',
+      'account': 'account',
       'data-quality': 'data-center',
       'data-center': 'data-center'
     }};

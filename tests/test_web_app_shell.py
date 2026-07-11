@@ -27,7 +27,7 @@ def test_web_uses_four_business_modules_and_data_center_shell() -> None:
     assert "我的持仓" in html
     assert "个股分析" in html
     assert "热点机会" in html
-    assert html.count('class="workspace-pane') == 5
+    assert html.count('class="workspace-pane') == 6
     for workspace in ["market", "portfolio", "stock", "opportunity", "data-center"]:
         assert f'id="{workspace}"' in html
         assert f'href="#{workspace}"' in html
@@ -79,7 +79,7 @@ def test_web_shell_listens_and_routes_legacy_hashes() -> None:
     assert "window.addEventListener('hashchange'" in html
     assert "'sector': 'opportunity'" in html
     assert "'screener': 'opportunity'" in html
-    assert "'settings': 'market'" in html
+    assert "'settings': 'account'" in html
     assert "document.querySelectorAll('[data-jump]')" in html
 
 

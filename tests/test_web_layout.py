@@ -11,7 +11,8 @@ def test_web_page_uses_structured_workbench_layout() -> None:
     assert 'id="module-stock"' in html
     assert 'id="module-opportunity"' in html
     assert 'id="module-data-center"' in html
-    assert html.count('class="workspace-pane') == 5
+    assert 'id="module-account"' in html
+    assert html.count('class="workspace-pane') == 6
     assert 'data-workspace="market"' in html
     assert 'data-workspace="portfolio"' in html
     assert 'data-workspace="stock"' in html

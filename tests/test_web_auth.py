@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from stock_ts.auth import AuthConfig, SessionManager, UserStore
+from stock_ts.auth import AuthConfig, AuthUser, SessionManager, UserStore
 from stock_ts.portfolio import load_holdings_csv
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.web import (
@@ -190,6 +190,64 @@ def test_settings_page_surfaces_account_system_without_secret_echo(monkeypatch, 
     assert "owner@example.com" not in html
     assert 'method="post" action="/logout"' not in html
     assert "secret-password" not in html
+
+
+
+
+def test_authenticated_workbench_has_account_menu_and_logout(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(tmp_path / "users.sqlite3"))
+    user = AuthUser(id=1, username="owner@example.com", role="owner")
+
+    holdings_path = tmp_path / "user-data" / "1" / "holdings.csv"
+    holdings_path.parent.mkdir(parents=True)
+    holdings_path.write_text("code,name,shares,cost_price,sector,note\n", encoding="utf-8")
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path=str(holdings_path),
+        current_user=user,
+    )
+
+    assert "账户管理" in html
+    assert "owner@example.com" in html
+    assert "角色：owner" in html
+    assert 'method="post" action="/logout"' in html
+    assert 'method="post" action="/account/password"' in html
+    assert 'data-workspace="account"' in html
+
+
+def test_member_account_page_hides_global_notification_settings(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(tmp_path / "users.sqlite3"))
+    user = AuthUser(id=2, username="member@example.com", role="member")
+
+    holdings_path = tmp_path / "user-data" / "2" / "holdings.csv"
+    holdings_path.parent.mkdir(parents=True)
+    holdings_path.write_text("code,name,shares,cost_price,sector,note\n", encoding="utf-8")
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path=str(holdings_path),
+        current_user=user,
+    )
+    account_html = html.split('id="account"', 1)[1]
+
+    assert "member@example.com" in account_html
+    assert "角色：member" in account_html
+    assert "只管理自己的持仓" in account_html
+    assert 'method="post" action="/logout"' in account_html
+    assert 'method="post" action="/settings"' not in account_html
+    assert 'method="post" action="/notification-test"' not in account_html
+    assert 'method="post" action="/dispatch-daily"' not in account_html
 
 
 def test_http_handler_change_password_requires_valid_old_password(monkeypatch, tmp_path) -> None:

@@ -1064,10 +1064,25 @@ def render_page(
             provider_name=provider_name,
             holdings_path=holdings_path,
         ),
+        "account": _render_account_management_module(
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            provider_class=provider_class,
+            stock_code=resolved.query,
+            notice=settings_notice,
+            current_user=current_user,
+        ),
     }
+    auth_config = AuthConfig.from_env()
     shell = f"""
   <div class="app-shell">
-      {render_shell_sidebar(resolved.query, holdings_path)}
+      {render_shell_sidebar(
+        resolved.query,
+        holdings_path,
+        current_username=current_user.username if current_user is not None else "",
+        current_role=current_user.role if current_user is not None else "",
+        auth_enabled=is_auth_enabled(auth_config),
+      )}
     <main class="workspace">
       {_render_global_freshness_bar(quality, market, provider_class, risk_gate)}
       {_render_data_center_summary(quality.data_center)}
@@ -4828,11 +4843,12 @@ def _render_auth_settings_panel(
     enabled = is_auth_enabled(config)
     status = "已开启" if enabled else "未开启"
     registration_status = "已开放" if should_allow_registration(config) else "未开放"
-    username = config.admin_username if enabled else "未配置"
+    username = "已配置" if enabled else "未配置"
     db_path = str(config.db_path) if enabled else "未启用"
     current_username = (
         current_user.username if current_user is not None else ("未登录" if enabled else "未启用")
     )
+    current_role = current_user.role if current_user is not None else ("未登录" if enabled else "本地")
     portfolio_mode = "按账号独立" if enabled else "本地单人文件"
     shared_scope = "行情 / 板块 / 选股 / 日报 / 消息配置" if enabled else "本机配置"
     logout_form = (
@@ -4840,8 +4856,19 @@ def _render_auth_settings_panel(
         <form method="post" action="/logout">
           <button class="ghost-button" type="submit">退出登录</button>
         </form>"""
-        if enabled
+        if enabled and current_user is not None
         else ""
+    )
+    password_form = (
+        """
+        <form class="portfolio-form-grid" method="post" action="/account/password" style="margin-top:14px">
+          <label class="field-stack">当前密码<input name="current_password" type="password" autocomplete="current-password" /></label>
+          <label class="field-stack">新密码<input name="new_password" type="password" autocomplete="new-password" /></label>
+          <label class="field-stack">确认新密码<input name="confirm_password" type="password" autocomplete="new-password" /></label>
+          <div class="form-actions"><button class="primary-button" type="submit">修改密码</button></div>
+        </form>"""
+        if enabled and current_user is not None
+        else '<div class="portfolio-action-bar" style="margin-top:12px"><a class="ghost-button" href="/login">登录 / 注册</a></div>'
     )
     return f"""
       <div class="panel" style="margin-top:16px">
@@ -4851,6 +4878,7 @@ def _render_auth_settings_panel(
         </div>
         <div class="summary-grid">
           <div class="summary-card"><span>当前账号</span><strong>{escape(current_username)}</strong><p class="kpi-foot">登录后自动使用自己的持仓账本。</p></div>
+          <div class="summary-card"><span>账号角色</span><strong>角色：{escape(current_role)}</strong><p class="kpi-foot">owner 可维护全局配置；member 只管理自己的持仓。</p></div>
           <div class="summary-card"><span>持仓隔离</span><strong>{escape(portfolio_mode)}</strong><p class="kpi-foot">当前账本：{escape(holdings_path)}</p></div>
           <div class="summary-card"><span>共享能力</span><strong>全站一致</strong><p class="kpi-foot">{escape(shared_scope)}</p></div>
           <div class="summary-card"><span>开放注册</span><strong>{escape(registration_status)}</strong><p class="kpi-foot">开放后新账号注册即获得访问权限。</p></div>
@@ -4858,14 +4886,46 @@ def _render_auth_settings_panel(
           <div class="summary-card"><span>管理员账号</span><strong>{escape(username)}</strong></div>
           <div class="summary-card"><span>账号库</span><strong>{escape(db_path)}</strong><p class="kpi-foot">只显示路径，不显示密码或会话密钥。</p></div>
         </div>
-        <form class="portfolio-form-grid" method="post" action="/account/password" style="margin-top:14px">
-          <label class="field-stack">当前密码<input name="current_password" type="password" autocomplete="current-password" /></label>
-          <label class="field-stack">新密码<input name="new_password" type="password" autocomplete="new-password" /></label>
-          <label class="field-stack">确认新密码<input name="confirm_password" type="password" autocomplete="new-password" /></label>
-          <div class="form-actions"><button class="primary-button" type="submit">修改密码</button></div>
-        </form>
+        {password_form}
         <div class="portfolio-action-bar" style="margin-top:12px">{logout_form}</div>
       </div>"""
+
+
+def _render_account_management_module(
+    *,
+    provider_name: str,
+    holdings_path: str,
+    provider_class: str,
+    stock_code: str,
+    notice: SettingsNotice | None,
+    current_user: AuthUser | None = None,
+) -> str:
+    del provider_class
+    account_panel = _render_auth_settings_panel(
+        current_user=current_user,
+        holdings_path=holdings_path,
+    )
+    owner_tools = ""
+    if current_user is not None and current_user.role == "owner":
+        owner_tools = _render_compact_status_module(
+            provider_name,
+            holdings_path,
+            "tdx-snapshot",
+            stock_code,
+            notice,
+        )
+    else:
+        owner_tools = """
+      <div class="panel" style="margin-top:16px">
+        <h3>普通账号权限</h3>
+        <p class="section-subtitle">普通账号只管理自己的持仓、成本、股数和个股分析；行情、数据刷新、邮件和全局配置由管理员统一维护。</p>
+      </div>"""
+    return f"""
+    <section class="module" id="module-account">
+      <div class="module-header"><div><h2 class="module-title">账户管理</h2><p class="module-desc">登录、退出、密码和个人持仓账本。行情、板块、机会和数据中台全站一致。</p></div><span class="status-pill">正规账户体系</span></div>
+      {account_panel}
+      {owner_tools}
+    </section>"""
 
 
 def _render_compact_market_module(

@@ -120,6 +120,22 @@ textarea:focus-visible,
   font-size:13px;
   line-height:1.6;
 }
+.sidebar-account-card {
+  display:grid;
+  gap:7px;
+  margin:0 0 12px;
+  padding:12px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:16px;
+  background:rgba(255,255,255,.07);
+}
+.sidebar-account-card span,
+.sidebar-account-card small { color:rgba(232,242,250,.66); font-size:12px; }
+.sidebar-account-card strong { color:#fff; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-account-actions { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.sidebar-account-actions form { margin:0; }
+.sidebar-account-link { display:inline-flex; align-items:center; min-height:30px; padding:6px 9px; font-size:12px; background:rgba(255,255,255,.10); color:#e8f2fa; border-color:rgba(255,255,255,.14); }
+
 .quick-stock-search {
   display:grid;
   grid-template-columns:minmax(0, 1fr);
