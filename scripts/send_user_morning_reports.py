@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from scripts.send_morning_report import SendResult, send_morning_report
 from stock_ts.account_settings import (
     DEFAULT_USER_DATA_DIR,
     iter_morning_email_preferences,
@@ -15,6 +14,11 @@ from stock_ts.account_settings import (
     should_send_morning_email,
 )
 from stock_ts.config import get_settings
+
+try:
+    from scripts.send_morning_report import SendResult, send_morning_report
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from send_morning_report import SendResult, send_morning_report
 
 __all__ = ["SendResult", "UserMorningDispatchResult", "dispatch_due_user_reports"]
 

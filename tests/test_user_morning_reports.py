@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -76,3 +79,26 @@ def test_user_morning_reports_skip_when_global_email_missing(monkeypatch, tmp_pa
     assert result.sent == 0
     assert result.skipped >= 1
     assert "邮箱未配置" in result.markdown
+
+
+def test_user_morning_reports_script_runs_directly(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/send_user_morning_reports.py",
+            "--user-data-dir",
+            str(tmp_path / "users"),
+            "--dry-run",
+            "--skip-if-email-missing",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    assert "StockTS 账号晨报发送结果" in result.stdout
