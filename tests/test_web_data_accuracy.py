@@ -467,6 +467,89 @@ def test_web_blocks_actions_when_pipeline_refresh_is_stale(
     assert "排序暂停" in html
 
 
+def test_web_blocks_when_kline_bars_are_stale_even_if_dates_are_real(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-11T09:30:00+08:00")
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n603278,大业股份,10,10,高端装备,核心\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "tdx.json"
+    stock_bar = {
+        "date": "2026-06-26",
+        "open": 10,
+        "high": 10.5,
+        "low": 9.8,
+        "close": 10.2,
+        "volume": 10000,
+    }
+    candidate_bar = stock_bar | {"date": "2026-06-23", "close": 9.8}
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-07-10",
+                    "indices": [
+                        {
+                            "code": "000001",
+                            "name": "上证指数",
+                            "close": 4090.48,
+                            "pct_chg": -0.43,
+                            "amount": 5123.4,
+                        }
+                    ],
+                    "advancing": 2023,
+                    "declining": 3407,
+                    "limit_up": 134,
+                    "limit_down": 35,
+                    "top_sectors": [["高端装备", 1.2]],
+                },
+                "sectors": [
+                    {
+                        "name": "高端装备",
+                        "pct_chg": 1.2,
+                        "advancing_ratio": 0.7,
+                        "amount_change": 10.0,
+                    }
+                ],
+                "stocks": {
+                    "603278": {
+                        "name": "大业股份",
+                        "bars": [stock_bar | {"date": "2026-06-25"}, stock_bar],
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "603278",
+                            "name": "大业股份",
+                            "sector": "高端装备",
+                            "bars": [candidate_bar | {"date": "2026-06-20"}, candidate_bar],
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_page(
+        stock_code="603278",
+        provider_name="tdx-snapshot",
+        provider=TdxSnapshotProvider(snapshot),
+        holdings_path=str(holdings),
+    )
+
+    assert "K线已滞后：最近应为 2026-07-10" in html
+    assert "个股K线最晚 2026-06-26" in html
+    assert "候选池K线最晚 2026-06-23" in html
+    assert "排序暂停" in html
+
+
 def test_web_consumes_real_news_announcement_financial_and_sentiment_snapshot(
     tmp_path: Path,
     monkeypatch,

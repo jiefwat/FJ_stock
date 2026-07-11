@@ -154,6 +154,26 @@ class CountingProfileClient(FakeClient):
         self.helpers = CountingProfileHelpers()
 
 
+class OneBarFirstClient(FakeClient):
+    def get_kline(
+        self, code: str, period: str, *, count: int, kind: str = "stock"
+    ) -> dict[str, object]:
+        if code == "300001":
+            return {
+                "bars": [
+                    {
+                        "time": "2026-06-18 15:00:00",
+                        "open": 11.0,
+                        "high": 12.0,
+                        "low": 10.8,
+                        "close": 12.0,
+                        "volume": 12000,
+                    }
+                ]
+            }
+        return super().get_kline(code, period, count=count, kind=kind)
+
+
 class BrokenProfileHelpers(FakeHelpers):
     def stock_profile_table(
         self,
@@ -207,6 +227,19 @@ def test_candidate_universe_bridge_records_full_market_scan_metadata() -> None:
     assert payload["returned_count"] == 1
     assert payload["scope"] == "all_a_share"
     assert "全市场" in payload["selection_method"]
+
+
+def test_candidate_universe_bridge_skips_candidates_without_two_real_bars() -> None:
+    bridge = _load_bridge_module()
+
+    payload = bridge.build_candidate_universe(
+        OneBarFirstClient(),
+        {"limit": 1, "bar_count": 2, "topic_limit": 1},
+    )
+
+    assert payload["returned_count"] == 1
+    assert payload["items"][0]["code"] == "600001"
+    assert len(payload["items"][0]["bars"]) == 2
 
 
 def test_candidate_universe_bridge_batches_profile_without_finance_payload() -> None:

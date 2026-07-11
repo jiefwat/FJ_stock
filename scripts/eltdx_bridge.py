@@ -9,7 +9,6 @@ from typing import Any
 
 from eltdx import TdxClient, to_jsonable
 
-
 EXCHANGE_BOARD_NAMES = {
     "sse_star_market",
     "szse_chinext",
@@ -78,7 +77,11 @@ def build_market_snapshot(client: TdxClient, payload: dict[str, Any]) -> dict[st
     index_map = {str(row.get("code", "")): row for row in index_rows}
     index_order = ["000001", "399001", "399006"]
     latest_rows = sorted(quote_rows, key=_change_pct, reverse=True)
-    sector_rows = _aggregate_sector_rows(client, latest_rows[:12], sector_limit=int(payload.get("sector_limit", 10)))
+    sector_rows = _aggregate_sector_rows(
+        client,
+        latest_rows[:12],
+        sector_limit=int(payload.get("sector_limit", 10)),
+    )
     valid_quote_rows = [row for row in quote_rows if _has_valid_trade_price(row)]
     advancing = sum(1 for row in valid_quote_rows if _change_pct(row) > 0)
     declining = sum(1 for row in valid_quote_rows if _change_pct(row) < 0)
@@ -148,7 +151,10 @@ def build_candidate_universe(client: TdxClient, payload: dict[str, Any]) -> dict
             "items": [_candidate_from_quote_row(row, trade_date) for row in rows],
         }
     rows = ranked_rows[: max(limit * 4, 80)]
-    profiles = _single_profile(client, [str(row.get("full_code") or row.get("code")) for row in rows])
+    profiles = _single_profile(
+        client,
+        [str(row.get("full_code") or row.get("code")) for row in rows],
+    )
     profile_map = {row.get("code"): row for row in profiles["rows"]}
     items = []
     bar_count = int(payload.get("bar_count", 20))
@@ -157,10 +163,8 @@ def build_candidate_universe(client: TdxClient, payload: dict[str, Any]) -> dict
             break
         code = str(row.get("code", ""))
         profile = profile_map.get(code, {})
-        last_price = float(row.get("last_price", 0.0))
-        pct_change = _change_pct(row)
         bars = _stock_bars(client, code, count=bar_count)
-        if not bars:
+        if len(bars) < 2:
             continue
         topic = _primary_topic_name(client, code, fallback=row.get("board") or "沪深A股")
         if _is_exchange_board_name(topic):
@@ -387,7 +391,11 @@ def _simplify_bar(bar: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _synthetic_bars(latest_close: float, pct_change: float, count: int = 10) -> list[dict[str, Any]]:
+def _synthetic_bars(
+    latest_close: float,
+    pct_change: float,
+    count: int = 10,
+) -> list[dict[str, Any]]:
     previous = latest_close / (1 + pct_change / 100) if pct_change != -100 else latest_close
     bars = []
     total = max(count - 1, 1)

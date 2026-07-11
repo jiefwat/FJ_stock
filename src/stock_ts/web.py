@@ -24,6 +24,7 @@ from .models import (
     CandidatePoolReport,
     CandidateStockAnalysis,
     CandidateStockRawData,
+    DailyBar,
     Holding,
     MarketSnapshot,
     NewsSentimentReport,
@@ -930,6 +931,7 @@ def render_page(
         requested_provider=provider_name,
         actual_provider=provider_class,
         resolved=resolved,
+        stock_raw=stock_raw,
         stock=stock,
         market=market,
         candidates=candidates,
@@ -2480,6 +2482,7 @@ def _assess_data_quality(
     requested_provider: str,
     actual_provider: str,
     resolved: ResolvedSymbol,
+    stock_raw: StockRawData,
     stock: DeepStockReport,
     market: MarketSnapshot,
     candidates: CandidatePoolReport,
@@ -2494,6 +2497,14 @@ def _assess_data_quality(
         actual_provider=actual_provider,
         stock_date=stock.trade_date,
         market_date=market.trade_date,
+    )
+    freshness_warnings.extend(
+        _kline_freshness_warnings(
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
+            stock_raw=stock_raw,
+            candidate_universe=candidate_universe,
+        )
     )
     freshness_warnings.extend(_pipeline_freshness_warnings())
     if freshness_warnings:
@@ -2578,6 +2589,66 @@ def _trade_date_freshness_warnings(
     return [
         f"数据已滞后：最近应为 {expected}，{joined}仍停留在旧交易日，不能按今天盘面执行。"
     ]
+
+
+def _kline_freshness_warnings(
+    *,
+    requested_provider: str,
+    actual_provider: str,
+    stock_raw: StockRawData,
+    candidate_universe: list[CandidateStockRawData],
+) -> list[str]:
+    if requested_provider.strip().lower() == "sample" or actual_provider == "SampleDataProvider":
+        return []
+    expected = _expected_latest_a_share_trade_date(_current_datetime())
+    stock_latest = _latest_bar_date(stock_raw.bars)
+    candidate_dates = [_latest_bar_date(item.bars) for item in candidate_universe]
+    candidate_stale_dates = [
+        date for date in candidate_dates if _iso_date_is_before(date, expected)
+    ]
+    candidate_missing_count = sum(1 for date in candidate_dates if not date)
+    stale_parts = []
+    if not stock_latest or _iso_date_is_before(stock_latest, expected):
+        stale_parts.append(f"个股K线最晚 {stock_latest or '缺失'}")
+    if candidate_stale_dates or candidate_missing_count:
+        stale_parts.append(
+            _candidate_kline_staleness_detail(
+                candidate_dates,
+                stale_dates=candidate_stale_dates,
+                missing_count=candidate_missing_count,
+            )
+        )
+    if not stale_parts:
+        return []
+    return [
+        f"K线已滞后：最近应为 {expected}，{'，'.join(stale_parts)}，不能按今天盘面执行。"
+    ]
+
+
+def _candidate_kline_staleness_detail(
+    dates: list[str],
+    *,
+    stale_dates: list[str],
+    missing_count: int,
+) -> str:
+    if not dates:
+        return "候选池K线最晚 缺失"
+    affected = len(stale_dates) + missing_count
+    total = len(dates)
+    valid_dates = [date for date in dates if date]
+    latest = max(valid_dates, default="")
+    oldest = min(valid_dates, default="")
+    if affected >= total:
+        return f"候选池K线最晚 {latest or '缺失'}"
+    return (
+        f"候选池K线过期 {affected}/{total}"
+        f"（最新 {latest or '缺失'}，最旧 {oldest or '缺失'}）"
+    )
+
+
+def _latest_bar_date(bars: list[DailyBar]) -> str:
+    dates = [bar.date for bar in bars if getattr(bar, "date", "")]
+    return max(dates) if dates else ""
 
 
 def _pipeline_freshness_warnings() -> list[str]:
@@ -2775,6 +2846,12 @@ def _render_global_freshness_bar(
 
 
 def _freshness_detail(quality: DataQualityView) -> str:
+    kline_warning = next(
+        (warning for warning in quality.warnings if warning.startswith("K线已滞后")),
+        "",
+    )
+    if kline_warning:
+        return kline_warning
     if any("自动更新已滞后" in warning for warning in quality.warnings):
         return "自动更新已滞后，先刷新数据流水线"
     if any("数据已滞后" in warning for warning in quality.warnings):
