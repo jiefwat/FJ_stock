@@ -584,3 +584,28 @@ def test_market_intelligence_filters_builtin_akshare_noise_without_external_sour
 
     titles = [item["title"] for item in result["items"]]
     assert titles == ["科创50指数半日涨超3% 半导体产业链走强"]
+
+
+def test_enrich_tdx_snapshot_preserves_existing_mcp_market_mover_events(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    data["market_news"] = [
+        {
+            "date": "2026-07-10",
+            "source": "longbridge.mcp.市场异动",
+            "title": "中芯国际异动：波动超 20 日均值",
+            "summary": "半导体厂商；涨跌幅 -5.62%",
+            "scope_type": "market_event",
+            "symbols": ["981.HK"],
+        }
+    ]
+    snapshot.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    module.enrich_snapshot(snapshot, codes=["688362"], ak=RichAk(), market_news_limit=1)
+
+    enriched = json.loads(snapshot.read_text(encoding="utf-8"))
+    titles = [item["title"] for item in enriched["market_news"]]
+    assert "中芯国际异动：波动超 20 日均值" in titles
+    assert "市场主线活跃" in titles

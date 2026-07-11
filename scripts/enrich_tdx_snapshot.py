@@ -104,7 +104,10 @@ def enrich_snapshot(
     )
     market_news = intelligence_result["items"]
     if market_news:
-        snapshot["market_news"] = market_news
+        existing_market_news = [
+            item for item in _as_list(snapshot.get("market_news")) if isinstance(item, dict)
+        ]
+        snapshot["market_news"] = _dedupe_news_payloads(existing_market_news + market_news)
 
     snapshot["external_enrichment"] = {
         "source": "multi-source",
