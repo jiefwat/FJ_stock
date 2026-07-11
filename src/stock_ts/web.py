@@ -3390,53 +3390,80 @@ def _render_global_freshness_bar(
 
 
 def _render_data_center_panel(data_center: DataCenterView) -> str:
+    rows_to_show = _simple_data_center_rows(data_center.rows)
     rows = "".join(
         f"""
         <tr id="{escape(_data_center_anchor(row.category))}" class="data-center-row {escape(row.level)}">
           <td>{escape(row.category)}</td>
-          <td>{escape(row.channel)}</td>
           <td>{escape(row.status)}</td>
           <td>{escape(row.latest_at)}</td>
-          <td>{escape(row.coverage)}</td>
-          <td>{escape(row.missing)}</td>
-          <td>{escape(row.impact)}</td>
+          <td>{escape(_simple_data_center_impact(row))}</td>
         </tr>"""
-        for row in data_center.rows
+        for row in rows_to_show
     )
-    alerts = _li_join(data_center.alerts or ["暂无影响分析的采集预警"])
-    blocked_count = sum(1 for row in data_center.rows if row.level == "blocked")
-    warn_count = sum(1 for row in data_center.rows if row.level == "warn")
-    available_count = sum(1 for row in data_center.rows if row.level == "ok")
-    review_links = "".join(
-        f'<a class="manual-action-card" href="#{escape(anchor)}"><strong>{escape(label)}</strong><span>{escape(note)}</span></a>'
-        for label, anchor, note in [
-            ("核对K线", "data-domain-kline", "影响技术面和候选排序"),
-            ("核对资金面", "data-domain-fund", "影响承接和分歧判断"),
-            ("核对公告", "data-domain-announcement", "影响事件风险"),
-            ("核对基本面", "data-domain-fundamental", "影响估值和财务质量"),
-        ]
+    alerts = _simple_data_center_alerts(rows_to_show)
+    alert_items = "".join(
+        f'<li class="data-center-alert">{escape(item)}</li>' for item in alerts
     )
+    conclusion = _simple_data_center_conclusion(data_center, rows_to_show)
     return f"""
-      <section class="module panel data-center-panel" id="module-data-center" aria-label="专业数据中台">
+      <section class="module panel data-center-panel" id="module-data-center" aria-label="数据中台">
         <div class="editor-toolbar">
-          <div><h3>专业数据中台</h3><p class="section-subtitle">先判断数据是否能用于分析；有缺口时只做人工复核，不输出强结论。</p></div>
+          <div><h3>数据中台</h3><p class="section-subtitle">只看数据能不能用、哪里有问题、是否影响分析。</p></div>
           <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
         </div>
-        <div class="data-center-kpi-grid">
-          <div class="data-center-kpi"><span>可用数据域</span><strong>{available_count}</strong></div>
-          <div class="data-center-kpi warn"><span>需复核</span><strong>{warn_count}</strong></div>
-          <div class="data-center-kpi blocked"><span>影响分析</span><strong>{blocked_count}</strong></div>
-          <div class="data-center-kpi"><span>更新时间</span><strong>{escape(data_center.updated_at)}</strong></div>
+        <div class="data-center-brief">
+          <span>数据状态：{escape(data_center.status)}</span>
+          <span>更新时间：{escape(data_center.updated_at)}</span>
+          <strong>结论：{escape(conclusion)}</strong>
         </div>
         <table class="data-table">
-          <thead><tr><th>数据域</th><th>采集渠道</th><th>采集状态</th><th>更新时间</th><th>覆盖范围</th><th>未采集/缺失</th><th>影响分析预警</th></tr></thead>
+          <thead><tr><th>数据</th><th>状态</th><th>更新时间</th><th>影响</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
-        <div class="manual-action-grid" aria-label="人工复核入口">{review_links}</div>
-        <div class="quality-banner {'high' if data_center.status == '影响分析' else ''}" style="margin-top:12px">
-          <strong>影响分析预警：</strong><ul class="note-list">{alerts}</ul>
+        <div class="data-center-alert-box {'high' if data_center.status == '影响分析' else ''}">
+          <strong>预警</strong><ul class="data-center-alert-list">{alert_items}</ul>
         </div>
       </section>"""
+
+
+def _simple_data_center_rows(rows: list[DataCenterRow]) -> list[DataCenterRow]:
+    core_categories = ["K线行情", "资金面", "新闻舆情", "公告", "基本面", "全链路校验"]
+    by_category = {row.category: row for row in rows}
+    return [by_category[item] for item in core_categories if item in by_category]
+
+
+def _simple_data_center_impact(row: DataCenterRow) -> str:
+    if row.missing and row.missing != "无":
+        return f"{row.impact}；缺口：{row.missing}"
+    return row.impact
+
+
+def _simple_data_center_conclusion(
+    data_center: DataCenterView, rows: list[DataCenterRow]
+) -> str:
+    if data_center.status == "影响分析":
+        blocked = [row.category for row in rows if row.level == "blocked"]
+        return f"{'、'.join(blocked[:3])} 会影响分析" if blocked else "有数据缺口会影响分析"
+    if data_center.status == "需复核":
+        warnings = [row.category for row in rows if row.level == "warn"]
+        return f"{'、'.join(warnings[:3])} 需复核" if warnings else "部分数据需复核"
+    return "数据可用"
+
+
+def _simple_data_center_alerts(rows: list[DataCenterRow]) -> list[str]:
+    alerts = [
+        _simple_data_center_alert(row)
+        for row in rows
+        if row.level in {"warn", "blocked"} and row.impact != "不影响分析"
+    ]
+    return alerts[:3] or ["暂无影响分析的预警"]
+
+
+def _simple_data_center_alert(row: DataCenterRow) -> str:
+    if row.missing and row.missing != "无":
+        return f"{row.category}：{row.status}，{row.missing}，{row.impact}"
+    return f"{row.category}：{row.status}，{row.impact}"
 
 
 def _render_data_center_summary(data_center: DataCenterView) -> str:

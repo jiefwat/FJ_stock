@@ -1018,50 +1018,43 @@ h1 {
   border-color:rgba(13,59,102,.18);
   background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(239,246,250,.96));
 }
-.data-center-kpi-grid {
+.data-center-brief {
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
   margin:12px 0;
 }
-.data-center-kpi {
+.data-center-brief span,
+.data-center-brief strong {
   border:1px solid var(--line);
-  border-radius:16px;
-  padding:12px;
+  border-radius:14px;
+  padding:10px 12px;
   background:#fff;
+  color:var(--ink);
+  font-size:13px;
+  line-height:1.45;
 }
-.data-center-kpi span {
-  display:block;
-  color:var(--muted);
-  font-size:12px;
-}
-.data-center-kpi strong {
-  display:block;
-  margin-top:6px;
-  font-size:20px;
-  font-family:var(--display);
-}
-.data-center-kpi.warn { border-color:#dfc28e; background:#fff8ea; }
-.data-center-kpi.blocked { border-color:#e6aaa1; background:#fff0ee; }
 .data-center-row.warn td { background:#fff9ed; }
 .data-center-row.blocked td { background:#fff1ef; }
-.manual-action-grid {
-  display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:10px;
+.data-center-alert-box {
   margin-top:12px;
-}
-.manual-action-card {
-  display:block;
   border:1px solid var(--line);
   border-radius:16px;
   padding:12px;
-  color:var(--ink);
   background:#fff;
-  text-decoration:none;
+  color:var(--ink);
 }
-.manual-action-card strong { display:block; font-size:14px; margin-bottom:5px; }
-.manual-action-card span { display:block; color:var(--muted); font-size:12px; line-height:1.45; }
+.data-center-alert-box.high {
+  border-color:#e6aaa1;
+  background:#fff3f0;
+}
+.data-center-alert-box strong { display:block; margin-bottom:6px; }
+.data-center-alert-list {
+  margin:0;
+  padding-left:18px;
+  color:var(--ink-soft);
+  line-height:1.65;
+}
 .sector-top5-panel,
 .market-mover-panel,
 .market-mover-strip {
@@ -1825,8 +1818,7 @@ h1 {
   .compact-note-grid,
   .compact-metric-grid,
   .freshness-bar,
-  .data-center-kpi-grid,
-  .manual-action-grid,
+  .data-center-brief,
   .market-mover-grid,
   .action-desk-grid,
   .portfolio-queue-grid,

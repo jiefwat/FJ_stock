@@ -104,25 +104,39 @@ def test_pages_show_data_statistics_analysis_without_narrator_blocks() -> None:
     ]:
         assert text in market_html
 
-def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
+def test_global_data_center_is_simple_status_list() -> None:
     html = _sample_html()
+    data_center_html = _workspace(html, "data-center")
 
     for text in [
-        "专业数据中台",
-        "采集渠道",
-        "采集状态",
+        "数据中台",
+        "数据状态",
         "更新时间",
-        "未采集/缺失",
-        "影响分析预警",
-        "人工复核入口",
-        "核对K线",
+        "结论",
+        "数据",
+        "状态",
+        "影响",
         "K线行情",
         "资金面",
         "新闻舆情",
         "公告",
         "基本面",
     ]:
-        assert text in html
+        assert text in data_center_html
+
+    for removed in [
+        "专业数据中台",
+        "采集渠道",
+        "覆盖范围",
+        "未采集/缺失",
+        "人工复核入口",
+        "核对K线",
+        "可用数据域",
+        "覆盖 12/12",
+        "个股新闻 5/12",
+        "市场消息 2 条",
+    ]:
+        assert removed not in data_center_html
 
 
 
@@ -426,11 +440,14 @@ def test_data_center_warns_when_required_stock_context_is_missing() -> None:
             )
 
     html = _sample_html(provider=MinimalStockProvider(), provider_name="tdx-snapshot")
+    data_center_html = _workspace(html, "data-center")
 
-    assert "数据中台预警：资金面" in html
-    assert "资金流/成交侧明细" in html
-    assert "数据中台预警：公告" in html
-    assert "影响风险公告、财报事件和监管风险判断" in html
+    assert "资金面" in data_center_html
+    assert "资金流/成交侧明细" in data_center_html
+    assert "公告" in data_center_html
+    assert "影响风险公告、财报事件和监管风险判断" in data_center_html
+    assert data_center_html.count('class="data-center-alert"') <= 3
+    assert "数据中台预警：" not in data_center_html
 
 
 def test_stock_module_shows_candidate_source_context_when_entered_from_opportunity() -> None:
@@ -610,7 +627,7 @@ def test_structured_daily_decisions_do_not_recreate_home_module(tmp_path, monkey
     assert "热点机会" in html
 
 
-def test_data_center_surfaces_mcp_market_news_channel_metadata() -> None:
+def test_data_center_keeps_mcp_market_news_status_simple() -> None:
     from stock_ts.models import NewsItem
 
     class McpNewsProvider(SampleDataProvider):
@@ -635,9 +652,11 @@ def test_data_center_surfaces_mcp_market_news_channel_metadata() -> None:
             }
 
     html = _sample_html(provider=McpNewsProvider(), provider_name="tdx-snapshot")
+    data_center_html = _workspace(html, "data-center")
 
-    assert "longbridge.mcp" in html
-    assert "2026-07-11T01:00:00Z" in html
+    assert "新闻舆情" in data_center_html
+    assert "2026-07-11T01:00:00Z" in data_center_html
+    assert "longbridge.mcp" not in data_center_html
 
 
 def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monkeypatch) -> None:
@@ -668,7 +687,7 @@ def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monk
     assert "公告" in html
 
 
-def test_data_center_shows_snapshot_coverage_for_each_data_domain() -> None:
+def test_data_center_hides_snapshot_coverage_details() -> None:
     class CoverageProvider(SampleDataProvider):
         def fetch_candidate_universe_metadata(self) -> dict[str, str]:
             return {
@@ -683,23 +702,26 @@ def test_data_center_shows_snapshot_coverage_for_each_data_domain() -> None:
             }
 
     html = _sample_html(provider=CoverageProvider(), provider_name="tdx-snapshot")
+    data_center_html = _workspace(html, "data-center")
 
-    assert "技术面" in html
-    assert "覆盖 12/12" in html
-    assert "覆盖 4/12" in html
-    assert "个股新闻 5/12" in html
-    assert "市场消息 2 条" in html
-    assert "公告 0/12" in html
-    assert "财务指标 3/12" in html
+    assert "K线行情" in data_center_html
+    assert "资金面" in data_center_html
+    assert "新闻舆情" in data_center_html
+    assert "覆盖 12/12" not in data_center_html
+    assert "覆盖 4/12" not in data_center_html
+    assert "个股新闻 5/12" not in data_center_html
+    assert "市场消息 2 条" not in data_center_html
+    assert "公告 0/12" not in data_center_html
+    assert "财务指标 3/12" not in data_center_html
 
 
 def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() -> None:
     html = _sample_html()
     workspace_start = html.index('<section class="workspace-pane')
     summary_start = html.index('aria-label="数据中台摘要"')
-    full_panel_start = html.index('aria-label="专业数据中台"')
+    full_panel_start = html.index('aria-label="数据中台"')
 
-    assert html.count('aria-label="专业数据中台"') == 1
+    assert html.count('aria-label="数据中台"') == 1
     assert html.count('aria-label="数据中台摘要"') == 1
     assert summary_start < workspace_start
     assert full_panel_start > html.index('data-workspace="opportunity"')
@@ -736,9 +758,10 @@ def test_data_center_surfaces_full_chain_validation_artifact(
 
     assert "全链路校验" in data_center_html
     assert "持仓 688362 缺少K线" in data_center_html
-    assert "market:ok" in data_center_html
-    assert "portfolio:failed" in data_center_html
-    assert "数据中台预警：全链路校验影响分析" in html
+    assert "market:ok" not in data_center_html
+    assert "portfolio:failed" not in data_center_html
+    assert "全链路存在阻断节点" in data_center_html
+    assert "数据中台预警：" not in data_center_html
 
 
 def test_data_center_does_not_warn_for_complete_hk_yahoo_and_hkex_context(
