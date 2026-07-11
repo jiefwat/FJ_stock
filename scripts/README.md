@@ -88,7 +88,7 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 - 12:30：午间复核，更新上午盘面后的候选和异动。
 - 14:00：尾盘前复核，供收盘前人工决策。
 
-模板位于 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。
+模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。
 ## 早间邮件
 
 每天早上发送昨晚生成好的最新日报，不重新拉行情。邮件会优先读取 `reports/daily/latest_decisions.json`，输出红黄绿交易清单、今日交易限制、自动任务提醒和压缩版机会；JSON 缺失时再降级解析 Markdown。如果最新日报包含个股“决策摘要”，持仓建议会直接使用最终判断、核心矛盾、今日动作、禁忌、转强和离场条件，不再只提示去网页查看；当新闻、资金或 K 线补强不完整时，会在邮件里标注对应判断不可信。
