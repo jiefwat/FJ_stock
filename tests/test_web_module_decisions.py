@@ -74,6 +74,25 @@ def test_four_modules_do_not_render_narrator_checklist_panels() -> None:
         assert narrator_panel not in html
 
 
+def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
+    html = _sample_html()
+
+    for text in [
+        "数据中台",
+        "采集渠道",
+        "采集状态",
+        "更新时间",
+        "未采集/缺失",
+        "影响分析预警",
+        "K线行情",
+        "资金面",
+        "新闻舆情",
+        "公告",
+        "基本面",
+    ]:
+        assert text in html
+
+
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     market_html = _workspace(_sample_html(), "market")
 
@@ -292,6 +311,33 @@ def test_stock_module_downgrades_missing_required_data_blocks() -> None:
     assert "基本面" in stock_html
     assert stock_html.count("不作为买入理由") >= 3
     assert "缺失降级" in stock_html
+
+
+def test_data_center_warns_when_required_stock_context_is_missing() -> None:
+    class MinimalStockProvider(SampleDataProvider):
+        def fetch_stock(self, code: str) -> StockRawData:
+            return StockRawData(
+                code=code,
+                name="缺数样本",
+                bars=[
+                    DailyBar(
+                        date="2026-07-10",
+                        open=10,
+                        high=10.2,
+                        low=9.8,
+                        close=10.1,
+                        volume=1000,
+                    )
+                ],
+                data_sources=["sample.kline"],
+            )
+
+    html = _sample_html(provider=MinimalStockProvider(), provider_name="tdx-snapshot")
+
+    assert "数据中台预警：资金面" in html
+    assert "资金流/成交侧明细" in html
+    assert "数据中台预警：公告" in html
+    assert "影响风险公告、财报事件和监管风险判断" in html
 
 
 def test_stock_module_shows_candidate_source_context_when_entered_from_opportunity() -> None:

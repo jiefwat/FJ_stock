@@ -822,6 +822,25 @@ h1 {
 
 
 @dataclass(frozen=True)
+class DataCenterRow:
+    category: str
+    channel: str
+    status: str
+    latest_at: str
+    missing: str
+    impact: str
+    level: str
+
+
+@dataclass(frozen=True)
+class DataCenterView:
+    status: str
+    updated_at: str
+    rows: list[DataCenterRow]
+    alerts: list[str]
+
+
+@dataclass(frozen=True)
 class DataQualityView:
     status: str
     warnings: list[str]
@@ -835,6 +854,7 @@ class DataQualityView:
     signal: str
     summary: str
     blocked_actions: list[str]
+    data_center: DataCenterView
 
 
 @dataclass(frozen=True)
@@ -936,6 +956,7 @@ def render_page(
         market=market,
         candidates=candidates,
         candidate_universe=candidate_universe,
+        candidate_universe_metadata=candidate_universe_metadata,
         market_news=daily.news,
     )
     announcement_report = _safe_fetch_announcements(
@@ -1012,6 +1033,7 @@ def render_page(
       {render_shell_sidebar(resolved.query, holdings_path)}
     <main class="workspace">
       {_render_global_freshness_bar(quality, market, provider_class, risk_gate)}
+      {_render_data_center_panel(quality.data_center)}
       {build_workspace_sections(section_map)}
     </main>
   </div>
@@ -2488,6 +2510,7 @@ def _assess_data_quality(
     market: MarketSnapshot,
     candidates: CandidatePoolReport,
     candidate_universe: list[CandidateStockRawData],
+    candidate_universe_metadata: dict[str, str],
     market_news: NewsSentimentReport | None = None,
 ) -> DataQualityView:
     warnings = list(resolved.warnings)
@@ -2547,6 +2570,19 @@ def _assess_data_quality(
 
     unique_warnings = list(dict.fromkeys(warnings))
     blocked_actions = list(dict.fromkeys(blocked_actions))
+    data_center = _build_data_center_view(
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        stock_raw=stock_raw,
+        stock=stock,
+        market=market,
+        candidates=candidates,
+        candidate_universe=candidate_universe,
+        candidate_universe_metadata=candidate_universe_metadata,
+        market_news=market_news,
+    )
+    if data_center.alerts:
+        unique_warnings = list(dict.fromkeys([*unique_warnings, *data_center.alerts]))
     if blocked_actions:
         status = "排序已暂停"
         gate_level = "blocked"
@@ -2575,7 +2611,281 @@ def _assess_data_quality(
         signal=signal,
         summary=summary,
         blocked_actions=blocked_actions,
+        data_center=data_center,
     )
+
+
+def _build_data_center_view(
+    *,
+    requested_provider: str,
+    actual_provider: str,
+    stock_raw: StockRawData,
+    stock: DeepStockReport,
+    market: MarketSnapshot,
+    candidates: CandidatePoolReport,
+    candidate_universe: list[CandidateStockRawData],
+    candidate_universe_metadata: dict[str, str],
+    market_news: NewsSentimentReport | None,
+) -> DataCenterView:
+    expected = _expected_latest_a_share_trade_date(_current_datetime())
+    sample_mode = requested_provider.strip().lower() == "sample" or actual_provider == "SampleDataProvider"
+    snapshot_source = candidate_universe_metadata.get("snapshot_source") or actual_provider
+    snapshot_generated = candidate_universe_metadata.get("snapshot_generated_at", "")
+    rows = [
+        _data_center_row(
+            category="大盘行情",
+            channel=snapshot_source,
+            latest_date=market.trade_date,
+            updated_at=snapshot_generated,
+            missing=[] if market.indices else ["指数表现"],
+            impact="影响市场摘要、风险项和目标仓位" if not market.indices else "不影响分析",
+            expected=expected,
+            critical=True,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="K线行情",
+            channel=_data_center_channel(
+                _source_for_block(
+                    stock_raw,
+                    ["daily", "kline", "tdx", "tencent", "tushare", "akshare"],
+                    snapshot_source,
+                ),
+                candidate_universe_metadata.get("holding_kline_refresh_source", ""),
+                candidate_universe_metadata.get("kline_refresh_source", ""),
+            ),
+            latest_date=_latest_bar_date(stock_raw.bars),
+            updated_at=_first_present(
+                candidate_universe_metadata.get("holding_kline_refresh_generated_at", ""),
+                candidate_universe_metadata.get("kline_refresh_generated_at", ""),
+                snapshot_generated,
+            ),
+            missing=_kline_missing_parts(stock_raw, candidate_universe),
+            impact="影响技术面、候选排序和盘面执行",
+            expected=expected,
+            critical=True,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="候选池",
+            channel=_data_center_channel(
+                candidate_universe_metadata.get("source", ""),
+                candidate_universe_metadata.get("bar_source", ""),
+                snapshot_source,
+            ),
+            latest_date=candidates.trade_date,
+            updated_at=_first_present(candidate_universe_metadata.get("generated_at", ""), snapshot_generated),
+            missing=_candidate_missing_parts(candidates, candidate_universe),
+            impact="影响热点机会、候选列表和排序评分",
+            expected=expected,
+            critical=True,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="资金面",
+            channel=_data_center_channel(
+                str(stock_raw.fund_flow_detail.get("source") or ""),
+                _source_for_block(stock_raw, ["moneyflow", "fund", "quote", "turnover", "akshare"], snapshot_source),
+            ),
+            latest_date=str(stock_raw.fund_flow_detail.get("date") or stock.trade_date or ""),
+            updated_at=snapshot_generated,
+            missing=[] if stock_raw.fund_flow is not None or stock_raw.fund_flow_detail else ["资金流/成交侧明细"],
+            impact="影响资金面证据和承接判断",
+            expected=expected,
+            critical=False,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="新闻舆情",
+            channel=_data_center_channel(
+                _latest_news_source(stock_raw.news_items),
+                _latest_news_source(market_news.items if market_news else []),
+            ),
+            latest_date=max(
+                _latest_news_date(stock_raw.news_items),
+                _latest_news_date(market_news.items if market_news else []),
+            ),
+            updated_at=_first_present(
+                candidate_universe_metadata.get("manual_context_refresh_generated_at", ""),
+                candidate_universe_metadata.get("external_enrichment_generated_at", ""),
+                snapshot_generated,
+            ),
+            missing=_news_missing_parts(stock_raw, market_news),
+            impact="影响消息面、市场舆情和事件催化判断",
+            expected=expected,
+            critical=False,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="公告",
+            channel=_data_center_channel(
+                _latest_announcement_source(stock_raw.announcements),
+                _source_for_block(stock_raw, ["announcement", "cninfo"], snapshot_source),
+            ),
+            latest_date=_latest_announcement_date(stock_raw.announcements),
+            updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
+            missing=[] if stock_raw.announcements else ["公告"],
+            impact="影响风险公告、财报事件和监管风险判断",
+            expected=expected,
+            critical=False,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="基本面",
+            channel=_data_center_channel(
+                str(stock_raw.fundamental_metrics.get("source") or ""),
+                _source_for_block(stock_raw, ["fina", "valuation", "profile", "tdx"], snapshot_source),
+            ),
+            latest_date=str(stock_raw.fundamental_metrics.get("date") or ""),
+            updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
+            missing=_fundamental_missing_parts(stock_raw),
+            impact="影响估值、财务质量和基本面证据",
+            expected=expected,
+            critical=False,
+            sample_mode=sample_mode,
+        ),
+    ]
+    alerts = [
+        f"数据中台预警：{row.category}{row.status}，{row.impact}。"
+        for row in rows
+        if row.level in {"warn", "blocked"} and row.impact != "不影响分析"
+    ]
+    if any(row.level == "blocked" for row in rows):
+        status = "影响分析"
+    elif any(row.level == "warn" for row in rows):
+        status = "需复核"
+    else:
+        status = "正常"
+    return DataCenterView(
+        status=status,
+        updated_at=_first_present(snapshot_generated, *(row.latest_at for row in rows)) or "待确认",
+        rows=rows,
+        alerts=alerts,
+    )
+
+
+def _data_center_row(
+    *,
+    category: str,
+    channel: str,
+    latest_date: str,
+    updated_at: str,
+    missing: list[str],
+    impact: str,
+    expected: str,
+    critical: bool,
+    sample_mode: bool,
+) -> DataCenterRow:
+    missing = [item for item in missing if item]
+    latest_text = latest_date or "未采集"
+    if updated_at:
+        latest_text = f"{latest_text} / 更新 {updated_at}"
+    is_stale = bool(latest_date) and _iso_date_is_before(latest_date, expected)
+    if sample_mode:
+        status = "样例"
+        level = "warn"
+        impact = "只能验证流程，不能用于真实分析"
+    elif missing or not latest_date:
+        status = "未采集" if not latest_date else "缺字段"
+        level = "blocked" if critical else "warn"
+    elif is_stale:
+        status = "已滞后"
+        level = "blocked" if critical else "warn"
+    else:
+        status = "可用"
+        level = "ok"
+        impact = "不影响分析" if impact != "只能验证流程，不能用于真实分析" else impact
+    return DataCenterRow(
+        category=category,
+        channel=channel or "待确认",
+        status=status,
+        latest_at=latest_text,
+        missing="、".join(missing) if missing else "无",
+        impact=impact,
+        level=level,
+    )
+
+
+def _data_center_channel(*values: str) -> str:
+    parts: list[str] = []
+    for value in values:
+        for item in str(value or "").replace("、", ",").split(","):
+            normalized = item.strip()
+            if normalized and normalized not in parts:
+                parts.append(normalized)
+    return " / ".join(parts[:3])
+
+
+def _first_present(*values: str) -> str:
+    for value in values:
+        if value:
+            return str(value)
+    return ""
+
+
+def _kline_missing_parts(
+    stock_raw: StockRawData, candidate_universe: list[CandidateStockRawData]
+) -> list[str]:
+    missing: list[str] = []
+    if not stock_raw.bars:
+        missing.append("个股K线")
+    if not candidate_universe:
+        missing.append("候选池K线")
+    elif any(not item.bars for item in candidate_universe):
+        missing.append("部分候选K线")
+    return missing
+
+
+def _candidate_missing_parts(
+    candidates: CandidatePoolReport, candidate_universe: list[CandidateStockRawData]
+) -> list[str]:
+    missing: list[str] = []
+    if not candidates.candidates:
+        missing.append("候选列表")
+    if not candidate_universe:
+        missing.append("扫描样本")
+    if not candidates.price_reliable:
+        missing.append("候选价格")
+    return missing
+
+
+def _news_missing_parts(
+    stock_raw: StockRawData, market_news: NewsSentimentReport | None
+) -> list[str]:
+    missing: list[str] = []
+    if not market_news or not market_news.items:
+        missing.append("市场新闻")
+    if not stock_raw.news_items:
+        missing.append("个股新闻")
+    return missing
+
+
+def _fundamental_missing_parts(stock_raw: StockRawData) -> list[str]:
+    missing: list[str] = []
+    if stock_raw.pe_ttm is None and not stock_raw.valuation:
+        missing.append("估值")
+    if not stock_raw.fundamental_metrics:
+        missing.append("财务指标")
+    return missing
+
+
+def _latest_news_source(items: list) -> str:
+    if not items:
+        return ""
+    latest = max(items, key=lambda item: str(getattr(item, "date", "") or ""))
+    return str(getattr(latest, "source", "") or "")
+
+
+def _latest_announcement_source(items: list[dict[str, object]]) -> str:
+    if not items:
+        return ""
+    latest = max(
+        items,
+        key=lambda item: str(
+            item.get("date") or item.get("announcement_date") or item.get("公告日期") or ""
+        ),
+    )
+    return str(latest.get("source") or latest.get("来源") or "")
 
 
 def _trade_date_freshness_warnings(
@@ -2926,6 +3236,36 @@ def _render_global_freshness_bar(
         <div><span>来源</span><strong>{escape(provider_label)}</strong></div>
         <div><span>动作闸门</span><strong>{escape(risk_gate.gate)}</strong></div>
       </div>"""
+
+
+def _render_data_center_panel(data_center: DataCenterView) -> str:
+    rows = "".join(
+        f"""
+        <tr class="data-center-row {escape(row.level)}">
+          <td>{escape(row.category)}</td>
+          <td>{escape(row.channel)}</td>
+          <td>{escape(row.status)}</td>
+          <td>{escape(row.latest_at)}</td>
+          <td>{escape(row.missing)}</td>
+          <td>{escape(row.impact)}</td>
+        </tr>"""
+        for row in data_center.rows
+    )
+    alerts = _li_join(data_center.alerts or ["暂无影响分析的采集预警"])
+    return f"""
+      <section class="panel data-center-panel" id="data-center" aria-label="数据中台">
+        <div class="editor-toolbar">
+          <div><h3>数据中台</h3><p class="section-subtitle">展示当前采集状态、采集渠道、更新时间、未采集字段和分析影响预警。</p></div>
+          <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>数据域</th><th>采集渠道</th><th>采集状态</th><th>更新时间</th><th>未采集/缺失</th><th>影响分析预警</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+        <div class="quality-banner {'high' if data_center.status == '影响分析' else ''}" style="margin-top:12px">
+          <strong>影响分析预警：</strong><ul class="note-list">{alerts}</ul>
+        </div>
+      </section>"""
 
 
 def _freshness_detail(quality: DataQualityView) -> str:

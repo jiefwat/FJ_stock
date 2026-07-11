@@ -148,7 +148,7 @@ class TdxSnapshotProvider(StockDataProvider):
         payload = self._read_payload()
         universe_payload = payload.get("candidate_universe", payload.get("candidates"))
         if not isinstance(universe_payload, dict):
-            return {}
+            universe_payload = {}
         keys = [
             "scope",
             "trade_date",
@@ -164,11 +164,38 @@ class TdxSnapshotProvider(StockDataProvider):
             "source",
             "generated_at",
         ]
-        return {
+        metadata = {
             key: str(universe_payload[key])
             for key in keys
             if universe_payload.get(key) not in {None, ""}
         }
+        if payload.get("source") not in {None, ""}:
+            metadata["snapshot_source"] = str(payload["source"])
+        if payload.get("generated_at") not in {None, ""}:
+            metadata["snapshot_generated_at"] = str(payload["generated_at"])
+        for section_name, prefix in [
+            ("kline_refresh", "kline_refresh"),
+            ("holding_kline_refresh", "holding_kline_refresh"),
+            ("external_enrichment", "external_enrichment"),
+            ("manual_context_refresh", "manual_context_refresh"),
+        ]:
+            section = payload.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            if section.get("source") not in {None, ""}:
+                metadata[f"{prefix}_source"] = str(section["source"])
+            if section.get("generated_at") not in {None, ""}:
+                metadata[f"{prefix}_generated_at"] = str(section["generated_at"])
+            for count_key in [
+                "updated_count",
+                "failed_count",
+                "requested_count",
+                "enriched_stock_count",
+                "error_count",
+            ]:
+                if section.get(count_key) not in {None, ""}:
+                    metadata[f"{prefix}_{count_key}"] = str(section[count_key])
+        return metadata
 
     def _read_payload(self) -> dict[str, Any]:
         if self._payload_cache is not None:
