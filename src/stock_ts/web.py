@@ -1223,6 +1223,8 @@ def _resolve_live_stock_news_fetcher(
 ) -> StockNewsFetcher | None:
     if stock_news_fetcher is not None:
         return stock_news_fetcher
+    if provider_name == "tdx-snapshot":
+        return None
     if provider_injected or provider_name == "sample":
         return None
     return _fetch_live_stock_news

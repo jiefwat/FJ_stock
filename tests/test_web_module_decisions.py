@@ -16,6 +16,7 @@ from stock_ts.web import (
     _manual_refresh_command,
     _render_automation_monitor_panel,
     _render_latest_daily_artifact,
+    _resolve_live_stock_news_fetcher,
     _run_manual_refresh_command,
     render_page,
 )
@@ -39,6 +40,28 @@ def _workspace(html: str, key: str) -> str:
     start = html.index(f'id="{key}"')
     next_workspace = html.find('<section class="workspace-pane', start + 1)
     return html[start:] if next_workspace == -1 else html[start:next_workspace]
+
+
+def test_tdx_snapshot_page_load_does_not_fetch_live_news_by_default() -> None:
+    def explicit_fetcher(symbol: str, limit: int) -> list[NewsItem]:
+        return []
+
+    assert (
+        _resolve_live_stock_news_fetcher(
+            provider_name="tdx-snapshot",
+            provider_injected=False,
+            stock_news_fetcher=None,
+        )
+        is None
+    )
+    assert (
+        _resolve_live_stock_news_fetcher(
+            provider_name="tdx-snapshot",
+            provider_injected=False,
+            stock_news_fetcher=explicit_fetcher,
+        )
+        is explicit_fetcher
+    )
 
 
 def test_four_workspaces_do_not_repeat_global_precision_summary() -> None:

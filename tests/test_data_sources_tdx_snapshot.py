@@ -424,6 +424,46 @@ def test_tdx_snapshot_provider_reuses_payload_within_instance(
     assert calls == 1
 
 
+def test_tdx_snapshot_provider_reuses_payload_across_instances(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    snapshot = tmp_path / "tdx.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-06-26",
+                    "indices": [],
+                    "advancing": 1,
+                    "declining": 1,
+                    "limit_up": 0,
+                    "limit_down": 0,
+                    "top_sectors": [],
+                },
+                "candidate_universe": {"items": []},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    original_read_text = Path.read_text
+    calls = 0
+
+    def counting_read_text(self: Path, *args, **kwargs):
+        nonlocal calls
+        if self == snapshot:
+            calls += 1
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    TdxSnapshotProvider(snapshot).fetch_market()
+    TdxSnapshotProvider(snapshot).fetch_market()
+
+    assert calls == 1
+
+
 def test_tdx_snapshot_provider_does_not_expose_exchange_boards_as_themes(
     tmp_path: Path,
 ) -> None:

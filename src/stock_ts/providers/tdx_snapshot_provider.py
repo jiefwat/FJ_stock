@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from stock_ts.models import (
     CandidateStockRawData,
@@ -21,6 +21,10 @@ from stock_ts.sector_labels import localize_theme_name
 
 class TdxSnapshotProvider(StockDataProvider):
     """Read TDX MCP/exported snapshots from local JSON without sample fallbacks."""
+
+    _shared_payload_cache: ClassVar[
+        dict[Path, tuple[tuple[int, int], dict[str, Any]]]
+    ] = {}
 
     def __init__(self, snapshot_path: str | Path | None = None) -> None:
         self.snapshot_path = Path(
@@ -208,7 +212,15 @@ class TdxSnapshotProvider(StockDataProvider):
             return self._payload_cache
         if not self.snapshot_path.exists():
             raise DataProviderError(f"TDX snapshot file not found: {self.snapshot_path}")
+        stat = self.snapshot_path.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cache_key = self.snapshot_path.resolve()
+        cached = self._shared_payload_cache.get(cache_key)
+        if cached is not None and cached[0] == signature:
+            self._payload_cache = cached[1]
+            return self._payload_cache
         self._payload_cache = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+        self._shared_payload_cache[cache_key] = (signature, self._payload_cache)
         return self._payload_cache
 
 
