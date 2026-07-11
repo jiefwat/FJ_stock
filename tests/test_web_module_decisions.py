@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from stock_ts.models import DailyBar, SectorRawData, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
@@ -565,6 +566,59 @@ def test_data_center_surfaces_mcp_market_news_channel_metadata() -> None:
 
     assert "longbridge.mcp" in html
     assert "2026-07-11T01:00:00Z" in html
+
+
+def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monkeypatch) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    (report_dir / "pipeline.status").write_text(
+        "\n".join(
+            [
+                "status=ok",
+                "generated_at=2026-07-11T10:31:56",
+                "refresh=skipped",
+                "tdx_enrich=skipped",
+                "a_share_kline=skipped",
+                "external_enrich=skipped",
+                "announcements=skipped",
+                "report=ok",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+
+    html = _sample_html(provider_name="tdx-snapshot")
+
+    assert "自动更新未完整" in html
+    assert "全市场刷新" in html
+    assert "公告" in html
+
+
+def test_data_center_shows_snapshot_coverage_for_each_data_domain() -> None:
+    class CoverageProvider(SampleDataProvider):
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "snapshot_stock_count": "12",
+                "snapshot_bars_count": "12",
+                "snapshot_fund_flow_detail_count": "4",
+                "snapshot_news_items_count": "5",
+                "snapshot_announcements_count": "0",
+                "snapshot_fundamental_metrics_count": "3",
+                "snapshot_valuation_count": "10",
+                "snapshot_market_news_count": "2",
+            }
+
+    html = _sample_html(provider=CoverageProvider(), provider_name="tdx-snapshot")
+
+    assert "技术面" in html
+    assert "覆盖 12/12" in html
+    assert "覆盖 4/12" in html
+    assert "个股新闻 5/12" in html
+    assert "市场消息 2 条" in html
+    assert "公告 0/12" in html
+    assert "财务指标 3/12" in html
 
 
 def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() -> None:

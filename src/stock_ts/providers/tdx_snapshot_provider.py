@@ -173,6 +173,7 @@ class TdxSnapshotProvider(StockDataProvider):
             metadata["snapshot_source"] = str(payload["source"])
         if payload.get("generated_at") not in {None, ""}:
             metadata["snapshot_generated_at"] = str(payload["generated_at"])
+        metadata.update(_snapshot_coverage_metadata(payload))
         for section_name, prefix in [
             ("kline_refresh", "kline_refresh"),
             ("holding_kline_refresh", "holding_kline_refresh"),
@@ -241,6 +242,39 @@ def _limit_down_payload(market_payload: dict[str, Any]) -> list[Any]:
         if items:
             return items
     return []
+
+
+def _snapshot_coverage_metadata(payload: dict[str, Any]) -> dict[str, str]:
+    stocks = payload.get("stocks")
+    stock_items = list(stocks.values()) if isinstance(stocks, dict) else []
+    metadata: dict[str, str] = {"snapshot_stock_count": str(len(stock_items))}
+    for key in [
+        "bars",
+        "fundamental_metrics",
+        "valuation",
+        "fund_flow_detail",
+        "news_items",
+        "announcements",
+    ]:
+        metadata[f"snapshot_{key}_count"] = str(
+            sum(1 for item in stock_items if _has_payload_block(item, key))
+        )
+    market_news = payload.get("market_news")
+    metadata["snapshot_market_news_count"] = str(
+        len(market_news) if isinstance(market_news, list) else 0
+    )
+    return metadata
+
+
+def _has_payload_block(item: object, key: str) -> bool:
+    if not isinstance(item, dict):
+        return False
+    value = item.get(key)
+    if isinstance(value, list):
+        return bool(value)
+    if isinstance(value, dict):
+        return bool(value)
+    return value not in {None, "", 0}
 
 
 def _market_unchanged_count(

@@ -828,6 +828,7 @@ class DataCenterRow:
     channel: str
     status: str
     latest_at: str
+    coverage: str
     missing: str
     impact: str
     level: str
@@ -2645,6 +2646,7 @@ def _build_data_center_view(
             latest_date=market.trade_date,
             updated_at=snapshot_generated,
             missing=[] if market.indices else ["指数表现"],
+            coverage=f"指数 {len(market.indices)} 个",
             impact="影响市场摘要、风险项和目标仓位" if not market.indices else "不影响分析",
             expected=expected,
             critical=True,
@@ -2668,9 +2670,26 @@ def _build_data_center_view(
                 snapshot_generated,
             ),
             missing=_kline_missing_parts(stock_raw, candidate_universe),
+            coverage=_coverage_ratio(candidate_universe_metadata, "snapshot_bars_count"),
             impact="影响技术面、候选排序和盘面执行",
             expected=expected,
             critical=True,
+            sample_mode=sample_mode,
+        ),
+        _data_center_row(
+            category="技术面",
+            channel="K线计算：MA / RSI / MACD / 量能",
+            latest_date=_latest_bar_date(stock_raw.bars),
+            updated_at=_first_present(
+                candidate_universe_metadata.get("holding_kline_refresh_generated_at", ""),
+                candidate_universe_metadata.get("kline_refresh_generated_at", ""),
+                snapshot_generated,
+            ),
+            missing=[] if stock_raw.bars else ["技术指标输入K线"],
+            coverage=_coverage_ratio(candidate_universe_metadata, "snapshot_bars_count"),
+            impact="影响趋势、支撑压力和交易触发线",
+            expected=expected,
+            critical=False,
             sample_mode=sample_mode,
         ),
         _data_center_row(
@@ -2683,6 +2702,7 @@ def _build_data_center_view(
             latest_date=candidates.trade_date,
             updated_at=_first_present(candidate_universe_metadata.get("generated_at", ""), snapshot_generated),
             missing=_candidate_missing_parts(candidates, candidate_universe),
+            coverage=f"候选 {len(candidate_universe)} 只",
             impact="影响热点机会、候选列表和排序评分",
             expected=expected,
             critical=True,
@@ -2697,6 +2717,7 @@ def _build_data_center_view(
             latest_date=str(stock_raw.fund_flow_detail.get("date") or stock.trade_date or ""),
             updated_at=snapshot_generated,
             missing=[] if stock_raw.fund_flow is not None or stock_raw.fund_flow_detail else ["资金流/成交侧明细"],
+            coverage=_coverage_ratio(candidate_universe_metadata, "snapshot_fund_flow_detail_count"),
             impact="影响资金面证据和承接判断",
             expected=expected,
             critical=False,
@@ -2720,6 +2741,7 @@ def _build_data_center_view(
                 snapshot_generated,
             ),
             missing=_news_missing_parts(stock_raw, market_news),
+            coverage=_news_coverage_text(candidate_universe_metadata),
             impact="影响消息面、市场舆情和事件催化判断",
             expected=expected,
             critical=False,
@@ -2734,6 +2756,9 @@ def _build_data_center_view(
             latest_date=_latest_announcement_date(stock_raw.announcements),
             updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
             missing=[] if stock_raw.announcements else ["公告"],
+            coverage=_coverage_ratio(
+                candidate_universe_metadata, "snapshot_announcements_count", label="公告"
+            ),
             impact="影响风险公告、财报事件和监管风险判断",
             expected=expected,
             critical=False,
@@ -2748,6 +2773,7 @@ def _build_data_center_view(
             latest_date=str(stock_raw.fundamental_metrics.get("date") or ""),
             updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
             missing=_fundamental_missing_parts(stock_raw),
+            coverage=_fundamental_coverage_text(candidate_universe_metadata),
             impact="影响估值、财务质量和基本面证据",
             expected=expected,
             critical=False,
@@ -2780,6 +2806,7 @@ def _data_center_row(
     latest_date: str,
     updated_at: str,
     missing: list[str],
+    coverage: str,
     impact: str,
     expected: str,
     critical: bool,
@@ -2809,10 +2836,39 @@ def _data_center_row(
         channel=channel or "待确认",
         status=status,
         latest_at=latest_text,
+        coverage=coverage or "当前标的",
         missing="、".join(missing) if missing else "无",
         impact=impact,
         level=level,
     )
+
+
+def _coverage_ratio(
+    metadata: dict[str, str], count_key: str, *, label: str = "覆盖"
+) -> str:
+    count = metadata.get(count_key, "")
+    total = metadata.get("snapshot_stock_count", "")
+    if count and total:
+        return f"{label} {count}/{total}"
+    return "当前标的"
+
+
+def _news_coverage_text(metadata: dict[str, str]) -> str:
+    stock_news = _coverage_ratio(metadata, "snapshot_news_items_count", label="个股新闻")
+    market_news = metadata.get("snapshot_market_news_count", "")
+    if market_news:
+        return f"{stock_news}；市场消息 {market_news} 条"
+    return stock_news
+
+
+def _fundamental_coverage_text(metadata: dict[str, str]) -> str:
+    fundamentals = _coverage_ratio(
+        metadata, "snapshot_fundamental_metrics_count", label="财务指标"
+    )
+    valuation = _coverage_ratio(metadata, "snapshot_valuation_count", label="估值")
+    if valuation == "当前标的":
+        return fundamentals
+    return f"{fundamentals}；{valuation}"
 
 
 def _data_center_channel(*values: str) -> str:
@@ -3255,6 +3311,7 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
           <td>{escape(row.channel)}</td>
           <td>{escape(row.status)}</td>
           <td>{escape(row.latest_at)}</td>
+          <td>{escape(row.coverage)}</td>
           <td>{escape(row.missing)}</td>
           <td>{escape(row.impact)}</td>
         </tr>"""
@@ -3286,7 +3343,7 @@ def _render_data_center_panel(data_center: DataCenterView) -> str:
           <div class="data-center-kpi"><span>更新时间</span><strong>{escape(data_center.updated_at)}</strong></div>
         </div>
         <table class="data-table">
-          <thead><tr><th>数据域</th><th>采集渠道</th><th>采集状态</th><th>更新时间</th><th>未采集/缺失</th><th>影响分析预警</th></tr></thead>
+          <thead><tr><th>数据域</th><th>采集渠道</th><th>采集状态</th><th>更新时间</th><th>覆盖范围</th><th>未采集/缺失</th><th>影响分析预警</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
         <div class="manual-action-grid" aria-label="人工复核入口">{review_links}</div>
@@ -3321,6 +3378,7 @@ def _data_center_anchor(category: str) -> str:
     mapping = {
         "大盘行情": "data-domain-market",
         "K线行情": "data-domain-kline",
+        "技术面": "data-domain-technical",
         "候选池": "data-domain-candidates",
         "资金面": "data-domain-fund",
         "新闻舆情": "data-domain-news",
@@ -7233,7 +7291,7 @@ def _render_automation_monitor_panel() -> str:
       <div class="panel" style="margin-top:16px">
         <h3>自动更新监控</h3>
         <div class="summary-grid">
-          <div class="summary-card"><span>运行节奏</span><strong>每 2 小时</strong><p class="kpi-foot">服务器定时刷新行情、K线、新闻、公告和日报。</p></div>
+          <div class="summary-card"><span>运行节奏</span><strong>00:00/06:00/09:00/12:30/14:00</strong><p class="kpi-foot">服务器定时刷新行情、K线、新闻、公告和日报。</p></div>
           <div class="summary-card"><span>最近运行</span><strong>{escape(generated_at)}</strong><p class="kpi-foot">{escape(freshness)}</p></div>
           <div class="summary-card"><span>整体状态</span><strong>{escape(_human_pipeline_status(status.get("status", "未知")))}</strong><p class="kpi-foot">以 pipeline.status 为准。</p></div>
           <div class="summary-card"><span>执行可用性</span><strong>{escape(execution_readiness)}</strong><p class="kpi-foot">先确认新鲜度，再看交易动作。</p></div>
@@ -7281,7 +7339,7 @@ def _automation_failed_steps(status: dict[str, str]) -> list[str]:
     }
     for key, label in labels.items():
         value = status.get(key, "")
-        if str(value).lower().startswith(("failed", "partial")):
+        if str(value).lower().startswith(("failed", "partial", "skipped")):
             failed.append(label)
     return failed
 
@@ -7315,6 +7373,8 @@ def _human_pipeline_status(value: str) -> str:
         if "news" in lower or "moneyflow" in lower:
             return "部分完成：新闻/资金缺口"
         return "部分完成"
+    if lower.startswith("skipped"):
+        return "跳过：未采集"
     return _short_condition(clean.replace("subprocess.", ""), 36)
 
 

@@ -209,6 +209,15 @@ def _enrich_stock_payload(
             field_errors["itick_tick"] = str(exc)[:180]
 
     if akshare_stock_fields:
+        if not payload.get("fundamental_metrics"):
+            try:
+                with _time_limit(field_timeout):
+                    fundamentals = _fetch_akshare_financial_indicators(ak, code)
+                if fundamentals:
+                    payload["fundamental_metrics"] = fundamentals
+            except Exception as exc:
+                field_errors["akshare_financial"] = str(exc)[:180]
+
         try:
             if payload.get("bar_source") not in {"tushare.daily", "itick.stock_kline"}:
                 with _time_limit(field_timeout):
@@ -375,6 +384,30 @@ def _fetch_tushare_fina_indicator(ts_client: object, code: str) -> dict[str, Any
         "gross_margin": _optional_float(latest.get("grossprofit_margin")),
         "debt_to_assets": _optional_float(latest.get("debt_to_assets")),
         "ocf_to_profit": _optional_float(latest.get("ocf_to_profit")),
+    }
+
+
+def _fetch_akshare_financial_indicators(ak: object, code: str) -> dict[str, Any]:
+    frame = ak.stock_financial_analysis_indicator_em(  # type: ignore[attr-defined]
+        symbol=_akshare_em_symbol(code), indicator="按报告期"
+    )
+    rows = _records(frame)
+    if not rows:
+        return {}
+    latest = rows[0]
+    return {
+        "source": "akshare.stock_financial_analysis_indicator_em",
+        "date": _format_report_date(str(latest.get("REPORT_DATE") or "")),
+        "eps": _optional_float(latest.get("EPSJB")),
+        "net_asset_per_share": _optional_float(latest.get("BPS")),
+        "operating_revenue": _optional_float(latest.get("TOTALOPERATEREVE")),
+        "net_profit": _optional_float(latest.get("PARENTNETPROFIT")),
+        "revenue_yoy": _optional_float(latest.get("TOTALOPERATEREVETZ")),
+        "net_profit_yoy": _optional_float(latest.get("PARENTNETPROFITTZ")),
+        "roe": _optional_float(latest.get("ROEJQ")),
+        "gross_margin": _optional_float(latest.get("XSMLL")),
+        "debt_to_assets": _optional_float(latest.get("ZCFZL")),
+        "operating_cash_flow_per_share": _optional_float(latest.get("MGJYXJJE")),
     }
 
 
@@ -567,14 +600,15 @@ def _select_codes(
     sources: list[str] = []
     if explicit_codes:
         sources.extend(explicit_codes)
-    stocks = snapshot.get("stocks", {})
-    if isinstance(stocks, dict):
-        sources.extend(str(code) for code in stocks.keys())
-    universe = snapshot.get("candidate_universe", {})
-    if isinstance(universe, dict):
-        for item in _as_list(universe.get("items")):
-            if isinstance(item, dict):
-                sources.append(str(item.get("code") or ""))
+    else:
+        stocks = snapshot.get("stocks", {})
+        if isinstance(stocks, dict):
+            sources.extend(str(code) for code in stocks.keys())
+        universe = snapshot.get("candidate_universe", {})
+        if isinstance(universe, dict):
+            for item in _as_list(universe.get("items")):
+                if isinstance(item, dict):
+                    sources.append(str(item.get("code") or ""))
     for code in sources:
         normalized = _normalize_code(code)
         if normalized and normalized not in seen:
@@ -647,6 +681,22 @@ def _format_tushare_date(value: str) -> str:
     if len(text) == 8 and text.isdigit():
         return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
     return text
+
+
+def _format_report_date(value: str) -> str:
+    text = value.strip()
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    return _format_tushare_date(text[:8])
+
+
+def _akshare_em_symbol(code: str) -> str:
+    normalized = _normalize_code(code)
+    if normalized.startswith(("6", "9")):
+        return f"{normalized}.SH"
+    if normalized.startswith(("8", "4")):
+        return f"{normalized}.BJ"
+    return f"{normalized}.SZ"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
