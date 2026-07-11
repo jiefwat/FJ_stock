@@ -1009,3 +1009,65 @@ def test_morning_report_is_subway_brief_with_market_holdings_opportunities_and_1
     assert "自动任务提醒" not in content
     assert "今日交易限制" not in content
     assert all(len(line) <= 220 for line in content.splitlines())
+
+
+def test_morning_report_fills_15_suggestions_when_decisions_json_has_fewer_items(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    candidate_lines: list[str] = []
+    for index in range(1, 16):
+        candidate_lines.extend(
+            [
+                f"{index}. 候补股票{index}（600{index:03d}，候补板块）：观察分 80/100",
+                "   - 入选理由：板块共振",
+                "   - 风险提示：追高风险",
+                "   - 观察条件：回踩承接",
+            ]
+        )
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-10）\n\n"
+        "## 深度结论\n- 市场震荡\n\n"
+        "## 候选股票池摘要\n## 候选股票\n"
+        + "\n".join(candidate_lines),
+        encoding="utf-8",
+    )
+    (daily_dir / "latest_decisions.json").write_text(
+        json.dumps(
+            {
+                "trade_date": "2026-07-10",
+                "market": {"summary": "结构化大盘"},
+                "opportunities": [
+                    {
+                        "name": "结构票1",
+                        "sector": "结构板块",
+                        "reason": "JSON 优先",
+                        "risk": "追高风险",
+                        "action": "回踩承接",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    suggestion_lines = _section_lines(content, "## 投资建议 15只票", "## 数据与风险提示")
+    numbered = [line for line in suggestion_lines if line[0].isdigit()]
+    assert len(numbered) == 15
+    assert numbered[0].startswith("1. 结构票1")
+    assert any("候补股票14" in line for line in numbered)

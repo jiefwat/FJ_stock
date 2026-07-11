@@ -73,7 +73,11 @@ def build_morning_report(
     )
     opportunity_actions = _opportunity_actions(daily, limit=15)
     announcement_actions = _announcement_action_summary(announcements, name_map=name_map)
-    opportunity_actions = _decision_opportunity_actions(decisions, limit=15) or opportunity_actions
+    opportunity_actions = _merge_opportunity_actions(
+        _decision_opportunity_actions(decisions, limit=15),
+        opportunity_actions,
+        limit=15,
+    )
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
@@ -247,6 +251,29 @@ def _decision_opportunity_actions(decisions: dict[str, object], *, limit: int) -
         if len(actions) >= limit:
             break
     return actions
+
+
+def _merge_opportunity_actions(
+    primary: list[str], fallback: list[str], *, limit: int
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in [*primary, *fallback]:
+        text = _strip_number_prefix(item)
+        key = _opportunity_action_key(text)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        merged.append(f"{len(merged) + 1}. {_shorten_line(text, limit=150)}")
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _opportunity_action_key(text: str) -> str:
+    name = text.split("｜", 1)[0].split("：", 1)[0].strip()
+    return name.lower()
 
 
 def _decision_action_limit_lines(decisions: dict[str, object]) -> list[str]:
