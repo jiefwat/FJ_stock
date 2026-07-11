@@ -66,8 +66,8 @@ def test_four_modules_keep_module_owned_actions() -> None:
     html = _render_sample_page()
 
     for text in [
-        'data-action="add-holding"',
         'class="stock-form" method="get"',
+        "持仓股票分析",
         "多维诊断",
         "股票机会",
         'href="/?code=',

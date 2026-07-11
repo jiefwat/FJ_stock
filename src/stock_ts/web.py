@@ -5503,7 +5503,6 @@ def _render_compact_portfolio_module(
     notice: PortfolioNotice | None,
     edit_code: str,
 ) -> str:
-    public_readonly = _is_public_readonly()
     advice = build_portfolio_advice(
         portfolio,
         market=market,
@@ -5511,26 +5510,6 @@ def _render_compact_portfolio_module(
         transactions_path="data/portfolio/transactions.csv",
     )
     advice_by_code = {item.code: item for item in advice.position_advices}
-    editing_position = _select_edit_position(portfolio.positions, edit_code)
-    editing_advice = advice_by_code.get(editing_position.holding.code) if editing_position else None
-    positions = "".join(
-        _render_portfolio_table_row(
-            position,
-            advice_by_code.get(position.holding.code),
-            stock_code=stock_code,
-            provider_name=provider_name,
-            holdings_path=holdings_path,
-            readonly=public_readonly,
-        )
-        for position in portfolio.positions
-    )
-    if not positions:
-        positions = (
-            '<tr><td colspan="10"><div class="empty-state">'
-            "<strong>还没有持仓</strong>"
-            "<p>点击添加持仓，录入股票代码、成本价和持仓数后，系统会自动计算当日盈亏、累计盈亏和组合风险。</p>"
-            "</div></td></tr>"
-        )
     stock_analysis = _render_portfolio_stock_analysis_panel(
         portfolio,
         advice_by_code,
@@ -5539,65 +5518,16 @@ def _render_compact_portfolio_module(
         provider_name=provider_name,
         holdings_path=holdings_path,
     )
+    sector_analysis = _render_portfolio_sector_analysis_panel(portfolio, sectors)
+    cost_analysis = _render_portfolio_cost_analysis_panel(portfolio, advice_by_code)
     notice_html = _render_portfolio_notice(notice)
-    action_bar = (
-        '<div class="portfolio-action-bar"><span class="portfolio-chip">线上安全模式：持仓数据只展示，不改服务器文件</span></div>'
-        if public_readonly
-        else f'<div class="portfolio-action-bar">{_render_portfolio_new_button()}</div>'
-    )
-    edit_panel = (
-        """
-      <div class="quality-banner" id="portfolio-form" style="margin-top:16px">
-        当前可以查看组合风险、打开个股分析和复制复盘；新增或编辑持仓请在本地/私有环境完成，避免公开页面修改你的真实持仓文件。
-      </div>"""
-        if public_readonly
-        else f"""
-      <details class="detail-shell" id="portfolio-form">
-        <summary>{"编辑持仓" if editing_position else "添加持仓"}</summary>
-        <div class="detail-body">
-          {_render_clear_edit_link(stock_code, provider_name, holdings_path, edit_code)}
-          {_render_add_holding_form(stock_code, provider_name, holdings_path, editing_position, editing_advice)}
-        </div>
-      </details>"""
-    )
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只分析你持有的股票：当前动作、主题概念、市场情绪、成本位置和下一步触发。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
-      {_render_research_data_flow_panel("我的持仓", "持仓成本、实时/收盘价、行业暴露、个股趋势和大盘风险", "持仓分析 -> 主题情绪 -> 下一步动作")}
+      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只展示真实持仓股票、对应板块、仓位和成本分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span></div></div>
       {notice_html}
-      <div class="portfolio-kpis">
-        {_kpi("总成本", f"{portfolio.total_cost:.2f}", "")}
-        {_kpi("总市值", f"{portfolio.total_market_value:.2f}", "")}
-        {_kpi("当日盈亏", f"{portfolio.daily_pnl:.2f}", "按前收价自动计算")}
-        {_kpi("累计盈亏", f"{portfolio.total_pnl:.2f}", f"{portfolio.total_pnl_ratio:.2f}%")}
-        {_kpi("第一大仓位", f"{portfolio.top_position_weight:.1%}", "")}
-      </div>
       {stock_analysis}
-      <details class="detail-shell compact-detail">
-        <summary>展开组合风险预算、处理队列和行业暴露</summary>
-        <div class="detail-body">
-          {_render_portfolio_command_panel(portfolio, market, advice, holdings_path, public_readonly)}
-          {_render_portfolio_risk_budget_panel(portfolio, advice, holdings_path, public_readonly)}
-          {_render_portfolio_priority_queue(portfolio, advice_by_code)}
-          {_render_portfolio_four_lane_board(
-              portfolio, advice, provider_name=provider_name, holdings_path=holdings_path
-          )}
-          {_render_portfolio_execution_boundaries(advice)}
-          {_render_portfolio_position_overview(advice)}
-          {_render_portfolio_exposure_map(portfolio)}
-          {_render_portfolio_overall_diagnosis(portfolio, market, advice)}
-          <div class="panel" style="margin-top:16px"><h3>数据质量</h3><p class="section-subtitle">持仓页只看顶部数据摘要；完整行情日期、资金面、公告和基本面状态统一到底部数据中台核对。缺报价或缺公告时只进入待补数据，不输出加仓建议。</p></div>
-        </div>
-      </details>
-      <details class="detail-shell compact-detail">
-        <summary>持仓明细和维护</summary>
-        <div class="detail-body">
-        <div class="editor-toolbar"><div><h3>持仓明细</h3><p class="section-subtitle">表格按成本、现价、仓位和趋势拆解每只股票；处理顺序以上方队列为准。</p></div><span class="portfolio-chip">{escape(advice.overall_action)}</span></div>
-        {action_bar}
-        <table class="data-table portfolio-table"><thead><tr><th>股票</th><th>数量</th><th>成本</th><th>现价</th><th>当日盈亏</th><th>总盈亏</th><th>仓位</th><th>趋势</th><th>建议</th><th>操作</th></tr></thead><tbody>{positions}</tbody></table>
-        </div>
-      </details>
-      {edit_panel}
+      {sector_analysis}
+      {cost_analysis}
     </section>"""
 
 
@@ -5612,7 +5542,7 @@ def _render_portfolio_stock_analysis_panel(
 ) -> str:
     if not portfolio.positions:
         rows = """
-        <tr><td colspan="6"><div class="empty-state"><strong>还没有持仓</strong><p>先录入股票，再生成主题、情绪和成本位置分析。</p></div></td></tr>
+        <tr><td colspan="9"><div class="empty-state"><strong>还没有持仓</strong><p>录入股票后展示趋势、资金、基本面、消息、板块和成本维度。</p></div></td></tr>
         """
     else:
         rows = "".join(
@@ -5632,11 +5562,11 @@ def _render_portfolio_stock_analysis_panel(
     return f"""
       <div class="panel portfolio-stock-analysis" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>我的股票分析</h3><p class="section-subtitle">重点看你真实持有的股票；主题、概念和市场情绪只作为持仓复核，不扩散成无关信息。</p></div>
+          <div><h3>持仓股票分析</h3><p class="section-subtitle">分析方法与个股分析保持一致，只覆盖你当前持有的股票。</p></div>
           <span class="portfolio-chip">市场情绪 {escape(market.regime)} · 热度 {market.heat_score}/100</span>
         </div>
         <table class="data-table portfolio-analysis-table">
-          <thead><tr><th>股票</th><th>主题 / 概念</th><th>市场情绪</th><th>持仓状态</th><th>分析结论</th><th>操作</th></tr></thead>
+          <thead><tr><th>股票</th><th>趋势/量价</th><th>资金/成交</th><th>基本面/估值</th><th>消息/公告</th><th>板块/主题</th><th>持仓/成本</th><th>结论</th><th>操作</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
       </div>"""
@@ -5653,27 +5583,178 @@ def _render_portfolio_stock_analysis_row(
 ) -> str:
     sector_name = localize_sector_name(position.holding.sector or "未识别主题")
     sector_state = _holding_sector_state(position.holding.sector, sectors)
-    mood = _holding_market_mood(position, market, sector_state)
     action = advice.action if advice else "观察"
-    next_check = advice.next_check if advice else "等待趋势、资金和公告补齐后再处理。"
     reason = advice.reason if advice else "先按成本位置和趋势复核，不做临时加仓。"
-    conclusion = (
-        f"{action}：{reason} "
-        f"下一步看 {next_check}"
-    )
-    holding_state = (
-        f"{_stock_cost_position_text(position)}；仓位 {position.weight:.1%}；"
-        f"{position.trend}/{position.risk_level}"
-    )
+    trend_text = _portfolio_trend_dimension(position)
+    fund_text = _portfolio_fund_dimension(position, market)
+    fundamental_text = _portfolio_fundamental_dimension(position)
+    news_text = _portfolio_news_dimension(position, market)
+    holding_state = _portfolio_holding_dimension(position, advice)
     actions = _render_open_stock_form(position.holding.code, provider_name, holdings_path)
     return (
         "<tr>"
         f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong><span>{escape(position.holding.code)}</span></td>"
+        f"<td>{escape(trend_text)}</td>"
+        f"<td>{escape(fund_text)}</td>"
+        f"<td>{escape(fundamental_text)}</td>"
+        f"<td>{escape(news_text)}</td>"
         f"<td><strong>{escape(sector_name)}</strong><span>{escape(sector_state)}</span></td>"
-        f"<td>{escape(mood)}</td>"
         f"<td>{escape(holding_state)}</td>"
-        f"<td>{escape(_short_condition(conclusion, 96))}</td>"
+        f"<td>{escape(_short_condition(f'{action}：{reason}', 88))}</td>"
         f"<td class='action-cell'>{actions}</td>"
+        "</tr>"
+    )
+
+
+def _portfolio_trend_dimension(position: PositionAnalysis) -> str:
+    return f"{position.trend}；日内 {position.daily_pnl_ratio:.2f}%；风险 {position.risk_level}"
+
+
+def _portfolio_fund_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
+    if position.latest_price <= 0:
+        return "缺最新报价，成交与资金不参与判断"
+    total_amount = sum(index.amount for index in market.indices)
+    if total_amount >= 1_000_000_000_000:
+        market_liquidity = "市场成交充足"
+    elif total_amount > 0:
+        market_liquidity = "市场成交一般"
+    else:
+        market_liquidity = "成交额待补"
+    return f"{market_liquidity}；个股资金看个股页明细"
+
+
+def _portfolio_fundamental_dimension(position: PositionAnalysis) -> str:
+    sector = localize_sector_name(position.holding.sector or "")
+    if sector:
+        return f"{sector} 基本面与估值在个股页复核"
+    return "未标注板块，基本面口径待补"
+
+
+def _portfolio_news_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
+    if market.heat_score >= 70 and position.risk_level != "高":
+        return "市场情绪偏强，公告风险仍以个股页为准"
+    if market.heat_score < 45 or position.risk_level == "高":
+        return "情绪偏弱或个股风险高，公告风险优先复核"
+    return "情绪中性，消息公告不单独构成动作理由"
+
+
+def _portfolio_holding_dimension(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+) -> str:
+    action = advice.action if advice else "观察"
+    return (
+        f"{_stock_cost_position_text(position)}；仓位 {position.weight:.1%}；"
+        f"成本 {position.holding.cost_price:.2f} / 现价 {position.latest_price:.2f}；{action}"
+    )
+
+
+def _render_portfolio_sector_analysis_panel(
+    portfolio: PortfolioAnalysisReport,
+    sectors: SectorAnalysisReport,
+) -> str:
+    rows = _portfolio_sector_analysis_rows(portfolio, sectors)
+    return f"""
+      <div class="panel portfolio-sector-analysis" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>对应板块分析</h3><p class="section-subtitle">只统计持仓股票所属板块，判断板块强弱和持仓相关性。</p></div>
+          <span class="portfolio-chip">板块 {len(portfolio.sector_weights)} 个</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>板块/主题</th><th>组合占比</th><th>持有股票</th><th>板块状态</th><th>分析</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _portfolio_sector_analysis_rows(
+    portfolio: PortfolioAnalysisReport,
+    sectors: SectorAnalysisReport,
+) -> str:
+    if not portfolio.positions:
+        return """
+        <tr><td colspan="5"><div class="empty-state"><strong>暂无持仓</strong><p>补充持仓后统计对应板块。</p></div></td></tr>
+        """
+    rows: list[str] = []
+    for sector, weight in sorted(portfolio.sector_weights, key=lambda item: item[1], reverse=True):
+        names = "、".join(
+            position.holding.name
+            for position in portfolio.positions
+            if position.holding.sector == sector
+        )
+        state = _holding_sector_state(sector, sectors)
+        analysis = _portfolio_sector_analysis_text(weight, state)
+        rows.append(
+            "<tr>"
+            f"<td><strong>{escape(localize_sector_name(sector) or '未识别主题')}</strong></td>"
+            f"<td>{weight:.1%}</td>"
+            f"<td>{escape(names or '未匹配')}</td>"
+            f"<td>{escape(state)}</td>"
+            f"<td>{escape(analysis)}</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _portfolio_sector_analysis_text(weight: float, state: str) -> str:
+    if weight >= 0.40:
+        concentration = "集中度偏高"
+    elif weight >= 0.25:
+        concentration = "集中度中等"
+    else:
+        concentration = "集中度可控"
+    if "强" in state or "热度" in state:
+        return f"{concentration}；板块需结合成交延续确认"
+    return f"{concentration}；板块证据不足时以个股维度为主"
+
+
+def _render_portfolio_cost_analysis_panel(
+    portfolio: PortfolioAnalysisReport,
+    advice_by_code: dict[str, PositionAdvice],
+) -> str:
+    if not portfolio.positions:
+        rows = """
+        <tr><td colspan="6"><div class="empty-state"><strong>暂无持仓</strong><p>补充数量和成本价后生成仓位/成本分析。</p></div></td></tr>
+        """
+    else:
+        rows = "".join(
+            _portfolio_cost_analysis_row(position, advice_by_code.get(position.holding.code))
+            for position in sorted(portfolio.positions, key=lambda item: item.weight, reverse=True)
+        )
+    return f"""
+      <div class="panel portfolio-cost-analysis" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>仓位/成本分析</h3><p class="section-subtitle">基于持仓占比、成本价、现价和盈亏结构判断单票压力。</p></div>
+          <span class="portfolio-chip">总市值 {portfolio.total_market_value:.2f} · 累计盈亏 {portfolio.total_pnl_ratio:.2f}%</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>股票</th><th>仓位</th><th>成本/现价</th><th>盈亏</th><th>仓位判断</th><th>成本结论</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _portfolio_cost_analysis_row(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+) -> str:
+    action = advice.action if advice else "观察"
+    if position.weight >= 0.30:
+        weight_view = "单票占比较高"
+    elif position.weight >= 0.15:
+        weight_view = "中等仓位"
+    else:
+        weight_view = "轻仓"
+    cost_view = _stock_cost_position_text(position)
+    conclusion = f"{cost_view}；{action}；{advice.reason if advice else '按趋势和成本复核'}"
+    return (
+        "<tr>"
+        f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong><span>{escape(position.holding.code)}</span></td>"
+        f"<td>{position.weight:.1%}</td>"
+        f"<td>{position.holding.cost_price:.2f} / {position.latest_price:.2f}</td>"
+        f"<td>{position.pnl:.2f}（{position.pnl_ratio:.2f}%）</td>"
+        f"<td>{escape(weight_view)}</td>"
+        f"<td>{escape(_short_condition(conclusion, 88))}</td>"
         "</tr>"
     )
 

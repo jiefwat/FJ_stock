@@ -46,5 +46,5 @@ def test_web_renders_decision_dashboard_and_strategy_lenses() -> None:
     assert "每日大盘" in html
     assert "市场" in html
     assert "热点机会" in html
-    assert "持仓健康度" in html
+    assert "持仓股票分析" in html
     assert "今天先做什么" not in html

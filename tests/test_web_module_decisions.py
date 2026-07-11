@@ -44,7 +44,7 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
 
     assert "股票涨跌统计" in html
     assert "每日大盘" in html
-    assert "持仓明细" in html
+    assert "持仓股票分析" in html
     assert "股票摘要" in html
     assert "热门板块主题" in html
     assert "股票机会" in html
@@ -457,67 +457,45 @@ def test_stock_module_shows_candidate_source_context_when_entered_from_opportuni
     assert "所属主题排名前 5，成交额放大" in stock_html
 
 
-def test_portfolio_module_surfaces_overall_diagnosis_and_position_overview() -> None:
+def test_portfolio_module_keeps_only_holding_sector_and_cost_analysis() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
         "我的持仓",
-        "持仓明细",
-        "处理队列",
-        "账本状态",
-        "组合整体诊断",
-        "处理优先级",
-        "目标现金/低风险",
+        "持仓股票分析",
+        "对应板块分析",
+        "仓位/成本分析",
+    ]:
+        assert text in portfolio_html
+
+    for text in [
+        "趋势/量价",
+        "资金/成交",
+        "基本面/估值",
+        "消息/公告",
+        "板块/主题",
+        "持仓/成本",
     ]:
         assert text in portfolio_html
 
 
-def test_portfolio_module_reads_like_disposal_console_before_table() -> None:
+def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    for text in [
+    for text in {
         "组合摘要",
         "今日先处理",
-        "最大风险",
-        "行业暴露",
-        "账本状态",
-        "行业暴露",
-    ]:
-        assert text in portfolio_html
-
-    assert portfolio_html.index("今日先处理") < portfolio_html.index("持仓风险处置")
-
-
-def test_portfolio_module_uses_four_lane_disposal_queue() -> None:
-    portfolio_html = _workspace(_sample_html(), "portfolio")
-
-    for text in [
+        "持仓风险处置",
         "处理队列",
-        "必须处理",
-        "观察",
-        "可继续",
-        "待补数据",
         "风险预算",
-        "成本位置",
-        "持仓账本来源",
-        "公开只读",
-    ]:
-        assert text in portfolio_html
-
-
-def test_portfolio_module_surfaces_health_light_and_execution_boundaries() -> None:
-    portfolio_html = _workspace(_sample_html(), "portfolio")
-
-    for text in [
-        "组合摘要",
-        "组合状态",
-        "现金比例",
         "操作边界",
-        "失效线",
-        "仓位上限",
-        "禁止动作",
-    ]:
-        assert text in portfolio_html
+        "行业暴露",
+        "持仓明细",
+        "持仓明细和维护",
+        "数据链路",
+        "下一步",
+    }:
+        assert text not in portfolio_html
 
 
 def test_tdx_snapshot_defensive_market_keeps_defensive_action() -> None:

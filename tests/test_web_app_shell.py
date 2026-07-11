@@ -51,7 +51,6 @@ def test_public_readonly_hides_mutating_public_controls(monkeypatch) -> None:
 
     html = _html()
 
-    assert "线上安全模式" in html
     assert 'method="post" action="/holdings"' not in html
     assert 'method="post" action="/settings"' not in html
     assert 'method="post" action="/notification-test"' not in html
@@ -66,12 +65,12 @@ def test_personal_writable_mode_keeps_portfolio_controls(monkeypatch) -> None:
     html = _html()
 
     assert _is_public_readonly() is False
-    assert "线上安全模式" not in html
-    assert 'method="post" action="/holdings"' in html
-    assert 'name="portfolio_action" value="upsert"' in html
-    assert 'name="portfolio_action" value="delete"' in html
-    assert "保存持仓" in html
-    assert "确认删除这条持仓记录？" in html
+    assert 'method="post" action="/holdings"' not in html
+    assert 'name="portfolio_action" value="upsert"' not in html
+    assert 'name="portfolio_action" value="delete"' not in html
+    assert "保存持仓" not in html
+    assert "确认删除这条持仓记录？" not in html
+    assert "持仓股票分析" in html
 
 
 def test_web_shell_listens_and_routes_legacy_hashes() -> None:
@@ -88,8 +87,8 @@ def test_each_workspace_contains_its_own_core_module_content() -> None:
     html = _html()
 
     expected = {
-        "market": "风险项",
-        "portfolio": "持仓明细",
+        "market": "股票涨跌统计",
+        "portfolio": "持仓股票分析",
         "stock": "股票摘要",
         "opportunity": "候选列表",
     }

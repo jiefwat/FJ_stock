@@ -61,7 +61,7 @@ def test_render_page_accepts_provider_and_holdings_query_values() -> None:
         stock_code="000001", provider_name="sample", holdings_path="data/portfolio/holdings.csv"
     )
 
-    assert "数据源" in html
+    assert "数据中台" in html
     assert "TDX MCP" in html
     assert "请求数据源" not in html
     assert "000001" in html
