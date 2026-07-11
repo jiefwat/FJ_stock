@@ -383,7 +383,7 @@ def test_market_wide_move_does_not_leave_unknown_research_copy() -> None:
     assert "大涨大跌分析" in market_html
     assert "未识别明确消息/公告/基本面原因" not in market_html
     assert "需继续查新闻" not in market_html
-    assert "已联查新闻和公告，暂无有效催化" in market_html
+    assert "联网核验未见可验证新增催化" in market_html
 
 
 def test_market_wide_move_uses_live_news_when_snapshot_missing() -> None:
@@ -1329,6 +1329,7 @@ def test_global_freshness_bar_stays_ok_when_only_optional_stock_context_is_missi
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-11T21:05:00+08:00")
     (tmp_path / "pipeline.status").write_text(
         "status=ok\n"
         "generated_at=2026-07-11T14:28:15\n"
@@ -1607,6 +1608,92 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "走弱原因" in market_html or "相对弱势原因" in market_html
     assert "强势；扩散" not in market_html
     assert "弱势；扩散" not in market_html
+
+
+def test_market_sector_top5_representatives_use_live_news_when_snapshot_missing() -> None:
+    class SectorNewsProvider(SampleDataProvider):
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="海洋经济",
+                    pct_chg=3.2,
+                    advancing_ratio=0.76,
+                    amount_change=18.0,
+                    fund_flow=2.4,
+                    limit_up_count=2,
+                ),
+                SectorRawData(
+                    name="机器人",
+                    pct_chg=2.4,
+                    advancing_ratio=0.74,
+                    amount_change=16.0,
+                    fund_flow=2.2,
+                    limit_up_count=2,
+                ),
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            higher_ranked = [
+                CandidateStockRawData(
+                    code=f"3001{index:02d}",
+                    name=f"高分候选{index}",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.2, 10.6, 10.1, 10.5, 1300),
+                        DailyBar("2026-07-08", 10.5, 11.0, 10.4, 10.9, 1700),
+                        DailyBar("2026-07-09", 10.9, 11.4, 10.8, 11.3, 2200),
+                        DailyBar("2026-07-10", 11.3, 11.8, 11.2, 11.7, 3200),
+                    ],
+                    fund_flow=3.0,
+                    turnover_rate=7.0,
+                    amount=25.0,
+                    pe_ttm=28.0,
+                )
+                for index in range(9)
+            ]
+            return higher_ranked + [
+                CandidateStockRawData(
+                    code="300065",
+                    name="海兰信",
+                    sector="海洋经济",
+                    bars=[
+                        DailyBar("2026-07-09", 10.0, 10.2, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-10", 10.2, 10.5, 10.1, 10.3, 1600),
+                    ],
+                    fund_flow=0.2,
+                    turnover_rate=8.6,
+                    amount=8.0,
+                    pe_ttm=34.0,
+                )
+            ]
+
+    def stock_news_fetcher(symbol: str, limit: int) -> list[NewsItem]:
+        if symbol == "300065":
+            return [
+                NewsItem(
+                    date="2026-07-10",
+                    source="联网新闻",
+                    title="海兰信中标海洋监测项目",
+                    summary="订单催化",
+                    sentiment="positive",
+                )
+            ][:limit]
+        return []
+
+    market_html = _workspace(
+        _sample_html(
+            provider=SectorNewsProvider(),
+            provider_name="tdx-snapshot",
+            stock_news_fetcher=stock_news_fetcher,
+        ),
+        "market",
+    )
+
+    assert "强势板块Top5" in market_html
+    assert "海兰信中标海洋监测项目" in market_html
+    assert "海洋经济" in market_html
+    assert "联网核验未见可验证新增催化" not in market_html
 
 
 def test_daily_market_explains_mainline_and_lists_top6_strongest_stocks() -> None:

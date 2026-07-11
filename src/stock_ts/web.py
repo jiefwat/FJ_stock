@@ -988,6 +988,7 @@ def render_page(
         [resolved.code]
         + [item.code for item in candidates.candidates[:7]]
         + _mainline_preferred_codes(candidate_universe, sectors)
+        + _sector_strength_preferred_codes(candidate_universe, sectors)
         + _wide_move_preferred_codes(candidate_universe, candidates)
     )
     candidate_universe = _enrich_candidate_universe_news(
@@ -4893,7 +4894,7 @@ def _opportunity_sector_dimensions(
     event_text = (
         "消息/公告：" + "；".join(event_evidence[:2])
         if event_evidence
-        else "消息/公告：已联查新闻和公告，暂无有效催化，不把涨跌当原因"
+        else "消息/公告：联网核验未见可验证新增催化，不把涨跌当原因"
     )
     fundamental_evidence = [
         evidence for evidence in causal_evidence if evidence.startswith("基本面")
@@ -4929,7 +4930,7 @@ def _opportunity_sector_cause(
     evidence = _sector_causal_evidence(item.name, candidate_universe)
     if evidence:
         return "；".join(evidence[:3])
-    return "已联查新闻和公告，暂无有效催化，只能列为观察方向，不把涨跌当原因"
+    return "联网核验未见可验证新增催化，只能列为观察方向，不把涨跌当原因"
 
 
 def _opportunity_sector_entry_reason(item) -> str:
@@ -5889,7 +5890,7 @@ def _wide_move_analysis(item: LimitBoardRow, *, up: bool) -> str:
         return "；".join(evidence[:4])
     direction = "上涨" if up else "下跌"
     return (
-        f"已联查新闻和公告，暂无有效催化；{direction}异动先按K线、资金和公告复核，"
+        f"联网核验未见可验证新增催化；{direction}异动先按K线、资金和公告复核，"
         "不把涨跌本身写成原因"
     )
 
@@ -6017,6 +6018,20 @@ def _wide_move_preferred_codes(
 ) -> list[str]:
     rows = _market_wide_move_rows(candidate_universe, candidates)
     return [item.code for item in rows[:12]]
+
+
+def _sector_strength_preferred_codes(
+    candidate_universe: list[CandidateStockRawData],
+    sectors: SectorAnalysisReport,
+) -> list[str]:
+    strong = sorted(sectors.sectors, key=lambda item: item.pct_chg, reverse=True)[:5]
+    weak = sorted(sectors.sectors, key=lambda item: item.pct_chg)[:5]
+    codes: list[str] = []
+    for sector in strong:
+        codes.extend(stock.code for stock in _theme_stocks_by_move(candidate_universe, sector.name, reverse=True)[:2])
+    for sector in weak:
+        codes.extend(stock.code for stock in _theme_stocks_by_move(candidate_universe, sector.name, reverse=False)[:2])
+    return codes
 
 
 def _render_mainline_intro_card(
@@ -6163,24 +6178,16 @@ def _sector_strength_analysis(
 def _sector_strong_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
     evidence = _sector_causal_evidence(item.name, candidate_universe)
     if evidence:
-        return f"走强原因：{'；'.join(evidence[:3])}"
-    return (
-        "走强原因：已联查新闻和公告，暂无有效催化；"
-        "当前只看到盘面强弱，不能把上涨本身当原因；"
-        f"资金面：{_sector_fund_context(item)}"
-    )
+        return f"走强原因：{_sector_market_context(item)}；{'；'.join(evidence[:3])}"
+    return f"走强原因：{_sector_market_context(item)}；{_sector_missing_event_context(strong=True)}"
 
 
 def _sector_weak_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
     evidence = _sector_causal_evidence(item.name, candidate_universe)
     label = "走弱原因" if item.pct_chg < 0 or item.advancing_ratio < 0.5 else "相对弱势原因"
     if evidence:
-        return f"{label}：{'；'.join(evidence[:3])}"
-    return (
-        f"{label}：已联查新闻和公告，暂无有效利空；"
-        "当前只看到盘面转弱，不能把下跌本身当原因；"
-        f"资金面：{_sector_fund_context(item)}"
-    )
+        return f"{label}：{_sector_market_context(item)}；{'；'.join(evidence[:3])}"
+    return f"{label}：{_sector_market_context(item)}；{_sector_missing_event_context(strong=False)}"
 
 
 def _sector_causal_evidence(
@@ -6241,10 +6248,24 @@ def _dedupe_texts(items: list[str]) -> list[str]:
 
 def _sector_fund_context(item) -> str:
     if item.fund_status == "资金活跃":
-        return "资金活跃，但仍需消息/公告/基本面解释催化"
+        return "资金活跃，消息/公告/基本面用于确认催化"
     if item.fund_status == "资金流出":
         return "资金流出，只能说明压力，不能解释根因"
-    return "资金配合一般，需继续补新闻、公告和基本面"
+    return "资金配合一般，等待新闻、公告和基本面形成交叉验证"
+
+
+def _sector_market_context(item) -> str:
+    return (
+        f"盘面证据：涨跌 {item.pct_chg:.2f}%，热度 {item.heat_score}/100，"
+        f"扩散 {item.advancing_ratio:.0%}，涨停 {item.limit_up_count}；"
+        f"资金面：{_sector_fund_context(item)}"
+    )
+
+
+def _sector_missing_event_context(*, strong: bool) -> str:
+    event = "可验证新增催化" if strong else "可验证新增利空"
+    action = "不把上涨本身当原因" if strong else "不把下跌本身当原因"
+    return f"消息/公告：联网核验未见{event}；判断：{action}"
 
 
 def _render_professional_market_diagnosis(
@@ -6750,7 +6771,7 @@ def _event_reason_text(item: NewsItem, theme: str, stock_text: str) -> str:
     title = item.title.strip("【】[]")
     summary = item.summary.strip()
     if "价格异动" in title:
-        reason = summary or "已联查新闻和公告，暂无有效催化；价格异动先按K线、资金和公告复核"
+        reason = summary or "联网核验未见可验证新增催化；价格异动先按K线、资金和公告复核"
     elif "波动超" in title:
         reason = title.split("：", 1)[-1]
     elif "板块" in title and theme:
@@ -6821,7 +6842,7 @@ def _candidate_price_mover_reason(row: LimitBoardRow) -> str:
     evidence = _candidate_causal_evidence(row)
     if evidence:
         return "；".join(evidence[:4])
-    return "已联查新闻和公告，暂无有效催化；价格异动先按K线、资金和公告复核"
+    return "联网核验未见可验证新增催化；价格异动先按K线、资金和公告复核"
 
 
 def _sentiment_label(value: str) -> str:
