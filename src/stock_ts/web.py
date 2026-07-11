@@ -7724,9 +7724,20 @@ def _render_compact_stock_module(
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">一个入口选择股票，结果只保留 K 线、核心结论、建议和预测四块。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=resolved.query, provider_name=provider_name, holdings_path=holdings_path, workspace="stock")}</div></div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先给最终判断，再给方法、证据和预测。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=resolved.query, provider_name=provider_name, holdings_path=holdings_path, workspace="stock")}</div></div>
       {_render_stock_simple_entry(resolved, provider_name, holdings_path)}
-      {_render_stock_simple_kline_data(stock, stock_raw, technical, quality)}
+      {_render_stock_top_conclusion(
+        stock=stock,
+        stock_raw=stock_raw,
+        portfolio=portfolio,
+        quality=quality,
+        technical=technical,
+        event_radar=event_radar,
+        trade_plan=trade_plan,
+        driver=driver,
+        risk=risk,
+        invalid=invalid,
+      )}
       {analysis_content}
       {_render_stock_simple_next_advice(stock, trade_plan, driver, risk, invalid, event_radar)}
       {_render_stock_simple_forecast(stock, technical, event_radar, quality)}
@@ -7749,6 +7760,41 @@ def _render_stock_simple_entry(
           <input name="code" value="{escape(resolved.query)}" placeholder="输入股票代码或名称" />
           <button type="submit">开始分析</button>
         </form>
+      </div>"""
+
+
+def _render_stock_top_conclusion(
+    *,
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    portfolio: PortfolioAnalysisReport,
+    quality: DataQualityView,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+    trade_plan: TradePlan,
+    driver: str,
+    risk: str,
+    invalid: str,
+) -> str:
+    position = next((item for item in portfolio.positions if item.holding.code == stock.code), None)
+    cost_text = _stock_cost_position_text(position)
+    data_blocks = _stock_required_data_blocks(stock_raw)
+    missing = [block["name"] for block in data_blocks if block["tone"] == "missing"]
+    data_text = "数据完整" if not missing else "缺失：" + "、".join(missing)
+    return f"""
+      <div class="panel stock-top-conclusion-panel">
+        <div class="editor-toolbar">
+          <div><h3>综合结论</h3><p class="section-subtitle">第一时间看结论；展开下方表格再核对技术、资金、消息、基本面、板块和成本。</p></div>
+          <span class="portfolio-chip">{escape(stock.risk_level)}风险 · {escape(quality.status)}</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>当前判断</span><strong>{escape(_short_condition(trade_plan.verdict, 70))}</strong><p class="kpi-foot">{escape(_short_condition(trade_plan.reason, 92))}</p></div>
+          <div class="summary-card"><span>综合依据</span><strong>{escape(_short_condition(driver, 70))}</strong><p class="kpi-foot">机会评分 {stock.upside.score}/100 · {escape(stock.trend)}</p></div>
+          <div class="summary-card"><span>关键位置</span><strong>{technical.support:.2f} / {technical.resistance:.2f}</strong><p class="kpi-foot">现价 {stock.latest_close:.2f} · 失效 {technical.invalid_line:.2f}</p></div>
+          <div class="summary-card"><span>转强条件</span><strong>{escape(_short_condition(trade_plan.entry_trigger, 70))}</strong><p class="kpi-foot">{escape(_short_condition(trade_plan.add_trigger, 92))}</p></div>
+          <div class="summary-card"><span>风险/失效</span><strong>{escape(_short_condition(invalid, 70))}</strong><p class="kpi-foot">{escape(_short_condition(risk, 92))} · {escape(event_radar.gate)}</p></div>
+          <div class="summary-card"><span>成本位置</span><strong>{escape(_short_condition(cost_text, 70))}</strong><p class="kpi-foot">{escape(data_text)}</p></div>
+        </div>
       </div>"""
 
 
@@ -8600,7 +8646,7 @@ def _render_stock_required_data_audit(stock_raw: StockRawData) -> str:
     return f"""
       <div class="panel stock-data-audit-panel">
         <div class="editor-toolbar">
-          <div><h3>数据质量</h3><p class="section-subtitle">K线数据、资金面、消息面、公告、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
+          <div><h3>数据质量</h3><p class="section-subtitle">K线行情、资金面、消息面、公告、基本面必须逐项核验；缺失项不作为买入理由。</p></div>
           <span class="portfolio-chip">{escape(summary)}</span>
         </div>
         <div class="stock-data-block-grid">{rows}</div>
@@ -8611,10 +8657,10 @@ def _stock_required_data_blocks(stock_raw: StockRawData) -> list[dict[str, str]]
     source_text = _stock_data_source_text(stock_raw)
     return [
         _stock_required_block(
-            "K线数据",
+            "K线行情",
             bool(stock_raw.bars),
             f"{len(stock_raw.bars)} 根日 K；用于趋势、均线、支撑压力和量价判断。",
-            "缺失降级：K线数据缺失，不做趋势突破判断，不作为买入理由。",
+            "缺失降级：K线行情缺失，不做趋势突破判断，不作为买入理由。",
             _source_for_block(stock_raw, ["daily", "kline", "tdx", "tencent", "itick"], source_text),
         ),
         _stock_required_block(

@@ -551,17 +551,22 @@ def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
     for text in [
         "分析入口",
         "开始分析",
-        "K线数据",
+        "综合结论",
         "分析内容",
         "后续建议",
         "未来涨跌预测",
     ]:
         assert text in stock_html
 
-    assert stock_html.index("分析入口") < stock_html.index("K线数据")
-    assert stock_html.index("K线数据") < stock_html.index("分析内容")
+    assert stock_html.index("分析入口") < stock_html.index("综合结论")
+    assert stock_html.index("综合结论") < stock_html.index("分析内容")
     assert stock_html.index("分析内容") < stock_html.index("后续建议")
     assert stock_html.index("后续建议") < stock_html.index("未来涨跌预测")
+    assert "K线数据" not in stock_html
+    kline_table_header = (
+        "<th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>成交量</th>"
+    )
+    assert kline_table_header not in stock_html
 
 
 def test_stock_analysis_uses_multi_day_theme_and_relative_comparison() -> None:
@@ -669,7 +674,7 @@ def test_stock_module_requires_kline_fund_news_and_fundamental_blocks() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "K线数据",
+        "K线行情",
         "资金面",
         "消息面",
         "基本面",
@@ -707,7 +712,7 @@ def test_stock_module_downgrades_missing_required_data_blocks() -> None:
 
     stock_html = _workspace(_sample_html(provider=MinimalStockProvider()), "stock")
 
-    assert "K线数据" in stock_html
+    assert "K线行情" in stock_html
     assert "资金面" in stock_html
     assert "消息面" in stock_html
     assert "基本面" in stock_html
@@ -754,7 +759,7 @@ def test_stock_module_shows_candidate_source_context_when_entered_from_opportuni
     )
 
     assert "分析入口" in stock_html
-    assert "K线数据" in stock_html
+    assert "综合结论" in stock_html
     assert "来源上下文" not in stock_html
     assert "主线强势 + 放量突破" not in stock_html
 

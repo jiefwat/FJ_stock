@@ -138,7 +138,7 @@ def test_web_stock_page_surfaces_tradingagents_chain_and_signal_attribution() ->
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
     assert "分析入口" in stock_html
-    assert "K线数据" in stock_html
+    assert "综合结论" in stock_html
     assert "分析内容" in stock_html
     assert "后续建议" in stock_html
     assert "未来涨跌预测" in stock_html

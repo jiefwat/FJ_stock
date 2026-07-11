@@ -16,7 +16,7 @@ def test_web_resolves_chinese_name_and_renders_professional_deep_sections() -> N
     assert "多轮对抗" not in html
     assert "失效" in html
     assert "数据可信度" in html
-    assert "K线数据" in html
+    assert "综合结论" in html
     assert "行情日期早于大盘交易日" not in html
 
 

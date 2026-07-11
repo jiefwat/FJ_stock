@@ -76,7 +76,7 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     assert "板块情绪" in html
     assert "仓位成本" in html
     assert "分析入口" in html
-    assert "K线数据" in html
+    assert "综合结论" in html
     assert "后续建议" in html
     assert "未来涨跌预测" in html
 
