@@ -81,7 +81,7 @@ def test_market_page_owns_market_decision_flow() -> None:
     portfolio_start = html.index('id="portfolio"')
     market_html = html[market_start:portfolio_start]
 
-    for text in ["每日大盘", "市场摘要", "风险项", "上涨/下跌", "指数表现", "板块方向"]:
+    for text in ["每日大盘", "股票涨跌统计", "上涨/下跌", "强势板块Top5", "弱势板块Top5"]:
         assert text in market_html
     assert 'data-jump="opportunity"' not in market_html
 

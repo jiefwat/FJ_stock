@@ -109,7 +109,9 @@ def test_web_pauses_candidate_ranking_when_tdx_snapshot_uses_synthetic_bars(
         holdings_path=str(holdings),
     )
 
-    assert "涨停 134 / 跌停 35" in html
+    assert "股票涨跌统计" in html
+    assert "涨停" in html
+    assert "跌停" in html
     assert "股票机会" in html
     assert "待补数据" in html or "价格可靠" in html
     assert "最强上涨" not in html
@@ -784,10 +786,9 @@ def test_web_consumes_real_news_announcement_financial_and_sentiment_snapshot(
         holdings_path=str(holdings),
     )
 
-    assert "异动事件" in html
+    assert "异动事件" not in html
     assert "正面 1 / 负面 1" not in html
     assert "多家公司提示减持风险" not in html
-    assert "减持公告可能压制风险偏好" in html
     assert "贵州茅台2026年半年度业绩预告公告" in html
     assert "营收同比 15.2%" in html
     assert "净利同比 18.4%" in html

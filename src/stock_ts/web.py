@@ -4736,95 +4736,198 @@ def _render_compact_market_module(
     candidate_universe: list[CandidateStockRawData] | None = None,
     news: NewsSentimentReport | None = None,
 ) -> str:
-    top_sector = sectors.sectors[0] if sectors.sectors else None
-    market_action = _market_action_label(market)
-    market_reason = _market_decision_reason(market, top_sector)
-    breadth_card = (
-        f"{_format_market_count(market, 'advancing')} / "
-        f"{_format_market_count(market, 'declining')} / "
-        f"{_format_market_count(market, 'unchanged')}"
-    )
-    opportunity_count = len(candidates.candidates) if candidates.price_reliable else 0
-    risk_tone = _market_risk_tone(market)
+    del portfolio, news
     candidate_universe = candidate_universe or []
-    sector_top5 = _render_market_sector_top5_panel(sectors, candidate_universe)
-    dimension_rows = "".join(
-        f"<tr><td>{escape(item.name)}</td><td>{item.score}</td><td>{escape(item.status)}</td></tr>"
-        for item in market.dimensions[:4]
+    distribution = _render_market_distribution_chart(market, candidate_universe, candidates)
+    strong_sectors = _render_market_strength_sector_panel(
+        "强势板块Top5", sectors, candidate_universe, reverse=True
     )
-    flow_summary = (
-        f"{market.regime} · 热度 {market.heat_score}/100 · "
-        f"上涨/下跌/平盘 {breadth_card}"
+    weak_sectors = _render_market_strength_sector_panel(
+        "弱势板块Top5", sectors, candidate_universe, reverse=False
     )
-    top_sector_name = top_sector.name if top_sector is not None else "暂无清晰主线"
-    top_sector_note = (
-        f"热度 {top_sector.heat_score}/100，{top_sector.rotation_status}，{top_sector.fund_status}"
-        if top_sector is not None
-        else "先等板块和成交额给出方向"
-    )
-    main_risk = market.risks[0] if market.risks else "未触发硬风险，仍按仓位纪律执行"
-    index_spine = _render_market_index_spine(market)
-    breadth_lamps = _render_market_breadth_lamps(market, portfolio)
+    analysis = _market_minimal_analysis(market, sectors, candidate_universe)
     return f"""
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
         <div>
           <h2 class="module-title">每日大盘</h2>
-          <p class="module-desc">指数、市场宽度、成交、板块与风险统计。</p>
+          <p class="module-desc">当前时刻股票涨跌统计、强弱板块与分析。</p>
         </div>
-        <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
+        <span class="market-state-pill {_market_risk_tone(market)}">{escape(market.trade_date)}</span>
       </div>
-      <div class="market-focus-board {risk_tone}">
-        <div class="market-focus-main">
-          <span>市场摘要</span>
-          <strong>{escape(market_action)}</strong>
-          <p>{escape(market_reason)}</p>
-          <div class="market-action-snapshot"><span>市场结论</span><strong>{escape(market_action)}</strong></div>
-          <div class="score-bar"><div class="score-fill" style="width:{market.heat_score}%"></div></div>
-        </div>
-        <div class="market-focus-card">
-          <span>风险敞口</span>
-          <strong>{escape(_market_target_cash(market))}</strong>
-          <p>{escape(flow_summary)}</p>
-        </div>
-        <div class="market-focus-card">
-          <span>最强方向</span>
-          <strong>{escape(top_sector_name)}</strong>
-          <p>{escape(top_sector_note)}</p>
-        </div>
-        <div class="market-focus-card">
-          <span>风险项</span>
-          <strong>{escape(_short_condition(main_risk, 28))}</strong>
-          <p>跌停 {market.limit_down_count}；持仓健康度 {portfolio.health_score}/100。</p>
-        </div>
+      {distribution}
+      <div class="market-sector-duo">
+        {strong_sectors}
+        {weak_sectors}
       </div>
-      <div class="market-focus-facts">
-        <span>市场总闸门：{escape(market_action)}</span>
-        <span>市场状态：{escape(_market_display_status(market, market_action))}</span>
-        <span>风险暴露：目标现金 {escape(_market_target_cash(market))}</span>
-        <span>主线：{escape(top_sector_name)}</span>
-        <span>交易日：{escape(market.trade_date)}</span>
-        <span>数据源：顶部 Provider 和底部数据中台</span>
-        <span>上涨/下跌/平盘：{escape(breadth_card)}</span>
-        <span>涨停/跌停：{market.limit_up_count} / {market.limit_down_count}</span>
-        <span>市场热度：{market.heat_score}/100</span>
+      <div class="panel market-analysis-panel">
+        <h3>分析</h3>
+        <p>{escape(analysis)}</p>
       </div>
-      {_render_market_sentiment_panel(news, candidate_universe=candidate_universe)}
-      <div class="panel market-panel market-sector-panel" style="margin-top:16px">
-          <div class="editor-toolbar"><div><h3>板块方向</h3><p class="section-subtitle">每个方向只看前排代表股和结论；不展示无关装饰。</p></div><span class="portfolio-chip">机会入口 {opportunity_count}</span></div>
-          {sector_top5}
-      </div>
-      <details class="detail-shell compact-detail">
-        <summary>展开指数、宽度和评分明细</summary>
-        <div class="detail-body">
-          <h3>指数表现</h3>
-          <div class="market-index-spine">{index_spine}</div>
-          <h3 style="margin-top:14px">市场宽度</h3>
-          <div class="market-lamp-grid" style="margin-top:12px">{breadth_lamps}</div>
-          <table class="data-table"><thead><tr><th>维度</th><th>评分</th><th>状态</th></tr></thead><tbody>{dimension_rows}</tbody></table>
-        </div>
-      </details>
     </section>"""
+
+
+def _render_market_distribution_chart(
+    market: MarketSnapshot,
+    candidate_universe: list[CandidateStockRawData],
+    candidates: CandidatePoolReport,
+) -> str:
+    pct_values = _market_distribution_pct_values(candidate_universe, candidates)
+    bins = [
+        ("涨停", market.limit_up_count),
+        (">5%", sum(1 for value in pct_values if value > 5)),
+        (">3%", sum(1 for value in pct_values if value > 3)),
+        ("0~3%", sum(1 for value in pct_values if 0 < value <= 3)),
+        ("平盘", _format_market_count(market, "unchanged")),
+        ("-3~0%", sum(1 for value in pct_values if -3 <= value < 0)),
+        ("<-3%", sum(1 for value in pct_values if value < -3)),
+        ("跌停", market.limit_down_count),
+    ]
+    counts = [count if isinstance(count, int) else 0 for _, count in bins]
+    max_count = max(counts) if counts else 1
+    bars = "".join(
+        _render_market_distribution_bar(label, count, max_count)
+        for label, count in bins
+    )
+    breadth = (
+        f"{_format_market_count(market, 'advancing')} / "
+        f"{_format_market_count(market, 'declining')} / "
+        f"{_format_market_count(market, 'unchanged')}"
+    )
+    return f"""
+      <div class="panel market-distribution-panel">
+        <div class="editor-toolbar">
+          <div><h3>股票涨跌统计</h3></div>
+          <span class="portfolio-chip">上涨/下跌/平盘 {escape(breadth)}</span>
+        </div>
+        <div class="market-distribution-bars">{bars}</div>
+      </div>"""
+
+
+def _market_distribution_pct_values(
+    candidate_universe: list[CandidateStockRawData],
+    candidates: CandidatePoolReport,
+) -> list[float]:
+    values = [
+        _candidate_raw_pct_change(item)
+        for item in candidate_universe
+        if _candidate_raw_pct_change(item) is not None
+    ]
+    if values:
+        return [value for value in values if value is not None]
+    return [item.pct_change for item in candidates.candidates]
+
+
+def _candidate_raw_pct_change(item: CandidateStockRawData) -> float | None:
+    if len(item.bars) < 2:
+        return None
+    previous = item.bars[-2].close
+    latest = item.bars[-1].close
+    if previous == 0:
+        return None
+    return (latest - previous) / previous * 100
+
+
+def _render_market_distribution_bar(label: str, count: int | str, max_count: int) -> str:
+    numeric = count if isinstance(count, int) else 0
+    width = 0 if max_count <= 0 else max(4 if numeric else 0, numeric / max_count * 100)
+    return f"""
+        <div class="market-distribution-row">
+          <span>{escape(label)}</span>
+          <i><b style="width:{width:.0f}%"></b></i>
+          <strong>{escape(str(count))}</strong>
+        </div>"""
+
+
+def _render_market_strength_sector_panel(
+    title: str,
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+    *,
+    reverse: bool,
+) -> str:
+    sorted_sectors = sorted(sectors.sectors, key=lambda item: item.pct_chg, reverse=reverse)[:5]
+    if not sorted_sectors:
+        rows = "<tr><td colspan='4'>暂无板块数据</td></tr>"
+    else:
+        rows = "".join(
+            _render_market_strength_sector_row(item, candidate_universe, reverse=reverse)
+            for item in sorted_sectors
+        )
+    return f"""
+      <div class="panel market-strength-panel">
+        <h3>{escape(title)}</h3>
+        <table class="data-table compact-sector-table">
+          <thead><tr><th>板块</th><th>涨跌</th><th>对应股票</th><th>分析</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _render_market_strength_sector_row(
+    item,
+    candidate_universe: list[CandidateStockRawData],
+    *,
+    reverse: bool,
+) -> str:
+    stocks = _theme_stocks_by_move(candidate_universe, item.name, reverse=reverse)
+    stock_text = (
+        "、".join(f"{stock.name} {stock.pct_change:.2f}%" for stock in stocks[:5])
+        if stocks
+        else "候选池暂无同主题样本"
+    )
+    analysis = _sector_strength_analysis(item, reverse=reverse)
+    return (
+        f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
+        f"<span>热度 {item.heat_score}/100</span></td>"
+        f"<td>{item.pct_chg:.2f}%</td>"
+        f"<td>{escape(stock_text)}</td>"
+        f"<td>{escape(analysis)}</td></tr>"
+    )
+
+
+def _theme_stocks_by_move(
+    candidate_universe: list[CandidateStockRawData],
+    theme: str,
+    *,
+    reverse: bool,
+) -> list[LimitBoardRow]:
+    rows = [
+        row
+        for row in _build_limit_board_rows(candidate_universe)
+        if row.sector.strip() == theme.strip()
+    ]
+    return sorted(rows, key=lambda item: item.pct_change, reverse=reverse)[:5]
+
+
+def _sector_strength_analysis(item, *, reverse: bool) -> str:
+    direction = "强势" if reverse else "弱势"
+    return (
+        f"{direction}；扩散 {item.advancing_ratio:.0%}；"
+        f"涨停 {item.limit_up_count}；{item.fund_status}"
+    )
+
+
+def _market_minimal_analysis(
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    pct_values = _market_distribution_pct_values(
+        candidate_universe,
+        CandidatePoolReport("", [], [], "", True),
+    )
+    over_three = sum(1 for value in pct_values if value > 3)
+    under_three = sum(1 for value in pct_values if value < -3)
+    strongest = max(sectors.sectors, key=lambda item: item.pct_chg, default=None)
+    weakest = min(sectors.sectors, key=lambda item: item.pct_chg, default=None)
+    strong_text = strongest.name if strongest else "暂无"
+    weak_text = weakest.name if weakest else "暂无"
+    return (
+        f"涨停 {market.limit_up_count}，跌停 {market.limit_down_count}，"
+        f">3% 样本 {over_three}，<-3% 样本 {under_three}；"
+        f"强势集中在 {strong_text}，弱势集中在 {weak_text}。"
+    )
 
 
 def _render_market_barometer_strip(

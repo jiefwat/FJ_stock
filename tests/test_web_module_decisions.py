@@ -42,7 +42,7 @@ def test_four_workspaces_do_not_repeat_global_precision_summary() -> None:
 def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     html = _sample_html()
 
-    assert "市场结论</span><strong>可以进攻</strong>" in html
+    assert "股票涨跌统计" in html
     assert "每日大盘" in html
     assert "持仓明细" in html
     assert "股票摘要" in html
@@ -92,7 +92,16 @@ def test_pages_show_data_statistics_analysis_without_narrator_blocks() -> None:
     ]:
         assert text not in html
 
-    for text in ["上涨/下跌/平盘", "涨停", "跌停", "市场热度", "板块方向", "代表股票", "分析结果"]:
+    for text in [
+        "上涨/下跌/平盘",
+        "涨停",
+        "跌停",
+        "股票涨跌统计",
+        "强势板块Top5",
+        "弱势板块Top5",
+        "对应股票",
+        "分析",
+    ]:
         assert text in market_html
 
 def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
@@ -118,6 +127,39 @@ def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
 
 
 
+
+
+def test_daily_market_only_shows_distribution_sector_top5_and_analysis() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "股票涨跌统计",
+        "涨停",
+        "&gt;3%",
+        "&lt;-3%",
+        "强势板块Top5",
+        "弱势板块Top5",
+        "对应股票",
+        "分析",
+    ]:
+        assert text in market_html
+
+    for removed in [
+        "市场摘要",
+        "市场结论",
+        "风险敞口",
+        "最强方向",
+        "风险项",
+        "市场总闸门",
+        "数据源",
+        "异动事件",
+        "指数表现",
+        "市场宽度",
+        "展开指数",
+        "板块Top5</strong>",
+    ]:
+        assert removed not in market_html
+
 def test_market_ui_uses_concise_data_labels_not_narrative_terms() -> None:
     market_html = _workspace(_sample_html(), "market")
 
@@ -132,7 +174,7 @@ def test_market_ui_uses_concise_data_labels_not_narrative_terms() -> None:
     ]:
         assert removed not in market_html
 
-    for text in ["风险敞口", "指数表现", "市场宽度", "市场热度", "板块方向"]:
+    for text in ["股票涨跌统计", "强势板块Top5", "弱势板块Top5", "分析"]:
         assert text in market_html
 
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
@@ -140,24 +182,23 @@ def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
 
     assert "上涨/下跌/平盘" in market_html
     assert "未返回" not in market_html
-    assert "风险项" in market_html
-    assert "市场热度" in market_html
+    assert "股票涨跌统计" in market_html
+    assert "强势板块Top5" in market_html
 
 
 def test_daily_market_module_matches_market_gate_design_doc() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     for text in [
-        "市场摘要",
-        "市场总闸门",
-        "指数表现",
-        "市场宽度",
-        "板块方向",
-        "风险项",
-        "数据源",
-        "交易日",
-        "涨停/跌停",
-        "市场热度",
+        "股票涨跌统计",
+        "涨停",
+        "跌停",
+        "&gt;3%",
+        "&lt;-3%",
+        "强势板块Top5",
+        "弱势板块Top5",
+        "对应股票",
+        "分析",
     ]:
         assert text in market_html
 
@@ -166,15 +207,11 @@ def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
     market_html = _workspace(_sample_html(), "market")
 
     for text in [
-        "市场摘要",
-        "市场状态",
-        "风险暴露",
-        "目标现金",
-        "主线",
-        "交易日",
+        "股票涨跌统计",
         "上涨/下跌/平盘",
-        "涨停/跌停",
-        "市场热度",
+        "强势板块Top5",
+        "弱势板块Top5",
+        "分析",
     ]:
         assert text in market_html
 
@@ -490,8 +527,7 @@ def test_tdx_snapshot_defensive_market_keeps_defensive_action() -> None:
         provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
     )
 
-    assert "市场结论</span><strong>防守观察</strong>" in html
-    assert "暂停行动" in html
+    assert "股票涨跌统计" in html
     assert "数据可信度" in html
 
 
@@ -806,41 +842,20 @@ def test_data_center_does_not_warn_for_complete_hk_yahoo_and_hkex_context(
 
 
 
-def test_daily_market_shows_twenty_event_summaries_only() -> None:
-    from stock_ts.models import NewsItem
-
-    class ManyEventProvider(SampleDataProvider):
-        def fetch_market_news(self) -> list[NewsItem]:
-            return [
-                NewsItem(
-                    date=f"2026-07-{index:02d}",
-                    source=f"source-{index}",
-                    title=f"事件标题 {index}",
-                    summary=f"异动摘要 {index}",
-                    sentiment="neutral",
-                )
-                for index in range(1, 26)
-            ]
-
-    market_html = _workspace(
-        _sample_html(provider=ManyEventProvider(), provider_name="tdx-snapshot"), "market"
-    )
+def test_daily_market_does_not_show_event_sections() -> None:
+    market_html = _workspace(_sample_html(), "market")
 
     assert "下一步验证" not in market_html
-    assert "异动事件" in market_html
-    assert market_html.count('class="market-event-summary"') == 20
-    assert "异动摘要 1" in market_html
-    assert "异动摘要 20" in market_html
-    assert "异动摘要 21" not in market_html
-    assert "事件标题" not in market_html
-    assert "source-" not in market_html
+    assert "异动事件" not in market_html
+    assert "market-event-summary" not in market_html
 
 def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None:
     market_html = _workspace(_sample_html(), "market")
 
-    assert "板块Top5" in market_html
-    assert "代表股票" in market_html
-    assert "分析结果" in market_html
+    assert "强势板块Top5" in market_html
+    assert "弱势板块Top5" in market_html
+    assert "对应股票" in market_html
+    assert "分析" in market_html
     assert "兆易创新" in market_html
     assert "北方华创" in market_html
 
@@ -871,8 +886,8 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
         _sample_html(provider=MoverProvider(), provider_name="tdx-snapshot"), "market"
     )
 
-    assert "异动事件" in market_html
-    assert "半导体厂商" in market_html
+    assert "异动事件" not in market_html
+    assert "半导体厂商" not in market_html
     assert "中芯国际异动：波动超 20 日均值" not in market_html
     assert "longbridge.mcp.市场异动" not in market_html
 
@@ -880,6 +895,5 @@ def test_market_module_surfaces_mcp_market_movers_as_events() -> None:
 def test_market_module_builds_price_movers_from_candidate_scan_without_news() -> None:
     market_html = _workspace(_sample_html(), "market")
 
-    assert "异动事件" in market_html
-    assert "换手" in market_html
+    assert "异动事件" not in market_html
     assert "价格异动" not in market_html

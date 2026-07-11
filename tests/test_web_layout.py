@@ -55,7 +55,7 @@ def test_four_modules_explain_professional_data_flow() -> None:
 def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
-    assert 'class="score-bar"' in html
+    assert 'class="market-distribution-row"' in html
     assert 'class="risk-pill' in html
     assert "table-note" in html
     assert 'class="report-copy"' not in html

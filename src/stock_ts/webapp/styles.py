@@ -3263,6 +3263,53 @@ body {
 }
 
 
+
+.market-distribution-panel,
+.market-strength-panel,
+.market-analysis-panel {
+  margin-top:16px;
+}
+.market-distribution-bars {
+  display:grid;
+  gap:10px;
+  margin-top:12px;
+}
+.market-distribution-row {
+  display:grid;
+  grid-template-columns:72px minmax(0,1fr) 54px;
+  gap:10px;
+  align-items:center;
+  color:var(--ink);
+  font-size:13px;
+}
+.market-distribution-row i {
+  display:block;
+  height:12px;
+  overflow:hidden;
+  border-radius:999px;
+  background:#e6edf2;
+}
+.market-distribution-row i b {
+  display:block;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#159a5b,#c27a18,#d8342a);
+}
+.market-sector-duo {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:16px;
+}
+.market-analysis-panel p {
+  margin:0;
+  color:var(--ink);
+  font-size:15px;
+  line-height:1.7;
+}
+@media (max-width:980px) {
+  .market-sector-duo { grid-template-columns:1fr; }
+}
+
 .market-event-summary-list {
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));

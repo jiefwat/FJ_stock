@@ -9,7 +9,7 @@ def test_web_renders_professional_four_module_framework() -> None:
     )
 
     assert "每日大盘" in html
-    assert "风险敞口" in html
+    assert "股票涨跌统计" in html
     assert "我的持仓" in html
     assert "持仓风险处置" in html
     assert "个股分析" in html
@@ -30,7 +30,7 @@ def test_web_keeps_professional_modules_connected_to_existing_data() -> None:
     )
 
     assert "市场" in html
-    assert "持仓健康度" in html
+    assert "持仓风险处置" in html
     assert "贵州茅台" in html
     assert 'href="/?code=' in html
     assert "不构成投资建议" not in html
