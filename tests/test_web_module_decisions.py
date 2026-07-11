@@ -340,12 +340,34 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
         "未知强势股 12.00%",
         "资金流入",
         "资金流出",
-        "&gt;6% 样本 4",
-        "&lt;-6% 样本 1",
+        "&gt;6%上涨 4",
+        "&lt;-6%下跌 1",
     ]:
         assert text in market_html
     assert "未识别主题：1只大涨" not in market_html
 
+
+def test_daily_market_uses_professional_market_diagnosis_not_shallow_summary() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "专业大盘研判",
+        "研判等级",
+        "市场环境",
+        "赚钱效应",
+        "亏钱效应",
+        "主线质量",
+        "资金持续性",
+        "结论",
+        "依据",
+    ]:
+        assert text in market_html
+
+    for shallow_text in [
+        "强势集中在",
+        "弱势集中在",
+    ]:
+        assert shallow_text not in market_html
 
 
 def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:

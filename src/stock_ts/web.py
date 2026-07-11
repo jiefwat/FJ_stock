@@ -4990,7 +4990,7 @@ def _render_compact_market_module(
     weak_sectors = _render_market_strength_sector_panel(
         "弱势板块Top5", sectors, candidate_universe, reverse=False
     )
-    analysis = _market_minimal_analysis(market, sectors, candidate_universe)
+    analysis_panel = _render_professional_market_diagnosis(market, sectors, candidate_universe)
     wide_move_panel = _render_market_wide_move_panel(candidate_universe, candidates)
     event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
     return f"""
@@ -5011,10 +5011,7 @@ def _render_compact_market_module(
         {strong_sectors}
         {weak_sectors}
       </div>
-      <div class="panel market-analysis-panel">
-        <h3>分析</h3>
-        <p>{escape(analysis)}</p>
-      </div>
+      {analysis_panel}
       {event_panel}
     </section>"""
 
@@ -5324,11 +5321,44 @@ def _sector_strength_analysis(item, *, reverse: bool) -> str:
     )
 
 
-def _market_minimal_analysis(
+def _render_professional_market_diagnosis(
     market: MarketSnapshot,
     sectors: SectorAnalysisReport,
     candidate_universe: list[CandidateStockRawData],
 ) -> str:
+    diagnosis = _professional_market_diagnosis(market, sectors, candidate_universe)
+    rows = "".join(
+        "<tr>"
+        f"<td>{escape(item['dimension'])}</td>"
+        f"<td><strong>{escape(item['judgement'])}</strong></td>"
+        f"<td>{escape(item['evidence'])}</td>"
+        "</tr>"
+        for item in diagnosis["dimensions"]
+    )
+    return f"""
+      <div class="panel market-analysis-panel">
+        <div class="editor-toolbar">
+          <div><h3>专业大盘研判</h3></div>
+          <span class="portfolio-chip">研判等级 {escape(diagnosis["grade"])}</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card"><span>研判等级</span><strong>{escape(diagnosis["grade"])}</strong><p class="kpi-foot">{escape(diagnosis["grade_reason"])}</p></div>
+          <div class="summary-card"><span>市场状态</span><strong>{escape(diagnosis["state"])}</strong><p class="kpi-foot">{escape(diagnosis["state_reason"])}</p></div>
+          <div class="summary-card"><span>主线</span><strong>{escape(diagnosis["mainline"])}</strong><p class="kpi-foot">{escape(diagnosis["mainline_reason"])}</p></div>
+        </div>
+        <table class="data-table compact-sector-table" style="margin-top:12px">
+          <thead><tr><th>维度</th><th>判断</th><th>依据</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+        <p class="section-subtitle" style="margin-top:12px"><strong>结论：</strong>{escape(diagnosis["conclusion"])}</p>
+      </div>"""
+
+
+def _professional_market_diagnosis(
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+) -> dict[str, object]:
     pct_values = _market_distribution_pct_values(
         candidate_universe,
         CandidatePoolReport("", [], [], "", True),
@@ -5337,16 +5367,253 @@ def _market_minimal_analysis(
     under_six = sum(1 for value in pct_values if value < -6)
     over_three = sum(1 for value in pct_values if value > 3)
     under_three = sum(1 for value in pct_values if value < -3)
-    strongest = max(sectors.sectors, key=lambda item: item.pct_chg, default=None)
-    weakest = min(sectors.sectors, key=lambda item: item.pct_chg, default=None)
-    strong_text = strongest.name if strongest else "暂无"
-    weak_text = weakest.name if weakest else "暂无"
-    return (
-        f"涨停 {market.limit_up_count}，跌停 {market.limit_down_count}，"
-        f">6% 样本 {over_six}，<-6% 样本 {under_six}，"
-        f">3% 样本 {over_three}，<-3% 样本 {under_three}；"
-        f"强势集中在 {strong_text}，弱势集中在 {weak_text}。"
+    wide_rows = _market_wide_move_rows(candidate_universe, CandidatePoolReport("", [], [], "", True))
+    wide_up = [item for item in wide_rows if item.pct_change > 6]
+    wide_down = [item for item in wide_rows if item.pct_change < -6]
+    theme_stats = _wide_move_theme_stats(wide_up, wide_down)
+    mainline_theme = _market_mainline_theme(theme_stats, sectors)
+    market_env = _market_environment_dimension(market)
+    profit = _profit_effect_dimension(market, over_six, over_three, theme_stats)
+    loss = _loss_effect_dimension(market, under_six, under_three)
+    mainline = _mainline_quality_dimension(mainline_theme, theme_stats, sectors)
+    funds = _fund_continuity_dimension(sectors, wide_up, wide_down)
+    dimensions = [
+        {"dimension": "市场环境", **market_env},
+        {"dimension": "赚钱效应", **profit},
+        {"dimension": "亏钱效应", **loss},
+        {"dimension": "主线质量", **mainline},
+        {"dimension": "资金持续性", **funds},
+    ]
+    score = sum(int(item["score"]) for item in dimensions)
+    grade, grade_reason = _market_diagnosis_grade(score, loss["score"])
+    state = _market_state_from_grade(grade)
+    conclusion = _market_diagnosis_conclusion(
+        grade=grade,
+        mainline=mainline_theme,
+        profit=profit["judgement"],
+        loss=loss["judgement"],
     )
+    return {
+        "grade": grade,
+        "grade_reason": grade_reason,
+        "state": state,
+        "state_reason": market_env["evidence"],
+        "mainline": mainline_theme,
+        "mainline_reason": mainline["evidence"],
+        "dimensions": dimensions,
+        "conclusion": conclusion,
+    }
+
+
+def _market_environment_dimension(market: MarketSnapshot) -> dict[str, object]:
+    score = 0
+    if market.heat_score >= 70:
+        score += 18
+    elif market.heat_score >= 50:
+        score += 12
+    elif market.heat_score >= 35:
+        score += 7
+    else:
+        score += 3
+    if market.breadth_ratio >= 1.5:
+        score += 7
+    elif market.breadth_ratio >= 1.0:
+        score += 5
+    elif market.breadth_ratio >= 0.75:
+        score += 3
+    judgement = "偏强" if score >= 22 else "中性" if score >= 15 else "偏弱"
+    evidence = (
+        f"热度 {market.heat_score}/100，涨跌家数比 {market.breadth_ratio:.2f}，"
+        f"上涨/下跌/平盘 {market.advancing_count}/{market.declining_count}/{market.unchanged_count}"
+    )
+    return {"score": min(score, 25), "judgement": judgement, "evidence": evidence}
+
+
+def _profit_effect_dimension(
+    market: MarketSnapshot,
+    over_six: int,
+    over_three: int,
+    theme_stats: list[tuple[str, dict[str, int]]],
+) -> dict[str, object]:
+    resonance_count = sum(1 for _theme, counts in theme_stats if counts["up"] >= 2)
+    score = 0
+    if market.limit_up_count >= 80:
+        score += 8
+    elif market.limit_up_count >= 40:
+        score += 6
+    elif market.limit_up_count >= 15:
+        score += 3
+    if over_six >= 20:
+        score += 7
+    elif over_six >= 8:
+        score += 5
+    elif over_six >= 3:
+        score += 3
+    if over_three >= 80:
+        score += 5
+    elif over_three >= 30:
+        score += 3
+    if resonance_count:
+        score += min(5, resonance_count * 2)
+    judgement = "强" if score >= 18 else "结构性" if score >= 11 else "弱"
+    evidence = (
+        f"涨停 {market.limit_up_count}，>6% {over_six}，>3% {over_three}，"
+        f"共振板块 {resonance_count} 个"
+    )
+    return {"score": min(score, 25), "judgement": judgement, "evidence": evidence}
+
+
+def _loss_effect_dimension(
+    market: MarketSnapshot,
+    under_six: int,
+    under_three: int,
+) -> dict[str, object]:
+    risk_score = 0
+    if market.limit_down_count >= 40:
+        risk_score += 12
+    elif market.limit_down_count >= 15:
+        risk_score += 8
+    elif market.limit_down_count >= 5:
+        risk_score += 4
+    if under_six >= 20:
+        risk_score += 8
+    elif under_six >= 8:
+        risk_score += 5
+    elif under_six >= 3:
+        risk_score += 3
+    if under_three >= 80:
+        risk_score += 5
+    elif under_three >= 30:
+        risk_score += 3
+    score = max(0, 20 - risk_score)
+    judgement = "风险扩散" if score <= 7 else "局部分歧" if score <= 14 else "风险可控"
+    evidence = f"跌停 {market.limit_down_count}，<-6% {under_six}，<-3% {under_three}"
+    return {"score": score, "judgement": judgement, "evidence": evidence}
+
+
+def _mainline_quality_dimension(
+    mainline: str,
+    theme_stats: list[tuple[str, dict[str, int]]],
+    sectors: SectorAnalysisReport,
+) -> dict[str, object]:
+    leading = next((item for item in sectors.sectors if item.name == mainline), None)
+    counts = next((counts for theme, counts in theme_stats if theme == mainline), {"up": 0, "down": 0})
+    score = 0
+    if mainline != "暂无明确主线":
+        score += 6
+    if counts["up"] >= 4:
+        score += 8
+    elif counts["up"] >= 2:
+        score += 5
+    elif counts["up"] == 1:
+        score += 2
+    if leading is not None:
+        if leading.advancing_ratio >= 0.65:
+            score += 5
+        elif leading.advancing_ratio >= 0.5:
+            score += 3
+        if leading.limit_up_count >= 3:
+            score += 4
+        elif leading.limit_up_count > 0:
+            score += 2
+        if leading.amount_change > 0:
+            score += 2
+    judgement = "主线清晰" if score >= 18 else "有主线雏形" if score >= 10 else "轮动分散"
+    if leading is None:
+        evidence = f"{mainline}；>6%样本 {counts['up']}，<-6%样本 {counts['down']}"
+    elif counts["up"] == 0 and counts["down"] == 0:
+        evidence = (
+            f"{mainline}；板块热度 {leading.heat_score}/100，"
+            f"扩散 {leading.advancing_ratio:.0%}，涨停 {leading.limit_up_count}，"
+            f"成交变化 {leading.amount_change:.1f}"
+        )
+    else:
+        evidence = (
+            f"{mainline}；>6%样本 {counts['up']}，<-6%样本 {counts['down']}，"
+            f"板块扩散 {leading.advancing_ratio:.0%}，涨停 {leading.limit_up_count}"
+        )
+    return {"score": min(score, 25), "judgement": judgement, "evidence": evidence}
+
+
+def _fund_continuity_dimension(
+    sectors: SectorAnalysisReport,
+    wide_up: list[LimitBoardRow],
+    wide_down: list[LimitBoardRow],
+) -> dict[str, object]:
+    leading_sectors = [item for item in sectors.sectors[:5] if item.amount_change > 0]
+    inflow_rows = sum(1 for item in wide_up if item.fund_flow is not None and item.fund_flow > 0)
+    outflow_rows = sum(1 for item in wide_down if item.fund_flow is not None and item.fund_flow < 0)
+    score = 0
+    score += min(8, len(leading_sectors) * 2)
+    if inflow_rows >= 10:
+        score += 7
+    elif inflow_rows >= 4:
+        score += 5
+    elif inflow_rows > 0:
+        score += 2
+    if outflow_rows >= 10:
+        score -= 5
+    elif outflow_rows >= 4:
+        score -= 3
+    judgement = "资金支持" if score >= 11 else "资金一般" if score >= 5 else "持续性不足"
+    evidence = (
+        f"强势板块成交改善 {len(leading_sectors)} 个，"
+        f">6%资金流入样本 {inflow_rows}，<-6%资金流出样本 {outflow_rows}"
+    )
+    return {"score": max(0, min(score, 20)), "judgement": judgement, "evidence": evidence}
+
+
+def _market_mainline_theme(
+    theme_stats: list[tuple[str, dict[str, int]]],
+    sectors: SectorAnalysisReport,
+) -> str:
+    candidates = [item for item in theme_stats if _is_known_theme(item[0]) and item[1]["up"] > 0]
+    if candidates:
+        return max(candidates, key=lambda item: (item[1]["up"] - item[1]["down"], item[1]["up"]))[0]
+    known_sectors = [item for item in sectors.sectors if _is_known_theme(item.name)]
+    if not known_sectors:
+        return "暂无明确主线"
+    leader = max(known_sectors, key=lambda item: (item.heat_score, item.advancing_ratio, item.pct_chg))
+    return leader.name if leader.heat_score >= 55 else "暂无明确主线"
+
+
+def _market_diagnosis_grade(score: int, loss_score: object) -> tuple[str, str]:
+    numeric_loss = int(loss_score)
+    if numeric_loss <= 7:
+        return "D 防守", f"总分 {score}，但亏钱效应已扩散"
+    if score >= 82:
+        return "A 主线强势", f"总分 {score}，环境、赚钱效应和主线质量同时较强"
+    if score >= 65:
+        return "B 结构性机会", f"总分 {score}，可围绕主线做筛选"
+    if score >= 48:
+        return "C 震荡轮动", f"总分 {score}，机会分散，重视持续性确认"
+    return "D 防守", f"总分 {score}，赚钱效应或主线质量不足"
+
+
+def _market_state_from_grade(grade: str) -> str:
+    if grade.startswith("A"):
+        return "主线强势"
+    if grade.startswith("B"):
+        return "结构性机会"
+    if grade.startswith("C"):
+        return "震荡轮动"
+    return "防守观察"
+
+
+def _market_diagnosis_conclusion(
+    *,
+    grade: str,
+    mainline: str,
+    profit: object,
+    loss: object,
+) -> str:
+    if grade.startswith("A"):
+        return f"{mainline}是当前主要观察方向，赚钱效应强，优先看板块前排和持续放量个股。"
+    if grade.startswith("B"):
+        return f"当前不是全面行情，是结构性机会；{mainline}优先级最高，同时观察{loss}是否扩大。"
+    if grade.startswith("C"):
+        return f"市场以轮动为主，{mainline}需要次日确认；{profit}不足时不追后排。"
+    return f"市场偏防守，{loss}优先级高于机会挖掘；只保留主线前排观察。"
 
 
 def _render_market_barometer_strip(
