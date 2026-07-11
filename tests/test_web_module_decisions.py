@@ -358,6 +358,78 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
     assert "未识别主题：1只大涨" not in market_html
 
 
+def test_market_wide_move_does_not_leave_unknown_research_copy() -> None:
+    class UnknownWideMoveProvider(SampleDataProvider):
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="600005",
+                    name="未知强势股",
+                    sector="未识别主题",
+                    bars=[
+                        DailyBar("2026-07-09", 15, 15.2, 14.8, 15.0, 1000),
+                        DailyBar("2026-07-10", 15.1, 17.1, 15.0, 16.8, 2600),
+                    ],
+                    turnover_rate=12.0,
+                    amount=16.0,
+                )
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=UnknownWideMoveProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+
+    assert "大涨大跌分析" in market_html
+    assert "未识别明确消息/公告/基本面原因" not in market_html
+    assert "需继续查新闻" not in market_html
+    assert "已联查新闻和公告，暂无有效催化" in market_html
+
+
+def test_market_wide_move_uses_live_news_when_snapshot_missing() -> None:
+    class NewslessWideMoveProvider(SampleDataProvider):
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="600005",
+                    name="联网强势股",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-09", 10, 10.2, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-10", 10.1, 11.2, 10.0, 11.0, 2600),
+                    ],
+                    fund_flow=1.6,
+                    turnover_rate=9.5,
+                    amount=12.0,
+                )
+            ]
+
+    def stock_news_fetcher(symbol: str, limit: int) -> list[NewsItem]:
+        if symbol == "600005":
+            return [
+                NewsItem(
+                    date="2026-07-10",
+                    source="联网新闻",
+                    title="联网强势股获得机器人订单",
+                    summary="订单催化",
+                    sentiment="positive",
+                )
+            ][:limit]
+        return []
+
+    market_html = _workspace(
+        _sample_html(
+            provider=NewslessWideMoveProvider(),
+            provider_name="tdx-snapshot",
+            stock_news_fetcher=stock_news_fetcher,
+        ),
+        "market",
+    )
+
+    assert "联网强势股获得机器人订单" in market_html
+    assert "未识别明确消息/公告/基本面原因" not in market_html
+
+
 def test_daily_market_uses_professional_market_diagnosis_not_shallow_summary() -> None:
     market_html = _workspace(_sample_html(), "market")
 
