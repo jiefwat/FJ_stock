@@ -250,6 +250,29 @@ def test_stock_module_uses_six_dimension_evidence_wall() -> None:
         assert text in stock_html
 
 
+def test_stock_module_prioritizes_deep_multidimensional_summary() -> None:
+    stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
+
+    for text in [
+        "专业个股结论",
+        "多维诊断",
+        "趋势/量价",
+        "资金/成交",
+        "基本面/估值",
+        "消息/公告",
+        "板块/主题",
+        "持仓/成本",
+        "综合总结",
+        "执行边界",
+    ]:
+        assert text in stock_html
+
+    assert stock_html.index("专业个股结论") < stock_html.index("多维诊断")
+    assert stock_html.index("多维诊断") < stock_html.index("综合总结")
+    assert "完整方法链" in stock_html
+    assert stock_html.index("综合总结") < stock_html.index("完整方法链")
+
+
 def test_stock_module_surfaces_single_stock_verdict_fields() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 

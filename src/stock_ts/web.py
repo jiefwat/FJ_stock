@@ -6041,14 +6041,45 @@ def _render_compact_stock_module(
         risk=risk,
         invalid=invalid,
     )
+    professional_brief = _render_stock_professional_brief(
+        stock=stock,
+        portfolio=portfolio,
+        quality=quality,
+        trade_plan=trade_plan,
+        driver=driver,
+        risk=risk,
+        invalid=invalid,
+    )
+    diagnosis = _render_stock_multidimensional_diagnosis(
+        stock=stock,
+        stock_raw=stock_raw,
+        sectors=sectors,
+        technical=technical,
+        event_radar=event_radar,
+        announcement_report=announcement_report,
+        portfolio=portfolio,
+        quality=quality,
+        trade_plan=trade_plan,
+        invalid=invalid,
+    )
+    final_summary = _render_stock_final_summary(
+        stock=stock,
+        quality=quality,
+        trade_plan=trade_plan,
+        driver=driver,
+        risk=risk,
+        invalid=invalid,
+        event_radar=event_radar,
+    )
     return f"""
     <section class="module" id="module-stock">
       <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先看当前结论，再核对技术面、基本面、资金面、消息公告、板块主题和成本位置。</p></div><div class="module-header-meta"><span class="risk-pill mid">综合机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
       {_render_research_data_flow_panel("个股分析", "日 K 线、均线/RSI/MACD、资金流、新闻公告和持仓成本", "个股三面复核 -> 触发条件 -> 失效条件")}
       {_render_stock_switcher(resolved, portfolio, candidates, provider_name, holdings_path)}
-      {_render_stock_verdict_wall(stock, stock_raw, portfolio, quality, technical, event_radar, trade_plan, sectors, driver, risk, invalid)}
       {_render_stock_candidate_context(candidate_source, candidate_strategy_label, candidate_evidence)}
-      {_render_stock_required_data_audit(stock_raw)}
+      {professional_brief}
+      {diagnosis}
+      {final_summary}
       <div class="panel" style="margin-bottom:16px">
         <div class="editor-toolbar"><div><h3>股票摘要</h3><p class="section-subtitle">价格、交易日、趋势和风险用于人工确认当前标的是否正确。</p></div><span class="portfolio-chip">{escape(trade_plan.verdict)}</span></div>
       </div>
@@ -6060,9 +6091,14 @@ def _render_compact_stock_module(
             <div class="ticket-card"><span>趋势</span><strong>{escape(stock.trend)}</strong></div>
             <div class="ticket-card"><span>风险</span><strong>{escape(stock.risk_level)}</strong></div>
           </div>
-          {holding_view}
-          {_render_stock_kline_panel(stock, stock_raw, portfolio, quality, technical, trade_plan, event_radar)}
-          {_render_stock_compact_research_panel(stock, stock_raw, sectors, technical, event_radar, announcement_report, portfolio, quality, trade_plan, driver, risk, invalid)}
+          <details class="detail-shell">
+            <summary>数据质量与K线详情</summary>
+            <div class="detail-body">
+              {holding_view}
+              {_render_stock_required_data_audit(stock_raw)}
+              {_render_stock_kline_panel(stock, stock_raw, portfolio, quality, technical, trade_plan, event_radar)}
+            </div>
+          </details>
           <details class="detail-shell">
             <summary>公告</summary>
             <div class="detail-body">
@@ -6070,10 +6106,191 @@ def _render_compact_stock_module(
               <table class="data-table"><thead><tr><th>日期</th><th>标题</th><th>风险</th><th>链接</th></tr></thead><tbody>{announcement_rows}</tbody></table>
             </div>
           </details>
+          {_render_stock_compact_research_panel(stock, stock_raw, sectors, technical, event_radar, announcement_report, portfolio, quality, trade_plan, driver, risk, invalid)}
         </div>
         {evidence_drawer}
       </div>
     </section>"""
+
+
+def _render_stock_professional_brief(
+    *,
+    stock: DeepStockReport,
+    portfolio: PortfolioAnalysisReport,
+    quality: DataQualityView,
+    trade_plan: TradePlan,
+    driver: str,
+    risk: str,
+    invalid: str,
+) -> str:
+    position = next(
+        (item for item in portfolio.positions if item.holding.code == stock.code),
+        None,
+    )
+    holding_state = _stock_holding_state(position) if position else "未持仓"
+    portfolio_impact = _stock_portfolio_impact(position, trade_plan)
+    forbidden = trade_plan.forbidden_actions[0] if trade_plan.forbidden_actions else "不追高，不脱离止损线临时加仓。"
+    today_action = getattr(trade_plan, "today_action", trade_plan.reason)
+    return f"""
+      <div class="panel stock-pro-brief">
+        <div class="stock-pro-head">
+          <div>
+            <span class="eyebrow">Professional Stock Brief</span>
+            <h3>专业个股结论 / 当前结论</h3>
+            <p>{escape(stock.name)}（{escape(stock.code)}）先按“证据够不够、触发到没到、错了怎么办”三步判断，不把缺失数据当成买入理由。</p>
+          </div>
+          <div class="stock-pro-verdict">
+            <span>当前动作</span>
+            <strong>{escape(trade_plan.verdict)}</strong>
+            <em>{escape(quality.status)}</em>
+          </div>
+        </div>
+        <div class="stock-pro-grid">
+          <div><span>今天</span><strong>{escape(_short_condition(today_action, 64))}</strong></div>
+          <div><span>买点 / 交易触发</span><strong>{escape(_short_condition(trade_plan.entry_trigger, 64))}</strong></div>
+          <div><span>止损 / 失效条件</span><strong>{escape(_short_condition(invalid, 64))}</strong></div>
+          <div><span>最强证据</span><strong>{escape(_short_condition(driver, 64))}</strong></div>
+          <div><span>最大反证</span><strong>{escape(_short_condition(risk, 64))}</strong></div>
+          <div><span>组合影响</span><strong>{escape(_short_condition(portfolio_impact, 64))}</strong></div>
+          <div><span>仓位上限</span><strong>{escape(trade_plan.target_position)}</strong></div>
+          <div><span>当前持仓状态</span><strong>{escape(holding_state)}</strong></div>
+        </div>
+        <div class="stock-pro-bear">
+          <strong>多空反证</strong>
+          <span>多头：{escape(_short_condition(driver, 76))}</span>
+          <span>空头：{escape(_short_condition(risk, 76))}</span>
+          <span>禁止动作：{escape(_short_condition(forbidden, 76))}</span>
+        </div>
+      </div>"""
+
+
+def _render_stock_multidimensional_diagnosis(
+    *,
+    stock: DeepStockReport,
+    stock_raw: StockRawData,
+    sectors: SectorAnalysisReport,
+    technical: TechnicalProfile,
+    event_radar: EventRadar,
+    announcement_report: AnnouncementReport | None,
+    portfolio: PortfolioAnalysisReport,
+    quality: DataQualityView,
+    trade_plan: TradePlan,
+    invalid: str,
+) -> str:
+    position = next(
+        (item for item in portfolio.positions if item.holding.code == stock.code),
+        None,
+    )
+    announcement_count = len(announcement_report.items) if announcement_report else 0
+    pct = _stock_recent_pct(stock_raw)
+    volume_ratio = _stock_volume_ratio(stock_raw)
+    volume_text = f"量能 {volume_ratio:.2f}x" if volume_ratio else "量能不足"
+    rows = [
+        {
+            "label": "趋势/量价",
+            "legacy": "技术面",
+            "verdict": f"{stock.trend} · 近一日 {pct:.2f}% · {volume_text}",
+            "evidence": f"{technical.structure}；支撑 {technical.support:.2f}，压力 {technical.resistance:.2f}",
+            "risk": f"跌破 {technical.invalid_line:.2f} 或 {invalid}",
+            "action": "只在趋势、量能和关键位同时确认时升级动作。",
+        },
+        {
+            "label": "资金/成交",
+            "legacy": "资金面",
+            "verdict": _stock_fund_flow_text(stock_raw),
+            "evidence": _stock_fund_flow_note(stock_raw),
+            "risk": "资金接口缺失或成交侧分歧时，不把资金面作为交易理由。",
+            "action": "看净流、换手、放量方向是否和价格同向。",
+        },
+        {
+            "label": "基本面/估值",
+            "legacy": "基本面",
+            "verdict": _stock_valuation_text(stock_raw),
+            "evidence": _stock_valuation_note(stock_raw),
+            "risk": "财务和估值缺失时，不给估值安全垫判断。",
+            "action": "用成长、ROE、现金流和估值约束仓位上限。",
+        },
+        {
+            "label": "消息/公告",
+            "legacy": "消息公告",
+            "verdict": _stock_news_text(event_radar, announcement_count, len(stock_raw.news_items)),
+            "evidence": _stock_news_note(stock_raw, event_radar),
+            "risk": f"事件闸门 {event_radar.gate}；公告风险分 {event_radar.risk_score}/100。",
+            "action": "利好只作催化，监管/减持/诉讼优先降级。",
+        },
+        {
+            "label": "板块/主题",
+            "legacy": "板块主题",
+            "verdict": _stock_sector_strength_text(stock, sectors),
+            "evidence": _stock_sector_strength_note(stock, sectors),
+            "risk": "主题不在主线或个股不在前排时，不做板块共振买点。",
+            "action": "确认主题强弱，再确认个股是否跑赢板块。",
+        },
+        {
+            "label": "持仓/成本",
+            "legacy": "成本位置",
+            "verdict": (
+                f"{_stock_holding_state(position)} · {_stock_cost_position_text(position)}"
+                if position
+                else _stock_cost_position_text(position)
+            ),
+            "evidence": _stock_cost_position_note(position, trade_plan, invalid),
+            "risk": "亏损仓不靠补仓摊薄；盈利仓优先保护利润回撤。",
+            "action": "按成本、止损线和目标仓位决定加减，不临盘凭感觉。",
+        },
+    ]
+    cards = "".join(
+        f"""
+        <article class="stock-diagnosis-card">
+          <div><span>{escape(row["legacy"])}</span><h4>{escape(row["label"])}</h4></div>
+          <strong>{escape(_short_condition(row["verdict"], 70))}</strong>
+          <p><b>依据</b>{escape(_short_condition(row["evidence"], 82))}</p>
+          <p><b>反证</b>{escape(_short_condition(row["risk"], 82))}</p>
+          <p><b>动作</b>{escape(_short_condition(row["action"], 82))}</p>
+        </article>"""
+        for row in rows
+    )
+    gap = quality.warnings[0] if quality.warnings else "暂无硬缺口"
+    return f"""
+      <div class="panel stock-diagnosis-panel">
+        <div class="editor-toolbar">
+          <div><h3>多维诊断 / 六类证据</h3><p class="section-subtitle">每个维度只保留结论、依据、反证和动作含义；缺口会降低置信度。</p></div>
+          <span class="portfolio-chip">{escape(quality.signal)}</span>
+        </div>
+        <div class="stock-diagnosis-grid">{cards}</div>
+        <div class="quality-banner" style="margin-top:12px"><strong>数据缺口</strong>：{escape(gap)}</div>
+      </div>"""
+
+
+def _render_stock_final_summary(
+    *,
+    stock: DeepStockReport,
+    quality: DataQualityView,
+    trade_plan: TradePlan,
+    driver: str,
+    risk: str,
+    invalid: str,
+    event_radar: EventRadar,
+) -> str:
+    downgrade = (
+        "数据有缺口，结论降级为观察；先补 K 线、资金、新闻公告和基本面。"
+        if quality.warnings
+        else "核心数据未触发硬缺口，仍需按价格触发和事件闸门执行。"
+    )
+    return f"""
+      <div class="panel stock-final-summary">
+        <div class="editor-toolbar">
+          <div><h3>综合总结</h3><p class="section-subtitle">把技术、资金、基本面、消息、板块和成本汇总成一条可执行边界。</p></div>
+          <span class="portfolio-chip">{escape(stock.risk_level)}</span>
+        </div>
+        <div class="stock-summary-lines">
+          <div><span>现在怎么看</span><strong>{escape(trade_plan.verdict)}</strong><p>{escape(_short_condition(getattr(trade_plan, "today_action", trade_plan.reason), 96))}</p></div>
+          <div><span>什么条件转强</span><strong>{escape(_short_condition(trade_plan.entry_trigger, 82))}</strong><p>{escape(_short_condition(driver, 96))}</p></div>
+          <div><span>执行边界</span><strong>{escape(_short_condition(trade_plan.target_position, 82))}</strong><p>买点未触发不追；止损/减仓触发：{escape(_short_condition(trade_plan.stop_loss, 96))}</p></div>
+          <div><span>什么条件失效/减仓</span><strong>{escape(_short_condition(invalid, 82))}</strong><p>{escape(_short_condition(risk, 96))}；事件闸门：{escape(event_radar.gate)}</p></div>
+          <div><span>数据降级规则</span><strong>{escape(quality.status)}</strong><p>{escape(downgrade)}</p></div>
+        </div>
+      </div>"""
 
 
 def _render_stock_candidate_context(
