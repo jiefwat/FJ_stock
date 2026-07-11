@@ -563,8 +563,21 @@ def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> N
     assert "净流出" in opportunity_html
     assert "东方财富最新消息" in opportunity_html
     assert "趋势强股获得机器人订单" in opportunity_html
-    assert "消息面：未接入个股新闻" in opportunity_html
+    assert "暂无可验证个股事件" in opportunity_html
     assert opportunity_html.count("个股原因：所属板块强度靠前，具备主线筛选价值") <= 1
+
+
+def test_opportunity_reasons_do_not_use_repeated_fallback_copy() -> None:
+    opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for repeated_copy in [
+        "基本面：估值待补，不能用低估值解释机会",
+        "入选原因：价格可靠，进入复核名单",
+        "消息面：未接入个股新闻，不作为推荐理由",
+        "基本面/估值：需用代表个股财报和估值继续确认",
+        "等待消息/公告/基本面确认",
+    ]:
+        assert repeated_copy not in opportunity_html
 
 
 def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
@@ -1008,6 +1021,16 @@ def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
         "仓位成本</strong>亏损",
     ]:
         assert shallow_text not in portfolio_html
+
+
+def test_portfolio_reasons_are_stock_specific_not_repeated_market_copy() -> None:
+    portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for repeated_copy in [
+        "趋势向上且风险低，日内 0.91% 用于确认承接",
+        "市场情绪偏强，但公告未确认前不把消息面作为加仓理由",
+    ]:
+        assert portfolio_html.count(repeated_copy) <= 1
 
 
 def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:
@@ -1811,9 +1834,9 @@ def test_market_sector_and_wide_move_causes_use_news_fundamental_not_price_only(
     for text in [
         "消息面：订单机器人签下机器人订单",
         "公告：订单机器人关于重大合同的公告",
-        "基本面：PE(TTM) 24.0",
+        "基本面：订单机器人PE(TTM) 24.0",
         "消息面：风险白酒库存压力上升",
-        "基本面：PE(TTM) 68.0",
+        "基本面：风险白酒PE(TTM) 68.0",
     ]:
         assert text in market_html
     for phenomenon in [

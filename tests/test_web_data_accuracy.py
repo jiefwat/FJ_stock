@@ -198,7 +198,7 @@ def test_web_quality_gate_marks_candidate_prices_available_when_dates_are_real(
     )
 
     assert "推荐股票" in html
-    assert "价格可靠" in html
+    assert "价格链路可靠" in html
     assert "排序暂停" not in html
 
 

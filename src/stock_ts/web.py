@@ -4706,17 +4706,29 @@ def _opportunity_candidate_dimensions(
         fundamental = _opportunity_valuation_reason(raw)
     else:
         trend_strength = f"个股原因：{_opportunity_candidate_cause(item, raw=raw)}"
-        technical_position = "技术面：K线待补，不能确认短线位置"
-        fund_flow = "资金面：资金和成交待补"
-        news_event = "消息面：未接入个股新闻，不作为推荐理由"
-        fundamental = "基本面：估值待补，不能用低估值解释机会"
+        technical_position = (
+            f"技术面：{item.name}K线字段缺口，先用候选涨跌 {item.pct_change:.2f}% "
+            f"和评分 {item.score}/100 做低权重观察"
+        )
+        fund_flow = f"资金面：{item.name}资金字段缺口，暂看{localize_sector_name(item.sector)}板块承接"
+        news_event = (
+            f"消息面：{item.name}暂无可验证个股事件，"
+            f"不把{item.pct_change:.2f}%涨跌直接写成催化"
+        )
+        fundamental = (
+            f"基本面：{item.name}估值字段缺口，"
+            f"按{localize_sector_name(item.sector)}景气度和后续财报复核"
+        )
     stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
     if stale:
         selection_risk = "风险原因：数据质量：已滞后，不能排到前列"
     elif not (pool_price_reliable and item.price_reliable):
-        selection_risk = "风险原因：价格或候选数据待补"
+        selection_risk = f"风险原因：{item.name}价格链路待补，评分 {item.score}/100 暂不前置"
     else:
-        selection_risk = "入选原因：价格可靠，进入复核名单"
+        selection_risk = (
+            f"入选原因：{item.name}价格链路可靠，"
+            f"评分 {item.score}/100，日涨跌 {item.pct_change:.2f}%"
+        )
     return OpportunityRecommendationDimensions(
         trend_strength=trend_strength,
         technical_position=technical_position,
@@ -4768,7 +4780,7 @@ def _opportunity_candidate_cause(
 def _opportunity_week_trend_reason(raw: CandidateStockRawData) -> str:
     bars = raw.bars[-5:]
     if len(bars) < 2:
-        return "一周趋势：K线不足，不能判断周内延续"
+        return f"一周趋势：{raw.name}K线不足，不能判断周内延续"
     week_pct = pct_change(bars[0].close, bars[-1].close)
     up_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close > previous.close)
     down_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close < previous.close)
@@ -4790,7 +4802,7 @@ def _opportunity_week_trend_reason(raw: CandidateStockRawData) -> str:
         state = f"近5日震荡 {week_pct:.2f}%，最新一日回落 {latest_pct:.2f}%"
     else:
         state = f"近5日震荡 {week_pct:.2f}%，还不是单边趋势"
-    return f"一周趋势：{state}"
+    return f"一周趋势：{raw.name}{state}"
 
 
 def _opportunity_technical_reason(raw: CandidateStockRawData) -> str:
@@ -4850,17 +4862,23 @@ def _opportunity_news_reason(raw: CandidateStockRawData) -> str:
         latest = raw.announcements[0]
         title = str(latest.get("title") or latest.get("公告标题") or "未命名公告")
         return f"消息面：公告“{_short_condition(title, 34)}”，先排查风险/催化属性"
-    return "消息面：未接入个股新闻，不作为推荐理由"
+    return (
+        f"消息面：{raw.name}暂无可验证个股事件，"
+        f"按{localize_sector_name(raw.sector)}板块、K线和资金权重处理"
+    )
 
 
 def _opportunity_valuation_reason(raw: CandidateStockRawData) -> str:
     if raw.pe_ttm is None:
-        return "基本面：估值待补，不能用低估值解释机会"
+        return (
+            f"基本面：{raw.name}PE(TTM)字段缺口，"
+            f"不能用低估值解释{localize_sector_name(raw.sector)}机会"
+        )
     if raw.pe_ttm >= 70:
-        return f"基本面：PE(TTM) {raw.pe_ttm:.1f} 偏高，防止题材高位分歧"
+        return f"基本面：{raw.name}PE(TTM) {raw.pe_ttm:.1f} 偏高，防止题材高位分歧"
     if raw.pe_ttm <= 25:
-        return f"基本面：PE(TTM) {raw.pe_ttm:.1f} 相对不高，估值压力较小"
-    return f"基本面：PE(TTM) {raw.pe_ttm:.1f}，重点看业绩与题材是否匹配"
+        return f"基本面：{raw.name}PE(TTM) {raw.pe_ttm:.1f} 相对不高，估值压力较小"
+    return f"基本面：{raw.name}PE(TTM) {raw.pe_ttm:.1f}，重点看业绩与题材是否匹配"
 
 
 def _render_opportunity_recommendation_sector_row(
@@ -4894,7 +4912,10 @@ def _opportunity_sector_dimensions(
     event_text = (
         "消息/公告：" + "；".join(event_evidence[:2])
         if event_evidence
-        else "消息/公告：联网核验未见可验证新增催化，不把涨跌当原因"
+        else (
+            f"消息/公告：{localize_sector_name(item.name)}联网核验未见可验证新增催化，"
+            f"不把{item.pct_chg:.2f}%涨跌当原因"
+        )
     )
     fundamental_evidence = [
         evidence for evidence in causal_evidence if evidence.startswith("基本面")
@@ -4902,7 +4923,10 @@ def _opportunity_sector_dimensions(
     fundamental_text = (
         "基本面/估值：" + "；".join(fundamental_evidence[:2])
         if fundamental_evidence
-        else "基本面/估值：需用代表个股财报和估值继续确认"
+        else (
+            f"基本面/估值：{localize_sector_name(item.name)}代表股PE缺口，"
+            f"当前按热度 {item.heat_score}/100 和扩散 {item.advancing_ratio:.0%} 降权"
+        )
     )
     selection_risk = f"入选原因：{_opportunity_sector_entry_reason(item)}"
     if risk:
@@ -4936,16 +4960,20 @@ def _opportunity_sector_cause(
 def _opportunity_sector_entry_reason(item) -> str:
     parts: list[str] = []
     if item.rotation_status == "市场主线":
-        parts.append("处在市场主线")
+        parts.append(f"{localize_sector_name(item.name)}处在市场主线")
     elif item.rotation_status == "轮动增强":
-        parts.append("轮动强度提升")
+        parts.append(f"{localize_sector_name(item.name)}轮动强度提升")
     if item.continuity in {"持续性强", "持续性观察"}:
         parts.append(item.continuity)
     if item.fund_status == "资金活跃":
-        parts.append("资金面：资金活跃，等待消息/公告/基本面确认")
+        parts.append(f"资金面：{localize_sector_name(item.name)}资金活跃，延续概率加分")
     elif item.amount_change > 0:
-        parts.append("资金面：成交放大，等待消息/公告/基本面确认")
-    return "；".join(parts) if parts else "仅作观察，等待资金、消息、公告和基本面确认"
+        parts.append(f"资金面：成交放大 {item.amount_change:+.1f} 亿，先看代表股承接")
+    return (
+        "；".join(parts)
+        if parts
+        else f"仅作观察：热度 {item.heat_score}/100，扩散 {item.advancing_ratio:.0%}"
+    )
 
 
 def _render_opportunity_candidate_cards(
@@ -6207,6 +6235,7 @@ def _sector_causal_evidence(
 
 def _candidate_causal_evidence(item: CandidateStockRawData | LimitBoardRow) -> list[str]:
     evidence: list[str] = []
+    name = getattr(item, "name", "")
     news_items = getattr(item, "news_items", []) or []
     announcements = getattr(item, "announcements", []) or []
     pe_ttm = getattr(item, "pe_ttm", None)
@@ -6220,10 +6249,12 @@ def _candidate_causal_evidence(item: CandidateStockRawData | LimitBoardRow) -> l
         if title:
             evidence.append(f"公告：{_short_condition(title, 36)}")
     if pe_ttm is not None:
-        evidence.append(f"基本面：PE(TTM) {pe_ttm:.1f}")
+        prefix = f"{name}" if name else ""
+        evidence.append(f"基本面：{prefix}PE(TTM) {pe_ttm:.1f}")
     if fund_flow is not None:
         direction = "净流入" if fund_flow > 0 else "净流出" if fund_flow < 0 else "中性"
-        evidence.append(f"资金面：{direction} {abs(fund_flow):.2f} 亿")
+        prefix = f"{name}" if name else ""
+        evidence.append(f"资金面：{prefix}{direction} {abs(fund_flow):.2f} 亿")
     return evidence
 
 
@@ -6248,10 +6279,10 @@ def _dedupe_texts(items: list[str]) -> list[str]:
 
 def _sector_fund_context(item) -> str:
     if item.fund_status == "资金活跃":
-        return "资金活跃，增强板块延续性"
+        return f"{localize_sector_name(item.name)}资金活跃，增强板块延续性"
     if item.fund_status == "资金流出":
-        return "资金流出，说明承接压力偏大"
-    return "资金配合一般，作为持续性扣分项"
+        return f"{localize_sector_name(item.name)}资金流出，说明承接压力偏大"
+    return f"{localize_sector_name(item.name)}资金配合一般，作为持续性扣分项"
 
 
 def _sector_market_context(item) -> str:
@@ -7593,11 +7624,21 @@ def _render_portfolio_stock_analysis_row(
 
 
 def _portfolio_trend_dimension(position: PositionAnalysis) -> str:
+    name = position.holding.name
     if position.trend == "上升趋势" and position.risk_level == "低":
-        return f"趋势向上且风险低，日内 {position.daily_pnl_ratio:.2f}% 用于确认承接"
+        return (
+            f"{name}趋势向上且风险低，日内 {position.daily_pnl_ratio:.2f}% "
+            f"和总盈亏 {position.pnl_ratio:.2f}% 共同确认承接"
+        )
     if position.trend == "下降趋势":
-        return f"趋势向下，日内 {position.daily_pnl_ratio:.2f}% 不能单独改变防守判断"
-    return f"{position.trend}，风险 {position.risk_level}，需要用量价延续确认"
+        return (
+            f"{name}趋势向下，日内 {position.daily_pnl_ratio:.2f}% "
+            f"不能单独改变防守判断"
+        )
+    return (
+        f"{name}{position.trend}，风险 {position.risk_level}，"
+        f"日内 {position.daily_pnl_ratio:.2f}% 需要用量价延续确认"
+    )
 
 
 def _portfolio_fund_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
@@ -7611,8 +7652,11 @@ def _portfolio_fund_dimension(position: PositionAnalysis, market: MarketSnapshot
     else:
         market_liquidity = "成交额待补"
     if total_amount > 0:
-        return f"{market_liquidity}，持仓动作仍要等个股资金明细确认"
-    return f"{market_liquidity}，当前不能把资金面作为动作理由"
+        return (
+            f"{position.holding.name}{market_liquidity}，"
+            f"仓位 {position.weight:.1%} 的动作仍要等个股资金明细确认"
+        )
+    return f"{position.holding.name}{market_liquidity}，当前不能把资金面作为动作理由"
 
 
 def _portfolio_fundamental_dimension(position: PositionAnalysis) -> str:
@@ -7623,11 +7667,21 @@ def _portfolio_fundamental_dimension(position: PositionAnalysis) -> str:
 
 
 def _portfolio_news_dimension(position: PositionAnalysis, market: MarketSnapshot) -> str:
+    name = position.holding.name
     if market.heat_score >= 70 and position.risk_level != "高":
-        return "市场情绪偏强，但公告未确认前不把消息面作为加仓理由"
+        return (
+            f"{name}处在情绪偏强市场，风险 {position.risk_level}；"
+            f"公告未确认前不把{name}消息面作为加仓理由"
+        )
     if market.heat_score < 45 or position.risk_level == "高":
-        return "情绪偏弱或个股风险高，先排查公告和事件风险"
-    return "情绪中性，消息公告不单独构成动作理由"
+        return (
+            f"{name}风险 {position.risk_level} 且市场热度 {market.heat_score}/100，"
+            f"先排查{name}公告和事件风险"
+        )
+    return (
+        f"{name}处在情绪中性市场，日内 {position.daily_pnl_ratio:.2f}%；"
+        f"{name}消息公告不单独构成动作理由"
+    )
 
 
 def _portfolio_sector_dimension(
@@ -8439,7 +8493,7 @@ def _render_stock_method_chain(
         "<tr>"
         f"<td>{escape(role)}</td>"
         f"<td>{escape(source)}</td>"
-        f"<td>{escape(_short_condition(judgement, 110))}</td>"
+        f"<td>{escape(_short_condition(f'{role}判断：{judgement}', 110))}</td>"
         "</tr>"
         for role, source, judgement in rows
     )
@@ -8596,8 +8650,8 @@ def _stock_trend_validation(
 def _stock_fund_cause(stock_raw: StockRawData) -> str:
     fund_text = _stock_fund_flow_text(stock_raw)
     if "未接入" in fund_text or "不明确" in fund_text:
-        return f"资金原因：{fund_text}，资金面不能单独作为交易理由"
-    return f"资金原因：{fund_text}，说明当前承接或分歧方向，但仍需价格确认"
+        return f"资金原因：{stock_raw.name}{fund_text}，资金面不能单独作为交易理由"
+    return f"资金原因：{stock_raw.name}{fund_text}，说明当前承接或分歧方向，但仍需价格确认"
 
 
 def _stock_fund_validation(stock_raw: StockRawData) -> str:
@@ -8608,8 +8662,8 @@ def _stock_fund_validation(stock_raw: StockRawData) -> str:
 def _stock_fundamental_cause(stock_raw: StockRawData) -> str:
     valuation = _stock_valuation_text(stock_raw)
     if valuation == "估值未接入":
-        return "估值原因：财务和估值缺失，基本面不能支持加仓或抄底"
-    return f"估值原因：{valuation} 决定安全边际和盈利弹性，不能只看短线涨跌"
+        return f"估值原因：{stock_raw.name}财务和估值缺失，基本面不能支持加仓或抄底"
+    return f"估值原因：{stock_raw.name}{valuation} 决定安全边际和盈利弹性，不能只看短线涨跌"
 
 
 def _stock_fundamental_validation(stock_raw: StockRawData) -> str:
@@ -8623,7 +8677,7 @@ def _stock_event_cause(
 ) -> str:
     news_count = len(stock_raw.news_items)
     if announcement_count == 0 and news_count == 0:
-        return "事件原因：公告和新闻未补齐，消息面不能作为交易理由"
+        return f"事件原因：{stock_raw.name}公告和新闻未补齐，消息面不能作为交易理由"
     event_text = _stock_news_text(event_radar, announcement_count, news_count)
     return f"事件原因：{event_text} 影响风险闸门和催化确认，需先判断利好还是风险"
 
@@ -9007,8 +9061,8 @@ def _stock_forecast_down_reason(
     event_radar: EventRadar,
 ) -> str:
     if stock.risk_level == "高" or event_radar.risk_score >= 70:
-        return f"风险分较高，跌破 {technical.invalid_line:.2f} 后下行概率提高"
-    return f"当前下行主要看 {technical.invalid_line:.2f} 是否失守和事件风险是否升温"
+        return f"{stock.name}风险分较高，跌破 {technical.invalid_line:.2f} 后下行概率提高"
+    return f"{stock.name}当前下行主要看 {technical.invalid_line:.2f} 是否失守和事件风险是否升温"
 
 
 def _stock_forecast_validation(
