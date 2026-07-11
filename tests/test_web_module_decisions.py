@@ -260,7 +260,7 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
             return [
                 CandidateStockRawData(
                     code="300001",
-                    name="强势机器人",
+                    name="强势机器人A",
                     sector="机器人",
                     bars=[
                         DailyBar("2026-07-09", 10, 10.2, 9.8, 10.0, 1000),
@@ -269,6 +269,18 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
                     fund_flow=1.8,
                     turnover_rate=9.6,
                     amount=18.5,
+                ),
+                CandidateStockRawData(
+                    code="300004",
+                    name="强势机器人B",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-09", 12, 12.2, 11.8, 12.0, 1000),
+                        DailyBar("2026-07-10", 12.1, 13.1, 12.0, 12.9, 2800),
+                    ],
+                    fund_flow=1.1,
+                    turnover_rate=6.6,
+                    amount=12.6,
                 ),
                 CandidateStockRawData(
                     code="600002",
@@ -303,14 +315,19 @@ def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
 
     for text in [
         "大涨大跌分析",
+        "板块扩散结论",
         "&gt;6%上涨",
         "&lt;-6%下跌",
-        "强势机器人 8.00%",
+        "机器人：2只大涨，0只大跌",
+        "白酒：0只大涨，1只大跌",
+        "机器人出现板块共振",
+        "强势机器人A 8.00%",
+        "强势机器人B 7.50%",
         "强势算力 7.00%",
         "弱势白酒 -7.33%",
         "资金流入",
         "资金流出",
-        "&gt;6% 样本 2",
+        "&gt;6% 样本 3",
         "&lt;-6% 样本 1",
     ]:
         assert text in market_html
@@ -802,6 +819,7 @@ def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monk
         encoding="utf-8",
     )
     monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("STOCK_TS_NOW", "2026-07-11T11:00:00+08:00")
 
     html = _sample_html(provider_name="tdx-snapshot")
 

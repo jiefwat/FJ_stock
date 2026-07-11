@@ -5062,8 +5062,10 @@ def _render_market_wide_move_panel(
     candidates: CandidatePoolReport,
 ) -> str:
     rows = _market_wide_move_rows(candidate_universe, candidates)
-    up_rows = [item for item in rows if item.pct_change > 6][:8]
-    down_rows = [item for item in rows if item.pct_change < -6][:8]
+    all_up_rows = [item for item in rows if item.pct_change > 6]
+    all_down_rows = [item for item in rows if item.pct_change < -6]
+    up_rows = all_up_rows[:8]
+    down_rows = all_down_rows[:8]
     if not up_rows and not down_rows:
         return """
       <div class="panel market-wide-move-panel">
@@ -5072,17 +5074,71 @@ def _render_market_wide_move_panel(
       </div>"""
     table_rows = _render_market_wide_move_rows(up_rows, direction=">6%上涨", up=True)
     table_rows += _render_market_wide_move_rows(down_rows, direction="<-6%下跌", up=False)
+    theme_summary = _render_wide_move_theme_summary(all_up_rows, all_down_rows)
     return f"""
       <div class="panel market-wide-move-panel">
         <div class="editor-toolbar">
           <div><h3>大涨大跌分析</h3></div>
-          <span class="portfolio-chip">&gt;6%上涨 {len(up_rows)} / &lt;-6%下跌 {len(down_rows)}</span>
+          <span class="portfolio-chip">&gt;6%上涨 {len(all_up_rows)} / &lt;-6%下跌 {len(all_down_rows)}</span>
         </div>
+        {theme_summary}
         <table class="data-table compact-sector-table">
           <thead><tr><th>方向</th><th>股票</th><th>板块</th><th>分析</th></tr></thead>
           <tbody>{table_rows}</tbody>
         </table>
       </div>"""
+
+
+def _render_wide_move_theme_summary(
+    up_rows: list[LimitBoardRow],
+    down_rows: list[LimitBoardRow],
+) -> str:
+    stats = _wide_move_theme_stats(up_rows, down_rows)
+    if not stats:
+        return ""
+    summary = "、".join(
+        f"{theme}：{counts['up']}只大涨，{counts['down']}只大跌"
+        for theme, counts in stats[:4]
+    )
+    conclusion = _wide_move_theme_conclusion(stats)
+    return f"""
+        <div class="compact-note-card" style="margin:12px 0">
+          <strong>板块扩散结论</strong>
+          <p class="section-subtitle">{escape(summary)}；{escape(conclusion)}</p>
+        </div>"""
+
+
+def _wide_move_theme_stats(
+    up_rows: list[LimitBoardRow],
+    down_rows: list[LimitBoardRow],
+) -> list[tuple[str, dict[str, int]]]:
+    stats: dict[str, dict[str, int]] = {}
+    for item in up_rows:
+        theme = item.sector or "未分类"
+        stats.setdefault(theme, {"up": 0, "down": 0})["up"] += 1
+    for item in down_rows:
+        theme = item.sector or "未分类"
+        stats.setdefault(theme, {"up": 0, "down": 0})["down"] += 1
+    return sorted(
+        stats.items(),
+        key=lambda item: (item[1]["up"] + item[1]["down"], item[1]["up"], -item[1]["down"]),
+        reverse=True,
+    )
+
+
+def _wide_move_theme_conclusion(stats: list[tuple[str, dict[str, int]]]) -> str:
+    strongest = max(stats, key=lambda item: item[1]["up"], default=None)
+    weakest = max(stats, key=lambda item: item[1]["down"], default=None)
+    pieces: list[str] = []
+    if strongest and strongest[1]["up"] >= 2:
+        pieces.append(f"{strongest[0]}出现板块共振")
+    elif strongest and strongest[1]["up"] == 1:
+        pieces.append("上涨更偏个股异动")
+    if weakest and weakest[1]["down"] >= 2:
+        pieces.append(f"{weakest[0]}出现板块退潮")
+    elif weakest and weakest[1]["down"] == 1:
+        pieces.append(f"{weakest[0]}先按单股风险复核")
+    return "；".join(pieces) if pieces else "大幅波动样本不足，先观察持续性"
 
 
 def _market_wide_move_rows(
