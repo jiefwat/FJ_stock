@@ -42,7 +42,7 @@ def test_four_workspaces_do_not_repeat_global_precision_summary() -> None:
 def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     html = _sample_html()
 
-    assert "仓位动作</span><strong>可以进攻</strong>" in html
+    assert "市场结论</span><strong>可以进攻</strong>" in html
     assert "每日大盘" in html
     assert "持仓明细" in html
     assert "股票摘要" in html
@@ -115,6 +115,25 @@ def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
     ]:
         assert text in html
 
+
+
+
+def test_market_ui_uses_concise_data_labels_not_narrative_terms() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for removed in [
+        "仓位闸门",
+        "只回答四件事",
+        "今天能不能做",
+        "仓位怎么放",
+        "主线在哪里",
+        "风险是什么",
+        "数据链路：K线 / 资金面 / 消息面",
+    ]:
+        assert removed not in market_html
+
+    for text in ["风险敞口", "指数表现", "市场宽度", "市场热度", "板块方向"]:
+        assert text in market_html
 
 def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     market_html = _workspace(_sample_html(), "market")
@@ -471,7 +490,7 @@ def test_tdx_snapshot_defensive_market_keeps_defensive_action() -> None:
         provider=TdxSnapshotProvider("data/imports/tdx_snapshots.json"),
     )
 
-    assert "仓位动作</span><strong>防守观察</strong>" in html
+    assert "市场结论</span><strong>防守观察</strong>" in html
     assert "暂停行动" in html
     assert "数据可信度" in html
 

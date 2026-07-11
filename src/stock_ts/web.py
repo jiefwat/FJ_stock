@@ -4770,7 +4770,7 @@ def _render_compact_market_module(
       <div class="module-header market-header">
         <div>
           <h2 class="module-title">每日大盘</h2>
-          <p class="module-desc">只回答四件事：今天能不能做、仓位怎么放、主线在哪里、风险是什么。</p>
+          <p class="module-desc">指数、市场宽度、成交、板块与风险统计。</p>
         </div>
         <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
       </div>
@@ -4779,11 +4779,11 @@ def _render_compact_market_module(
           <span>市场摘要</span>
           <strong>{escape(market_action)}</strong>
           <p>{escape(market_reason)}</p>
-          <div class="market-action-snapshot"><span>仓位动作</span><strong>{escape(market_action)}</strong></div>
+          <div class="market-action-snapshot"><span>市场结论</span><strong>{escape(market_action)}</strong></div>
           <div class="score-bar"><div class="score-fill" style="width:{market.heat_score}%"></div></div>
         </div>
         <div class="market-focus-card">
-          <span>仓位闸门</span>
+          <span>风险敞口</span>
           <strong>{escape(_market_target_cash(market))}</strong>
           <p>{escape(flow_summary)}</p>
         </div>

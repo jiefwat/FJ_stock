@@ -9,7 +9,7 @@ def test_web_renders_professional_four_module_framework() -> None:
     )
 
     assert "每日大盘" in html
-    assert "仓位闸门" in html
+    assert "风险敞口" in html
     assert "我的持仓" in html
     assert "持仓风险处置" in html
     assert "个股分析" in html

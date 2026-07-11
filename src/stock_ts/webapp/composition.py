@@ -7,7 +7,7 @@ WORKSPACES = [
         key="market",
         label="每日大盘",
         badge="01",
-        description="从指数、宽度、资金和情绪判断今天的仓位闸门。",
+        description="指数、宽度、成交、板块与风险统计。",
     ),
     WorkspaceMeta(
         key="portfolio",
