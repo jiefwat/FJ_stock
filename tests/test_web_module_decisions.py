@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from stock_ts.models import DailyBar, NewsItem, SectorRawData, StockRawData
+from stock_ts.models import (
+    CandidateStockRawData,
+    DailyBar,
+    IndexQuote,
+    MarketRawData,
+    NewsItem,
+    SectorRawData,
+    StockRawData,
+)
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 from stock_ts.web import render_page
@@ -695,6 +703,118 @@ def test_data_center_warns_when_pipeline_steps_were_skipped(tmp_path: Path, monk
     assert "自动更新未完整" in html
     assert "全市场刷新" in html
     assert "公告" in html
+
+
+
+
+def test_global_freshness_bar_stays_ok_when_only_optional_stock_context_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(tmp_path))
+    (tmp_path / "pipeline.status").write_text(
+        "status=ok\n"
+        "generated_at=2026-07-11T14:28:15\n"
+        "refresh=ok\n"
+        "data_chain=ok\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data_chain_status.json").write_text(
+        json.dumps({"status": "ok", "generated_at": "2026-07-11T14:28:15"}),
+        encoding="utf-8",
+    )
+
+    class OptionalGapProvider(SampleDataProvider):
+        def _fresh_bars(self, close: float) -> list[DailyBar]:
+            return [
+                DailyBar("2026-07-08", close * 0.98, close, close * 0.97, close * 0.99, 1000),
+                DailyBar("2026-07-09", close * 0.99, close * 1.01, close * 0.98, close, 1200),
+                DailyBar("2026-07-10", close, close * 1.02, close * 0.99, close * 1.01, 1500),
+            ]
+
+        def fetch_market(self) -> MarketRawData:
+            return MarketRawData(
+                trade_date="2026-07-10",
+                indices=[IndexQuote("000001", "上证指数", 3996.16, -1.0, 15631.0)],
+                advancing=3771,
+                declining=1678,
+                limit_up=134,
+                limit_down=8,
+                top_sectors=[("半导体", 3.1)],
+            )
+
+        def fetch_stock(self, code: str) -> StockRawData:
+            return StockRawData(
+                code="600519",
+                name="贵州茅台",
+                bars=self._fresh_bars(1500),
+                fund_flow=1.2,
+                fund_flow_detail={"date": "2026-07-10", "source": "akshare", "net_inflow": 1.2},
+                news_items=[
+                    NewsItem(
+                        date="2026-07-11",
+                        source="market-news",
+                        title="贵州茅台市场新闻",
+                        summary="新闻已采集",
+                    )
+                ],
+                announcements=[],
+                fundamental_metrics={},
+                valuation={},
+                data_sources=["tdx", "akshare"],
+            )
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="600000",
+                    name="候选A",
+                    sector="半导体",
+                    bars=self._fresh_bars(20),
+                    fund_flow=0.8,
+                    turnover_rate=4.0,
+                    amount=10.0,
+                    pe_ttm=20,
+                )
+            ]
+
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "snapshot_source": "tdx-snapshot",
+                "snapshot_generated_at": "2026-07-11T06:06:19+00:00",
+                "snapshot_bars_count": "1",
+                "snapshot_fund_flow_detail_count": "1",
+                "snapshot_news_items_count": "1",
+                "snapshot_market_news_count": "1",
+                "snapshot_announcements_count": "0",
+                "snapshot_fundamental_metrics_count": "0",
+            }
+
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date="2026-07-11",
+                    source="market-news",
+                    title="市场新闻",
+                    summary="市场消息已采集",
+                )
+            ]
+
+    html = _sample_html(
+        provider=OptionalGapProvider(),
+        provider_name="tdx-snapshot",
+        stock_code="600519",
+    )
+    freshness_start = html.index('aria-label="全局数据新鲜度"')
+    freshness_end = html.index('aria-label="数据中台摘要"')
+    freshness_html = html[freshness_start:freshness_end]
+    data_center_html = _workspace(html, "data-center")
+
+    assert "多维数据缺口" not in freshness_html
+    assert "降级" not in freshness_html
+    assert "暂停行动" not in freshness_html
+    assert "可用" in freshness_html
+    assert "公告" in data_center_html
+    assert "基本面" in data_center_html
 
 
 def test_data_center_hides_snapshot_coverage_details() -> None:

@@ -2635,12 +2635,13 @@ def _assess_data_quality(
     )
     if data_center.alerts:
         unique_warnings = list(dict.fromkeys([*unique_warnings, *data_center.alerts]))
+    gate_warnings = [warning for warning in unique_warnings if _is_global_quality_warning(warning)]
     if blocked_actions:
         status = "排序已暂停"
         gate_level = "blocked"
         signal = "暂停"
         summary = "排序暂停"
-    elif unique_warnings:
+    elif gate_warnings:
         status = "需要人工确认"
         gate_level = "warn"
         signal = "降级"
@@ -2665,6 +2666,15 @@ def _assess_data_quality(
         blocked_actions=blocked_actions,
         data_center=data_center,
     )
+
+
+def _is_global_quality_warning(warning: str) -> bool:
+    optional_stock_context_prefixes = (
+        "多维数据缺口",
+        "数据中台预警：公告",
+        "数据中台预警：基本面",
+    )
+    return not warning.startswith(optional_stock_context_prefixes)
 
 
 def _build_data_center_view(
@@ -3583,7 +3593,7 @@ def _freshness_detail(quality: DataQualityView) -> str:
     context_warnings = [
         warning
         for warning in quality.warnings
-        if warning.startswith("市场新闻") or warning.startswith("多维数据缺口")
+        if warning.startswith("市场新闻")
     ]
     if context_warnings:
         return "；".join(context_warnings[:2])
