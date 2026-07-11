@@ -160,6 +160,9 @@ def test_daily_pipeline_writes_cninfo_announcements_back_to_snapshot(
     announcements = payload["stocks"]["603278"]["announcements"]
     assert announcements[0]["title"] == "测试公司半年度业绩预告公告"
     assert announcements[0]["source"] == "cninfo"
+    assert payload["announcement_refresh"]["source"] == "cninfo"
+    assert payload["announcement_refresh"]["requested_count"] == 1
+    assert payload["announcement_refresh"]["updated_count"] == 1
 
 
 def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path) -> None:

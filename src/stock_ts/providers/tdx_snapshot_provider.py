@@ -179,6 +179,7 @@ class TdxSnapshotProvider(StockDataProvider):
             ("holding_kline_refresh", "holding_kline_refresh"),
             ("external_enrichment", "external_enrichment"),
             ("manual_context_refresh", "manual_context_refresh"),
+            ("announcement_refresh", "announcement_refresh"),
             ("mcp_market_news_refresh", "mcp_market_news_refresh"),
         ]:
             section = payload.get(section_name)

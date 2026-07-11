@@ -338,6 +338,7 @@ def _write_announcements(config: DailyPipelineConfig, codes: list[str]) -> None:
             )
         except Exception as exc:
             blocks.extend([f"## {code}", "", f"- 公告抓取失败：{exc}", ""])
+    _write_announcement_refresh_metadata(snapshot, codes)
     (out_dir / "latest.md").write_text("\n".join(blocks).strip() + "\n", encoding="utf-8")
     if snapshot:
         snapshot_path.write_text(
@@ -379,6 +380,25 @@ def _write_announcement_report_to_snapshot(snapshot: dict, code: str, report) ->
     sources = set(str(item) for item in stock.get("data_sources", []) if item)
     sources.add("cninfo.announcement")
     stock["data_sources"] = sorted(sources)
+
+
+def _write_announcement_refresh_metadata(snapshot: dict, codes: list[str]) -> None:
+    if not snapshot:
+        return
+    stocks = snapshot.get("stocks", {})
+    updated_count = 0
+    if isinstance(stocks, dict):
+        for code in codes:
+            stock = stocks.get(code)
+            if isinstance(stock, dict) and stock.get("announcements"):
+                updated_count += 1
+    snapshot["announcement_refresh"] = {
+        "source": "cninfo",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "requested_count": len(codes),
+        "updated_count": updated_count,
+        "failed_count": max(0, len(codes) - updated_count),
+    }
 
 
 def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) -> None:

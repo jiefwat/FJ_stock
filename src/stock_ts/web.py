@@ -2754,7 +2754,11 @@ def _build_data_center_view(
                 _source_for_block(stock_raw, ["announcement", "cninfo"], snapshot_source),
             ),
             latest_date=_latest_announcement_date(stock_raw.announcements),
-            updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
+            updated_at=_first_present(
+                candidate_universe_metadata.get("announcement_refresh_generated_at", ""),
+                candidate_universe_metadata.get("manual_context_refresh_generated_at", ""),
+                snapshot_generated,
+            ),
             missing=[] if stock_raw.announcements else ["公告"],
             coverage=_coverage_ratio(
                 candidate_universe_metadata, "snapshot_announcements_count", label="公告"
@@ -2771,7 +2775,11 @@ def _build_data_center_view(
                 _source_for_block(stock_raw, ["fina", "valuation", "profile", "tdx"], snapshot_source),
             ),
             latest_date=str(stock_raw.fundamental_metrics.get("date") or ""),
-            updated_at=_first_present(candidate_universe_metadata.get("manual_context_refresh_generated_at", ""), snapshot_generated),
+            updated_at=_first_present(
+                candidate_universe_metadata.get("external_enrichment_generated_at", ""),
+                candidate_universe_metadata.get("manual_context_refresh_generated_at", ""),
+                snapshot_generated,
+            ),
             missing=_fundamental_missing_parts(stock_raw),
             coverage=_fundamental_coverage_text(candidate_universe_metadata),
             impact="影响估值、财务质量和基本面证据",
