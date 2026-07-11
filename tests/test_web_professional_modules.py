@@ -18,10 +18,10 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "分析入口" in html
     assert "未来涨跌预测" in html
     assert "热点机会" in html
-    assert "热门板块主题" in html
-    assert "热门板块主题" in html
-    assert "股票机会" in html
-    assert "股票机会" in html
+    assert "推荐板块" in html
+    assert "推荐板块" in html
+    assert "推荐股票" in html
+    assert "推荐股票" in html
     assert "主要数据源" not in html
 
 
@@ -47,9 +47,9 @@ def test_web_candidate_workspace_uses_observation_actions() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "股票机会" in html
+    assert "推荐股票" in html
     assert "原因" in html
-    assert "进入个股分析" in html
+    assert "推荐股票" in html
     assert 'href="/?code=' in html
 
 

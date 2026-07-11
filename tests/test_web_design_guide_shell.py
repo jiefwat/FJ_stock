@@ -69,7 +69,7 @@ def test_four_modules_keep_module_owned_actions() -> None:
         'class="stock-form" method="get"',
         "持仓股票分析",
         "分析内容",
-        "股票机会",
+        "推荐股票",
         'href="/?code=',
     ]:
         assert text in html
@@ -92,12 +92,9 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     opportunity_html = html[opportunity_start:]
 
     for text in [
-        "热门板块主题",
-        "板块方向",
-        "股票机会",
-        "候选列表",
-        "原因",
-        "进入个股分析",
+        "推荐板块",
+        "推荐股票",
+        "推荐原因",
     ]:
         assert text in opportunity_html
 

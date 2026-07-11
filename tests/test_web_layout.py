@@ -48,9 +48,9 @@ def test_four_modules_explain_professional_data_flow() -> None:
     assert "对应板块分析" in html
     assert "仓位/成本分析" in html
     assert "分析内容" in html
-    assert "热门板块主题" in html
-    assert "股票机会" in html
-    assert "候选列表" in html
+    assert "推荐板块" in html
+    assert "推荐股票" in html
+    assert "推荐股票" in html
 
 
 def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None:

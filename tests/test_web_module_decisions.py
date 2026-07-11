@@ -46,8 +46,8 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     assert "每日大盘" in html
     assert "持仓股票分析" in html
     assert "分析内容" in html
-    assert "热门板块主题" in html
-    assert "股票机会" in html
+    assert "推荐板块" in html
+    assert "推荐股票" in html
 
 
 def test_four_modules_keep_copy_functional_and_simple() -> None:
@@ -221,10 +221,23 @@ def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
 def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["热门板块主题", "股票机会", "原因", "股票", "主题"]:
+    for text in ["推荐板块", "推荐股票", "推荐原因"]:
         assert text in opportunity_html
 
-    for noisy_text in ["策略通道", "机会总闸门", "情绪温度", "赚钱效应", "亏钱效应", "方法说明"]:
+    for noisy_text in [
+        "热门板块主题",
+        "股票机会",
+        "候选列表",
+        "板块方向",
+        "策略通道",
+        "机会总闸门",
+        "情绪温度",
+        "赚钱效应",
+        "亏钱效应",
+        "方法说明",
+        "数据链路",
+        "进入个股分析",
+    ]:
         assert noisy_text not in opportunity_html
 
 def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
@@ -232,14 +245,9 @@ def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     opportunity_html = _workspace(html, "opportunity")
 
     for text in [
-        "热门板块主题",
-        "板块方向",
-        "股票机会",
-        "候选列表",
-        "主题",
-        "股票",
-        "原因",
-        "进入个股分析",
+        "推荐板块",
+        "推荐股票",
+        "推荐原因",
     ]:
         assert text in opportunity_html
 
@@ -263,9 +271,9 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
 def test_opportunity_module_removes_strategy_funnel_noise() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["热门板块主题", "股票机会", "原因", "进入个股分析"]:
+    for text in ["推荐板块", "推荐股票", "推荐原因"]:
         assert text in opportunity_html
-    for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明"]:
+    for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明", "进入个股分析"]:
         assert removed not in opportunity_html
 
 
@@ -273,23 +281,22 @@ def test_opportunity_module_renders_candidate_rows_with_research_links() -> None
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     for text in [
-        "候选列表",
-        "股票",
-        "主题",
-        "原因",
-        "进入个股分析",
+        "推荐板块",
+        "推荐股票",
+        "推荐原因",
     ]:
         assert text in opportunity_html
-    for removed in ["策略：", "入选证据", "主要风险"]:
+    for removed in ["策略：", "入选证据", "主要风险", "候选列表"]:
         assert removed not in opportunity_html
 
 
 def test_opportunity_candidate_links_carry_source_strategy_and_evidence() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    assert "candidate_source=opportunity" in opportunity_html
-    assert "candidate_strategy_label=" in opportunity_html
-    assert "candidate_evidence=" in opportunity_html
+    assert 'href="/?code=' in opportunity_html
+    assert "candidate_source=opportunity" not in opportunity_html
+    assert "candidate_strategy_label=" not in opportunity_html
+    assert "candidate_evidence=" not in opportunity_html
 
 
 def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
