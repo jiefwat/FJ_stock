@@ -254,6 +254,67 @@ def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
         assert text in market_html
 
 
+def test_daily_market_analyzes_stocks_moving_more_than_six_percent() -> None:
+    class WideMoveProvider(SampleDataProvider):
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300001",
+                    name="强势机器人",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-09", 10, 10.2, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-10", 10.1, 10.9, 10.0, 10.8, 3200),
+                    ],
+                    fund_flow=1.8,
+                    turnover_rate=9.6,
+                    amount=18.5,
+                ),
+                CandidateStockRawData(
+                    code="600002",
+                    name="强势算力",
+                    sector="算力",
+                    bars=[
+                        DailyBar("2026-07-09", 20, 20.2, 19.8, 20.0, 1000),
+                        DailyBar("2026-07-10", 20.2, 21.6, 20.0, 21.4, 2600),
+                    ],
+                    fund_flow=0.9,
+                    turnover_rate=5.2,
+                    amount=15.0,
+                ),
+                CandidateStockRawData(
+                    code="600003",
+                    name="弱势白酒",
+                    sector="白酒",
+                    bars=[
+                        DailyBar("2026-07-09", 30, 30.3, 29.8, 30.0, 1000),
+                        DailyBar("2026-07-10", 29.5, 29.7, 27.5, 27.8, 4100),
+                    ],
+                    fund_flow=-1.3,
+                    turnover_rate=8.1,
+                    amount=11.2,
+                ),
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=WideMoveProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+
+    for text in [
+        "大涨大跌分析",
+        "&gt;6%上涨",
+        "&lt;-6%下跌",
+        "强势机器人 8.00%",
+        "强势算力 7.00%",
+        "弱势白酒 -7.33%",
+        "资金流入",
+        "资金流出",
+        "&gt;6% 样本 2",
+        "&lt;-6% 样本 1",
+    ]:
+        assert text in market_html
+
 
 
 def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:

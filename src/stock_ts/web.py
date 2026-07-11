@@ -1159,6 +1159,7 @@ class LimitBoardRow:
     amount: float = 0.0
     turnover_rate: float = 0.0
     latest_date: str = ""
+    fund_flow: float | None = None
 
 
 def _safe_fetch_candidate_universe(provider: StockDataProvider) -> list[CandidateStockRawData]:
@@ -1232,6 +1233,7 @@ def _build_limit_board_rows(universe: list[CandidateStockRawData]) -> list[Limit
                 amount=item.amount,
                 turnover_rate=item.turnover_rate,
                 latest_date=item.bars[-1].date,
+                fund_flow=item.fund_flow,
             )
         )
     return rows
@@ -4989,6 +4991,7 @@ def _render_compact_market_module(
         "弱势板块Top5", sectors, candidate_universe, reverse=False
     )
     analysis = _market_minimal_analysis(market, sectors, candidate_universe)
+    wide_move_panel = _render_market_wide_move_panel(candidate_universe, candidates)
     event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
     return f"""
     <section class="module market-console" id="module-market">
@@ -5003,6 +5006,7 @@ def _render_compact_market_module(
         </div>
       </div>
       {distribution}
+      {wide_move_panel}
       <div class="market-sector-duo">
         {strong_sectors}
         {weak_sectors}
@@ -5023,12 +5027,13 @@ def _render_market_distribution_chart(
     pct_values = _market_distribution_pct_values(candidate_universe, candidates)
     bins = [
         ("涨停", market.limit_up_count),
-        (">5%", sum(1 for value in pct_values if value > 5)),
+        (">6%", sum(1 for value in pct_values if value > 6)),
         (">3%", sum(1 for value in pct_values if value > 3)),
         ("0~3%", sum(1 for value in pct_values if 0 < value <= 3)),
         ("平盘", _format_market_count(market, "unchanged")),
         ("-3~0%", sum(1 for value in pct_values if -3 <= value < 0)),
         ("<-3%", sum(1 for value in pct_values if value < -3)),
+        ("<-6%", sum(1 for value in pct_values if value < -6)),
         ("跌停", market.limit_down_count),
     ]
     counts = [count if isinstance(count, int) else 0 for _, count in bins]
@@ -5050,6 +5055,111 @@ def _render_market_distribution_chart(
         </div>
         <div class="market-distribution-bars">{bars}</div>
       </div>"""
+
+
+def _render_market_wide_move_panel(
+    candidate_universe: list[CandidateStockRawData],
+    candidates: CandidatePoolReport,
+) -> str:
+    rows = _market_wide_move_rows(candidate_universe, candidates)
+    up_rows = [item for item in rows if item.pct_change > 6][:8]
+    down_rows = [item for item in rows if item.pct_change < -6][:8]
+    if not up_rows and not down_rows:
+        return """
+      <div class="panel market-wide-move-panel">
+        <div class="editor-toolbar"><div><h3>大涨大跌分析</h3></div><span class="portfolio-chip">暂无 &gt;6% / &lt;-6% 样本</span></div>
+        <p class="section-subtitle">当前候选池没有返回大幅波动股票，先看涨跌统计和强弱板块。</p>
+      </div>"""
+    table_rows = _render_market_wide_move_rows(up_rows, direction=">6%上涨", up=True)
+    table_rows += _render_market_wide_move_rows(down_rows, direction="<-6%下跌", up=False)
+    return f"""
+      <div class="panel market-wide-move-panel">
+        <div class="editor-toolbar">
+          <div><h3>大涨大跌分析</h3></div>
+          <span class="portfolio-chip">&gt;6%上涨 {len(up_rows)} / &lt;-6%下跌 {len(down_rows)}</span>
+        </div>
+        <table class="data-table compact-sector-table">
+          <thead><tr><th>方向</th><th>股票</th><th>板块</th><th>分析</th></tr></thead>
+          <tbody>{table_rows}</tbody>
+        </table>
+      </div>"""
+
+
+def _market_wide_move_rows(
+    candidate_universe: list[CandidateStockRawData],
+    candidates: CandidatePoolReport,
+) -> list[LimitBoardRow]:
+    rows = _build_limit_board_rows(candidate_universe)
+    if not rows:
+        rows = [
+            LimitBoardRow(
+                code=item.code,
+                name=item.name,
+                sector=item.sector,
+                latest_close=item.latest_close,
+                pct_change=item.pct_change,
+            )
+            for item in candidates.candidates
+        ]
+    big_up = sorted(
+        (item for item in rows if item.pct_change > 6),
+        key=lambda item: item.pct_change,
+        reverse=True,
+    )
+    big_down = sorted(
+        (item for item in rows if item.pct_change < -6),
+        key=lambda item: item.pct_change,
+    )
+    return big_up + big_down
+
+
+def _render_market_wide_move_rows(
+    rows: list[LimitBoardRow],
+    *,
+    direction: str,
+    up: bool,
+) -> str:
+    if not rows:
+        return (
+            "<tr>"
+            f"<td>{escape(direction)}</td>"
+            "<td colspan='3'>暂无样本</td>"
+            "</tr>"
+        )
+    return "".join(
+        "<tr>"
+        f"<td>{escape(direction)}</td>"
+        f"<td class='name-cell'><strong>{escape(item.name)} {item.pct_change:.2f}%</strong>"
+        f"<span>{escape(item.code)}</span></td>"
+        f"<td>{escape(item.sector)}</td>"
+        f"<td>{escape(_wide_move_analysis(item, up=up))}</td>"
+        "</tr>"
+        for item in rows
+    )
+
+
+def _wide_move_analysis(item: LimitBoardRow, *, up: bool) -> str:
+    pieces: list[str] = []
+    if _is_known_theme(item.sector):
+        pieces.append(f"{item.sector}主题{'走强' if up else '承压'}")
+    if item.fund_flow is not None:
+        if item.fund_flow > 0:
+            pieces.append("资金流入")
+        elif item.fund_flow < 0:
+            pieces.append("资金流出")
+        else:
+            pieces.append("资金中性")
+    if item.turnover_rate >= 8:
+        pieces.append(f"换手活跃 {item.turnover_rate:.1f}%")
+    if item.amount >= 10:
+        pieces.append(f"成交额 {item.amount:.1f} 亿")
+    if up and item.pct_change >= 9:
+        pieces.append("接近涨停，关注封板和次日溢价")
+    elif not up and item.pct_change <= -9:
+        pieces.append("接近跌停，优先排查公告和流动性风险")
+    if not pieces:
+        pieces.append("价格大幅波动，需结合板块、资金和消息复核")
+    return "；".join(pieces[:4])
 
 
 def _market_distribution_pct_values(
@@ -5165,6 +5275,8 @@ def _market_minimal_analysis(
         candidate_universe,
         CandidatePoolReport("", [], [], "", True),
     )
+    over_six = sum(1 for value in pct_values if value > 6)
+    under_six = sum(1 for value in pct_values if value < -6)
     over_three = sum(1 for value in pct_values if value > 3)
     under_three = sum(1 for value in pct_values if value < -3)
     strongest = max(sectors.sectors, key=lambda item: item.pct_chg, default=None)
@@ -5173,6 +5285,7 @@ def _market_minimal_analysis(
     weak_text = weakest.name if weakest else "暂无"
     return (
         f"涨停 {market.limit_up_count}，跌停 {market.limit_down_count}，"
+        f">6% 样本 {over_six}，<-6% 样本 {under_six}，"
         f">3% 样本 {over_three}，<-3% 样本 {under_three}；"
         f"强势集中在 {strong_text}，弱势集中在 {weak_text}。"
     )
