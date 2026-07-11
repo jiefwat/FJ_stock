@@ -53,6 +53,17 @@ def build_data_source_matrix(
             integration="provider=tdx-snapshot / data/imports/tdx_snapshots.json",
         ),
         DataSourceCapability(
+            name="Longbridge MCP",
+            status="available",
+            coverage="市场新闻、个股新闻、异动事件、市场温度、财经日历",
+            best_for="补市场消息面、跨市场异动、宏观事件和风险偏好温度",
+            limitation=(
+                "MCP 是会话工具，需先导出 JSON 再由脚本写入快照；"
+                "新闻只做证据，不单独作为交易理由"
+            ),
+            integration="scripts/import_mcp_market_intelligence.py / mcp_market_news_refresh",
+        ),
+        DataSourceCapability(
             name="本地 CSV/Excel 导入",
             status="available",
             coverage="行情 CSV、新闻舆情 CSV、持仓 CSV、交易流水 CSV",

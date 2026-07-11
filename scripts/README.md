@@ -28,6 +28,17 @@ PYTHONPATH=src python3 scripts/run_daily_pipeline.py \
 - 持仓/候选公告事件摘要。
 - 每日 Markdown/HTML 报告生成。
 
+单独导入 MCP 新闻/事件：
+
+```bash
+PYTHONPATH=src python3 scripts/import_mcp_market_intelligence.py \
+  --snapshot data/imports/tdx_snapshots.json \
+  --source longbridge.mcp \
+  /tmp/longbridge_news.json /tmp/longbridge_events.json
+```
+
+该脚本接收 Longbridge MCP 的 `_news`、`_top_movers`、`_market_temperature`、`_finance_calendar` JSON 输出，也兼容通用新闻 JSON；导入后写入 `market_news` 和 `mcp_market_news_refresh`，Web 数据中台会展示采集渠道、更新时间和缺口预警。MCP 是会话工具，项目运行时只读取落地后的快照，不在打开页面时调用 MCP。
+
 单独刷新 A 股日线：
 
 ```bash

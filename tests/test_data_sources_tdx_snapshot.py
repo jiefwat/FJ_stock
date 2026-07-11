@@ -49,10 +49,38 @@ def test_data_source_matrix_mentions_skills_and_mcp() -> None:
         "iTick",
         "AKShare",
         "TDX MCP 快照",
+        "Longbridge MCP",
         "CNInfo skill",
         "AgentReach skill",
     } <= names
     assert next(item for item in matrix if item.name == "TDX MCP 快照").status == "active"
+    assert "市场新闻" in next(item for item in matrix if item.name == "Longbridge MCP").coverage
+
+
+def test_tdx_snapshot_provider_exposes_mcp_market_news_refresh_metadata(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "mcp_market_news_refresh": {
+                    "source": "longbridge.mcp",
+                    "generated_at": "2026-07-11T01:00:00Z",
+                    "imported_count": 4,
+                    "skipped_count": 1,
+                    "total_market_news_count": 12,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    metadata = TdxSnapshotProvider(snapshot).fetch_candidate_universe_metadata()
+
+    assert metadata["mcp_market_news_refresh_source"] == "longbridge.mcp"
+    assert metadata["mcp_market_news_refresh_generated_at"] == "2026-07-11T01:00:00Z"
+    assert metadata["mcp_market_news_refresh_imported_count"] == "4"
+    assert metadata["mcp_market_news_refresh_total_market_news_count"] == "12"
 
 
 def test_tdx_snapshot_provider_reads_local_mcp_export(tmp_path: Path) -> None:

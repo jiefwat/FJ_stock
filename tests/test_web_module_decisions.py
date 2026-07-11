@@ -535,3 +535,33 @@ def test_structured_daily_decisions_do_not_recreate_home_module(tmp_path, monkey
     assert 'id="home"' not in html
     assert "每日大盘" in html
     assert "热点机会" in html
+
+
+def test_data_center_surfaces_mcp_market_news_channel_metadata() -> None:
+    from stock_ts.models import NewsItem
+
+    class McpNewsProvider(SampleDataProvider):
+        def fetch_market_news(self) -> list[NewsItem]:
+            return [
+                NewsItem(
+                    date="2026-07-11",
+                    source="longbridge.mcp.新闻",
+                    title="A股半导体板块走强",
+                    summary="Longbridge MCP 市场新闻",
+                    sentiment="positive",
+                )
+            ]
+
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "snapshot_source": "tdx-mcp-eltdx-bridge",
+                "snapshot_generated_at": "2026-07-11T00:30:00Z",
+                "mcp_market_news_refresh_source": "longbridge.mcp",
+                "mcp_market_news_refresh_generated_at": "2026-07-11T01:00:00Z",
+                "mcp_market_news_refresh_imported_count": "4",
+            }
+
+    html = _sample_html(provider=McpNewsProvider(), provider_name="tdx-snapshot")
+
+    assert "longbridge.mcp" in html
+    assert "2026-07-11T01:00:00Z" in html

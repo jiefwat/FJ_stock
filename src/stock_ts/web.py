@@ -2700,12 +2700,14 @@ def _build_data_center_view(
             channel=_data_center_channel(
                 _latest_news_source(stock_raw.news_items),
                 _latest_news_source(market_news.items if market_news else []),
+                candidate_universe_metadata.get("mcp_market_news_refresh_source", ""),
             ),
             latest_date=max(
                 _latest_news_date(stock_raw.news_items),
                 _latest_news_date(market_news.items if market_news else []),
             ),
             updated_at=_first_present(
+                candidate_universe_metadata.get("mcp_market_news_refresh_generated_at", ""),
                 candidate_universe_metadata.get("manual_context_refresh_generated_at", ""),
                 candidate_universe_metadata.get("external_enrichment_generated_at", ""),
                 snapshot_generated,

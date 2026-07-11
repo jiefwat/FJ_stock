@@ -178,6 +178,7 @@ class TdxSnapshotProvider(StockDataProvider):
             ("holding_kline_refresh", "holding_kline_refresh"),
             ("external_enrichment", "external_enrichment"),
             ("manual_context_refresh", "manual_context_refresh"),
+            ("mcp_market_news_refresh", "mcp_market_news_refresh"),
         ]:
             section = payload.get(section_name)
             if not isinstance(section, dict):
@@ -192,6 +193,9 @@ class TdxSnapshotProvider(StockDataProvider):
                 "requested_count",
                 "enriched_stock_count",
                 "error_count",
+                "imported_count",
+                "skipped_count",
+                "total_market_news_count",
             ]:
                 if section.get(count_key) not in {None, ""}:
                     metadata[f"{prefix}_{count_key}"] = str(section[count_key])
