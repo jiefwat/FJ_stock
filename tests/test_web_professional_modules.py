@@ -13,9 +13,9 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "我的持仓" in html
     assert "持仓风险处置" in html
     assert "个股分析" in html
-    assert "个股三面复核" in html
+    assert "多维诊断" in html
     assert "热点机会" in html
-    assert "热门主题" in html
+    assert "热门板块主题" in html
     assert "热门板块主题" in html
     assert "股票机会" in html
     assert "股票机会" in html

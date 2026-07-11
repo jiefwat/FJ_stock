@@ -1454,7 +1454,7 @@ def _render_portfolio_table_row(
     next_check = advice.next_check if advice else "等待更多数据后再处理。"
     reason = advice.reason if advice else "先观察走势和市场匹配度。"
     trend = f"{position.trend} / {position.risk_level}"
-    detail = f"{reason} 下一步：{next_check}"
+    detail = f"{reason} 复核：{next_check}"
     actions = _render_open_stock_form(position.holding.code, provider_name, holdings_path)
     if not readonly:
         actions += _render_edit_holding_form(
@@ -4213,7 +4213,7 @@ def _render_opportunity_candidate_card(
             <p>入选证据：{escape(evidence)}</p>
             <p>主要风险：{escape(risk)}</p>
             <p>{escape(data_quality)}</p>
-            <a class="primary-button" href="/?{query}#stock">下一步：进入股票分析验证六维证据；不直接买入</a>
+            <a class="primary-button" href="/?{query}#stock">进入股票分析验证六维证据；不直接买入</a>
           </article>"""
 
 
@@ -4763,10 +4763,6 @@ def _render_compact_market_module(
         else "先等板块和成交额给出方向"
     )
     main_risk = market.risks[0] if market.risks else "未触发硬风险，仍按仓位纪律执行"
-    validation = market.tomorrow_watch[0] if market.tomorrow_watch else "成交额放大，主线前排不破分时均线。"
-    invalidation = market.risks[0] if market.risks else "数据过期、跌停扩散或主线资金转弱时，机会降级为只观察。"
-    event_text = market.tomorrow_watch[1] if len(market.tomorrow_watch) > 1 else "无重大事件时仍按交易日和公告窗口复核。"
-    mover_text = market.opportunities[0] if market.opportunities else "异动清单等待候选池和板块热力补充。"
     index_spine = _render_market_index_spine(market)
     breadth_lamps = _render_market_breadth_lamps(market, portfolio)
     return f"""
@@ -4778,7 +4774,6 @@ def _render_compact_market_module(
         </div>
         <span class="market-state-pill {risk_tone}">{escape(market.regime)}</span>
       </div>
-      {_render_research_data_flow_panel("每日大盘", "指数 K 线、涨跌家数、涨跌停情绪、成交额、资金与板块主线", "市场环境 -> 仓位闸门 -> 持仓/机会/个股复核")}
       <div class="market-focus-board {risk_tone}">
         <div class="market-focus-main">
           <span>市场摘要</span>
@@ -4808,14 +4803,11 @@ def _render_compact_market_module(
         <span>市场状态：{escape(_market_display_status(market, market_action))}</span>
         <span>风险暴露：目标现金 {escape(_market_target_cash(market))}</span>
         <span>主线：{escape(top_sector_name)}</span>
-        <a href="#portfolio" data-jump="portfolio">下一步：看我的持仓</a>
-        <a href="#opportunity" data-jump="opportunity">看热点机会，只观察触发条件</a>
         <span>交易日：{escape(market.trade_date)}</span>
         <span>数据源：顶部 Provider 和底部数据中台</span>
-        <span>验证条件：{escape(_short_condition(validation, 42))}</span>
-        <span>失效条件：{escape(_short_condition(invalidation, 42))}</span>
-        <span>异动清单：{escape(_short_condition(mover_text, 42))}</span>
-        <span>事件日历：{escape(_short_condition(event_text, 42))}</span>
+        <span>上涨/下跌/平盘：{escape(breadth_card)}</span>
+        <span>涨停/跌停：{market.limit_up_count} / {market.limit_down_count}</span>
+        <span>市场热度：{market.heat_score}/100</span>
       </div>
       {_render_market_sentiment_panel(news, candidate_universe=candidate_universe)}
       <div class="panel market-panel market-sector-panel" style="margin-top:16px">
@@ -4840,12 +4832,8 @@ def _render_market_barometer_strip(
     action: str,
     reason: str,
 ) -> str:
-    validation = market.tomorrow_watch[0] if market.tomorrow_watch else "成交额放大，主线前排不破分时均线。"
-    invalidation = market.risks[0] if market.risks else "数据过期、跌停扩散或主线资金转弱时，机会降级为只观察。"
     target_cash = _market_target_cash(market)
     market_status = _market_display_status(market, action)
-    event_text = market.tomorrow_watch[1] if len(market.tomorrow_watch) > 1 else "无重大事件时仍按交易日和公告窗口复核。"
-    mover_text = market.opportunities[0] if market.opportunities else "异动清单等待候选池和板块热力补充。"
     return f"""
       <div class="market-barometer-strip">
         <div class="market-barometer-title">
@@ -4860,13 +4848,10 @@ def _render_market_barometer_strip(
           <span>市场状态：{escape(market_status)}</span>
           <span>风险暴露：目标现金 {escape(target_cash)}，数据降级时自动只观察。</span>
           <span>主线：见板块方向，不用交易板兜底。</span>
-          <span>下一步：去股市机会验证候选；去我的持仓处理高风险仓位。</span>
-          <span>交易日：{escape(market.trade_date)}</span>
+                    <span>交易日：{escape(market.trade_date)}</span>
           <span>数据源：顶部全局状态条 / Provider</span>
-          <span>验证条件：{escape(_short_condition(validation, 42))}</span>
-          <span>失效条件：{escape(_short_condition(invalidation, 42))}</span>
-          <span>异动清单：{escape(_short_condition(mover_text, 42))}</span>
-          <span>事件日历：{escape(_short_condition(event_text, 42))}</span>
+          <span>涨停/跌停：{market.limit_up_count} / {market.limit_down_count}</span>
+          <span>市场热度：{market.heat_score}/100</span>
         </div>
       </div>"""
 
@@ -5150,11 +5135,8 @@ def _render_market_watch_stack(market: MarketSnapshot) -> str:
     )
 
 def _render_research_data_flow_panel(module: str, sources: str, output: str) -> str:
-    return f"""
-      <div class="quality-banner research-flow">
-        <strong>数据链路：K线 / 资金面 / 消息面</strong>
-        <span>{escape(module)} 使用 {escape(sources)}，输出 {escape(output)}。缺失的数据只作为风险提示，不补成交易理由。</span>
-      </div>"""
+    del module, sources, output
+    return ""
 
 
 def _market_decision_reason(market: MarketSnapshot, top_sector) -> str:
@@ -5668,7 +5650,7 @@ def _render_portfolio_command_panel(
 ) -> str:
     priority = _portfolio_priority_advice(advice)
     largest_risk = portfolio.risk_alerts[0] if portfolio.risk_alerts else _portfolio_default_risk(portfolio)
-    next_check = priority.next_check if priority is not None else "先录入持仓，再生成下一步复核条件。"
+    next_check = priority.next_check if priority is not None else "先录入持仓，再生成复核条件。"
     ledger_state = "线上只读" if readonly else "可编辑账本"
     tone = _portfolio_console_tone(portfolio)
     headline = _portfolio_console_headline(portfolio, market, advice)
@@ -5938,7 +5920,7 @@ def _render_portfolio_exposure_map(portfolio: PortfolioAnalysisReport) -> str:
     top_positions = "".join(_portfolio_weight_tile(position) for position in sorted(portfolio.positions, key=lambda item: item.weight, reverse=True)[:4])
     return f"""
       <div class="panel portfolio-exposure-panel" style="margin-top:16px">
-        <div class="editor-toolbar"><div><h3>行业暴露</h3><p class="section-subtitle">先看组合是不是押在同一条线，再决定能否新增同主题股票。</p></div><span class="portfolio-chip">下一步复核</span></div>
+        <div class="editor-toolbar"><div><h3>行业暴露</h3><p class="section-subtitle">先看组合是不是押在同一条线，再决定能否新增同主题股票。</p></div><span class="portfolio-chip">行业统计</span></div>
         <div class="portfolio-exposure-layout">
           <div class="portfolio-exposure-bars">{bars}</div>
           <div class="portfolio-weight-tiles">{top_positions}</div>
@@ -6934,7 +6916,7 @@ def _stock_cost_position_note(
     if position.pnl_ratio >= 15:
         return f"成本 {position.holding.cost_price:.2f}；优先保护利润，减仓触发：{trade_plan.reduce_trigger}"
     if position.pnl_ratio <= -10:
-        return f"成本 {position.holding.cost_price:.2f}；不补亏，失效条件：{invalid}"
+        return f"成本 {position.holding.cost_price:.2f}；不补亏，风控线 {invalid}"
     return f"成本 {position.holding.cost_price:.2f}；按买入/止损触发执行，不临时加仓。"
 
 

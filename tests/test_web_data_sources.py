@@ -10,10 +10,10 @@ def test_web_renders_research_data_flow_without_source_matrix_noise() -> None:
 
     assert "TDX MCP" in html
     assert "主要数据源" not in html
-    assert "数据链路：K线 / 资金面 / 消息面" in html
-    assert "日 K 线" in html
-    assert "资金流" in html
-    assert "新闻公告" in html
+    assert "数据链路：" not in html
+    assert "K线行情" in html
+    assert "资金面" in html
+    assert "新闻舆情" in html
     assert "热点机会" in html
 
 

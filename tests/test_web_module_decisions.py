@@ -75,6 +75,26 @@ def test_four_modules_do_not_render_narrator_checklist_panels() -> None:
         assert narrator_panel not in html
 
 
+
+
+def test_pages_show_data_statistics_analysis_without_narrator_blocks() -> None:
+    html = _sample_html()
+    market_html = _workspace(html, "market")
+
+    for text in [
+        "数据链路：",
+        "缺失的数据只作为风险提示",
+        "下一步：",
+        "验证条件：",
+        "失效条件：",
+        "异动清单：",
+        "事件日历：",
+    ]:
+        assert text not in html
+
+    for text in ["上涨/下跌/平盘", "涨停", "跌停", "市场热度", "板块方向", "代表股票", "分析结果"]:
+        assert text in market_html
+
 def test_global_data_center_surfaces_collection_channels_and_alerts() -> None:
     html = _sample_html()
 
@@ -102,7 +122,7 @@ def test_market_module_uses_real_breadth_counts_instead_of_unreturned() -> None:
     assert "上涨/下跌/平盘" in market_html
     assert "未返回" not in market_html
     assert "风险项" in market_html
-    assert "看热点机会" in market_html
+    assert "市场热度" in market_html
 
 
 def test_daily_market_module_matches_market_gate_design_doc() -> None:
@@ -117,8 +137,8 @@ def test_daily_market_module_matches_market_gate_design_doc() -> None:
         "风险项",
         "数据源",
         "交易日",
-        "验证条件",
-        "失效条件",
+        "涨停/跌停",
+        "市场热度",
     ]:
         assert text in market_html
 
@@ -132,10 +152,10 @@ def test_daily_market_module_surfaces_conclusion_card_fields() -> None:
         "风险暴露",
         "目标现金",
         "主线",
-        "下一步",
-        "异动清单",
-        "事件日历",
-        "只观察",
+        "交易日",
+        "上涨/下跌/平盘",
+        "涨停/跌停",
+        "市场热度",
     ]:
         assert text in market_html
 
@@ -221,7 +241,7 @@ def test_stock_module_surfaces_decision_chain_and_holding_cost() -> None:
     stock_html = _workspace(html, "stock")
 
     for text in [
-        "个股三面复核",
+        "多维诊断",
         "个股证据抽屉",
         "持仓成本视角",
         "交易触发",
@@ -405,7 +425,7 @@ def test_portfolio_module_reads_like_disposal_console_before_table() -> None:
         "最大风险",
         "行业暴露",
         "账本状态",
-        "下一步复核",
+        "行业暴露",
     ]:
         assert text in portfolio_html
 

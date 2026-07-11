@@ -188,7 +188,7 @@ def test_stock_page_keeps_agentic_method_but_hides_noisy_detail_by_default() -> 
     next_workspace = html.find('<section class="workspace-pane', stock_start + 1)
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
-    assert "个股三面复核" in stock_html
+    assert "多维诊断" in stock_html
     assert "证据链" in stock_html
     assert "风险边界" in stock_html
     assert "完整方法链" in stock_html

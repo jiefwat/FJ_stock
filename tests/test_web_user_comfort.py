@@ -23,9 +23,9 @@ def test_four_modules_guide_user_workflow_and_fast_jumps() -> None:
     assert "我的持仓" in html
     assert "个股分析" in html
     assert "热点机会" in html
-    assert 'data-jump="portfolio"' in html
-    assert 'data-jump="stock"' in html
-    assert 'data-jump="opportunity"' in html
+    assert 'data-jump="portfolio"' not in html
+    assert 'data-jump="opportunity"' not in html
+    assert 'href="/?code=' in html
     assert 'data-jump="status"' not in html
     assert "A-Share Desk" not in html
     assert "document.querySelectorAll('[data-jump]')" in html

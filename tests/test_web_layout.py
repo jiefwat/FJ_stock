@@ -42,7 +42,7 @@ def test_web_page_uses_structured_workbench_layout() -> None:
 def test_four_modules_explain_professional_data_flow() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
-    assert "数据链路：K线 / 资金面 / 消息面" in html
+    assert "数据链路：" not in html
     assert "每日大盘" in html
     assert "持仓明细" in html
     assert "股票摘要" in html

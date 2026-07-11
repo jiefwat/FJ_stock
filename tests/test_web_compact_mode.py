@@ -56,7 +56,7 @@ def test_compact_stock_module_has_single_core_surface() -> None:
     assert "当前动作" in html
     assert "买点" in html
     assert "止损" in html
-    assert "个股三面复核" in html
+    assert "多维诊断" in html
 
 
 def test_error_page_uses_current_workspace_shell() -> None:

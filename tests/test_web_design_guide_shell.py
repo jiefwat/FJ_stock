@@ -68,7 +68,7 @@ def test_four_modules_keep_module_owned_actions() -> None:
     for text in [
         'data-action="add-holding"',
         'class="stock-form" method="get"',
-        "个股三面复核",
+        "多维诊断",
         "股票机会",
         'href="/?code=',
     ]:
@@ -83,7 +83,7 @@ def test_market_page_owns_market_decision_flow() -> None:
 
     for text in ["每日大盘", "市场摘要", "风险项", "上涨/下跌", "指数表现", "板块方向"]:
         assert text in market_html
-    assert 'data-jump="opportunity"' in market_html
+    assert 'data-jump="opportunity"' not in market_html
 
 
 def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
