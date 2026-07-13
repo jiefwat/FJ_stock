@@ -86,15 +86,15 @@ def test_web_renders_portfolio_interaction_controls(tmp_path: Path) -> None:
         portfolio_notice=PortfolioNotice(level="success", message="已新增持仓"),
     )
 
-    assert "持仓分析" in html
+    assert "组合风控结论" in html
+    assert "持仓证据" in html
+    assert "持仓账本审计" in html
     assert "对应板块分析" not in html
     assert "仓位/成本分析" not in html
-    assert "技术面" in html
-    assert "资金面" in html
-    assert "基本面" in html
-    assert "消息面" in html
-    assert "板块/主题" in html
-    assert "仓位成本" in html
+    assert "处置队列" in html
+    assert "风险暴露登记表" in html
+    assert "持仓边界" in html
+    assert "禁止动作" in html
     assert 'method="post" action="/holdings"' in html
     assert 'name="portfolio_action" value="upsert"' in html
     assert 'name="portfolio_action" value="delete"' in html

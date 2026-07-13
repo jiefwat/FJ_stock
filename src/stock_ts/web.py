@@ -68,6 +68,7 @@ from .research.evidence import (
 )
 from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
+from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
@@ -81,6 +82,7 @@ from .webapp import (
     render_document,
     render_market_workspace,
     render_opportunity_workspace,
+    render_portfolio_workspace,
     render_stock_workspace,
     workspace_action,
 )
@@ -1103,6 +1105,7 @@ def render_page(
             edit_code,
             refresh_time=refresh_time,
             agentic_decisions=portfolio_agentic_decisions,
+            quality=quality,
         ),
         "stock": _render_compact_stock_module(
             stock,
@@ -8583,6 +8586,7 @@ def _render_compact_portfolio_module(
     edit_code: str,
     refresh_time: str,
     agentic_decisions: dict[str, StockAgentDecision] | None = None,
+    quality: DataQualityView | None = None,
 ) -> str:
     advice = build_portfolio_advice(
         portfolio,
@@ -8591,6 +8595,14 @@ def _render_compact_portfolio_module(
         transactions_path="data/portfolio/transactions.csv",
     )
     advice_by_code = {item.code: item for item in advice.position_advices}
+    quote_status = quality.quote_status if quality else EvidenceStatus.COMPLETE
+    assessment = assess_market_regime(market, quote_status=quote_status)
+    dossier = build_portfolio_dossier(
+        portfolio,
+        advice,
+        market=assessment,
+        quote_status=quote_status,
+    )
     editing_position = next(
         (position for position in portfolio.positions if position.holding.code == edit_code),
         None,
@@ -8606,32 +8618,100 @@ def _render_compact_portfolio_module(
             holdings_path=holdings_path,
             editing_position=editing_position,
         )
-    analysis_list = _render_portfolio_unified_analysis_panel(
-        portfolio,
-        advice_by_code,
-        market,
-        sectors,
-        provider_name=provider_name,
-        holdings_path=holdings_path,
-        stock_code=stock_code,
-        readonly=readonly,
-        agentic_decisions=agentic_decisions or {},
-    )
-    overall_summary = _render_portfolio_overall_summary_card(
-        portfolio,
-        advice,
-        advice_by_code,
-        market,
+    if assessment.stage == "数据暂停":
+        analysis_list = _render_portfolio_stale_audit(
+            portfolio,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            stock_code=stock_code,
+            readonly=readonly,
+        )
+    else:
+        analysis_list = _render_portfolio_unified_analysis_panel(
+            portfolio,
+            advice_by_code,
+            market,
+            sectors,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            stock_code=stock_code,
+            readonly=readonly,
+            agentic_decisions=agentic_decisions or {},
+        )
+    workspace = render_portfolio_workspace(
+        dossier,
+        supporting_evidence_html=analysis_list,
     )
     notice_html = _render_portfolio_notice(notice)
     return f"""
     <section class="module" id="module-portfolio">
       <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="portfolio")}</div></div>
       {notice_html}
-      {overall_summary}
+      {workspace}
       {editor}
-      {analysis_list}
     </section>"""
+
+
+def _render_portfolio_stale_audit(
+    portfolio: PortfolioAnalysisReport,
+    *,
+    provider_name: str,
+    holdings_path: str,
+    stock_code: str,
+    readonly: bool,
+) -> str:
+    if not portfolio.positions:
+        rows = """
+        <tr><td colspan="4"><div class="empty-state"><strong>还没有持仓</strong>
+        <p>先录入股票、股数和成本价；行情刷新后再生成处置动作。</p></div></td></tr>
+        """
+    else:
+        rendered_rows: list[str] = []
+        for position in portfolio.positions:
+            actions = _render_open_stock_form(
+                position.holding.code,
+                provider_name,
+                holdings_path,
+            )
+            if not readonly:
+                actions += _render_edit_holding_form(
+                    position.holding.code,
+                    stock_code,
+                    provider_name,
+                    holdings_path,
+                )
+                actions += _render_delete_holding_form(
+                    position.holding.code,
+                    stock_code,
+                    provider_name,
+                    holdings_path,
+                )
+            cost = (
+                f"{position.holding.cost_price:.2f}"
+                if position.holding.cost_price > 0
+                else "待补录"
+            )
+            rendered_rows.append(
+                "<tr>"
+                f"<td class='name-cell'><strong>{escape(position.holding.name)}</strong>"
+                f"<span>{escape(position.holding.code)}</span></td>"
+                f"<td>{_format_form_number(position.holding.shares)} 股 · 成本 {cost}</td>"
+                f"<td>{position.weight:.1%}（历史快照）<br><small>行情待刷新</small></td>"
+                f"<td class='action-cell'>{actions}</td>"
+                "</tr>"
+            )
+        rows = "".join(rendered_rows)
+    return f"""
+      <div class="panel portfolio-stock-analysis portfolio-stale-audit">
+        <div class="editor-toolbar">
+          <div><h3>持仓账本审计</h3><p class="section-subtitle">仅展示股数、成本与历史暴露；当前价格动作待刷新。</p></div>
+          <span class="portfolio-chip">禁止使用旧行情形成价格动作</span>
+        </div>
+        <table class="data-table portfolio-analysis-table">
+          <thead><tr><th>股票</th><th>账本</th><th>历史暴露</th><th>操作</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>"""
 
 
 def _render_portfolio_overall_summary_card(

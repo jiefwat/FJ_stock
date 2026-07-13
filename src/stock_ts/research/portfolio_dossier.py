@@ -151,7 +151,11 @@ def _queue_item(
         state = "重点观察"
     else:
         state = "可继续持有"
-    reason = advice.reason if advice is not None else _position_reason(position)
+    reason = (
+        "行情时效未通过，仅保留股数、成本和历史暴露审计"
+        if blocked
+        else advice.reason if advice is not None else _position_reason(position)
+    )
     trigger = "待刷新" if blocked else (advice.next_check if advice else "复核趋势与风险")
     invalidation = "待刷新" if blocked else _invalidation(position, advice)
     return PortfolioQueueItem(
@@ -160,7 +164,7 @@ def _queue_item(
         code=position.holding.code,
         name=position.holding.name,
         current_weight=position.weight,
-        cost_context=_cost_context(position),
+        cost_context=_cost_context(position, blocked=blocked),
         reason=reason,
         trigger=trigger,
         invalidation=invalidation,
@@ -225,9 +229,11 @@ def _exposures(portfolio: PortfolioAnalysisReport) -> tuple[PortfolioExposure, .
     return tuple(sorted(exposures, key=lambda item: item.weight, reverse=True))
 
 
-def _cost_context(position: PositionAnalysis) -> str:
+def _cost_context(position: PositionAnalysis, *, blocked: bool) -> str:
     if position.holding.cost_price <= 0:
         return "成本待补录"
+    if blocked:
+        return f"成本 {position.holding.cost_price:.2f} / 现价待刷新 / 盈亏待刷新"
     return (
         f"成本 {position.holding.cost_price:.2f} / 现价 {position.latest_price:.2f} / "
         f"盈亏 {position.pnl_ratio:+.1f}%"

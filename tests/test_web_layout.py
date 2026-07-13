@@ -45,7 +45,7 @@ def test_four_modules_explain_professional_data_flow() -> None:
 
     assert "数据链路：" not in html
     assert "每日大盘" in html
-    assert "持仓分析" in html
+    assert "组合风控结论" in html
     assert "对应板块分析" not in html
     assert "仓位/成本分析" not in html
     assert "分析内容" in html
@@ -68,7 +68,9 @@ def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None
 def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
-    assert "持仓分析" in html
+    assert "组合风控结论" in html
+    assert "处置队列" in html
+    assert "持仓边界" in html
     assert "技术结构" in html
     assert "资金与交易" in html
     assert "财务质量" in html

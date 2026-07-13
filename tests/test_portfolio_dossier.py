@@ -191,6 +191,11 @@ def test_stale_quote_suppresses_numeric_portfolio_actions() -> None:
     assert dossier.verdict.confidence == 0
     assert all(item.state == "待补数据" for item in dossier.queue)
     assert all(item.trigger == "待刷新" for item in dossier.queue)
+    assert all(
+        "现价待刷新" in item.cost_context or item.cost_context == "成本待补录"
+        for item in dossier.queue
+    )
+    assert all("行情时效未通过" in item.reason for item in dossier.queue)
     assert all(item.target_range == "待刷新" for item in dossier.boundaries)
     assert all(item.invalidation == "待刷新" for item in dossier.boundaries)
 

@@ -7,6 +7,7 @@ from .composition import (
 from .forms import workspace_action
 from .market_workspace import render_market_workspace
 from .opportunity_workspace import render_opportunity_workspace
+from .portfolio_workspace import render_portfolio_workspace
 from .shell import (
     app_script,
     render_app_toolbar,
@@ -28,6 +29,7 @@ __all__ = [
     "render_document",
     "render_market_workspace",
     "render_opportunity_workspace",
+    "render_portfolio_workspace",
     "render_stock_workspace",
     "render_sidebar",
     "render_topbar",

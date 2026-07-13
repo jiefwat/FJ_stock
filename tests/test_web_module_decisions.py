@@ -85,7 +85,7 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
 
     assert "股票涨跌统计" in html
     assert "每日大盘" in html
-    assert "持仓分析" in html
+    assert "组合风控结论" in html
     assert "分析内容" in html
     assert "机会总闸门" in html
     assert "研究候选" in html
@@ -1143,9 +1143,8 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
     stock_html = _workspace(html, "stock")
     opportunity_html = _workspace(html, "opportunity")
 
-    for section in [portfolio_html]:
-        for text in ["动作：", "主因：", "触发：", "失效："]:
-            assert text in section
+    for text in ["组合风控结论", "处置依据", "复核触发", "失效条件", "禁止动作"]:
+        assert text in portfolio_html
 
     for text in ["机会总闸门", "支持证据", "最大反证", "下一步："]:
         assert text in opportunity_html
@@ -1162,16 +1161,17 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
         assert stale_phrase not in opportunity_html
 
 
-def test_core_modules_show_explicit_buy_sell_guidance_not_only_analysis() -> None:
+def test_core_modules_show_explicit_execution_boundaries_not_only_analysis() -> None:
     html = _sample_html(stock_code="603278")
-    legacy_sections = [
-        _workspace(html, "market"),
-        _workspace(html, "portfolio"),
-    ]
+    market_html = _workspace(html, "market")
+    for text in ["买卖指导", "买入触发", "卖出/减仓", "仓位上限", "止损/失效"]:
+        assert text in market_html
 
-    for section in legacy_sections:
-        for text in ["买卖指导", "买入触发", "卖出/减仓", "仓位上限", "止损/失效"]:
-            assert text in section
+    portfolio_html = _workspace(html, "portfolio")
+    for text in ["组合风控结论", "处置队列", "持仓边界", "禁止动作"]:
+        assert text in portfolio_html
+    assert "买卖指导" not in portfolio_html
+    assert "买入触发" not in portfolio_html
 
     stock_html = _workspace(html, "stock")
     for text in ["仓位与执行边界", "入场触发", "减仓触发", "仓位上限", "失效条件"]:
@@ -1575,11 +1575,11 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
 
     for text in [
         "我的持仓",
-        "组合整体总结",
-        "看好",
-        "建议轻仓",
-        "继续观察",
-        "持仓分析",
+        "组合风控结论",
+        "处置队列",
+        "风险暴露登记表",
+        "持仓边界",
+        "持仓证据",
         "新增持仓",
         "编辑",
         "删除",
@@ -1587,12 +1587,11 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
     ]:
         assert text in portfolio_html
 
-    for text in [
-        "重点结论",
-        "简单原因",
-        "关键触发",
-    ]:
+    for text in ["处置依据", "复核触发", "失效条件", "禁止动作"]:
         assert text in portfolio_html
+
+    for obsolete_text in ["组合整体总结", "看好", "建议轻仓", "继续观察", "买卖指导"]:
+        assert obsolete_text not in portfolio_html
 
     for old_section in [
         "对应板块分析",
@@ -1606,20 +1605,14 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
     ]:
         assert old_section not in portfolio_html
 
-    assert portfolio_html.index("组合整体总结") < portfolio_html.index("持仓分析")
+    assert portfolio_html.index("组合风控结论") < portfolio_html.index("处置队列")
+    assert portfolio_html.index("处置队列") < portfolio_html.index("持仓证据")
 
 
 def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    for text in [
-        "重点结论",
-        "简单原因",
-        "关键触发",
-        "趋势",
-        "盈亏",
-        "板块",
-    ]:
+    for text in ["处置依据", "复核触发", "失效条件", "首要风险", "历史暴露"]:
         assert text in portfolio_html
 
     for shallow_text in [
@@ -1643,18 +1636,14 @@ def test_portfolio_reasons_are_stock_specific_not_repeated_market_copy() -> None
 def test_portfolio_uses_same_stock_analysis_method_as_stock_module() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    for text in [
-        "重点结论",
-        "简单原因",
-        "关键触发",
-    ]:
+    for text in ["组合风控结论", "处置依据", "复核触发", "失效条件"]:
         assert text in portfolio_html
 
     for old_label in ["技术面原因", "板块情绪原因", "分析师团队", "多空审议", "交易员/组合经理"]:
         assert old_label not in portfolio_html
 
 
-def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> None:
+def test_portfolio_module_uses_research_dossier_not_legacy_console() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in {
@@ -1662,15 +1651,14 @@ def test_portfolio_module_removes_disposal_console_and_maintenance_panels() -> N
         "今日先处理",
         "持仓风险处置",
         "处理队列",
-        "风险预算",
         "操作边界",
-        "行业暴露",
         "持仓明细",
         "持仓明细和维护",
         "数据链路",
-        "下一步",
     }:
         assert text not in portfolio_html
+    for text in ["市场风险预算", "处置队列", "风险暴露登记表", "持仓边界"]:
+        assert text in portfolio_html
 
 
 def test_tdx_snapshot_defensive_market_keeps_defensive_action() -> None:
@@ -2355,7 +2343,7 @@ def test_market_sector_analysis_shows_conclusion_not_full_method_chain() -> None
 def test_portfolio_stocks_hide_dual_git_method_chain_summary_only() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    for text in ["重点结论", "简单原因", "关键触发"]:
+    for text in ["组合风控结论", "处置依据", "复核触发", "失效条件"]:
         assert text in portfolio_html
 
     for text in [
