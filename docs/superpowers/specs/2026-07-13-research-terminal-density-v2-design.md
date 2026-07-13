@@ -1,7 +1,7 @@
 # Research Terminal Density V2 Design
 
-Date: 2026-07-13  
-Branch: `codex/research-terminal-density-v2`  
+Date: 2026-07-13
+Branch: `codex/research-terminal-density-v2`
 Status: approved by the user's standing instruction to proceed autonomously
 
 ## 1. Goal

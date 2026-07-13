@@ -2,9 +2,10 @@
 
 - [x] Audit desktop and mobile density problems.
 - [x] Approve the hierarchy-and-density design direction.
-- [ ] Implement the global Research Tape.
-- [ ] Compact the mobile shell and navigation.
-- [ ] Add portfolio progressive disclosure.
-- [ ] Add opportunity progressive disclosure.
-- [ ] Complete focused, full-suite, and visual verification.
+- [x] Implement the global Research Tape.
+- [x] Compact the mobile shell and navigation.
+- [x] Add portfolio progressive disclosure.
+- [x] Add opportunity progressive disclosure.
+- [x] Complete focused and visual verification.
+- [x] Complete final lint, contract, and full-suite verification.
 - [ ] Review, merge, push, and deploy.
