@@ -145,18 +145,19 @@ def test_pages_show_data_statistics_analysis_without_narrator_blocks() -> None:
     ]:
         assert text in market_html
 
-def test_global_data_center_is_simple_status_list() -> None:
+def test_global_data_center_is_recovery_command_center() -> None:
     html = _sample_html()
     data_center_html = _workspace(html, "data-center")
 
     for text in [
         "数据中台",
-        "数据状态",
-        "更新时间",
-        "结论",
-        "数据",
-        "状态",
-        "影响",
+        "数据就绪闸门",
+        "恢复运行轨道",
+        "模块影响面",
+        "完整来源账本",
+        "阻断域",
+        "复核域",
+        "可用域",
         "K线行情",
         "资金面",
         "新闻舆情",
@@ -165,18 +166,9 @@ def test_global_data_center_is_simple_status_list() -> None:
     ]:
         assert text in data_center_html
 
-    for removed in [
-        "专业数据中台",
-        "采集渠道",
-        "覆盖范围",
-        "未采集/缺失",
-        "人工复核入口",
-        "核对K线",
-        "可用数据域",
-        "覆盖 12/12",
-        "个股新闻 5/12",
-        "市场消息 2 条",
-    ]:
+    assert data_center_html.index("数据就绪闸门") < data_center_html.index("恢复运行轨道")
+    assert data_center_html.index("恢复运行轨道") < data_center_html.index("模块影响面")
+    for removed in ["自动修复成功", "一键恢复全部数据", "数据中台预警："]:
         assert removed not in data_center_html
 
 
@@ -1804,11 +1796,13 @@ def test_data_center_keeps_mcp_market_news_status_simple() -> None:
 
     html = _sample_html(provider=McpNewsProvider(), provider_name="tdx-snapshot")
     data_center_html = _workspace(html, "data-center")
+    data_center_front = data_center_html.split('<details class="data-source-ledger">', 1)[0]
 
     assert "新闻舆情" in data_center_html
     assert "2026-07-11 09:00:00 北京时间" in data_center_html
     assert "2026-07-11T01:00:00Z" not in data_center_html
-    assert "longbridge.mcp" not in data_center_html
+    assert "longbridge.mcp" not in data_center_front
+    assert "longbridge.mcp" in data_center_html
 
 
 def test_data_refresh_times_render_as_beijing_time() -> None:
@@ -2069,7 +2063,7 @@ def test_global_freshness_bar_stays_ok_when_only_optional_stock_context_is_missi
     assert "基本面" in data_center_html
 
 
-def test_data_center_hides_snapshot_coverage_details() -> None:
+def test_data_center_keeps_snapshot_coverage_inside_source_ledger() -> None:
     class CoverageProvider(SampleDataProvider):
         def fetch_candidate_universe_metadata(self) -> dict[str, str]:
             return {
@@ -2085,16 +2079,21 @@ def test_data_center_hides_snapshot_coverage_details() -> None:
 
     html = _sample_html(provider=CoverageProvider(), provider_name="tdx-snapshot")
     data_center_html = _workspace(html, "data-center")
+    data_center_front = data_center_html.split('<details class="data-source-ledger">', 1)[0]
 
     assert "K线行情" in data_center_html
     assert "资金面" in data_center_html
     assert "新闻舆情" in data_center_html
-    assert "覆盖 12/12" not in data_center_html
-    assert "覆盖 4/12" not in data_center_html
-    assert "个股新闻 5/12" not in data_center_html
-    assert "市场消息 2 条" not in data_center_html
-    assert "公告 0/12" not in data_center_html
-    assert "财务指标 3/12" not in data_center_html
+    for detail in [
+        "覆盖 12/12",
+        "覆盖 4/12",
+        "个股新闻 5/12",
+        "市场消息 2 条",
+        "公告 0/12",
+        "财务指标 3/12",
+    ]:
+        assert detail not in data_center_front
+        assert detail in data_center_html
 
 
 def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() -> None:
@@ -2137,11 +2136,14 @@ def test_data_center_surfaces_full_chain_validation_artifact(
 
     html = _sample_html()
     data_center_html = _workspace(html, "data-center")
+    data_center_front = data_center_html.split('<details class="data-source-ledger">', 1)[0]
 
     assert "全链路校验" in data_center_html
     assert "持仓 688362 缺少K线" in data_center_html
-    assert "market:ok" not in data_center_html
-    assert "portfolio:failed" not in data_center_html
+    assert "market:ok" not in data_center_front
+    assert "portfolio:failed" not in data_center_front
+    assert "market:ok" in data_center_html
+    assert "portfolio:failed" in data_center_html
     assert "全链路存在阻断节点" in data_center_html
     assert "数据中台预警：" not in data_center_html
 

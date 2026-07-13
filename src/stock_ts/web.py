@@ -59,6 +59,7 @@ from .professional_research import (
 )
 from .providers import create_provider
 from .providers.base import StockDataProvider
+from .research.data_center_dossier import build_data_center_dossier
 from .research.evidence import (
     EvidenceStatus,
     ResearchInputQuality,
@@ -89,6 +90,7 @@ from .webapp import (
 from .webapp import (
     render_sidebar as render_shell_sidebar,
 )
+from .webapp.data_center_workspace import render_data_center_workspace
 from .webapp.shell import (
     PUBLIC_SITE_DOMAIN,
     PUBLIC_SITE_LOGO,
@@ -4001,83 +4003,21 @@ def _render_data_center_panel(
     provider_name: str,
     holdings_path: str,
 ) -> str:
-    rows_to_show = _simple_data_center_rows(data_center.rows)
-    rows = "".join(
-        f"""
-        <tr id="{escape(_data_center_anchor(row.category))}" class="data-center-row {escape(row.level)}">
-          <td>{escape(row.category)}</td>
-          <td>{escape(row.status)}</td>
-          <td>{escape(row.latest_at)}</td>
-          <td>{escape(_simple_data_center_impact(row))}</td>
-        </tr>"""
-        for row in rows_to_show
+    dossier = build_data_center_dossier(
+        status=data_center.status,
+        updated_at=data_center.updated_at,
+        rows=data_center.rows,
     )
-    alerts = _simple_data_center_alerts(rows_to_show)
-    alert_items = "".join(
-        f'<li class="data-center-alert">{escape(item)}</li>' for item in alerts
+    return render_data_center_workspace(
+        dossier,
+        refresh_html=_render_module_refresh_tools(
+            refresh_time=data_center.updated_at,
+            stock_code=stock_code,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            workspace="data-center",
+        ),
     )
-    conclusion = _simple_data_center_conclusion(data_center, rows_to_show)
-    return f"""
-      <section class="module panel data-center-panel" id="module-data-center" aria-label="数据中台">
-        <div class="editor-toolbar">
-          <div><h3>数据中台</h3><p class="section-subtitle">只看数据能不能用、哪里有问题、是否影响分析。</p></div>
-          <div class="module-header-meta">
-            <span class="portfolio-chip">{escape(data_center.status)} · {escape(data_center.updated_at)}</span>
-            {_render_module_refresh_tools(refresh_time=data_center.updated_at, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="data-center")}
-          </div>
-        </div>
-        <div class="data-center-brief">
-          <span>数据状态：{escape(data_center.status)}</span>
-          <span>更新时间：{escape(data_center.updated_at)}</span>
-          <strong>结论：{escape(conclusion)}</strong>
-        </div>
-        <table class="data-table">
-          <thead><tr><th>数据</th><th>状态</th><th>更新时间</th><th>影响</th></tr></thead>
-          <tbody>{rows}</tbody>
-        </table>
-        <div class="data-center-alert-box {'high' if data_center.status == '影响分析' else ''}">
-          <strong>预警</strong><ul class="data-center-alert-list">{alert_items}</ul>
-        </div>
-      </section>"""
-
-
-def _simple_data_center_rows(rows: list[DataCenterRow]) -> list[DataCenterRow]:
-    core_categories = ["K线行情", "资金面", "新闻舆情", "公告", "基本面", "全链路校验"]
-    by_category = {row.category: row for row in rows}
-    return [by_category[item] for item in core_categories if item in by_category]
-
-
-def _simple_data_center_impact(row: DataCenterRow) -> str:
-    if row.missing and row.missing != "无":
-        return f"{row.impact}；缺口：{row.missing}"
-    return row.impact
-
-
-def _simple_data_center_conclusion(
-    data_center: DataCenterView, rows: list[DataCenterRow]
-) -> str:
-    if data_center.status == "影响分析":
-        blocked = [row.category for row in rows if row.level == "blocked"]
-        return f"{'、'.join(blocked[:3])} 会影响分析" if blocked else "有数据缺口会影响分析"
-    if data_center.status == "需复核":
-        warnings = [row.category for row in rows if row.level == "warn"]
-        return f"{'、'.join(warnings[:3])} 需复核" if warnings else "部分数据需复核"
-    return "数据可用"
-
-
-def _simple_data_center_alerts(rows: list[DataCenterRow]) -> list[str]:
-    alerts = [
-        _simple_data_center_alert(row)
-        for row in rows
-        if row.level in {"warn", "blocked"} and row.impact != "不影响分析"
-    ]
-    return alerts[:3] or ["暂无影响分析的预警"]
-
-
-def _simple_data_center_alert(row: DataCenterRow) -> str:
-    if row.missing and row.missing != "无":
-        return f"{row.category}：{row.status}，{row.missing}，{row.impact}"
-    return f"{row.category}：{row.status}，{row.impact}"
 
 
 def _render_data_center_summary(data_center: DataCenterView) -> str:
@@ -4099,21 +4039,6 @@ def _render_data_center_summary(data_center: DataCenterView) -> str:
         <span>更新 {escape(data_center.updated_at)}</span>
         <a href="#data-center">查看完整状态</a>
       </div>"""
-
-
-def _data_center_anchor(category: str) -> str:
-    mapping = {
-        "大盘行情": "data-domain-market",
-        "K线行情": "data-domain-kline",
-        "技术面": "data-domain-technical",
-        "候选池": "data-domain-candidates",
-        "资金面": "data-domain-fund",
-        "新闻舆情": "data-domain-news",
-        "公告": "data-domain-announcement",
-        "基本面": "data-domain-fundamental",
-        "全链路校验": "data-domain-chain",
-    }
-    return mapping.get(category, f"data-domain-{category}")
 
 
 def _freshness_detail(quality: DataQualityView) -> str:
