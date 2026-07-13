@@ -76,13 +76,13 @@ Create a dedicated dossier boundary under `stock_ts.research`.
 
 Recovery order is meaningful and therefore may use numbered steps:
 
-1. full-chain validation;
-2. market and K-line inputs;
-3. candidate universe and fund-flow inputs;
-4. news and event context;
-5. announcements and fundamentals.
+1. market and K-line inputs;
+2. candidate universe and fund-flow inputs;
+3. news and event context;
+4. announcements and fundamentals;
+5. full-chain validation as the final acceptance check.
 
-Within the same rank, blocked rows precede warnings and existing row order remains stable.
+Within the same rank, blocked rows precede warnings and existing row order remains stable. Full-chain validation is never presented as a repairable source; it closes the runbook after upstream inputs are restored.
 
 ### 4.3 DataImpactLane
 

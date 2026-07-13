@@ -62,7 +62,7 @@ def test_data_center_workspace_is_gate_first_and_recovery_ordered() -> None:
     assert html.index("恢复运行轨道") < html.index("模块影响面")
     assert "停止强结论，按恢复顺序补齐数据" in html
     assert "01" in html
-    assert html.index("全链路校验") < html.index("K线行情")
+    assert html.index("K线行情") < html.index("全链路校验")
     assert "每日大盘" in html
     assert "我的持仓" in html
     assert "个股分析" in html

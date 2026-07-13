@@ -55,11 +55,11 @@ def test_blocked_dossier_orders_recovery_and_preserves_ledger() -> None:
     assert dossier.gate.warning_count == 1
     assert dossier.gate.ready_count == 1
     assert [item.category for item in dossier.recovery_steps] == [
-        "全链路校验",
         "K线行情",
         "新闻舆情",
+        "全链路校验",
     ]
-    assert dossier.gate.next_step == "先处理全链路校验：持仓 688362 缺少K线"
+    assert dossier.gate.next_step == "先处理K线行情：最近交易日K线"
     assert len(dossier.ledger) == len(rows)
     assert [item.category for item in dossier.ledger] == [row.category for row in rows]
 

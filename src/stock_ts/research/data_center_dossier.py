@@ -24,7 +24,6 @@ class DataCenterRowLike(Protocol):
 
 
 _RECOVERY_RANK = {
-    "全链路校验": 0,
     "大盘行情": 1,
     "K线行情": 1,
     "技术面": 2,
@@ -33,6 +32,7 @@ _RECOVERY_RANK = {
     "新闻舆情": 3,
     "公告": 4,
     "基本面": 4,
+    "全链路校验": 5,
 }
 
 _MODULE_DOMAINS = (

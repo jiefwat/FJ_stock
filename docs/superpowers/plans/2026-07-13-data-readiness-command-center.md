@@ -31,7 +31,7 @@ dossier = build_data_center_dossier(
 assert dossier.gate.state == "影响分析"
 assert dossier.gate.action == "停止强结论，按恢复顺序补齐数据"
 assert dossier.gate.blocked_count == 2
-assert [item.category for item in dossier.recovery_steps] == ["全链路校验", "K线行情", "新闻舆情"]
+assert [item.category for item in dossier.recovery_steps] == ["K线行情", "新闻舆情", "全链路校验"]
 assert len(dossier.ledger) == len(rows)
 ```
 
