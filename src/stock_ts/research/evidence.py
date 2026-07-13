@@ -3,15 +3,18 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 
-class EvidenceStatus(StrEnum):
+class EvidenceStatus(str, Enum):
     COMPLETE = "complete"
     DEGRADED = "degraded"
     MISSING = "missing"
     STALE = "stale"
     BLOCKED = "blocked"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True)
