@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research.evidence import EvidenceStatus
@@ -114,3 +115,23 @@ def test_stale_web_page_has_no_recommendation_surface() -> None:
     assert "待补数据" in opportunity_html
     assert "推荐买入" not in opportunity_html
     assert "推荐股票" not in opportunity_html
+
+
+def test_opportunity_workspace_keeps_six_front_candidates_and_all_records() -> None:
+    dossier = _dossier()
+    seed = dossier.candidates[0]
+    candidates = tuple(
+        replace(seed, code=f"6000{index:02d}", name=f"候选{index:02d}")
+        for index in range(1, 9)
+    )
+    html = render_opportunity_workspace(
+        replace(dossier, candidates=candidates),
+        provider_name="sample",
+        holdings_path="data/portfolio/holdings.csv",
+    )
+
+    assert html.count("data-opportunity-stock-row") == 8
+    front = html.split('class="candidate-overflow', 1)[0]
+    assert front.count("data-opportunity-stock-row") == 6
+    assert "查看其余 2 只候选" in html
+    assert html.count("进入个股分析") == 8

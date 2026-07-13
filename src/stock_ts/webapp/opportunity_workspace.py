@@ -34,10 +34,27 @@ def render_opportunity_workspace(
         f"<small>{escape(item.consequence)}</small></article>"
         for item in dossier.risks
     )
+    front_candidates = dossier.candidates[:6]
+    overflow_candidates = dossier.candidates[6:]
     candidates = "".join(
         _render_candidate(item, provider_name=provider_name, holdings_path=holdings_path)
-        for item in dossier.candidates
+        for item in front_candidates
     )
+    overflow = ""
+    if overflow_candidates:
+        overflow_cards = "".join(
+            _render_candidate(
+                item,
+                provider_name=provider_name,
+                holdings_path=holdings_path,
+            )
+            for item in overflow_candidates
+        )
+        overflow = (
+            '<details class="candidate-overflow research-overflow">'
+            f"<summary>查看其余 {len(overflow_candidates)} 只候选</summary>"
+            f'<div class="candidate-decision-grid">{overflow_cards}</div></details>'
+        )
     if not candidates:
         candidates = (
             '<div class="dossier-empty-state">候选池为空；刷新候选源后重新生成研究漏斗。</div>'
@@ -75,6 +92,7 @@ def render_opportunity_workspace(
           <div class="dossier-heading"><span>CANDIDATES</span>
             <h3 id="opportunity-candidates-title">研究候选</h3></div>
           <div class="candidate-decision-grid">{candidates}</div>
+          {overflow}
         </section>
         <section class="opportunity-risk-register" aria-labelledby="opportunity-risks-title">
           <div class="dossier-heading"><span>RISK FIRST</span>

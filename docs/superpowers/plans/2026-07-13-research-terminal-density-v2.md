@@ -267,7 +267,7 @@ def test_opportunity_workspace_keeps_six_front_candidates_and_all_records() -> N
     )
 
     assert html.count("data-opportunity-stock-row") == 8
-    front = html.split('class="candidate-overflow"', 1)[0]
+    front = html.split('class="candidate-overflow', 1)[0]
     assert front.count("data-opportunity-stock-row") == 6
     assert "查看其余 2 只候选" in html
     assert html.count("进入个股分析") == 8
