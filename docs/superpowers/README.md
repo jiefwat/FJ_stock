@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `market-session-playbook/`：把每日大盘收敛为盘前、盘中、收盘三段式市场剧本
 - `data-readiness-command-center/`：把数据中台升级为影响优先的恢复指挥台
 - `professional-core-workspaces/`：统一每日大盘、我的持仓与热点机会的专业决策链
 - `professional-stock-dossier/`：统一专业个股研究档案与条件化操作指引
@@ -13,6 +14,9 @@
 
 ## 默认可读目录
 
+- `market-session-playbook/README.md`
+- `market-session-playbook/TODO.md`
+- `market-session-playbook/plan.md`
 - `data-readiness-command-center/README.md`
 - `data-readiness-command-center/TODO.md`
 - `data-readiness-command-center/plan.md`
