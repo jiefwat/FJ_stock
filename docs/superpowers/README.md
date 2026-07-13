@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `professional-core-workspaces/`：统一每日大盘、我的持仓与热点机会的专业决策链
 - `professional-stock-dossier/`：统一专业个股研究档案与条件化操作指引
 - `sector-candidate-workbench/`：每日板块情况与明日候选观察池
 - `daily-analysis-workbench/`：每日大盘与每日持仓分析工作台
@@ -11,6 +12,9 @@
 
 ## 默认可读目录
 
+- `professional-core-workspaces/README.md`
+- `professional-core-workspaces/TODO.md`
+- `professional-core-workspaces/plan.md`
 - `professional-stock-dossier/README.md`
 - `professional-stock-dossier/TODO.md`
 - `professional-stock-dossier/plan.md`
