@@ -138,14 +138,78 @@ Both research workspaces pause because the current linked local snapshot and pip
 
 ## 8. Deployment Verification
 
-Status: pending incremental deployment.
+Status: deployed and verified on 2026-07-13.
 
-The deployment record must add:
+### 8.1 Patch boundary and backup
 
-- server patch-check result;
-- exact source backup path;
-- explicit remote compile/import result;
-- temporary port 18501 preview GET result;
-- `stock-ts.service` active state after restart;
-- public `https://stock.jiewat-kaka-fj.com/` GET status and research-workspace markers;
-- rollback source path and whether rollback was exercised.
+- Target: `admin@47.82.145.207:/opt/stock-ts`
+- Service: `stock-ts.service`
+- Patch size: 18,791 bytes
+- Patch scope: 5 Python source files, 216 insertions and 39 deletions
+- `git apply --check`: passed before any remote write
+- Backup directory: `/opt/stock-ts/.deploy_backups/research-safety-gates-20260713125430`
+- Source archive: `/opt/stock-ts/.deploy_backups/research-safety-gates-20260713125430/src-stock-ts-before.tgz`
+- Applied patch copy: `/opt/stock-ts/.deploy_backups/research-safety-gates-20260713125430/change.patch`
+
+The five server files matched the `53fcd80` pre-change hashes before deployment. Their post-apply hashes match the locally verified source files.
+
+### 8.2 Remote compile and behavior
+
+The server uses Python 3.12.3. Explicit `py_compile` completed for all five files, and the remote behavior check returned:
+
+```text
+market=风险释放:10%-30%:58
+stock=技术性观察:42
+stale=数据暂停:0
+remote_compile_import=ok
+```
+
+### 8.3 Temporary preview
+
+The authenticated configuration first returned the expected 303 login redirect. A temporary read-only preview on `127.0.0.1:18501` with authentication disabled only for that preview process returned:
+
+```text
+preview_http=200
+preview_bytes=305057
+data-market-stage="数据暂停"
+data-research-status="数据暂停"
+stock_workspace=ok
+market_workspace=ok
+```
+
+The preview process was stopped and port 18501 was confirmed released.
+
+### 8.4 Production service and public route
+
+`stock-ts.service` restarted successfully:
+
+```text
+before_pid=1604584
+after_pid=1609689
+service=active
+started=Mon 2026-07-13 12:57:36 CST
+```
+
+Production authentication remains enabled:
+
+```text
+direct_root=303
+direct_login=200
+public_root=303
+public_location=/login?next=%2F
+public_login=200
+public_login_title=Jiewat Kaka FJ 研究分析平台
+```
+
+The protected research content was verified through the temporary server preview rather than by bypassing production authentication.
+
+### 8.5 Rollback verification
+
+The backup archive lists all five expected paths and can stream their original content. Sample restored-content hashes match the pre-deploy baseline:
+
+```text
+evidence.py=828b2f08795d05529455a4e0a5a8d073b3849286de6deb2404c428cd0a08d751
+web.py=abcd1241f4b1237d8fe79a37281f25966a73ff5c3a0bb15eaebc45ac41052b01
+```
+
+Rollback was not executed because every post-deploy check passed. If required, restore the five archived paths from `src-stock-ts-before.tgz` into `/opt/stock-ts` and restart `stock-ts.service`.
