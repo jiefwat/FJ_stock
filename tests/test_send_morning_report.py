@@ -1011,6 +1011,77 @@ def test_morning_report_is_subway_brief_with_market_holdings_opportunities_and_1
     assert all(len(line) <= 220 for line in content.splitlines())
 
 
+def test_morning_report_is_three_minute_mobile_brief(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    html_dir = tmp_path / "html"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    html_dir.mkdir()
+    announcement_dir.mkdir()
+    candidate_lines: list[str] = []
+    for index in range(1, 16):
+        candidate_lines.extend(
+            [
+                (
+                    f"{index}. 测试股票{index}（600{index:03d}，测试板块）："
+                    f"观察分 90/100，最新价 {10 + index}.00，日涨跌 {index}.00%"
+                ),
+                (
+                    f"   - 入选理由：测试股票{index}所在测试板块强度 100/100；"
+                    "收盘价位于短期均线上方；近期量能放大，关注承接；"
+                    "消息面有产业订单催化"
+                ),
+                "   - 风险提示：短线涨幅较大，次日追高风险上升；近期波动偏高，需控制回撤",
+                (
+                    "   - 观察条件：高开超过 3% 不追，等回落承接；"
+                    "放量后 30 分钟不能跌回开盘价；必须强于指数才保留"
+                ),
+            ]
+        )
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-10）\n\n"
+        "## 深度结论\n- 市场震荡，结构性机会为主，今天只看主线前排承接\n\n"
+        "## 每日大盘情况\n"
+        "- 上涨 2100，下跌 2800，涨停 45，跌停 12，成交额缩量，指数震荡但题材局部活跃\n\n"
+        "## 板块情况\n- CXO概念、海洋经济、国防军工相对强，白酒和地产偏弱\n\n"
+        "## 每日持仓分析\n"
+        "## 持仓明细\n"
+        "- 大业股份（603278）：市值 50160.00，仓位 10.7%，"
+        "盈亏 12015.20（31.50%），趋势 下降趋势，风险 高\n"
+        "- 蓝色光标（300058）：市值 53375.00，仓位 11.3%，"
+        "盈亏 -3302.95（-5.83%），趋势 上升趋势，风险 低\n"
+        "- 润建股份（002929）：市值 55192.00，仓位 11.6%，"
+        "盈亏 -5837.12（-9.56%），趋势 下降趋势，风险 中\n"
+        "- 甬矽电子（688362）：市值 54360.00，仓位 11.4%，"
+        "盈亏 19019.60（53.82%），趋势 下降趋势，风险 高\n\n"
+        "## 候选股票池摘要\n## 候选股票\n"
+        + "\n".join(candidate_lines),
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-10T18:30:00+08:00\nreport=ok\n",
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        html_dir=html_dir,
+        announcement_dir=announcement_dir,
+    )
+
+    assert len(content) <= 2300
+    assert len(content.splitlines()) <= 42
+    assert all(len(line) <= 115 for line in content.splitlines())
+    suggestions = _section_lines(content, "## 投资建议 15只票", "## 数据与风险提示")
+    numbered = [line for line in suggestions if line and line[0].isdigit()]
+    assert len(numbered) == 15
+    assert all("；" in line for line in numbered)
+    assert "放量后 30 分钟不能跌回开盘价；必须强于指数才保留" not in content
+    assert "开盘前确认所属板块是否仍在市场主线或资金活跃方向" not in content
+
+
 def test_morning_report_fills_15_suggestions_when_decisions_json_has_fewer_items(
     tmp_path: Path,
 ) -> None:

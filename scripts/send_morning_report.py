@@ -238,15 +238,18 @@ def _decision_opportunity_actions(decisions: dict[str, object], *, limit: int) -
             continue
         name = str(item.get("name") or "未识别股票").strip()
         sector = str(item.get("sector") or "未识别板块").strip()
-        reason = str(item.get("reason") or "入选理由待补充").strip()
-        risk = str(item.get("risk") or "等待盘中确认").strip()
-        action = str(item.get("action") or "只观察，不追高").strip()
-        detail = (
-            f"{name}｜{sector}｜机会：{reason}；"
-            f"风险：{risk}；动作：{action}"
+        reason = _clean_candidate_text(str(item.get("reason") or "入选理由待补充"), name)
+        risk = _clean_candidate_text(str(item.get("risk") or "等待盘中确认"), name)
+        action = _clean_candidate_text(str(item.get("action") or "只观察，不追高"), name)
+        detail = _compact_opportunity_entry(
+            name=name,
+            sector=sector,
+            reason=reason,
+            risk=risk,
+            action=action,
         )
         actions.append(
-            f"{len(actions) + 1}. {_shorten_line(detail, limit=150)}"
+            f"{len(actions) + 1}. {_shorten_line(detail, limit=125)}"
         )
         if len(actions) >= limit:
             break
@@ -265,7 +268,8 @@ def _merge_opportunity_actions(
             continue
         if key:
             seen.add(key)
-        merged.append(f"{len(merged) + 1}. {_shorten_line(text, limit=150)}")
+        merged_text = _recompact_opportunity_text(text)
+        merged.append(f"{len(merged) + 1}. {_shorten_line(merged_text, limit=110)}")
         if len(merged) >= limit:
             break
     return merged
@@ -274,6 +278,36 @@ def _merge_opportunity_actions(
 def _opportunity_action_key(text: str) -> str:
     name = text.split("｜", 1)[0].split("：", 1)[0].strip()
     return name.lower()
+
+
+def _recompact_opportunity_text(text: str) -> str:
+    parts = text.split("｜", 2)
+    if len(parts) != 3:
+        return text
+    name, sector, detail = [part.strip() for part in parts]
+    reason = _extract_compact_field(detail, "机会", "风险") or detail
+    risk = _extract_compact_field(detail, "风险", "动作") or "盘中确认"
+    action = _extract_compact_field(detail, "动作", "") or "只观察"
+    return _compact_opportunity_entry(
+        name=name,
+        sector=sector,
+        reason=_clean_candidate_text(reason, name),
+        risk=_clean_candidate_text(risk, name),
+        action=_clean_candidate_text(action, name),
+    )
+
+
+def _extract_compact_field(text: str, label: str, next_label: str) -> str:
+    marker = f"{label}："
+    start = text.find(marker)
+    if start < 0:
+        return ""
+    start += len(marker)
+    if next_label:
+        end_marker = f"；{next_label}："
+        end = text.find(end_marker, start)
+        return text[start:end].strip() if end >= 0 else text[start:].strip()
+    return text[start:].strip()
 
 
 def _decision_action_limit_lines(decisions: dict[str, object]) -> list[str]:
@@ -415,13 +449,26 @@ def _portfolio_stock_actions(
 
 def _format_stock_decision_action(display: str, decision: dict[str, str]) -> str:
     parts = [
-        f"{display}：判断：{_clause(decision.get('verdict', '观察'))}",
-        f"动作：{_clause(decision.get('action', '只观察'), limit=42)}",
-        f"风险：{_clause(decision.get('conflict', '证据不足'), limit=46)}",
-        f"禁忌：{_clause(decision.get('forbidden', '不临时交易'), limit=28)}",
-        f"离场：{_clause(decision.get('exit', '跌破关键线降风险'), limit=34)}",
+        f"{display}：判断：{_holding_clause(decision.get('verdict', '观察'), limit=14)}",
+        f"动作：{_holding_clause(decision.get('action', '只观察'), limit=22)}",
+        f"风险：{_holding_clause(decision.get('conflict', '证据不足'), limit=22)}",
+        f"禁忌：{_holding_clause(decision.get('forbidden', '不临时交易'), limit=18)}",
+        f"离场：{_holding_clause(decision.get('exit', '跌破关键线降风险'), limit=20)}",
     ]
-    return _bullet("；".join(parts))
+    return _bullet(_shorten_line("；".join(parts), limit=112))
+
+
+def _holding_clause(value: object, *, limit: int) -> str:
+    clean = str(value).strip().rstrip("。；;，, ")
+    replacements = {
+        "开盘前确认所属板块是否仍在市场主线或资金活跃方向": "看板块/资金是否延续",
+        "不补仓摊低；不因跌多了临时买入": "不补仓摊低",
+        "跌破关键支撑或继续放量下跌时降低仓位": "跌破关键支撑降仓",
+    }
+    for old, new in replacements.items():
+        clean = clean.replace(old, new)
+    clean = clean.replace("，：", "，").replace("：：", "：").strip(" ：:，,")
+    return _shorten_line(clean, limit=limit)
 
 
 def _clause(value: str, *, limit: int = 80) -> str:
@@ -535,7 +582,7 @@ def _deep_stock_observation_decision_map(markdown: str) -> dict[str, dict[str, s
 def _clean_deep_observation_summary(summary: str, stock_name: str) -> str:
     clean = _shorten_line(summary.strip(), limit=84)
     if stock_name:
-        clean = clean.removeprefix(stock_name).strip(" ，。")
+        clean = clean.removeprefix(stock_name).strip(" ：:，。")
     generic_patterns = (
         "当前信号不足或风险约束较多",
         "优先观察而非进攻",
@@ -928,8 +975,28 @@ def _format_opportunity_entry(entry: dict[str, str]) -> str:
     reason = _clean_candidate_text(entry["reason"], name)
     risk = _clean_candidate_text(entry["risk"], name)
     action = _clean_candidate_text(entry["action"], name)
-    text = f"{name}｜{entry['sector']}｜机会：{reason}；风险：{risk}；动作：{action}"
-    return _shorten_line(text, limit=150)
+    text = _compact_opportunity_entry(
+        name=name,
+        sector=entry["sector"],
+        reason=reason,
+        risk=risk,
+        action=action,
+    )
+    return _shorten_line(text, limit=110)
+
+
+def _compact_opportunity_entry(
+    *,
+    name: str,
+    sector: str,
+    reason: str,
+    risk: str,
+    action: str,
+) -> str:
+    return (
+        f"{name}｜{sector}｜机会：{_clause(reason, limit=22)}；"
+        f"风险：{_clause(risk, limit=14)}；动作：{_clause(action, limit=18)}"
+    )
 
 
 def _clean_candidate_text(text: str, stock_name: str) -> str:
@@ -1174,16 +1241,16 @@ def _yesterday_market_lines(
         lines.append(_bullet(f"主线：{_strip_bullet(first_sector)}"))
     if execution_guard:
         lines.append(_bullet(f"执行：{_strip_bullet(execution_guard[0])}"))
-    return [_short_bullet(line, limit=190) for line in lines[:5]]
+    return [_short_bullet(line, limit=112) for line in lines[:5]]
 
 
 def _subway_holding_lines(portfolio_actions: list[str], portfolio: str) -> list[str]:
     if portfolio_actions:
-        return [_short_bullet(item, limit=190) for item in portfolio_actions[:8]]
+        return [_short_bullet(item, limit=112) for item in portfolio_actions[:5]]
     items = _content_items(portfolio)[:5]
     if not items:
         items = ["未读取到持仓摘要，请检查持仓文件和日报生成状态。"]
-    return [_short_bullet(item, limit=190) for item in items]
+    return [_short_bullet(item, limit=112) for item in items]
 
 
 def _subway_market_opportunity_lines(
@@ -1204,7 +1271,7 @@ def _subway_market_opportunity_lines(
         if first_opportunity:
             lines.append(_bullet(f"先看：{_strip_bullet(first_opportunity)}"))
     lines.append(_bullet("原则：只看板块延续、资金承接和个股触发位，不追高。"))
-    return [_short_bullet(line, limit=190) for line in lines[:4]]
+    return [_short_bullet(line, limit=112) for line in lines[:4]]
 
 
 def _subway_data_risk_lines(
@@ -1216,17 +1283,17 @@ def _subway_data_risk_lines(
     extra_limits: list[str] | None = None,
 ) -> list[str]:
     notice = _data_notice_lines(trade_date, report_date, pipeline)
-    lines = [_short_bullet(item, limit=190) for item in notice[:2]]
+    lines = [_short_bullet(item, limit=112) for item in notice[:2]]
     for item in extra_limits or []:
         clean = _strip_bullet(item)
         if clean and not clean.startswith(("未读取到", "未触发", "自动更新未发现")):
-            lines.append(_short_bullet(clean, limit=190))
+            lines.append(_short_bullet(clean, limit=112))
     gap = _data_gap_sentence(pipeline)
     if gap:
-        lines.append(_short_bullet(gap, limit=190))
+        lines.append(_short_bullet(gap, limit=112))
     announcement_line = _first_content_line(announcements)
     if announcement_line:
-        lines.append(_short_bullet(f"公告：{_strip_bullet(announcement_line)}", limit=190))
+        lines.append(_short_bullet(f"公告：{_strip_bullet(announcement_line)}", limit=112))
     return lines[:5]
 
 

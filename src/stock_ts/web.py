@@ -325,6 +325,24 @@ h1 {
 .note-list { margin:0; padding-left:18px; color:var(--muted); line-height:1.7; }
 .sector-strip { display:grid; gap:10px; }
 .sector-item { display:grid; grid-template-columns: 90px minmax(0, 1fr) 54px; align-items:center; gap:12px; }
+.market-sector-heatmap-panel { margin-top:16px; background:#111927; color:#e8edf5; border-color:#263247; }
+.market-sector-heatmap-panel h3 { display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; color:#f3f6fb; }
+.market-sector-heatmap-panel h3 span { color:#8793a8; font-size:13px; font-family:var(--body); }
+.market-sector-heatmap-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.market-sector-heat-card { border:1px solid #293448; border-radius:14px; background:#0d1420; padding:12px; color:#e8edf5; text-align:left; }
+.market-sector-heat-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:12px; }
+.market-sector-heat-head strong { font-size:15px; }
+.market-sector-heat-head span { color:#768398; font-size:12px; font-weight:700; }
+.market-sector-heat-head em { color:#ff746c; font-style:normal; font-weight:900; font-family:var(--mono); }
+.market-sector-heat-card.down .market-sector-heat-head em { color:#37d295; }
+.market-sector-heat-cells { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+.market-sector-heat-cell { border-radius:6px; padding:9px 6px; text-align:center; background:#183a34; }
+.market-sector-heat-cell.up { background:#893331; }
+.market-sector-heat-cell.down { background:#123e35; }
+.market-sector-heat-cell.flat { background:#263348; }
+.market-sector-heat-cell small,.market-sector-heat-cell strong { display:block; }
+.market-sector-heat-cell small { color:#d7dde8; font-size:11px; font-weight:800; }
+.market-sector-heat-cell strong { margin-top:3px; color:#f5f7fb; font-family:var(--mono); font-size:13px; }
 .market-event-card-list { display:grid; gap:10px; margin-top:14px; }
 .market-event-card { border:1px solid var(--line); border-radius:16px; background:#fffdfa; padding:13px 15px; }
 .market-event-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:8px; }
@@ -836,12 +854,14 @@ h1 {
   .field-span-2 { grid-column: span 1; }
   .portfolio-editor { position:static; }
   .desk-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .market-sector-heatmap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 680px) {
   .workspace { padding:18px; }
   .nav-group { grid-template-columns: 1fr; }
   .kpi-grid,
   .desk-status { grid-template-columns: 1fr; }
+  .market-sector-heatmap-grid { grid-template-columns: 1fr; }
   .data-table { font-size:12px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4699,20 +4719,108 @@ def _render_hot_opportunity_module(
         quality=quality,
     )
     if not rows:
-        rows = "<tr><td colspan='9'>暂无推荐；等待板块和候选股票刷新。</td></tr>"
+        rows = "<tr><td colspan='6'>暂无推荐买入候选；等待资金、K线、消息和买点同时满足。</td></tr>"
     mainline = "、".join(sectors.market_mainline[:3]) or (
         sectors.sectors[0].name if sectors.sectors else "待确认"
     )
-    candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"推荐 {min(len(candidates.candidates), 10)} 只"
+    buy_count = _opportunity_recommended_buy_count(
+        sectors=sectors,
+        candidates=candidates,
+        candidate_universe=candidate_universe,
+        quality=quality,
+    )
+    candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"推荐买入候选 {min(buy_count, 30)} 只"
+    sector_risk = _render_opportunity_sector_risk_chip(sectors)
+    guidance = _render_opportunity_buy_sell_guidance(
+        sectors=sectors,
+        candidates=candidates,
+        candidate_universe=candidate_universe,
+        quality=quality,
+    )
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">只展示推荐板块、推荐股票和推荐维度。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">这里只放推荐买入候选；没有买入计划的观察票、资金流出票和剔除票不放上面。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{sector_risk}{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
+      {guidance}
       <div class="panel opportunity-focus-panel">
         <div class="opportunity-table-scroll">
-          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>统一个股分析</th><th>趋势/量价原因</th><th>资金/成交原因</th><th>基本面/估值原因</th><th>消息/公告原因</th><th>板块/主题原因</th><th>未来趋势</th></tr></thead><tbody>{rows}</tbody></table>
+          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>重点结论</th><th>简单原因</th><th>后续观察</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
         </div>
       </div>
     </section>"""
+
+
+def _render_opportunity_buy_sell_guidance(
+    *,
+    sectors: SectorAnalysisReport,
+    candidates: CandidatePoolReport,
+    candidate_universe: list[CandidateStockRawData],
+    quality: DataQualityView | None,
+) -> str:
+    raw_by_code = _candidate_raw_lookup(candidate_universe)
+    ranked = _opportunity_ranked_buy_candidates(
+        sectors=sectors,
+        candidates=candidates,
+        candidate_universe=candidate_universe,
+        quality=quality,
+    )
+    top = ranked[0] if ranked else None
+    top_raw = raw_by_code.get(top.code) if top else None
+    signal = (
+        _opportunity_forward_signal(top, top_raw, sectors, quality=quality)
+        if top is not None
+        else None
+    )
+    buyable = bool(
+        signal
+        and any(
+            keyword in signal.verdict
+            for keyword in ["可小仓试买", "建议买入", "回踩可试买", "等待回踩买点"]
+        )
+    )
+    if top is None:
+        action = "暂无推荐买入"
+        buy = "等待候选池刷新出K线、资金、消息和基本面证据"
+        sell = "已有持仓回到持仓页处理，不用机会页做卖点"
+        stop = "候选数据缺失时不建仓"
+    elif _opportunity_quality_blocks_trading(quality) and not _opportunity_raw_price_ready(top_raw):
+        action = "暂停推荐买入"
+        buy = f"{top.name}等行情、资金、消息刷新后重新排序"
+        sell = "若已持有同主题，先按个股止损线减仓"
+        stop = "数据闸门未通过，机会名单不参与交易"
+    elif buyable:
+        action = f"{top.name}{_opportunity_action_label(signal.verdict)}"
+        buy = "等计划里的回踩/放量触发；触发前只放观察池，不追高下单"
+        sell = "跌破5日线、放量长阴或消息催化证伪时减仓"
+        stop = "跌破入场价下方3%-5%或弱于所属板块即失效"
+    else:
+        action = "暂无推荐买入"
+        buy = "观察票不放入推荐买入区；等资金、消息或5日线承接补强再动手"
+        sell = "冲高无量、资金转流出、跌破5日线时剔除候选"
+        stop = "连续弱于主线或数据未补齐则取消观察"
+    mainline = "、".join(sectors.market_mainline[:2]) or (top.sector if top else "主线待确认")
+    return _render_buy_sell_guidance_panel(
+        title="只把有买入计划的票放上面；没有买入计划就明确空仓等待。",
+        action=action,
+        buy_trigger=buy,
+        sell_trigger=sell,
+        position_limit=f"单票试错不超过10%，同主题合计不超过20%；主线：{mainline}",
+        stop_loss=stop,
+        note="只买证据共振的前排，后排补涨和数据缺口票不直接买。",
+    )
+
+
+def _render_opportunity_sector_risk_chip(sectors: SectorAnalysisReport) -> str:
+    risk = next(
+        (
+            f"{item.name}：{item.risk}"
+            for item in sectors.sectors
+            if getattr(item, "risk", "风险可控") != "风险可控"
+        ),
+        "",
+    )
+    if not risk:
+        return ""
+    return f'<span class="risk-pill mid">板块风险 {escape(risk)}</span>'
 
 
 def _render_opportunity_recommendation_rows(
@@ -4724,23 +4832,86 @@ def _render_opportunity_recommendation_rows(
     holdings_path: str,
     quality: DataQualityView | None,
 ) -> str:
-    sector_rows = "".join(
-        _render_opportunity_recommendation_sector_row(item, candidate_universe)
-        for item in sectors.sectors[:3]
-    )
     raw_by_code = _candidate_raw_lookup(candidate_universe)
+    ranked_candidates = _opportunity_ranked_buy_candidates(
+        sectors=sectors,
+        candidates=candidates,
+        candidate_universe=candidate_universe,
+        quality=quality,
+    )
     candidate_rows = "".join(
         _render_opportunity_recommendation_candidate_row(
             item,
             raw=raw_by_code.get(item.code),
+            sectors=sectors,
             provider_name=provider_name,
             holdings_path=holdings_path,
             pool_price_reliable=candidates.price_reliable,
             quality=quality,
         )
-        for item in candidates.candidates[:7]
+        for item in ranked_candidates[:30]
     )
-    return sector_rows + candidate_rows
+    return candidate_rows
+
+
+def _opportunity_ranked_buy_candidates(
+    *,
+    sectors: SectorAnalysisReport,
+    candidates: CandidatePoolReport,
+    candidate_universe: list[CandidateStockRawData],
+    quality: DataQualityView | None,
+) -> list[CandidateStockAnalysis]:
+    raw_by_code = _candidate_raw_lookup(candidate_universe)
+    ranked = sorted(
+        candidates.candidates,
+        key=lambda item: _opportunity_forward_signal(
+            item,
+            raw_by_code.get(item.code),
+            sectors,
+            quality=quality,
+        ).score,
+        reverse=True,
+    )
+    return [
+        item
+        for item in ranked
+        if _opportunity_is_recommended_buy_signal(
+            _opportunity_forward_signal(
+                item,
+                raw_by_code.get(item.code),
+                sectors,
+                quality=quality,
+            )
+        )
+    ]
+
+
+def _opportunity_recommended_buy_count(
+    *,
+    sectors: SectorAnalysisReport,
+    candidates: CandidatePoolReport,
+    candidate_universe: list[CandidateStockRawData],
+    quality: DataQualityView | None,
+) -> int:
+    return len(
+        _opportunity_ranked_buy_candidates(
+            sectors=sectors,
+            candidates=candidates,
+            candidate_universe=candidate_universe,
+            quality=quality,
+        )
+    )
+
+
+def _opportunity_is_recommended_buy_signal(signal: OpportunityForwardSignal) -> bool:
+    verdict = signal.verdict
+    action = signal.verdict.split("；", 1)[0]
+    if any(text in action for text in ["暂停", "暂不推荐买入", "待补数据", "剔除"]):
+        return False
+    return any(
+        text in verdict
+        for text in ["可小仓买入", "可小仓试买", "低吸买入候选", "回踩买入候选", "确认买入候选"]
+    )
 
 
 @dataclass(frozen=True)
@@ -4761,6 +4932,15 @@ class SectorMethodChainSummary:
     analyst_team: str
     debate: str
     trader_risk: str
+
+
+@dataclass(frozen=True)
+class OpportunityForwardSignal:
+    score: int
+    direction: str
+    verdict: str
+    basis: str
+    confirmation: str
 
 
 def _sector_method_chain_summary(
@@ -4853,6 +5033,7 @@ def _render_opportunity_recommendation_candidate_row(
     item: CandidateStockAnalysis,
     *,
     raw: CandidateStockRawData | None = None,
+    sectors: SectorAnalysisReport,
     provider_name: str,
     holdings_path: str,
     pool_price_reliable: bool,
@@ -4861,23 +5042,25 @@ def _render_opportunity_recommendation_candidate_row(
     dimensions = _opportunity_candidate_dimensions(
         item,
         raw=raw,
+        sectors=sectors,
         agentic_decision=_safe_agentic_decision_from_candidate(raw),
         pool_price_reliable=pool_price_reliable,
         quality=quality,
     )
     query = urlencode({"code": item.code, "provider": provider_name, "holdings": holdings_path})
     stock_link = f'<a href="/?{query}#stock">{escape(item.name)}<span>{escape(item.code)}</span></a>'
+    analysis_button = (
+        f'<a class="primary-button opportunity-analysis-button" '
+        f'href="/?{query}#stock" aria-label="查看 {escape(item.name)} 个股分析">个股分析</a>'
+    )
     return (
-        "<tr>"
+        '<tr data-opportunity-stock-row="1">'
         f"<td>{escape(localize_sector_name(item.sector) or '未识别主题')}</td>"
         f"<td class='name-cell'><strong>{stock_link}</strong></td>"
-        f"<td>{escape(dimensions.current_trend)}</td>"
-        f"<td>{escape(dimensions.trend_reason)}</td>"
-        f"<td>{escape(dimensions.fund_reason)}</td>"
-        f"<td>{escape(dimensions.fundamental_reason)}</td>"
-        f"<td>{escape(dimensions.news_reason)}</td>"
-        f"<td>{escape(dimensions.theme_reason)}</td>"
-        f"<td>{escape(dimensions.future_trend)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.current_trend, tight=True)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.trend_reason)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.future_trend)}</td>"
+        f"<td class='action-cell'>{analysis_button}</td>"
         "</tr>"
     )
 
@@ -4886,21 +5069,24 @@ def _opportunity_candidate_dimensions(
     item: CandidateStockAnalysis,
     *,
     raw: CandidateStockRawData | None,
+    sectors: SectorAnalysisReport,
     agentic_decision: StockAgentDecision | None = None,
     pool_price_reliable: bool,
     quality: DataQualityView | None,
 ) -> OpportunityRecommendationDimensions:
+    del agentic_decision
+    signal = _opportunity_forward_signal(item, raw, sectors, quality=quality)
     if raw is not None and raw.bars:
-        current_trend = f"统一个股分析：{_agentic_signal_text(agentic_decision)}；当前趋势：{_candidate_current_trend_state(raw)}"
-        trend_reason = f"趋势/量价原因：{_agentic_team_text(agentic_decision)}；{_opportunity_week_trend_reason(raw)}；{_opportunity_technical_reason(raw)}"
+        current_trend = f"重点结论：买入建议：{signal.verdict}"
+        trend_reason = f"简单原因：为什么推荐买：{signal.basis}"
         fund_reason = _opportunity_fund_reason(raw).replace("资金面：", "资金/成交原因：", 1)
         news_reason = _opportunity_news_reason(raw).replace("消息面：", "消息/公告原因：", 1)
         fundamental_reason = _opportunity_valuation_reason(raw).replace("基本面：", "基本面/估值原因：", 1)
-        theme_reason = f"{_opportunity_theme_reason(item, raw)}；{_agentic_debate_text(agentic_decision)}"
-        future_trend = f"{_opportunity_future_trend_reason(item, raw, quality)}；{_agentic_trader_text(agentic_decision)}"
+        theme_reason = _opportunity_theme_reason(item, raw)
+        future_trend = signal.confirmation
     else:
-        current_trend = f"统一个股分析：daily_stock_analysis 信号归因：候选评分 {item.score}/100；TradingAgents：等待候选深度数据；当前趋势：候选涨跌 {item.pct_change:.2f}%"
-        trend_reason = f"趋势/量价原因：分析师团队：K线/资金/消息待补；{_opportunity_candidate_cause(item, raw=raw)}"
+        current_trend = f"重点结论：买入建议：{signal.verdict}"
+        trend_reason = f"简单原因：为什么推荐买：{signal.basis}"
         fund_reason = f"资金/成交原因：{item.name}资金字段缺口，暂看{localize_sector_name(item.sector)}板块承接"
         news_reason = (
             f"消息/公告原因：{item.name}暂无可验证个股事件，"
@@ -4910,9 +5096,13 @@ def _opportunity_candidate_dimensions(
             f"基本面/估值原因：{item.name}估值字段缺口，"
             f"按{localize_sector_name(item.sector)}景气度和后续财报复核"
         )
-        theme_reason = f"板块/主题原因：{localize_sector_name(item.sector)}主题；多空审议：候选证据不足，先按板块和个股页复核"
-        future_trend = f"{_opportunity_future_trend_from_candidate(item, quality)}；交易员：等待触发；组合经理：不因单日涨跌追入"
-    stale = bool(quality and any("数据已滞后" in warning for warning in quality.warnings))
+        theme_reason = f"板块/主题原因：{localize_sector_name(item.sector)}主题"
+        future_trend = signal.confirmation
+    stale = bool(
+        quality
+        and any("数据已滞后" in warning for warning in quality.warnings)
+        and not _opportunity_raw_price_ready(raw)
+    )
     if stale:
         risk_text = "风险原因：数据质量：已滞后，不能排到前列"
     elif not (pool_price_reliable and item.price_reliable):
@@ -4920,9 +5110,10 @@ def _opportunity_candidate_dimensions(
     else:
         risk_text = (
             f"入选原因：{item.name}价格链路可靠，"
-            f"评分 {item.score}/100，日涨跌 {item.pct_change:.2f}%"
+            f"进入综合排序前排，需用原因链继续验证"
         )
     theme_reason = f"{theme_reason}；{risk_text}"
+    trend_reason = _shorten_display_reason(f"{trend_reason}；{risk_text}", limit=150)
     return OpportunityRecommendationDimensions(
         current_trend=current_trend,
         trend_reason=trend_reason,
@@ -4930,8 +5121,399 @@ def _opportunity_candidate_dimensions(
         fundamental_reason=fundamental_reason,
         news_reason=news_reason,
         theme_reason=theme_reason,
-        future_trend=future_trend,
+        future_trend=_shorten_display_reason(f"{future_trend}；{risk_text}", limit=120),
     )
+
+
+def _candidate_opportunity_verdict(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData,
+) -> str:
+    if item.score >= 80 and item.pct_change <= 6:
+        return f"{item.name}可观察，等回踩承接"
+    if item.pct_change > 6:
+        return f"{item.name}偏强但不追高"
+    if raw.fund_flow is not None and raw.fund_flow < 0:
+        return f"{item.name}先观察，资金未确认"
+    return f"{item.name}加入观察池"
+
+
+def _opportunity_forward_signal(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData | None,
+    sectors: SectorAnalysisReport,
+    *,
+    quality: DataQualityView | None,
+) -> OpportunityForwardSignal:
+    sector = _opportunity_sector_for_candidate(item, raw, sectors)
+    stale = bool(
+        quality
+        and any("数据已滞后" in warning for warning in quality.warnings)
+        and not _opportunity_raw_price_ready(raw)
+    )
+    score = 45
+    basis: list[str] = []
+    confirmation_parts: list[str] = []
+    if raw is not None and raw.bars:
+        week_pct, latest_pct, up_days = _opportunity_recent_kline_stats(raw)
+        score += _opportunity_kline_score(week_pct, latest_pct, up_days)
+        basis.append(
+            f"近5日K线/一周趋势：{_opportunity_week_direction_text(raw, week_pct)}，{up_days}天收涨"
+        )
+        basis.append(_compact_opportunity_clause(_opportunity_technical_reason(raw), "技术面", 34))
+        confirmation_parts.append(f"未来趋势：{_opportunity_forward_direction_from_stats(week_pct, latest_pct)}")
+        confirmation_parts.append("触发：站稳5日线且不放量长阴")
+        fund_flow = raw.fund_flow
+        volume_ratio = _candidate_volume_ratio([bar.volume for bar in raw.bars])
+        if fund_flow is not None and fund_flow > 0:
+            score += min(14, 8 + int(fund_flow * 2))
+            basis.append(f"资金面：资金净流入 {fund_flow:.2f}亿")
+        elif fund_flow is not None and fund_flow < 0:
+            score -= min(18, 8 + int(abs(fund_flow) * 3))
+            basis.append(f"资金面：资金净流出 {abs(fund_flow):.2f}亿")
+        else:
+            basis.append("资金面：净流向待确认")
+        if raw.news_items or raw.announcements:
+            score += 8
+            basis.append(_opportunity_compact_news_catalyst(raw))
+        else:
+            basis.append("消息面：暂无可验证个股事件，消息催化待确认")
+        basis.append(_opportunity_compact_fundamental(raw))
+        if sector is not None:
+            sector_name = localize_sector_name(sector.name)
+            basis.append(f"热点：{sector_name} {sector.heat_score}/100")
+            if getattr(sector, "risk", "风险可控") != "风险可控":
+                basis.append(f"板块风险：{sector.risk}")
+        if 1.15 <= volume_ratio <= 2.2:
+            score += 6
+            basis.append(f"成交：温和放量 {volume_ratio:.2f}x")
+        elif volume_ratio > 3:
+            score -= 4
+            basis.append(f"成交：急剧放量 {volume_ratio:.2f}x，防追高")
+        if raw.pe_ttm is not None and raw.pe_ttm >= 70:
+            score -= 8
+            basis.append(f"估值：PE {raw.pe_ttm:.1f} 偏高")
+        elif raw.pe_ttm is not None and raw.pe_ttm <= 35:
+            score += 3
+        if latest_pct > 7:
+            score -= 14
+            confirmation_parts.append("风险：单日涨幅过大，不能追高")
+        elif latest_pct < -3:
+            score -= 10
+            confirmation_parts.append("风险：最新一日转弱，先等止跌")
+    else:
+        score += min(18, max(-10, item.score - 65))
+        basis.append(f"近5日K线：待补，先用候选评分 {item.score}/100")
+        basis.append(_opportunity_candidate_cause(item, raw=raw))
+        confirmation_parts.append(_opportunity_future_trend_from_candidate(item, quality))
+    if sector is not None:
+        sector_name = localize_sector_name(sector.name)
+        score += _opportunity_sector_forward_score(sector, sectors)
+        if sector.rotation_status == "市场主线" or sector_name in [localize_sector_name(name) for name in sectors.market_mainline]:
+            confirmation_parts.append(f"热点确认：{sector_name}继续扩散")
+    else:
+        basis.append(f"热点：{localize_sector_name(item.sector)}待确认")
+    if stale or not item.price_reliable:
+        score = min(score, 45)
+        confirmation_parts.append("数据：刷新后再排序")
+    score = max(0, min(100, int(score)))
+    direction = "偏上涨" if score >= 72 else "观察" if score >= 55 else "暂不前置"
+    verdict = _opportunity_trade_guidance(
+        item,
+        raw,
+        score=score,
+        quality=quality,
+        stale=stale,
+    )
+    return OpportunityForwardSignal(
+        score=score,
+        direction=direction,
+        verdict=verdict,
+        basis="；".join(basis[:6]),
+        confirmation=f"后续观察：{'；'.join(confirmation_parts[:4])}",
+    )
+
+
+def _opportunity_trade_guidance(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData | None,
+    *,
+    score: int,
+    quality: DataQualityView | None,
+    stale: bool,
+) -> str:
+    driver = _opportunity_primary_driver(item, raw, score=score)
+    raw_price_ready = _opportunity_raw_price_ready(raw)
+    if (
+        stale
+        or (not item.price_reliable and not raw_price_ready)
+        or (_opportunity_quality_blocks_trading(quality) and not raw_price_ready)
+    ):
+        return (
+            "动作：暂停买入；"
+            f"主因：{driver}；触发：刷新行情/资金/消息后重排；"
+            "买入条件：同触发；失效：数据不过关剔除；风控：同失效"
+        )
+    if raw is None or len(raw.bars) < 2:
+        return (
+            "动作：待补数据，不进场；"
+            f"主因：{driver}；触发：补齐近5日K线和资金；"
+            "买入条件：同触发；失效：证据不足不进场；风控：同失效"
+        )
+
+    bars = raw.bars[-5:]
+    latest = bars[-1]
+    previous = bars[-2]
+    latest_pct = pct_change(previous.close, latest.close)
+    ma5 = sma([bar.close for bar in bars], min(5, len(bars))) or latest.close
+    buy_line = max(ma5, latest.close * 0.97)
+    stop_line = min(ma5 * 0.98, latest.close * 0.94)
+    fund_flow = raw.fund_flow
+
+    if fund_flow is not None and fund_flow < 0:
+        return (
+            "动作：暂不推荐买入；"
+            f"主因：{driver}；触发：资金转流入且站回5日线{ma5:.2f}；"
+            f"买入条件：同触发；失效：跌破{stop_line:.2f}剔除；风控：同失效"
+        )
+    if latest_pct > 7:
+        return (
+            "动作：回踩买入候选；"
+            f"主因：{driver}；触发：回踩{buy_line:.2f}附近承接再看；"
+            f"买入条件：同触发，不能追高；失效：跌破{stop_line:.2f}剔除；风控：同失效"
+        )
+    if _opportunity_is_buyable(raw, score=score, latest_pct=latest_pct):
+        return (
+            "动作：可小仓买入；"
+            f"主因：{driver}；触发：回踩{buy_line:.2f}不破或盘中放量承接；"
+            f"买入条件：同触发；失效：跌破{stop_line:.2f}剔除；风控：单票小仓试错"
+        )
+    if score >= 72:
+        return (
+            "动作：低吸买入候选；"
+            f"主因：{driver}；触发：回踩{buy_line:.2f}不破且资金不流出；"
+            f"买入条件：同触发，不能追高；失效：跌破{stop_line:.2f}剔除；风控：同失效"
+        )
+    if score >= 55:
+        return (
+            "动作：确认买入候选；"
+            f"主因：{driver}；触发：放量站稳5日线{ma5:.2f}；"
+            f"买入条件：同触发；失效：跌破{stop_line:.2f}取消；风控：同失效"
+        )
+    return (
+        "动作：剔除，不买；"
+        f"主因：{driver}；触发：重新站回5日线{ma5:.2f}并放量；"
+        "买入条件：同触发；失效：弱于板块剔除；风控：同失效"
+    )
+
+
+def _opportunity_action_label(verdict: str) -> str:
+    if "可小仓买入" in verdict:
+        return "可小仓买入"
+    if "可小仓试买" in verdict:
+        return "可小仓买入"
+    if "回踩买入候选" in verdict:
+        return "回踩买入候选"
+    if "低吸买入候选" in verdict:
+        return "低吸买入候选"
+    if "确认买入候选" in verdict:
+        return "确认买入候选"
+    return "进入观察池"
+
+
+def _opportunity_is_buyable(
+    raw: CandidateStockRawData,
+    *,
+    score: int,
+    latest_pct: float,
+) -> bool:
+    fund_flow = raw.fund_flow or 0.0
+    pe_ok = raw.pe_ttm is None or raw.pe_ttm <= 45
+    event_ok = bool(raw.news_items or raw.announcements)
+    volumes = [bar.volume for bar in raw.bars]
+    volume_ratio = _candidate_volume_ratio(volumes)
+    return (
+        score >= 82
+        and 0 <= latest_pct <= 5
+        and fund_flow > 0
+        and pe_ok
+        and event_ok
+        and 0.8 <= volume_ratio <= 2.6
+    )
+
+
+def _opportunity_raw_price_ready(raw: CandidateStockRawData | None) -> bool:
+    return bool(raw is not None and raw.price_reliable and len(raw.bars) >= 2)
+
+
+def _opportunity_quality_blocks_trading(quality: DataQualityView | None) -> bool:
+    if quality is None:
+        return False
+    hard_markers = [
+        "数据已滞后",
+        "候选排序暂停",
+        "候选池K线过期",
+        "候选池K线最晚 缺失",
+        "候选价格",
+    ]
+    return any(marker in warning for warning in quality.warnings for marker in hard_markers)
+
+
+def _opportunity_primary_driver(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData | None,
+    *,
+    score: int,
+) -> str:
+    if raw is None or not raw.bars:
+        return (
+            f"{item.name}缺少近5日K线，当前只来自候选评分 {item.score}/100 "
+            f"和{localize_sector_name(item.sector)}主题线索"
+        )
+    week_pct, latest_pct, up_days = _opportunity_recent_kline_stats(raw)
+    fund_flow = raw.fund_flow
+    if raw.news_items or raw.announcements:
+        return f"{raw.name}有事件催化，叠加近5日{week_pct:.2f}%和{up_days}天收涨"
+    if fund_flow is not None and fund_flow > 0:
+        return f"{raw.name}资金净流入 {fund_flow:.2f}亿，近5日{week_pct:.2f}%"
+    if fund_flow is not None and fund_flow < 0:
+        return f"{raw.name}资金净流出 {abs(fund_flow):.2f}亿，短线先等资金修复"
+    if week_pct >= 5:
+        return f"{raw.name}近5日{week_pct:.2f}%且最新{latest_pct:.2f}%，趋势强于候选池均值"
+    if score >= 55:
+        return f"{raw.name}题材和技术有线索，但资金/消息未形成强共振"
+    return f"{raw.name}趋势、资金和消息证据不足，先从机会池降级"
+
+
+def _opportunity_sector_for_candidate(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData | None,
+    sectors: SectorAnalysisReport,
+):
+    target = localize_sector_name(raw.sector if raw is not None else item.sector)
+    return next(
+        (sector for sector in sectors.sectors if localize_sector_name(sector.name) == target),
+        None,
+    )
+
+
+def _opportunity_recent_kline_stats(raw: CandidateStockRawData) -> tuple[float, float, int]:
+    bars = raw.bars[-5:]
+    if len(bars) < 2:
+        return 0.0, 0.0, 0
+    week_pct = pct_change(bars[0].close, bars[-1].close)
+    latest_pct = pct_change(bars[-2].close, bars[-1].close)
+    up_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close > previous.close)
+    return week_pct, latest_pct, up_days
+
+
+def _opportunity_kline_score(week_pct: float, latest_pct: float, up_days: int) -> int:
+    score = 0
+    if week_pct >= 8 and up_days >= 3:
+        score += 16
+    elif week_pct >= 3:
+        score += 9
+    elif week_pct <= -4:
+        score -= 12
+    if 0 <= latest_pct <= 5:
+        score += 5
+    elif latest_pct > 7:
+        score -= 6
+    elif latest_pct < -3:
+        score -= 6
+    return score
+
+
+def _opportunity_forward_direction_from_stats(week_pct: float, latest_pct: float) -> str:
+    if week_pct >= 5 and -1 <= latest_pct <= 5:
+        return "偏上涨"
+    if latest_pct > 7:
+        return "上涨后分歧，等回踩"
+    if week_pct <= -4 or latest_pct < -3:
+        return "偏回撤"
+    return "震荡观察"
+
+
+def _opportunity_week_direction_text(raw: CandidateStockRawData, week_pct: float) -> str:
+    bars = raw.bars[-5:]
+    if len(bars) >= 2:
+        down_days = sum(1 for previous, current in zip(bars, bars[1:]) if current.close < previous.close)
+        recent_high = max(bar.high for bar in bars)
+        pullback = pct_change(recent_high, bars[-1].close) if recent_high else 0.0
+        if down_days >= 2 and pullback <= -4:
+            return f"近5日转弱 {week_pct:.2f}%，高点回落 {pullback:.2f}%"
+    if week_pct > 0:
+        return f"近5日上涨 {week_pct:.2f}%"
+    if week_pct < 0:
+        return f"近5日转弱 {week_pct:.2f}%"
+    return "近5日持平 0.00%"
+
+
+def _opportunity_sector_forward_score(item, sectors: SectorAnalysisReport) -> int:
+    score = 0
+    if item.heat_score >= 75:
+        score += 8
+    elif item.heat_score <= 45:
+        score -= 8
+    if item.advancing_ratio >= 0.65:
+        score += 5
+    elif item.advancing_ratio < 0.45:
+        score -= 5
+    if item.limit_up_count >= 2:
+        score += 4
+    if item.fund_status == "资金活跃":
+        score += 5
+    elif item.fund_status == "资金流出":
+        score -= 8
+    mainline_names = {localize_sector_name(name) for name in sectors.market_mainline}
+    if item.rotation_status == "市场主线" or localize_sector_name(item.name) in mainline_names:
+        score += 7
+    return score
+
+
+def _opportunity_event_title(raw: CandidateStockRawData) -> str:
+    if raw.news_items:
+        latest = raw.news_items[0]
+        return _short_condition(latest.title or latest.summary or "未命名消息", 28)
+    latest_announcement = raw.announcements[0] if raw.announcements else {}
+    return _short_condition(_announcement_title(latest_announcement) or "未命名公告", 28)
+
+
+def _opportunity_compact_news_catalyst(raw: CandidateStockRawData) -> str:
+    if raw.news_items:
+        latest = raw.news_items[0]
+        source = latest.source or "新闻源"
+        title = _short_condition(latest.title or latest.summary or "未命名消息", 28)
+        return f"消息面：{source}最新消息，消息催化：{title}"
+    return f"消息面：公告消息催化：{_opportunity_event_title(raw)}"
+
+
+def _opportunity_compact_fundamental(raw: CandidateStockRawData) -> str:
+    if raw.pe_ttm is None:
+        return "基本面：PE待补，不能用估值解释机会"
+    if raw.pe_ttm >= 70:
+        return f"基本面：PE {raw.pe_ttm:.1f} 偏高，降权观察"
+    if raw.pe_ttm <= 35:
+        return f"基本面：PE {raw.pe_ttm:.1f} 相对可控"
+    return f"基本面：PE {raw.pe_ttm:.1f}，结合业绩验证"
+
+
+def _opportunity_simple_reason(raw: CandidateStockRawData) -> str:
+    dimensions = [
+        _compact_opportunity_clause(_opportunity_week_trend_reason(raw), "一周趋势", 42),
+        _compact_opportunity_clause(_opportunity_fund_reason(raw), "资金面", 38),
+        _compact_opportunity_clause(_opportunity_technical_reason(raw), "技术面", 34),
+        _compact_opportunity_clause(_opportunity_news_reason(raw), "消息面", 36),
+    ]
+    return "；".join(dimensions)
+
+
+def _compact_opportunity_clause(text: str, label: str, limit: int) -> str:
+    content = str(text)
+    if "：" in content:
+        content = content.split("：", 1)[1]
+    content = content.split("；", 1)[0]
+    return f"{label}：{_shorten_display_reason(content, limit=limit)}"
 
 
 def _candidate_raw_lookup(
@@ -5170,68 +5752,50 @@ def _render_opportunity_recommendation_sector_row(
         "<tr>"
         f"<td>{escape(localize_sector_name(item.name))}</td>"
         f"<td>{escape(_sector_representative_stocks(item, candidate_universe))}</td>"
-        f"<td>{escape(dimensions.current_trend)}</td>"
-        f"<td>{escape(dimensions.trend_reason)}</td>"
-        f"<td>{escape(dimensions.fund_reason)}</td>"
-        f"<td>{escape(dimensions.fundamental_reason)}</td>"
-        f"<td>{escape(dimensions.news_reason)}</td>"
-        f"<td>{escape(dimensions.theme_reason)}</td>"
-        f"<td>{escape(dimensions.future_trend)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.current_trend, tight=True)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.trend_reason)}</td>"
+        f"<td>{_render_clamped_cell(dimensions.future_trend)}</td>"
         "</tr>"
     )
+
+
+def _render_clamped_cell(text: str, *, tight: bool = False) -> str:
+    klass = "cell-clamp tight" if tight else "cell-clamp"
+    return f'<span class="{klass}" title="{escape(text)}">{escape(text)}</span>'
 
 
 def _opportunity_sector_dimensions(
     item,
     candidate_universe: list[CandidateStockRawData],
 ) -> OpportunityRecommendationDimensions:
-    method = _sector_method_chain_summary(item, candidate_universe)
+    del candidate_universe
     risk = _sector_risk_text(item)
-    causal_evidence = _sector_causal_evidence(item.name, candidate_universe)
-    event_evidence = [
-        evidence for evidence in causal_evidence if evidence.startswith(("消息面", "公告"))
-    ]
-    event_text = (
-        "消息/公告：" + "；".join(event_evidence[:2])
-        if event_evidence
-        else (
-            f"消息/公告：{localize_sector_name(item.name)}联网核验未见可验证新增催化，"
-            f"不把{item.pct_chg:.2f}%涨跌当原因"
-        )
-    )
-    fundamental_evidence = [
-        evidence for evidence in causal_evidence if evidence.startswith("基本面")
-    ]
-    fundamental_text = (
-        "基本面/估值：" + "；".join(fundamental_evidence[:2])
-        if fundamental_evidence
-        else (
-            f"基本面/估值：{localize_sector_name(item.name)}代表股PE缺口，"
-            f"当前按热度 {item.heat_score}/100 和扩散 {item.advancing_ratio:.0%} 降权"
-        )
-    )
     selection_risk = f"入选原因：{_opportunity_sector_entry_reason(item)}"
     if risk:
         selection_risk = f"{selection_risk}；风险原因：{risk}"
     return OpportunityRecommendationDimensions(
         current_trend=(
-            f"统一个股分析：{method.signal_attribution}；当前趋势：主题级事件，{localize_sector_name(item.name)}"
-            f"热度 {item.heat_score}/100"
+            f"重点结论：{localize_sector_name(item.name)}热度 {item.heat_score}/100，"
+            f"{'可观察前排' if item.pct_chg >= 0 else '先等止跌'}"
         ),
-        trend_reason=(
-            f"趋势/量价原因：{method.analyst_team}；板块原因：覆盖 {item.advancing_ratio:.0%}，"
-            f"涨停 {item.limit_up_count}，{item.continuity}，{item.rotation_status}"
+        trend_reason=_shorten_display_reason(
+            f"简单原因：覆盖 {item.advancing_ratio:.0%}，涨停 {item.limit_up_count}，"
+            f"{item.fund_status}；{selection_risk}",
+            limit=115,
         ),
         fund_reason=(
             f"资金/成交原因：{item.fund_status}，"
             f"成交额变化 {item.amount_change:+.1f} 亿"
         ),
-        fundamental_reason=fundamental_text.replace("基本面/估值：", "基本面/估值原因：", 1),
-        news_reason=event_text.replace("消息/公告：", "消息/公告原因：", 1),
-        theme_reason=f"板块/主题原因：{method.context_pack}；{selection_risk}",
-        future_trend=f"{_opportunity_sector_future_trend(item)}；{method.debate}；{method.trader_risk}",
+        fundamental_reason=(
+            f"基本面/估值原因：代表股估值只作复核，先看热度 {item.heat_score}/100"
+        ),
+        news_reason=(
+            f"消息/公告原因：{localize_sector_name(item.name)}事件只作复核，不把涨跌直接当原因"
+        ),
+        theme_reason=f"板块/主题原因：{selection_risk}",
+        future_trend=_shorten_display_reason(_opportunity_sector_future_trend(item), limit=100),
     )
-
 
 def _opportunity_sector_cause(
     item,
@@ -5943,9 +6507,10 @@ def _render_compact_market_module(
     provider_name: str,
     holdings_path: str,
 ) -> str:
-    del portfolio
     candidate_universe = candidate_universe or []
+    trade_guidance = _render_market_buy_sell_guidance(market, sectors, candidate_universe)
     distribution = _render_market_distribution_chart(market, candidate_universe, candidates)
+    sector_heatmap = _render_market_sector_heatmap(sectors)
     mainline_panel = _render_market_mainline_intro_panel(
         sectors,
         candidate_universe,
@@ -5978,7 +6543,9 @@ def _render_compact_market_module(
           {_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="market")}
         </div>
       </div>
+      {trade_guidance}
       {distribution}
+      {sector_heatmap}
       {mainline_panel}
       {wide_move_panel}
       <div class="market-sector-duo">
@@ -5988,6 +6555,78 @@ def _render_compact_market_module(
       {analysis_panel}
       {event_panel}
     </section>"""
+
+
+def _render_buy_sell_guidance_panel(
+    *,
+    title: str,
+    action: str,
+    buy_trigger: str,
+    sell_trigger: str,
+    position_limit: str,
+    stop_loss: str,
+    note: str,
+) -> str:
+    cards = [
+        ("当前动作", action, note),
+        ("买入触发", buy_trigger, "没有触发就不买，避免把分析结论当买点。"),
+        ("卖出/减仓", sell_trigger, "触发后按计划执行，不临盘改规则。"),
+        ("仓位上限", position_limit, "只表示风险控制上限，不代表必须买满。"),
+        ("止损/失效", stop_loss, "失效后先降风险，再重新分析。"),
+    ]
+    card_html = "".join(
+        "<div class='summary-card'>"
+        f"<span>{escape(label)}</span><strong>{escape(_shorten_display_reason(value, limit=72))}</strong>"
+        f"<p class='kpi-foot'>{escape(_shorten_display_reason(foot, limit=92))}</p></div>"
+        for label, value, foot in cards
+    )
+    return f"""
+      <div class="panel buy-sell-guidance-panel" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>买卖指导</h3><p class="section-subtitle">{escape(title)}</p></div>
+        </div>
+        <div class="summary-grid">{card_html}</div>
+      </div>"""
+
+
+def _render_market_buy_sell_guidance(
+    market: MarketSnapshot,
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    top_sector = sectors.sectors[0] if sectors.sectors else None
+    mainline = localize_sector_name(top_sector.name) if top_sector is not None else "主线待确认"
+    target_cash = _market_target_cash(market)
+    stock_limit = _market_stock_position_limit(target_cash)
+    if market.heat_score >= 70 and market.limit_down_count < 15:
+        action = "允许围绕主线前排做条件买入"
+        buy = f"{mainline}继续扩散，前排股回踩不破5日线且资金不流出"
+    elif market.heat_score >= 50 and market.limit_down_count < 20:
+        action = "只做结构性低吸，不追后排"
+        buy = f"{mainline}前排放量站稳，且涨跌家数不继续恶化"
+    else:
+        action = "防守观察，暂停新增风险仓"
+        buy = "跌停收敛、涨跌家数修复、主线重新放量后再考虑"
+    sell = "跌停扩散、主线前排放量长阴、指数跌破当日支撑时先减仓"
+    stop = "市场热度跌破40或跌停超过20家，机会池全部降级"
+    note = f"大盘只决定交易开关和风险上限，个股买卖仍回到个股页触发线；目标现金/低风险 {target_cash}"
+    return _render_buy_sell_guidance_panel(
+        title="先判断市场状态，再决定只做哪些前排股票。",
+        action=action,
+        buy_trigger=buy,
+        sell_trigger=sell,
+        position_limit=f"股票仓位不高于 {stock_limit}",
+        stop_loss=stop,
+        note=note,
+    )
+
+
+def _market_stock_position_limit(target_cash: str) -> str:
+    if "50%-70%" in target_cash:
+        return "30%-50%"
+    if "20%-35%" in target_cash:
+        return "65%-80%"
+    return "50%-70%"
 
 
 def _render_market_distribution_chart(
@@ -6038,13 +6677,13 @@ def _render_market_wide_move_panel(
     rows = _market_wide_move_rows(candidate_universe, candidates)
     all_up_rows = [item for item in rows if item.pct_change > 6]
     all_down_rows = [item for item in rows if item.pct_change < -6]
-    up_rows = all_up_rows[:8]
-    down_rows = all_down_rows[:8]
+    up_rows = all_up_rows[:6]
+    down_rows = all_down_rows[:6]
     if not up_rows and not down_rows:
         return """
       <div class="panel market-wide-move-panel">
         <div class="editor-toolbar"><div><h3>大涨大跌分析</h3></div><span class="portfolio-chip">暂无 &gt;6% / &lt;-6% 样本</span></div>
-        <p class="section-subtitle">当前候选池没有返回大幅波动股票，先看涨跌统计和强弱板块。</p>
+        <p class="section-subtitle">大幅波动归因：暂无 &gt;6% / &lt;-6% 样本，说明极端情绪未在候选池扩散；跟踪重点：若午后出现批量大涨/大跌，再回到板块和事件核验。</p>
       </div>"""
     table_rows = _render_market_wide_move_rows(
         up_rows,
@@ -6068,7 +6707,7 @@ def _render_market_wide_move_panel(
           <span class="portfolio-chip">&gt;6%上涨 {len(all_up_rows)} / &lt;-6%下跌 {len(all_down_rows)}</span>
         </div>
         {theme_summary}
-        <table class="data-table compact-sector-table">
+        <table class="data-table compact-sector-table market-wide-move-table">
           <thead><tr><th>方向</th><th>股票</th><th>板块</th><th>分析</th></tr></thead>
           <tbody>{table_rows}</tbody>
         </table>
@@ -6176,8 +6815,8 @@ def _render_market_wide_move_rows(
         "<tr>"
         f"<td>{escape(direction)}</td>"
         f"<td class='name-cell'><strong>{_render_wide_move_stock_link(item, provider_name=provider_name, holdings_path=holdings_path)}</strong></td>"
-        f"<td>{escape(item.sector)}</td>"
-        f"<td>{escape(_wide_move_analysis(item, up=up))}</td>"
+        f"<td>{_render_clamped_cell(item.sector, tight=True)}</td>"
+        f"<td>{_render_clamped_cell(_wide_move_analysis(item, up=up), tight=True)}</td>"
         "</tr>"
         for item in rows
     )
@@ -6200,13 +6839,92 @@ def _render_wide_move_stock_link(
 
 def _wide_move_analysis(item: LimitBoardRow, *, up: bool) -> str:
     evidence = _candidate_causal_evidence(item)
+    cause_parts = [
+        _wide_move_event_cause(item, up=up),
+        _wide_move_fund_cause(item),
+        _wide_move_fundamental_cause(item),
+        _wide_move_theme_cause(item),
+    ]
     if evidence:
-        return "；".join(evidence[:4])
-    direction = "上涨" if up else "下跌"
-    return (
-        f"联网核验未见可验证新增催化；{direction}异动先按K线、资金和公告复核，"
-        "不把涨跌本身写成原因"
+        cause_parts.extend(evidence[:2])
+    review_focus = "回踩承接、公告催化是否延续" if up else "止跌信号、公告风险是否释放"
+    return "；".join(
+        [f"大幅波动归因：原因：{cause_parts[0]}", *cause_parts[1:4], f"核验：{review_focus}"]
     )
+
+
+def _wide_move_price_context(item: LimitBoardRow, *, up: bool) -> str:
+    direction = "上涨" if up else "下跌"
+    strength = _wide_move_strength_label(item.pct_change, up=up)
+    board = _price_limit_mechanism(item.code, item.name, item.pct_change, up=up)
+    return f"盘面归因：{item.name}{direction} {item.pct_change:.2f}%，{strength}；{board}"
+
+
+def _wide_move_event_cause(item: LimitBoardRow, *, up: bool) -> str:
+    if item.news_items:
+        title = _first_non_empty([item.news_items[0].title, item.news_items[0].summary])
+        if title:
+            return f"消息催化：{_short_condition(title, 38)}"
+    if item.announcements:
+        title = _announcement_title(item.announcements[0])
+        if title:
+            return f"公告催化：{_short_condition(title, 38)}"
+    if _is_known_theme(item.sector):
+        return f"题材驱动待核验：{localize_sector_name(item.sector)}，先查产业/政策/订单消息"
+    action = "上涨" if up else "下跌"
+    return f"未识别新增催化：{item.name}{action}先按个股独立异动核验"
+
+
+def _wide_move_fund_cause(item: LimitBoardRow) -> str:
+    if item.fund_flow is not None:
+        direction = "资金流入" if item.fund_flow > 0 else "资金流出" if item.fund_flow < 0 else "资金中性"
+        return f"资金行为：{direction} {abs(item.fund_flow):.2f}亿，确认是否有主动资金参与"
+    pieces: list[str] = []
+    if item.amount:
+        pieces.append(f"成交额 {item.amount:.1f}亿")
+    if item.turnover_rate:
+        pieces.append(f"换手 {item.turnover_rate:.1f}%")
+    suffix = "，".join(pieces) if pieces else "成交/换手待补"
+    return f"资金行为：{suffix}，无法单独证明原因"
+
+
+def _wide_move_fundamental_cause(item: LimitBoardRow) -> str:
+    if item.pe_ttm is None:
+        return "基本面：估值/财务待补，不能用基本面解释异动"
+    if item.pe_ttm >= 70:
+        return f"基本面：PE {item.pe_ttm:.1f} 偏高，需防题材兑现"
+    if item.pe_ttm <= 35:
+        return f"基本面：PE {item.pe_ttm:.1f} 相对可控，可继续看业绩匹配"
+    return f"基本面：PE {item.pe_ttm:.1f}，需要看业绩与题材是否匹配"
+
+
+def _wide_move_theme_cause(item: LimitBoardRow) -> str:
+    if _is_known_theme(item.sector):
+        return f"题材核验：{localize_sector_name(item.sector)}是否有同主题前排共振"
+    return "题材核验：题材未识别，先按个股独立异动观察"
+
+
+def _wide_move_strength_label(pct_change: float, *, up: bool) -> str:
+    abs_pct = abs(pct_change)
+    if abs_pct >= 20:
+        return "极端波动"
+    if abs_pct >= 10:
+        return "大幅拉升" if up else "大幅下杀"
+    return "明显走强" if up else "明显走弱"
+
+
+def _wide_move_liquidity_context(item: LimitBoardRow) -> str:
+    pieces: list[str] = []
+    if item.fund_flow is not None:
+        flow = "净流入" if item.fund_flow > 0 else "净流出" if item.fund_flow < 0 else "净流向中性"
+        pieces.append(f"{flow} {abs(item.fund_flow):.2f} 亿")
+    if item.amount:
+        pieces.append(f"成交额 {item.amount:.1f} 亿")
+    if item.turnover_rate:
+        pieces.append(f"换手 {item.turnover_rate:.1f}%")
+    if pieces:
+        return "资金活跃度：" + "，".join(pieces)
+    return "资金活跃度：资金/成交字段不足，先按价格异动降权观察"
 
 
 def _market_distribution_pct_values(
@@ -6262,6 +6980,7 @@ def _render_market_strength_sector_panel(
     return f"""
       <div class="panel market-strength-panel">
         <h3>{escape(title)}</h3>
+        <p class="section-subtitle">资金行为看成交和净流向，催化看消息/公告，基本面只做解释权重。</p>
         <table class="data-table compact-sector-table">
           <thead><tr><th>板块</th><th>涨跌</th><th>对应股票</th><th>分析</th></tr></thead>
           <tbody>{rows}</tbody>
@@ -6295,7 +7014,7 @@ def _render_market_mainline_intro_panel(
     return f"""
       <div class="panel market-mainline-panel">
         <div class="editor-toolbar">
-          <div><h3>主线介绍</h3><p class="section-subtitle">板块逻辑、强度指标与同方向最强股票。</p></div>
+          <div><h3>主线介绍</h3><p class="section-subtitle">板块逻辑、资金行为、基本面线索与同方向最强股票。</p></div>
           <span class="portfolio-chip">最强股票Top6</span>
         </div>
         <div class="summary-grid compact-summary-grid">{sector_cards}</div>
@@ -6362,20 +7081,47 @@ def _render_mainline_intro_card(
 
 def _mainline_intro_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
     evidence = _sector_causal_evidence(item.name, candidate_universe)
-    if evidence:
-        logic = "主线逻辑：" + "；".join(evidence[:2])
-    else:
-        logic = "主线逻辑：消息/公告/基本面催化待确认"
-    strength = [
-        f"扩散 {item.advancing_ratio:.0%}",
-        f"涨停 {item.limit_up_count}",
-        f"成交变化 {item.amount_change:.1f}亿",
+    event_items = [
+        text
+        for text in evidence
+        if text.startswith(("消息面", "公告"))
     ]
-    if item.fund_status:
-        strength.append(item.fund_status)
-    if item.rotation_status:
-        strength.append(item.rotation_status)
-    return f"{logic}；强度：{'，'.join(strength)}"
+    fundamental_items = [text for text in evidence if text.startswith("基本面")]
+    fund_items = [text.replace("资金面：", "", 1) for text in evidence if text.startswith("资金面")]
+    catalyst = (
+        "催化核验：" + "；".join(event_items[:2])
+        if event_items
+        else f"催化核验：暂无可验证新增事件，继续查{localize_sector_name(item.name)}政策/订单/公告"
+    )
+    fundamental = (
+        "基本面：" + "；".join(text.replace("基本面：", "", 1) for text in fundamental_items[:2])
+        if fundamental_items
+        else "基本面：代表股估值/财务待补，不能只靠热度解释主线"
+    )
+    if fund_items:
+        fund = "资金行为：" + "；".join(fund_items[:2])
+    elif item.fund_status == "资金活跃":
+        fund = f"资金行为：{localize_sector_name(item.name)}成交改善，需看前排换手承接"
+    elif item.fund_status == "资金流出":
+        fund = f"资金行为：{localize_sector_name(item.name)}资金流出，主线持续性降权"
+    else:
+        fund = "资金行为：净流向待补，不用扩散率替代资金原因"
+    representative = _sector_representative_stocks(item, candidate_universe)
+    mainline_type = _market_mainline_style_label(item)
+    return (
+        f"主线性质：{mainline_type}；主线逻辑：{catalyst}；{fundamental}；{fund}；"
+        f"配置含义：只看前排和回踩承接，不用后排补涨替代主线；代表股验证：{representative}"
+    )
+
+
+def _market_mainline_style_label(item) -> str:
+    if item.advancing_ratio >= 0.7 and item.limit_up_count >= 3:
+        return "主升扩散，适合看龙头带队和板块宽度"
+    if item.advancing_ratio >= 0.55 and item.amount_change > 0:
+        return "结构修复，重点看资金是否连续回流"
+    if getattr(item, "high_divergence", False):
+        return "高位分歧，强度在但追高性价比下降"
+    return "轮动试探，需要次日成交和代表股确认"
 
 
 def _mainline_top_stocks(
@@ -6409,7 +7155,7 @@ def _render_mainline_top_stock_row(
         f"<td class='name-cell'><strong>{link}</strong></td>"
         f"<td>{escape(localize_sector_name(stock.sector))}</td>"
         f"<td>{pct:.2f}%</td>"
-        f"<td>{escape(reason)}</td>"
+        f"<td>{_render_clamped_cell(reason, tight=True)}</td>"
         "</tr>"
     )
 
@@ -6459,8 +7205,8 @@ def _render_market_strength_sector_row(
         f"<tr><td class='name-cell'><strong>{escape(item.name)}</strong>"
         f"<span>热度 {item.heat_score}/100</span></td>"
         f"<td>{item.pct_chg:.2f}%</td>"
-        f"<td>{escape(stock_text)}</td>"
-        f"<td>{escape(analysis)}</td></tr>"
+        f"<td>{_render_clamped_cell(stock_text, tight=True)}</td>"
+        f"<td>{_render_clamped_cell(analysis, tight=True)}</td></tr>"
     )
 
 
@@ -6484,30 +7230,66 @@ def _sector_strength_analysis(
     *,
     reverse: bool,
 ) -> str:
-    method = _sector_method_chain_summary(item, candidate_universe)
     if reverse:
         reason = _sector_strong_reason(item, candidate_universe)
     else:
         reason = _sector_weak_reason(item, candidate_universe)
-    return (
-        f"{reason}；{method.context_pack}；{method.signal_attribution}；"
-        f"{method.analyst_team}；{method.debate}；{method.trader_risk}"
-    )
+    return f"结论：{reason}"
 
 
 def _sector_strong_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
     evidence = _sector_causal_evidence(item.name, candidate_universe)
+    context = _sector_cause_context(item, candidate_universe)
     if evidence:
-        return f"走强原因：{_sector_market_context(item)}；{'；'.join(evidence[:3])}"
-    return f"走强原因：{_sector_market_context(item)}；{_sector_missing_event_context(strong=True)}"
+        return f"强势归因：走强原因：{context}；{'；'.join(evidence[:2])}"
+    return f"强势归因：走强原因：{context}；{_sector_missing_event_context(strong=True)}"
 
 
 def _sector_weak_reason(item, candidate_universe: list[CandidateStockRawData]) -> str:
     evidence = _sector_causal_evidence(item.name, candidate_universe)
     label = "走弱原因" if item.pct_chg < 0 or item.advancing_ratio < 0.5 else "相对弱势原因"
+    context = _sector_cause_context(item, candidate_universe)
     if evidence:
-        return f"{label}：{_sector_market_context(item)}；{'；'.join(evidence[:3])}"
-    return f"{label}：{_sector_market_context(item)}；{_sector_missing_event_context(strong=False)}"
+        return f"弱势归因：{label}：{context}；{'；'.join(evidence[:2])}"
+    return f"弱势归因：{label}：{context}；{_sector_missing_event_context(strong=False)}"
+
+
+def _sector_cause_context(item, candidate_universe: list[CandidateStockRawData]) -> str:
+    related = [
+        raw
+        for raw in candidate_universe
+        if localize_sector_name(raw.sector) == localize_sector_name(item.name)
+    ]
+    catalysts = _sector_causal_evidence(item.name, candidate_universe)
+    representative = "、".join(raw.name for raw in related[:3]) or "代表股待补"
+    event_catalysts = [
+        text for text in catalysts if text.startswith(("消息面：", "公告："))
+    ]
+    event_text = (
+        "催化核验：" + "；".join(event_catalysts[:2])
+        if event_catalysts
+        else f"催化缺口：未见可验证新增事件，需核对{localize_sector_name(item.name)}政策/订单/公告"
+    )
+    if item.fund_status == "资金活跃":
+        fund_text = f"资金确认：{localize_sector_name(item.name)}有主动资金参与，继续看前排承接"
+    elif item.fund_status == "资金流出":
+        fund_text = f"承接压力：{localize_sector_name(item.name)}资金流出，说明抛压仍在"
+    else:
+        fund_text = f"资金确认：{localize_sector_name(item.name)}资金未形成强确认"
+    fundamental = _sector_fundamental_context(related)
+    return f"{event_text}；{fund_text}；{fundamental}；代表股：{representative}"
+
+
+def _sector_fundamental_context(related: list[CandidateStockRawData]) -> str:
+    pe_values = [raw.pe_ttm for raw in related if raw.pe_ttm is not None]
+    if not pe_values:
+        return "基本面：代表股估值/财务待补，不能用基本面解释板块"
+    avg_pe = sum(pe_values) / len(pe_values)
+    if avg_pe >= 70:
+        return f"基本面：代表股平均PE {avg_pe:.1f} 偏高，需防高位兑现"
+    if avg_pe <= 35:
+        return f"基本面：代表股平均PE {avg_pe:.1f} 相对可控"
+    return f"基本面：代表股平均PE {avg_pe:.1f}，需继续看业绩匹配"
 
 
 def _sector_causal_evidence(
@@ -6645,7 +7427,12 @@ def _professional_market_diagnosis(
     market_env = _market_environment_dimension(market)
     profit = _profit_effect_dimension(market, over_six, over_three, theme_stats)
     loss = _loss_effect_dimension(market, under_six, under_three)
-    mainline = _mainline_quality_dimension(mainline_theme, theme_stats, sectors)
+    mainline = _mainline_quality_dimension(
+        mainline_theme,
+        theme_stats,
+        sectors,
+        candidate_universe,
+    )
     funds = _fund_continuity_dimension(sectors, wide_up, wide_down)
     dimensions = [
         {"dimension": "市场环境", **market_env},
@@ -6702,8 +7489,14 @@ def _market_environment_dimension(market: MarketSnapshot) -> dict[str, object]:
     elif market.limit_down_count >= 30:
         score -= 5
     judgement = "偏强" if score >= 22 else "中性" if score >= 15 else "偏弱"
+    if judgement == "偏强":
+        tone = "风险偏好修复，指数和宽度对短线交易形成支撑"
+    elif judgement == "中性":
+        tone = "指数有支撑但宽度未充分扩散，适合结构性筛选"
+    else:
+        tone = "风险偏好收缩，先看防守和止跌，不扩大试错"
     evidence = (
-        f"热度 {market.heat_score}/100，涨跌家数比 {market.breadth_ratio:.2f}，"
+        f"市场定性：{tone}；热度 {market.heat_score}/100，涨跌家数比 {market.breadth_ratio:.2f}，"
         f"上涨/下跌/平盘 {market.advancing_count}/{market.declining_count}/{market.unchanged_count}，"
         f"涨停/跌停 {market.limit_up_count}/{market.limit_down_count}"
     )
@@ -6738,6 +7531,7 @@ def _profit_effect_dimension(
         score += min(5, resonance_count * 2)
     judgement = "强" if score >= 18 else "结构性" if score >= 11 else "弱"
     evidence = (
+        f"扩散解读：{'板块共振带动赚钱效应' if resonance_count else '赚钱效应仍偏个股'}；"
         f"涨停 {market.limit_up_count}，>6% {over_six}，>3% {over_three}，"
         f"共振板块 {resonance_count} 个"
     )
@@ -6768,7 +7562,10 @@ def _loss_effect_dimension(
         risk_score += 3
     score = max(0, 20 - risk_score)
     judgement = "风险扩散" if score <= 7 else "局部分歧" if score <= 14 else "风险可控"
-    evidence = f"跌停 {market.limit_down_count}，<-6% {under_six}，<-3% {under_three}"
+    evidence = (
+        f"风险解释：{'亏钱效应向多数方向扩散' if score <= 7 else '风险主要集中在局部方向' if score <= 14 else '跌停和大跌未形成系统性传导'}；"
+        f"跌停 {market.limit_down_count}，<-6% {under_six}，<-3% {under_three}"
+    )
     return {"score": score, "judgement": judgement, "evidence": evidence}
 
 
@@ -6776,6 +7573,7 @@ def _mainline_quality_dimension(
     mainline: str,
     theme_stats: list[tuple[str, dict[str, int]]],
     sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
 ) -> dict[str, object]:
     leading = next((item for item in sectors.sectors if item.name == mainline), None)
     counts = next((counts for theme, counts in theme_stats if theme == mainline), {"up": 0, "down": 0})
@@ -6801,17 +7599,17 @@ def _mainline_quality_dimension(
             score += 2
     judgement = "主线清晰" if score >= 18 else "有主线雏形" if score >= 10 else "轮动分散"
     if leading is None:
-        evidence = f"{mainline}；>6%样本 {counts['up']}，<-6%样本 {counts['down']}"
-    elif counts["up"] == 0 and counts["down"] == 0:
-        evidence = (
-            f"{mainline}；板块热度 {leading.heat_score}/100，"
-            f"扩散 {leading.advancing_ratio:.0%}，涨停 {leading.limit_up_count}，"
-            f"成交变化 {leading.amount_change:.1f}"
-        )
+        evidence = f"主线性质：轮动分散；{mainline}；催化核验：主线待确认；代表股：等待板块成分映射"
     else:
+        cause_context = _sector_cause_context(leading, candidate_universe)
+        if counts["up"] or counts["down"]:
+            sample_context = f"样本验证：>6% {counts['up']}，<-6% {counts['down']}"
+        else:
+            sample_context = "样本验证：大幅波动样本不足，先看代表股承接"
         evidence = (
-            f"{mainline}；>6%样本 {counts['up']}，<-6%样本 {counts['down']}，"
-            f"板块扩散 {leading.advancing_ratio:.0%}，涨停 {leading.limit_up_count}"
+            f"主线性质：{_market_mainline_style_label(leading)}；{mainline}；"
+            f"催化核验：只对消息/公告加权，缺事件时不把涨幅当原因；"
+            f"{cause_context}；{sample_context}"
         )
     return {"score": min(score, 25), "judgement": judgement, "evidence": evidence}
 
@@ -6837,10 +7635,16 @@ def _fund_continuity_dimension(
     elif outflow_rows >= 4:
         score -= 3
     judgement = "资金支持" if score >= 11 else "资金配合一般" if score >= 5 else "持续性不足"
-    evidence = (
-        f"强势板块成交改善 {len(leading_sectors)} 个，"
-        f">6%资金流入样本 {inflow_rows}，<-6%资金流出样本 {outflow_rows}"
-    )
+    if leading_sectors:
+        sector_text = "、".join(
+            f"{localize_sector_name(item.name)}成交变化{item.amount_change:+.1f}亿"
+            for item in leading_sectors[:3]
+        )
+        evidence = f"资金迁移：资金优先流向前排主题；资金行为：{sector_text}；前排资金承接需看代表股分时和换手"
+    elif inflow_rows or outflow_rows:
+        evidence = f"资金迁移：方向仍待确认；资金行为：大幅波动样本中流入{inflow_rows}只、流出{outflow_rows}只；先看是否集中到同一主题"
+    else:
+        evidence = "资金行为：板块成交和个股净流向证据不足，资金持续性不作为交易理由"
     return {"score": max(0, min(score, 20)), "judgement": judgement, "evidence": evidence}
 
 
@@ -6889,12 +7693,12 @@ def _market_diagnosis_conclusion(
     loss: object,
 ) -> str:
     if grade.startswith("A"):
-        return f"{mainline}是当前主要观察方向，赚钱效应强，优先看板块前排和持续放量个股。"
+        return f"配置含义：{mainline}处于主升扩散窗口，仓位只向龙头、放量承接和有催化的前排集中；跟踪重点：成交额能否继续放大、跌停是否不扩散。"
     if grade.startswith("B"):
-        return f"当前不是全面行情，是结构性机会；{mainline}优先级最高，同时观察{loss}是否扩大。"
+        return f"配置含义：结构性修复优先，不按全面牛市处理；{mainline}只做强中选强，跟踪重点：{loss}是否扩大和资金是否连续两日回流。"
     if grade.startswith("C"):
-        return f"市场以轮动为主，{mainline}需要次日确认；{profit}不足时不追后排。"
-    return f"市场偏防守，{loss}优先级高于机会挖掘；只保留主线前排观察。"
+        return f"配置含义：轮动市降低追涨权重，{mainline}需要次日放量确认；跟踪重点：{profit}能否从个股扩散到板块。"
+    return f"配置含义：防守优先，{loss}比机会更重要；跟踪重点：跌停/大跌是否收敛，主线前排是否仍有承接。"
 
 
 def _render_market_barometer_strip(
@@ -7125,7 +7929,20 @@ def _event_reason_text(item: NewsItem, theme: str, stock_text: str) -> str:
         reason = f"{theme}：{reason}"
     if stock_text and stock_text not in reason:
         reason = f"{reason}；对应 {stock_text}"
-    return _compact_event_reason(reason, 120)
+    focus = _event_follow_focus(theme, stock_text, reason)
+    return _compact_event_reason(f"事件解读：{reason}；跟踪重点：{focus}", 140)
+
+
+def _event_follow_focus(theme: str, stock_text: str, reason: str) -> str:
+    if any(word in reason for word in ["订单", "中标", "业绩", "回购"]):
+        return "确认事件是否改善业绩预期，并看对应股票是否放量承接"
+    if any(word in reason for word in ["减持", "监管", "诉讼", "风险"]):
+        return "先排查公告风险是否扩散到同主题持仓"
+    if theme:
+        return f"观察{theme}前排3只股票是否继续强于板块"
+    if stock_text:
+        return "回到个股页核对K线、资金和公告"
+    return "只做信息提示，不单独作为交易理由"
 
 
 def _compact_event_reason(text: str, limit: int = 120) -> str:
@@ -7280,23 +8097,88 @@ def _render_market_risk_cards(market: MarketSnapshot) -> str:
 
 def _render_market_sector_heatmap(sectors: SectorAnalysisReport) -> str:
     if not sectors.sectors:
-        return "<div class='empty-state'><strong>暂无可靠板块数据</strong><p>先确认 TDX / AKShare / 本地快照是否返回行业或概念，不用交易板块伪装主题。</p></div>"
-    top_items = sorted(sectors.sectors, key=lambda item: item.heat_score, reverse=True)[:6]
-    max_heat = max(item.heat_score for item in top_items) or 1
-    cards = []
-    for item in top_items:
-        width = min(100, max(10, item.heat_score / max_heat * 100))
-        pct_label = _sector_move_text(item)
-        cards.append(
-            f"""
-            <button class="market-sector-tile" type="button" data-jump="opportunity">
-              <span>{escape(item.name)}</span>
-              <strong>{escape(pct_label)}</strong>
-              <i><b style="width:{width:.0f}%"></b></i>
-              <em>{escape(item.rotation_status)} · 热度 {item.heat_score}/100</em>
-            </button>"""
-        )
-    return "".join(cards)
+        return """
+      <div class="panel market-sector-heatmap-panel">
+        <h3>板块热力图 <span>按主题聚合 · 颜色=今日涨跌/风险强度 · 红强绿弱</span></h3>
+        <div class="empty-state"><strong>暂无可靠板块数据</strong><p>先确认 TDX / AKShare / 本地快照是否返回行业或概念，不用交易板块伪装主题。</p></div>
+      </div>"""
+    top_items = sorted(
+        sectors.sectors,
+        key=lambda item: (item.heat_score, item.pct_chg, item.amount_change),
+        reverse=True,
+    )[:8]
+    cards = "".join(_render_market_sector_heat_card(item) for item in top_items)
+    return f"""
+      <div class="panel market-sector-heatmap-panel">
+        <h3>板块热力图 <span>按主题聚合 · 颜色=今日涨跌/风险强度 · 红强绿弱</span></h3>
+        <div class="market-sector-heatmap-grid">
+          {cards}
+        </div>
+      </div>"""
+
+
+def _render_market_sector_heat_card(item) -> str:
+    pct_tone = _market_sector_heat_tone(item.pct_chg)
+    heat_delta = (item.heat_score - 50) / 20
+    heat_tone = _market_sector_heat_tone(heat_delta)
+    fund_value = _market_sector_fund_value(item)
+    fund_tone = _market_sector_heat_tone(fund_value)
+    return f"""
+          <article class="market-sector-heat-card {pct_tone}" aria-label="查看 {escape(item.name)} 板块">
+            <div class="market-sector-heat-head">
+              <strong>{escape(item.name)} <span>主题</span></strong>
+              <em>{_format_signed_pct(item.pct_chg)}</em>
+            </div>
+            <div class="market-sector-heat-cells">
+              {_render_market_sector_heat_cell(item.name, _format_signed_pct(item.pct_chg), pct_tone)}
+              {_render_market_sector_heat_cell("热度", f"{item.heat_score}/100", heat_tone)}
+              {_render_market_sector_heat_cell("资金", _market_sector_fund_label(item), fund_tone)}
+            </div>
+          </article>"""
+
+
+def _render_market_sector_heat_cell(label: str, value: str, tone: str) -> str:
+    return (
+        f'<span class="market-sector-heat-cell {tone}">'
+        f"<small>{escape(label)}</small><strong>{escape(value)}</strong>"
+        "</span>"
+    )
+
+
+def _market_sector_heat_tone(value: float) -> str:
+    if value >= 0.2:
+        return "up"
+    if value <= -0.2:
+        return "down"
+    return "flat"
+
+
+def _format_signed_pct(value: float) -> str:
+    return f"{value:+.2f}%"
+
+
+def _market_sector_fund_value(item) -> float:
+    if item.fund_status == "资金流出":
+        return -1.0
+    if item.fund_status == "资金活跃":
+        return 1.0
+    if item.amount_change > 0:
+        return 0.3
+    if item.amount_change < 0:
+        return -0.3
+    return 0.0
+
+
+def _market_sector_fund_label(item) -> str:
+    if item.fund_status == "资金流出":
+        return "流出"
+    if item.fund_status == "资金活跃":
+        return "活跃"
+    if item.amount_change > 0:
+        return f"{item.amount_change:+.1f}亿"
+    if item.amount_change < 0:
+        return f"{item.amount_change:+.1f}亿"
+    return "一般"
 
 
 def _render_market_sector_top5_panel(
@@ -7692,14 +8574,143 @@ def _render_compact_portfolio_module(
         readonly=readonly,
         agentic_decisions=agentic_decisions or {},
     )
+    overall_summary = _render_portfolio_overall_summary_card(
+        portfolio,
+        advice,
+        advice_by_code,
+        market,
+    )
     notice_html = _render_portfolio_notice(notice)
     return f"""
     <section class="module" id="module-portfolio">
       <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="portfolio")}</div></div>
       {notice_html}
+      {overall_summary}
       {editor}
       {analysis_list}
     </section>"""
+
+
+def _render_portfolio_overall_summary_card(
+    portfolio: PortfolioAnalysisReport,
+    advice: PortfolioAdvice,
+    advice_by_code: dict[str, PositionAdvice],
+    market: MarketSnapshot,
+) -> str:
+    bullish, light, watch = _portfolio_summary_groups(portfolio, advice_by_code)
+    guidance = _render_portfolio_buy_sell_guidance(
+        portfolio=portfolio,
+        advice=advice,
+        advice_by_code=advice_by_code,
+    )
+    return f"""
+      <div class="panel portfolio-overall-summary" style="margin-top:16px">
+        <div class="editor-toolbar">
+          <div><h3>组合整体总结</h3><p class="section-subtitle">{escape(advice.overall_action)}；目标现金/低风险仓位 {escape(advice.target_cash)}；市场热度 {market.heat_score}/100。</p></div>
+          <span class="portfolio-chip">健康度 {portfolio.health_score}/100</span>
+        </div>
+        <div class="grid-3" style="margin-top:12px">
+          {_render_portfolio_summary_bucket("看好", bullish, "动作：持有跟踪；主因：趋势、成本和风险结构占优；触发：板块继续扩散；失效：跌破个股止损线。")}
+          {_render_portfolio_summary_bucket("建议轻仓", light, "风险、集中度或止盈压力较高，优先控制仓位。")}
+          {_render_portfolio_summary_bucket("继续观察", watch, "动作：暂不加仓；主因：趋势、资金或消息证据不共振；触发：放量站回趋势线；失效：继续弱于板块。")}
+        </div>
+      </div>
+      {guidance}"""
+
+
+def _render_portfolio_buy_sell_guidance(
+    *,
+    portfolio: PortfolioAnalysisReport,
+    advice: PortfolioAdvice,
+    advice_by_code: dict[str, PositionAdvice],
+) -> str:
+    sell_items = [
+        item
+        for item in advice.position_advices
+        if item.action in {"降仓", "锁定利润"} or item.adjust_amount < 0
+    ]
+    buy_items = [
+        position
+        for position in portfolio.positions
+        if (advice_by_code.get(position.holding.code) is not None)
+        and advice_by_code[position.holding.code].action in {"持有", "观察"}
+        and position.trend == "上升趋势"
+        and position.risk_level != "高"
+    ]
+    top_buy = buy_items[0].holding.name if buy_items else "暂无需要主动加仓的持仓"
+    top_sell = sell_items[0].name if sell_items else "暂无必须立即卖出的持仓"
+    stop = (
+        f"{sell_items[0].name}跌破 {sell_items[0].stop_loss:.2f} 先执行减仓"
+        if sell_items
+        else "任何持仓跌破各自止损线，先减仓再复盘"
+    )
+    return _render_buy_sell_guidance_panel(
+        title="持仓页只回答你的股票怎么处理：谁能拿、谁要减、什么条件加。",
+        action=advice.overall_action,
+        buy_trigger=f"{top_buy}只有放量转强且不突破目标仓位时才加仓",
+        sell_trigger=f"{top_sell}若继续弱于板块或触发止损，优先卖出/减仓",
+        position_limit=f"按目标现金/低风险仓位 {advice.target_cash} 控制总风险",
+        stop_loss=stop,
+        note="先处理风险票，再考虑加仓强势票；亏损票不因成本低而摊平。",
+    )
+
+
+def _portfolio_summary_groups(
+    portfolio: PortfolioAnalysisReport,
+    advice_by_code: dict[str, PositionAdvice],
+) -> tuple[list[str], list[str], list[str]]:
+    bullish: list[str] = []
+    light: list[str] = []
+    watch: list[str] = []
+    for position in portfolio.positions:
+        advice = advice_by_code.get(position.holding.code)
+        item = _portfolio_summary_item(position, advice)
+        action = advice.action if advice else "观察"
+        if action in {"降仓", "锁定利润"} or position.risk_level == "高" or position.weight >= 0.30:
+            light.append(item)
+        elif position.trend == "上升趋势" and position.pnl_ratio >= 0:
+            bullish.append(item)
+        else:
+            watch.append(item)
+    return (
+        _limit_summary_items(bullish),
+        _limit_summary_items(light),
+        _limit_summary_items(watch),
+    )
+
+
+def _portfolio_summary_item(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+) -> str:
+    action = advice.action if advice else "观察"
+    trigger = _short_condition(advice.next_check, 28) if advice else "复核趋势和资金"
+    return (
+        f"{position.holding.name}：动作：{action}；主因：趋势 {position.trend}、"
+        f"盈亏 {position.pnl_ratio:.1f}%、仓位 {position.weight:.1%}；"
+        f"触发：{trigger}；失效：跌破成本/止损线"
+    )
+
+
+def _limit_summary_items(items: list[str], *, limit: int = 3) -> list[str]:
+    if len(items) <= limit:
+        return items
+    return items[:limit] + [f"另有 {len(items) - limit} 只归入此类"]
+
+
+def _render_portfolio_summary_bucket(
+    title: str,
+    items: list[str],
+    empty_text: str,
+) -> str:
+    content = "".join(f"<li>{escape(item)}</li>" for item in items)
+    if not content:
+        content = f"<li>{escape(empty_text)}</li>"
+    return f"""
+          <div class="kpi-card">
+            <div class="kpi-label">{escape(title)}</div>
+            <ul class="note-list compact-list">{content}</ul>
+          </div>"""
 
 
 def _render_portfolio_editor_panel(
@@ -7777,7 +8788,7 @@ def _render_portfolio_unified_analysis_panel(
     return f"""
       <div class="panel portfolio-stock-analysis" style="margin-top:16px">
         <div class="editor-toolbar">
-          <div><h3>持仓分析</h3><p class="section-subtitle">一行看完技术、资金、基本面、消息、板块、仓位成本和结论。</p></div>
+          <div><h3>持仓分析</h3><p class="section-subtitle">这里只展示重点结论、简单原因和关键触发；详细多维分析进入个股分析页查看。</p></div>
           <span class="portfolio-chip">总市值 {portfolio.total_market_value:.2f} · 累计盈亏 {portfolio.total_pnl_ratio:.2f}%</span>
         </div>
         <table class="data-table portfolio-analysis-table">
@@ -7832,34 +8843,97 @@ def _render_portfolio_multidimensional_analysis(
     *,
     agentic_decision: StockAgentDecision | None = None,
 ) -> str:
-    sector_name = localize_sector_name(position.holding.sector or "未识别主题")
+    del agentic_decision
     sector_state = _holding_sector_state(position.holding.sector, sectors)
     action = advice.action if advice else "观察"
     reason = _clean_position_reason(advice.reason, action) if advice else "等待更多数据确认"
     next_check = advice.next_check if advice else "复核趋势、公告和资金变化。"
+    next_check = _shorten_display_reason(next_check, limit=78)
+    simple_reason = _portfolio_simple_reason(position, market, sector_state, reason)
+    conclusion = _portfolio_research_style_conclusion(
+        position,
+        advice,
+        action=action,
+        sector_state=sector_state,
+        next_check=next_check,
+    )
     lines = [
-        ("统一个股分析", "按 daily_stock_analysis + TradingAgents 同一口径：上下文包、信号归因、分析师团队、多空审议、交易员和组合经理。"),
-        ("方法链", _agentic_signal_text(agentic_decision)),
-        ("分析师团队", _agentic_team_text(agentic_decision)),
-        ("多空审议", _agentic_debate_text(agentic_decision)),
-        ("交易员/组合经理", _agentic_trader_text(agentic_decision)),
-        ("趋势/量价原因", _portfolio_trend_dimension(position)),
-        ("资金/成交原因", _portfolio_fund_dimension(position, market)),
-        ("基本面/估值原因", _portfolio_fundamental_dimension(position)),
-        ("消息/公告原因", _portfolio_news_dimension(position, market)),
-        ("板块/主题原因", _portfolio_sector_dimension(sector_name, sector_state, position)),
-        ("未来趋势预测", _portfolio_future_trend_dimension(position, market, sector_state)),
-        ("仓位原因", _portfolio_holding_dimension(position, advice)),
-        ("结论", f"{action}：{reason}；后续看 {next_check}"),
+        ("重点结论", conclusion),
+        ("简单原因", simple_reason),
+        ("关键触发", next_check),
     ]
     return (
         "<div class='portfolio-analysis-stack'>"
         + "".join(
-            f"<p class='portfolio-analysis-line'><strong>{escape(label)}</strong>{escape(text)}</p>"
+            f"<p class='portfolio-analysis-line'><strong>{escape(label)}</strong><span>{escape(text)}</span></p>"
             for label, text in lines
         )
         + "</div>"
     )
+
+
+def _portfolio_simple_reason(
+    position: PositionAnalysis,
+    market: MarketSnapshot,
+    sector_state: str,
+    reason: str,
+) -> str:
+    parts = [
+        f"趋势 {position.trend}、风险 {position.risk_level}",
+        f"仓位成本：盈亏 {position.pnl_ratio:.2f}%、仓位 {position.weight:.1%}",
+    ]
+    if sector_state:
+        parts.append(f"板块 {sector_state}")
+    if market.heat_score < 45:
+        parts.append(f"市场热度 {market.heat_score}/100 偏弱")
+    if reason:
+        parts.append(_shorten_display_reason(reason, limit=54))
+    return "；".join(parts[:4])
+
+
+def _portfolio_research_style_conclusion(
+    position: PositionAnalysis,
+    advice: PositionAdvice | None,
+    *,
+    action: str,
+    sector_state: str,
+    next_check: str,
+) -> str:
+    driver_parts = [
+        f"{position.trend}",
+        f"盈亏 {position.pnl_ratio:.2f}%",
+        f"仓位 {position.weight:.1%}",
+    ]
+    if sector_state:
+        driver_parts.append(sector_state)
+    if advice and advice.reason:
+        driver_parts.append(_clean_position_reason(advice.reason, action))
+    driver = _shorten_display_reason("、".join(driver_parts), limit=70)
+    if position.risk_level == "高" or position.trend == "下降趋势":
+        invalid = "继续弱于板块或跌破止损线"
+    elif position.pnl_ratio < 0:
+        invalid = "反弹无量或再次跌破成本下沿"
+    else:
+        invalid = "跌破短期趋势线且资金转弱"
+    return (
+        f"动作：{action}；主因：{driver}；"
+        f"触发：{_shorten_display_reason(next_check, limit=52)}；失效：{invalid}"
+    )
+
+
+def _portfolio_short_verdict(position: PositionAnalysis) -> str:
+    if position.risk_level == "高" or position.trend == "下降趋势":
+        return "先降风险，不补仓"
+    if position.pnl_ratio < 0:
+        return "先观察修复，不摊低成本"
+    if position.trend == "上升趋势":
+        return "持有跟踪，跌破触发线再处理"
+    return "持有观察，等方向确认"
+
+
+def _shorten_display_reason(text: str, *, limit: int = 80) -> str:
+    clean = " ".join(str(text).strip().split())
+    return clean if len(clean) <= limit else clean[: limit - 1].rstrip() + "…"
 
 
 def _clean_position_reason(reason: str, action: str) -> str:
@@ -8650,6 +9724,17 @@ def _render_stock_top_conclusion(
     data_blocks = _stock_required_data_blocks(stock_raw)
     missing = [block["name"] for block in data_blocks if block["tone"] == "missing"]
     data_text = "数据完整" if not missing else "缺失：" + "、".join(missing)
+    professional_conclusion = _stock_research_style_conclusion(
+        trade_plan=trade_plan,
+        driver=driver,
+        invalid=invalid,
+    )
+    guidance = _render_stock_buy_sell_guidance(
+        stock=stock,
+        trade_plan=trade_plan,
+        technical=technical,
+        invalid=invalid,
+    )
     return f"""
       <div class="panel stock-top-conclusion-panel">
         <div class="editor-toolbar">
@@ -8657,14 +9742,53 @@ def _render_stock_top_conclusion(
           <span class="portfolio-chip">{escape(stock.risk_level)}风险 · {escape(quality.status)}</span>
         </div>
         <div class="summary-grid">
-          <div class="summary-card"><span>当前判断</span><strong>{escape(_short_condition(trade_plan.verdict, 70))}</strong><p class="kpi-foot">{escape(_short_condition(trade_plan.reason, 92))}</p></div>
+          <div class="summary-card"><span>专业结论</span><strong>{escape(_shorten_display_reason(professional_conclusion, limit=160))}</strong><p class="kpi-foot">{escape(_short_condition(trade_plan.reason, 92))}</p></div>
           <div class="summary-card"><span>综合依据</span><strong>{escape(_short_condition(driver, 70))}</strong><p class="kpi-foot">机会评分 {stock.upside.score}/100 · {escape(stock.trend)}</p></div>
           <div class="summary-card"><span>关键位置</span><strong>{technical.support:.2f} / {technical.resistance:.2f}</strong><p class="kpi-foot">现价 {stock.latest_close:.2f} · 失效 {technical.invalid_line:.2f}</p></div>
           <div class="summary-card"><span>转强条件</span><strong>{escape(_short_condition(trade_plan.entry_trigger, 70))}</strong><p class="kpi-foot">{escape(_short_condition(trade_plan.add_trigger, 92))}</p></div>
           <div class="summary-card"><span>风险/失效</span><strong>{escape(_short_condition(invalid, 70))}</strong><p class="kpi-foot">{escape(_short_condition(risk, 92))} · {escape(event_radar.gate)}</p></div>
           <div class="summary-card"><span>成本位置</span><strong>{escape(_short_condition(cost_text, 70))}</strong><p class="kpi-foot">{escape(data_text)}</p></div>
         </div>
-      </div>"""
+      </div>
+      {guidance}"""
+
+
+def _render_stock_buy_sell_guidance(
+    *,
+    stock: DeepStockReport,
+    trade_plan: TradePlan,
+    technical: TechnicalProfile,
+    invalid: str,
+) -> str:
+    if trade_plan.verdict in {"小仓试错", "持有"}:
+        action = f"{trade_plan.verdict}，只按触发线执行"
+    elif trade_plan.verdict == "减仓":
+        action = "先减仓，等风险释放后再看"
+    else:
+        action = f"{trade_plan.verdict}，未触发前不买"
+    return _render_buy_sell_guidance_panel(
+        title=f"{stock.name} 的买卖只按价格触发和失效条件执行。",
+        action=action,
+        buy_trigger=trade_plan.entry_trigger,
+        sell_trigger=trade_plan.stop_loss,
+        position_limit=trade_plan.target_position,
+        stop_loss=f"{invalid}；技术失效线 {technical.invalid_line:.2f}",
+        note=f"现价 {stock.latest_close:.2f}；支撑 {technical.support:.2f} / 压力 {technical.resistance:.2f}",
+    )
+
+
+def _stock_research_style_conclusion(
+    *,
+    trade_plan: TradePlan,
+    driver: str,
+    invalid: str,
+) -> str:
+    return (
+        f"动作：{trade_plan.verdict}；"
+        f"主因：{_shorten_display_reason(driver, limit=32)}；"
+        f"触发：{_shorten_display_reason(trade_plan.entry_trigger, limit=30)}；"
+        f"失效：{_shorten_display_reason(invalid, limit=30)}"
+    )
 
 
 def _render_stock_simple_kline_data(

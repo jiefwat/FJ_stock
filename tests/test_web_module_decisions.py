@@ -223,6 +223,32 @@ def test_daily_market_shows_concise_data_sector_analysis_and_mapped_events() -> 
     ]:
         assert removed not in market_html
 
+
+def test_daily_market_renders_sector_heatmap_cards() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    for text in [
+        "板块热力图",
+        "按主题聚合",
+        "颜色=今日涨跌/风险强度",
+        "主题",
+        "热度",
+        "资金",
+        "半导体",
+        "机器人",
+    ]:
+        assert text in market_html
+
+    for class_name in [
+        "market-sector-heatmap-panel",
+        "market-sector-heatmap-grid",
+        "market-sector-heat-card",
+        "market-sector-heat-cells",
+        "market-sector-heat-cell",
+    ]:
+        assert class_name in market_html
+
+
 def test_market_ui_uses_concise_data_labels_not_narrative_terms() -> None:
     market_html = _workspace(_sample_html(), "market")
 
@@ -402,11 +428,62 @@ def test_market_wide_move_does_not_leave_unknown_research_copy() -> None:
         _sample_html(provider=UnknownWideMoveProvider(), provider_name="tdx-snapshot"),
         "market",
     )
+    wide_move_html = market_html[
+        market_html.index("大涨大跌分析") : market_html.index("market-sector-duo")
+    ]
 
-    assert "大涨大跌分析" in market_html
-    assert "未识别明确消息/公告/基本面原因" not in market_html
-    assert "需继续查新闻" not in market_html
-    assert "联网核验未见可验证新增催化" in market_html
+    assert "大涨大跌分析" in wide_move_html
+    assert "未识别明确消息/公告/基本面原因" not in wide_move_html
+    assert "需继续查新闻" not in wide_move_html
+    assert "联网核验未见可验证新增催化" not in wide_move_html
+    assert "未知强势股 12.00%" in wide_move_html
+    assert "未知强势股上涨 12.00%" not in wide_move_html
+    assert "题材未识别，先按个股独立异动观察" in wide_move_html
+    assert "换手 12.0%" in wide_move_html
+
+
+def test_market_wide_move_analysis_explains_cause_not_price_result() -> None:
+    class CauseProvider(SampleDataProvider):
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300111",
+                    name="订单驱动",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-09", 10, 10.2, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-10", 10.1, 11.2, 10.0, 11.0, 2600),
+                    ],
+                    fund_flow=2.4,
+                    turnover_rate=9.0,
+                    amount=18.0,
+                    pe_ttm=24.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="订单驱动签订机器人订单",
+                            summary="订单增长",
+                            sentiment="positive",
+                        )
+                    ],
+                )
+            ]
+
+    market_html = _workspace(
+        _sample_html(provider=CauseProvider(), provider_name="tdx-snapshot"),
+        "market",
+    )
+    wide_move_html = market_html[
+        market_html.index("大涨大跌分析") : market_html.index("market-sector-duo")
+    ]
+
+    assert "原因：" in wide_move_html
+    assert "消息催化" in wide_move_html
+    assert "资金行为" in wide_move_html
+    assert "基本面" in wide_move_html
+    assert "盘面原因" not in wide_move_html
+    assert "上涨 8.91%" not in wide_move_html
 
 
 def test_market_wide_move_uses_live_news_when_snapshot_missing() -> None:
@@ -482,11 +559,8 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "统一个股分析",
-        "趋势/量价原因",
-        "资金/成交原因",
-        "消息/公告原因",
-        "基本面/估值原因",
+        "重点结论",
+        "简单原因",
         "未来趋势",
     ]:
         assert text in opportunity_html
@@ -503,7 +577,6 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
         "亏钱效应",
         "方法说明",
         "数据链路",
-        "进入个股分析",
     ]:
         assert noisy_text not in opportunity_html
 
@@ -511,7 +584,7 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
 def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐维度", "板块原因", "入选原因", "趋势/量价原因", "风险原因"]:
+    for text in ["重点结论", "简单原因", "入选原因", "未来趋势"]:
         assert text in opportunity_html
 
     for shallow_text in [
@@ -575,18 +648,15 @@ def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> N
         "opportunity",
     )
 
-    for text in ["一周趋势", "资金面", "技术面", "消息面"]:
+    for text in ["简单原因", "一周趋势", "资金面", "技术面", "消息面"]:
         assert text in opportunity_html
 
     assert "趋势强股" in opportunity_html
-    assert "冲高回落" in opportunity_html
+    assert "冲高回落" not in opportunity_html
     assert "近5日上涨" in opportunity_html
-    assert "近5日转弱" in opportunity_html
     assert "净流入" in opportunity_html
-    assert "净流出" in opportunity_html
     assert "东方财富最新消息" in opportunity_html
     assert "趋势强股获得机器人订单" in opportunity_html
-    assert "暂无可验证个股事件" in opportunity_html
     assert opportunity_html.count("个股原因：所属板块强度靠前，具备主线筛选价值") <= 1
 
 
@@ -610,7 +680,8 @@ def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐维度",
+        "重点结论",
+        "简单原因",
     ]:
         assert text in opportunity_html
 
@@ -634,9 +705,9 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
 def test_opportunity_module_removes_strategy_funnel_noise() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐板块", "推荐股票", "统一个股分析", "资金/成交原因"]:
+    for text in ["推荐板块", "推荐股票", "重点结论", "简单原因"]:
         assert text in opportunity_html
-    for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明", "进入个股分析"]:
+    for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明"]:
         assert removed not in opportunity_html
 
 
@@ -646,7 +717,8 @@ def test_opportunity_module_renders_candidate_rows_with_research_links() -> None
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐维度",
+        "重点结论",
+        "简单原因",
     ]:
         assert text in opportunity_html
     for removed in ["策略：", "入选证据", "主要风险", "候选列表"]:
@@ -669,39 +741,522 @@ def test_opportunity_recommendation_table_uses_dimension_columns_not_one_long_re
     for header in [
         "<th>推荐板块</th>",
         "<th>推荐股票</th>",
-        "<th>统一个股分析</th>",
-        "<th>趋势/量价原因</th>",
-        "<th>资金/成交原因</th>",
-        "<th>基本面/估值原因</th>",
-        "<th>消息/公告原因</th>",
-        "<th>板块/主题原因</th>",
-        "<th>未来趋势</th>",
+        "<th>重点结论</th>",
+        "<th>简单原因</th>",
+        "<th>后续观察</th>",
+        "<th>操作</th>",
     ]:
         assert header in opportunity_html
     assert "opportunity-dimension-table" in opportunity_html
+
+
+def test_opportunity_recommendations_include_buyable_candidates_and_stock_analysis_button(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    daily_dir = tmp_path / "daily"
+    daily_dir.mkdir()
+    (daily_dir / "pipeline.status").write_text(
+        "status=ok\ngenerated_at=2026-07-12T09:00:00\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(daily_dir))
+
+    class BuyableOpportunityProvider(SampleDataProvider):
+        def fetch_market(self) -> MarketRawData:
+            return MarketRawData(
+                trade_date="2026-07-10",
+                indices=[
+                    IndexQuote(
+                        code="000001",
+                        name="上证指数",
+                        close=3200.0,
+                        pct_chg=0.8,
+                        amount=5200.0,
+                    )
+                ],
+                advancing=3600,
+                declining=1200,
+                limit_up=80,
+                limit_down=4,
+                top_sectors=[("机器人", 3.2)],
+                northbound_net_inflow=40.0,
+            )
+
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="机器人",
+                    pct_chg=3.2,
+                    advancing_ratio=0.82,
+                    amount_change=28.0,
+                    fund_flow=5.1,
+                    limit_up_count=5,
+                )
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300777",
+                    name="可买强股",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.0, 10.4, 9.9, 10.3, 1400),
+                        DailyBar("2026-07-08", 10.3, 10.8, 10.2, 10.7, 1700),
+                        DailyBar("2026-07-09", 10.7, 11.0, 10.6, 10.9, 2100),
+                        DailyBar("2026-07-10", 10.9, 11.3, 10.8, 11.2, 2600),
+                    ],
+                    fund_flow=3.6,
+                    turnover_rate=7.2,
+                    amount=26.0,
+                    pe_ttm=24.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="可买强股机器人订单落地",
+                            summary="订单催化",
+                            sentiment="positive",
+                        )
+                    ],
+                )
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=BuyableOpportunityProvider()),
+        "opportunity",
+    )
+
+    assert "动作：建议买入" in opportunity_html or "动作：可小仓买入" in opportunity_html
+    assert "个股分析" in opportunity_html
+    assert 'class="primary-button opportunity-analysis-button"' in opportunity_html
+    assert 'href="/?code=300777&provider=sample' in opportunity_html
+
+
+def test_opportunity_top_list_only_contains_recommended_buy_candidates() -> None:
+    class MixedOpportunityProvider(SampleDataProvider):
+        def fetch_market(self) -> MarketRawData:
+            return MarketRawData(
+                trade_date="2026-07-10",
+                indices=[
+                    IndexQuote(
+                        code="000001",
+                        name="上证指数",
+                        close=3200.0,
+                        pct_chg=0.9,
+                        amount=5600.0,
+                    )
+                ],
+                advancing=3500,
+                declining=1100,
+                limit_up=75,
+                limit_down=3,
+                top_sectors=[("机器人", 3.5)],
+                northbound_net_inflow=35.0,
+            )
+
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="机器人",
+                    pct_chg=3.5,
+                    advancing_ratio=0.82,
+                    amount_change=30.0,
+                    fund_flow=5.0,
+                    limit_up_count=6,
+                )
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300781",
+                    name="推荐买入票",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.0, 10.3, 9.9, 10.2, 1300),
+                        DailyBar("2026-07-08", 10.2, 10.6, 10.1, 10.5, 1600),
+                        DailyBar("2026-07-09", 10.5, 10.8, 10.4, 10.7, 1900),
+                        DailyBar("2026-07-10", 10.7, 11.1, 10.6, 11.0, 2400),
+                    ],
+                    fund_flow=3.2,
+                    turnover_rate=7.2,
+                    amount=26.0,
+                    pe_ttm=24.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="推荐买入票机器人订单落地",
+                            summary="订单催化",
+                            sentiment="positive",
+                        )
+                    ],
+                ),
+                CandidateStockRawData(
+                    code="300782",
+                    name="负资金票",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.0, 10.3, 9.9, 10.2, 1200),
+                        DailyBar("2026-07-08", 10.2, 10.6, 10.1, 10.5, 1500),
+                        DailyBar("2026-07-09", 10.5, 10.8, 10.4, 10.7, 1800),
+                        DailyBar("2026-07-10", 10.7, 11.1, 10.6, 10.9, 2100),
+                    ],
+                    fund_flow=-2.5,
+                    turnover_rate=9.0,
+                    amount=30.0,
+                    pe_ttm=30.0,
+                ),
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=MixedOpportunityProvider()),
+        "opportunity",
+    )
+
+    assert "推荐买入候选" in opportunity_html
+    assert "推荐买入票" in opportunity_html
+    assert "动作：可小仓买入" in opportunity_html
+    assert "负资金票" not in opportunity_html
+    assert "动作：资金转强再买" not in opportunity_html
+
+
+def test_opportunity_overheated_candidates_explain_why_ranked_and_wait_for_buy_point() -> None:
+    class OverheatedOpportunityProvider(SampleDataProvider):
+        def fetch_market(self) -> MarketRawData:
+            return MarketRawData(
+                trade_date="2026-07-10",
+                indices=[
+                    IndexQuote(
+                        code="000001",
+                        name="上证指数",
+                        close=3200.0,
+                        pct_chg=0.6,
+                        amount=5100.0,
+                    )
+                ],
+                advancing=3200,
+                declining=1400,
+                limit_up=60,
+                limit_down=6,
+                top_sectors=[("机器人", 3.1)],
+                northbound_net_inflow=20.0,
+            )
+
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="机器人",
+                    pct_chg=3.1,
+                    advancing_ratio=0.78,
+                    amount_change=24.0,
+                    fund_flow=4.2,
+                    limit_up_count=4,
+                )
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300778",
+                    name="高位强股",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.0, 10.3, 9.9, 10.2, 1200),
+                        DailyBar("2026-07-08", 10.2, 10.5, 10.1, 10.4, 1400),
+                        DailyBar("2026-07-09", 10.4, 10.6, 10.2, 10.3, 1500),
+                        DailyBar("2026-07-10", 10.3, 11.7, 10.3, 11.5, 2600),
+                    ],
+                    fund_flow=2.8,
+                    turnover_rate=8.0,
+                    amount=24.0,
+                    pe_ttm=26.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="证券时报",
+                            title="高位强股机器人订单增长",
+                            summary="订单催化",
+                            sentiment="positive",
+                        )
+                    ],
+                )
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=OverheatedOpportunityProvider()),
+        "opportunity",
+    )
+
+    assert "为什么推荐买：" in opportunity_html
+    assert "动作：回踩买入候选" in opportunity_html
+    assert "买入条件：" in opportunity_html
+    assert "不能追高" in opportunity_html
 
 
 def test_opportunity_uses_stock_analysis_method_and_current_future_trend() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     for text in [
-        "统一个股分析",
-        "趋势/量价原因",
-        "资金/成交原因",
-        "基本面/估值原因",
-        "消息/公告原因",
-        "板块/主题原因",
-        "当前趋势",
+        "重点结论",
+        "简单原因",
+        "一周趋势",
+        "资金面",
         "未来趋势",
     ]:
         assert text in opportunity_html
 
-    for old_header in ["<th>趋势/强度</th>", "<th>技术/位置</th>"]:
+    for old_header in [
+        "<th>趋势/强度</th>",
+        "<th>技术/位置</th>",
+        "<th>统一个股分析</th>",
+        "<th>趋势/量价原因</th>",
+        "<th>资金/成交原因</th>",
+        "<th>基本面/估值原因</th>",
+        "<th>消息/公告原因</th>",
+        "<th>板块/主题原因</th>",
+    ]:
         assert old_header not in opportunity_html
 
 
-def test_opportunity_stocks_use_dual_git_method_chain() -> None:
+def test_opportunity_page_ranks_top_stocks_without_probability_wording() -> None:
+    class ForwardOpportunityProvider(SampleDataProvider):
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="先进制造",
+                    pct_chg=2.8,
+                    advancing_ratio=0.74,
+                    amount_change=22.0,
+                    fund_flow=3.2,
+                    limit_up_count=3,
+                ),
+                SectorRawData(
+                    name="冷门周期",
+                    pct_chg=-1.2,
+                    advancing_ratio=0.32,
+                    amount_change=-8.0,
+                    fund_flow=-1.4,
+                    limit_up_count=0,
+                ),
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300901",
+                    name="趋势潜力",
+                    sector="先进制造",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.1, 10.5, 10.0, 10.4, 1300),
+                        DailyBar("2026-07-08", 10.4, 10.8, 10.3, 10.7, 1600),
+                        DailyBar("2026-07-09", 10.7, 11.0, 10.6, 10.9, 1900),
+                        DailyBar("2026-07-10", 10.9, 11.4, 10.8, 11.2, 2600),
+                    ],
+                    fund_flow=2.6,
+                    turnover_rate=6.8,
+                    amount=18.0,
+                    pe_ttm=28.0,
+                    news_items=[
+                        NewsItem(
+                            date="2026-07-10",
+                            source="东方财富",
+                            title="趋势潜力获得产业订单",
+                            summary="先进制造订单催化",
+                            sentiment="positive",
+                        )
+                    ],
+                ),
+                CandidateStockRawData(
+                    code="300902",
+                    name="单日追高",
+                    sector="先进制造",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.1, 9.8, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.0, 10.2, 9.8, 10.1, 1100),
+                        DailyBar("2026-07-08", 10.1, 10.3, 9.9, 10.2, 1200),
+                        DailyBar("2026-07-09", 10.2, 10.3, 10.0, 10.1, 1300),
+                        DailyBar("2026-07-10", 10.1, 11.4, 10.1, 11.3, 5200),
+                    ],
+                    fund_flow=-2.2,
+                    turnover_rate=18.0,
+                    amount=35.0,
+                    pe_ttm=88.0,
+                ),
+                CandidateStockRawData(
+                    code="300903",
+                    name="冷门反弹",
+                    sector="冷门周期",
+                    bars=[
+                        DailyBar("2026-07-06", 8.0, 8.1, 7.9, 8.0, 1000),
+                        DailyBar("2026-07-07", 8.0, 8.1, 7.8, 7.9, 1000),
+                        DailyBar("2026-07-08", 7.9, 8.0, 7.7, 7.8, 1000),
+                        DailyBar("2026-07-09", 7.8, 7.9, 7.6, 7.7, 1000),
+                        DailyBar("2026-07-10", 7.7, 8.0, 7.6, 7.9, 1100),
+                    ],
+                    fund_flow=0.1,
+                    turnover_rate=3.0,
+                    amount=4.0,
+                    pe_ttm=18.0,
+                ),
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=ForwardOpportunityProvider()), "opportunity"
+    )
+
+    assert "综合排序" in opportunity_html
+    assert "近5日K线" in opportunity_html
+    assert "资金净流入" in opportunity_html
+    assert "消息催化" in opportunity_html
+    assert "基本面" in opportunity_html
+    assert "热点：先进制造" in opportunity_html
+    assert "概率" not in opportunity_html
+    assert "综合排序 71/100" not in opportunity_html
+    assert "趋势潜力" in opportunity_html
+    assert "单日追高" not in opportunity_html
+
+
+def test_opportunity_focus_conclusion_is_future_trade_guidance_not_empty_verdict() -> None:
+    class GuidanceProvider(SampleDataProvider):
+        def fetch_sectors(self) -> list[SectorRawData]:
+            return [
+                SectorRawData(
+                    name="先进制造",
+                    pct_chg=2.8,
+                    advancing_ratio=0.74,
+                    amount_change=22.0,
+                    fund_flow=3.2,
+                    limit_up_count=3,
+                )
+            ]
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code="300901",
+                    name="未来指导",
+                    sector="先进制造",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.1, 10.5, 10.0, 10.4, 1300),
+                        DailyBar("2026-07-08", 10.4, 10.8, 10.3, 10.7, 1600),
+                        DailyBar("2026-07-09", 10.7, 11.0, 10.6, 10.9, 1900),
+                        DailyBar("2026-07-10", 10.9, 11.4, 10.8, 11.2, 2600),
+                    ],
+                    fund_flow=2.6,
+                    turnover_rate=6.8,
+                    amount=18.0,
+                    pe_ttm=28.0,
+                )
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=GuidanceProvider()), "opportunity"
+    )
+
+    assert "重点结论：未来指导观察，等确认" not in opportunity_html
+    assert "重点结论：未来指导" not in opportunity_html
+    assert "动作：" in opportunity_html
+    assert "买入条件：" in opportunity_html
+    assert "风控：" in opportunity_html
+    assert any(
+        action in opportunity_html
+        for action in ["暂停买入", "低吸确认", "仅观察", "先不买", "不买"]
+    )
+
+
+def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> None:
+    html = _sample_html(stock_code="603278")
+    portfolio_html = _workspace(html, "portfolio")
+    stock_html = _workspace(html, "stock")
+    opportunity_html = _workspace(html, "opportunity")
+
+    for section in [portfolio_html, stock_html, opportunity_html]:
+        for text in ["动作：", "主因：", "触发：", "失效："]:
+            assert text in section
+
+    for stale_phrase in [
+        "趋势和风险结构较好，可继续跟踪。",
+        "证据还不够强，等趋势、资金或消息确认。",
+        "观察不买，不追高",
+    ]:
+        assert stale_phrase not in portfolio_html
+        assert stale_phrase not in opportunity_html
+
+
+def test_core_modules_show_explicit_buy_sell_guidance_not_only_analysis() -> None:
+    html = _sample_html(stock_code="603278")
+    sections = [
+        _workspace(html, "market"),
+        _workspace(html, "portfolio"),
+        _workspace(html, "stock"),
+        _workspace(html, "opportunity"),
+    ]
+
+    for section in sections:
+        for text in ["买卖指导", "买入触发", "卖出/减仓", "仓位上限", "止损/失效"]:
+            assert text in section
+
+    for vague_text in [
+        "继续观察即可",
+        "自行判断买卖",
+        "只看分析不做计划",
+    ]:
+        assert vague_text not in html
+
+
+def test_opportunity_page_limits_full_market_to_top_30_stocks() -> None:
+    class ThirtyFiveCandidateProvider(SampleDataProvider):
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {
+                "scope": "all_a_share",
+                "returned_count": "35",
+                "scanned_count": "35",
+            }
+
+        def fetch_candidate_universe(self) -> list[CandidateStockRawData]:
+            return [
+                CandidateStockRawData(
+                    code=f"300{index:03d}",
+                    name=f"综合候选{index:02d}",
+                    sector="机器人",
+                    bars=[
+                        DailyBar("2026-07-06", 10.0, 10.2, 9.9, 10.0, 1000),
+                        DailyBar("2026-07-07", 10.1, 10.4, 10.0, 10.2, 1300),
+                        DailyBar("2026-07-08", 10.2, 10.5, 10.1, 10.4, 1500),
+                        DailyBar("2026-07-09", 10.4, 10.7, 10.3, 10.6, 1700),
+                        DailyBar("2026-07-10", 10.6, 10.9, 10.5, 10.8, 1900),
+                    ],
+                    fund_flow=1.0,
+                    turnover_rate=5.0,
+                    amount=12.0,
+                    pe_ttm=28.0,
+                )
+                for index in range(35)
+            ]
+
+    opportunity_html = _workspace(
+        _sample_html(provider=ThirtyFiveCandidateProvider()), "opportunity"
+    )
+
+    assert "综合候选29" in opportunity_html
+    assert "综合候选30" not in opportunity_html
+    assert opportunity_html.count("data-opportunity-stock-row") == 30
+
+
+def test_opportunity_stocks_hide_dual_git_method_chain_summary_only() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
+
+    for text in ["重点结论", "简单原因", "未来趋势"]:
+        assert text in opportunity_html
 
     for text in [
         "daily_stock_analysis 信号归因",
@@ -711,7 +1266,7 @@ def test_opportunity_stocks_use_dual_git_method_chain() -> None:
         "交易员",
         "组合经理",
     ]:
-        assert text in opportunity_html
+        assert text not in opportunity_html
 
 
 def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
@@ -848,7 +1403,7 @@ def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_miss
     opportunity_html = _workspace(html, "opportunity")
 
     assert "联网新闻：603278 签订机器人订单" in stock_html
-    assert "消息/公告原因：联网新闻最新消息" in opportunity_html
+    assert "消息面：联网新闻最新消息" in opportunity_html
     assert "300222 签订机器人订单" in opportunity_html
     assert "消息面：未接入个股新闻" not in opportunity_html
 
@@ -1036,6 +1591,10 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
 
     for text in [
         "我的持仓",
+        "组合整体总结",
+        "看好",
+        "建议轻仓",
+        "继续观察",
         "持仓分析",
         "新增持仓",
         "编辑",
@@ -1045,30 +1604,37 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
         assert text in portfolio_html
 
     for text in [
+        "重点结论",
+        "简单原因",
+        "关键触发",
+    ]:
+        assert text in portfolio_html
+
+    for old_section in [
+        "对应板块分析",
+        "仓位/成本分析",
         "趋势/量价原因",
         "资金/成交原因",
         "基本面/估值原因",
         "消息/公告原因",
         "板块/主题原因",
         "仓位原因",
-        "结论",
     ]:
-        assert text in portfolio_html
-
-    for old_section in ["对应板块分析", "仓位/成本分析"]:
         assert old_section not in portfolio_html
+
+    assert portfolio_html.index("组合整体总结") < portfolio_html.index("持仓分析")
 
 
 def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "趋势/量价原因",
-        "资金/成交原因",
-        "基本面/估值原因",
-        "消息/公告原因",
-        "板块/主题原因",
-        "仓位原因",
+        "重点结论",
+        "简单原因",
+        "关键触发",
+        "趋势",
+        "盈亏",
+        "板块",
     ]:
         assert text in portfolio_html
 
@@ -1094,17 +1660,13 @@ def test_portfolio_uses_same_stock_analysis_method_as_stock_module() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
     for text in [
-        "统一个股分析",
-        "趋势/量价原因",
-        "资金/成交原因",
-        "基本面/估值原因",
-        "消息/公告原因",
-        "板块/主题原因",
-        "未来趋势预测",
+        "重点结论",
+        "简单原因",
+        "关键触发",
     ]:
         assert text in portfolio_html
 
-    for old_label in ["技术面原因", "板块情绪原因"]:
+    for old_label in ["技术面原因", "板块情绪原因", "分析师团队", "多空审议", "交易员/组合经理"]:
         assert old_label not in portfolio_html
 
 
@@ -1215,8 +1777,8 @@ def test_opportunity_module_handles_limit_down_details_from_snapshot(tmp_path) -
     )
     opportunity_html = _workspace(html, "opportunity")
 
-    assert "跌停" in opportunity_html
-    assert "二十厘米跌停" in opportunity_html
+    assert "暂无推荐买入候选" in opportunity_html
+    assert "二十厘米跌停" not in opportunity_html
 
 
 def test_structured_daily_decisions_do_not_recreate_home_module(tmp_path, monkeypatch) -> None:
@@ -1709,9 +2271,91 @@ def test_daily_market_sector_direction_lists_top5_stocks_with_analysis() -> None
     assert "等待新闻、公告和基本面形成交叉验证" not in market_html
 
 
-def test_market_sector_analysis_uses_dual_git_method_chain() -> None:
+def test_market_sector_direction_explains_catalyst_not_market_snapshot() -> None:
+    market_html = _workspace(_sample_html(), "market")
+    sector_html = market_html[
+        market_html.index("强势板块Top5") : market_html.index("专业大盘研判")
+    ]
+
+    assert "原因：" in sector_html
+    assert "资金行为" in sector_html
+    assert "催化" in sector_html
+    assert "基本面" in sector_html
+    assert "盘面证据：涨跌" not in sector_html
+    assert "热度 100/100，扩散" not in sector_html
+    assert "资金配合一般，作为持续性扣分项" not in sector_html
+
+
+def test_professional_market_diagnosis_uses_reason_chain_not_metric_snapshot() -> None:
+    market_html = _workspace(_sample_html(), "market")
+    diagnosis_html = market_html[
+        market_html.index("专业大盘研判") : market_html.index("异动事件")
+    ]
+
+    for text in ["资金行为", "催化核验", "基本面", "代表股"]:
+        assert text in diagnosis_html
+
+    for shallow_text in [
+        "板块热度 100/100，扩散",
+        "板块扩散 78%",
+        "强势板块成交改善",
+        ">6%资金流入样本",
+    ]:
+        assert shallow_text not in diagnosis_html
+
+
+def test_market_mainline_summary_does_not_restate_price_results_as_reason() -> None:
+    market_html = _workspace(_sample_html(), "market")
+    summary_html = market_html[
+        market_html.index("主线") : market_html.index("大涨大跌分析")
+    ]
+
+    for text in ["主线逻辑", "资金行为", "基本面"]:
+        assert text in summary_html
+
+    for shallow_text in [
+        "涨跌 3.80%",
+        "扩散 78%，涨停",
+        "强度：扩散",
+    ]:
+        assert shallow_text not in summary_html
+
+
+def test_daily_market_sections_use_distinct_research_style_conclusions() -> None:
     market_html = _workspace(_sample_html(), "market")
 
+    for text in [
+        "市场定性：",
+        "主线性质：",
+        "配置含义：",
+        "强势归因：",
+        "弱势归因：",
+        "大幅波动归因：",
+        "事件解读：",
+        "跟踪重点：",
+    ]:
+        assert text in market_html
+
+    repeated_fragments = [
+        "原因：催化核验",
+        "资金行为：",
+        "基本面：代表股估值/财务待补",
+    ]
+    for fragment in repeated_fragments:
+        assert market_html.count(fragment) <= 6
+
+    for stale_phrase in [
+        "赚钱效应强，优先看板块前排和持续放量个股",
+        "当前不是全面行情，是结构性机会",
+        "市场以轮动为主",
+    ]:
+        assert stale_phrase not in market_html
+
+
+def test_market_sector_analysis_shows_conclusion_not_full_method_chain() -> None:
+    market_html = _workspace(_sample_html(), "market")
+
+    assert "结论" in market_html
     for text in [
         "板块方法链",
         "daily_stock_analysis 信号归因",
@@ -1720,11 +2364,14 @@ def test_market_sector_analysis_uses_dual_git_method_chain() -> None:
         "多空审议",
         "组合经理",
     ]:
-        assert text in market_html
+        assert text not in market_html
 
 
-def test_portfolio_stocks_use_dual_git_method_chain() -> None:
+def test_portfolio_stocks_hide_dual_git_method_chain_summary_only() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
+
+    for text in ["重点结论", "简单原因", "关键触发"]:
+        assert text in portfolio_html
 
     for text in [
         "daily_stock_analysis 信号归因",
@@ -1734,7 +2381,7 @@ def test_portfolio_stocks_use_dual_git_method_chain() -> None:
         "交易员",
         "组合经理最终意见",
     ]:
-        assert text in portfolio_html
+        assert text not in portfolio_html
 
 
 def test_market_sector_top5_representatives_use_live_news_when_snapshot_missing() -> None:

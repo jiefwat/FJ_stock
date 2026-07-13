@@ -95,9 +95,23 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     for text in [
         "推荐板块",
         "推荐股票",
-        "推荐维度",
+        "重点结论",
+        "简单原因",
     ]:
         assert text in opportunity_html
+
+
+def test_dense_pages_use_compact_readable_layout_rules() -> None:
+    assert ".portfolio-overall-summary .grid-3" in CSS
+    assert "align-items:start" in CSS
+    assert ".opportunity-dimension-table" in CSS
+    assert "table-layout:fixed" in CSS
+    assert ".cell-clamp" in CSS
+    assert ".portfolio-analysis-table" in CSS
+    assert ".portfolio-analysis-line span" in CSS
+    assert ".market-event-card-list" in CSS
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in CSS
+    assert ".opportunity-dimension-table th:nth-child(n+3)" not in CSS
 
 
 def test_home_specific_grid_rules_are_retired() -> None:
