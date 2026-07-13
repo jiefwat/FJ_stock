@@ -19,24 +19,39 @@ def _bars(count: int = 80, *, close: float = 10.0) -> list[DailyBar]:
     ]
 
 
-def _raw_stock(*, financial: bool = False, events: bool = False) -> StockRawData:
+def _raw_stock(
+    *,
+    financial: bool = False,
+    events: bool = False,
+    close: float = 10.0,
+    pe_ttm: float | None = 12.0,
+    valuation: dict[str, float | str | None] | None = None,
+    fundamental_metrics: dict[str, float | str | None] | None = None,
+) -> StockRawData:
+    default_metrics: dict[str, float | str | None] = (
+        {
+            "eps": 0.3,
+            "operating_revenue": 1_000.0,
+            "net_profit": 100.0,
+            "operating_cash_flow": 120.0,
+            "source": "fixture",
+            "date": "2026-03-31",
+        }
+        if financial
+        else {}
+    )
     return StockRawData(
         code="603278",
         name="大业股份",
-        bars=_bars(),
-        pe_ttm=12.0,
-        valuation={"pb": 1.8, "industry_pe_median": 18.0, "source": "fixture"},
+        bars=_bars(close=close),
+        pe_ttm=pe_ttm,
+        valuation=(
+            valuation
+            if valuation is not None
+            else {"pb": 1.8, "industry_pe_median": 18.0, "source": "fixture"}
+        ),
         fundamental_metrics=(
-            {
-                "eps": 0.3,
-                "operating_revenue": 1_000.0,
-                "net_profit": 100.0,
-                "operating_cash_flow": 120.0,
-                "source": "fixture",
-                "date": "2026-03-31",
-            }
-            if financial
-            else {}
+            fundamental_metrics if fundamental_metrics is not None else default_metrics
         ),
         fund_flow_detail={"source": "tdx.quote.turnover", "amount_yuan": 100_000_000.0},
         news_items=(
@@ -74,16 +89,20 @@ def _event_radar() -> EventRadar:
     )
 
 
-def _build(raw: StockRawData, *, quality: ResearchInputQuality):
+def _build(raw: StockRawData, *, quality: ResearchInputQuality | None = None):
     from stock_ts.research.stock_dossier import build_professional_stock_dossier
 
     return build_professional_stock_dossier(
         raw,
         technical=_technical(),
         event_radar=_event_radar(),
-        input_quality=quality,
+        input_quality=quality or ResearchInputQuality(quote_status=EvidenceStatus.COMPLETE),
         sector_context="高端装备",
     )
+
+
+def _diagnostic(dossier, name: str):
+    return next(item for item in dossier.diagnostics if item.name == name)
 
 
 def test_complete_score_measures_evidence_not_upside() -> None:
@@ -110,3 +129,50 @@ def test_stale_quote_forces_grade_d_and_zero_confidence() -> None:
     assert dossier.verdict.evidence_grade == "D"
     assert dossier.verdict.confidence == 0
     assert dossier.position.position_cap == "0%"
+
+
+def test_absolute_financial_snapshot_is_not_reported_missing() -> None:
+    dossier = _build(
+        _raw_stock(
+            fundamental_metrics={
+                "eps": -0.07,
+                "net_asset_per_share": 5.665,
+                "operating_revenue": 1_136_418.25,
+                "operating_profit": -27_039.40,
+                "net_profit": -24_557.60,
+                "operating_cash_flow": 29_811.00,
+                "source": "tdx.profile.finance",
+                "date": "2026-05-18",
+            }
+        )
+    )
+    financial = _diagnostic(dossier, "财务质量")
+
+    assert financial.status == "degraded"
+    assert "亏损" in financial.conclusion
+    assert "经营现金流为正" in financial.conclusion
+    assert "财务数据缺失" not in financial.conclusion
+
+
+def test_negative_pe_is_not_a_valuation_anchor() -> None:
+    dossier = _build(_raw_stock(pe_ttm=-79.96, fundamental_metrics={"net_profit": -10.0}))
+    valuation = _diagnostic(dossier, "估值")
+
+    assert "PE 失去解释力" in valuation.conclusion
+    assert "低估" not in valuation.conclusion
+
+
+def test_reported_pb_conflict_is_exposed() -> None:
+    dossier = _build(
+        _raw_stock(
+            close=10.05,
+            valuation={"pb": 0.177},
+            fundamental_metrics={"net_asset_per_share": 5.665},
+        )
+    )
+    valuation = _diagnostic(dossier, "估值")
+
+    assert valuation.status == "degraded"
+    assert "来源 PB 0.18x" in valuation.conclusion
+    assert "价格/每股净资产反算 1.77x" in valuation.conclusion
+    assert "口径冲突" in valuation.risks
