@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `data-readiness-command-center/`：把数据中台升级为影响优先的恢复指挥台
 - `professional-core-workspaces/`：统一每日大盘、我的持仓与热点机会的专业决策链
 - `professional-stock-dossier/`：统一专业个股研究档案与条件化操作指引
 - `sector-candidate-workbench/`：每日板块情况与明日候选观察池
@@ -12,6 +13,9 @@
 
 ## 默认可读目录
 
+- `data-readiness-command-center/README.md`
+- `data-readiness-command-center/TODO.md`
+- `data-readiness-command-center/plan.md`
 - `professional-core-workspaces/README.md`
 - `professional-core-workspaces/TODO.md`
 - `professional-core-workspaces/plan.md`
