@@ -4,6 +4,7 @@ from stock_ts.models import Holding, StockRawData
 from stock_ts.professional_research import EventRadar, TechnicalProfile
 
 from .evidence import (
+    EvidenceItem,
     EvidenceStatus,
     ResearchInputQuality,
     has_comparable_valuation,
@@ -18,9 +19,12 @@ from .stock_diagnostics import (
 )
 from .stock_dossier_models import (
     DecisionStep,
+    DiagnosticBlock,
+    DossierScenario,
     DossierVerdict,
     PositionGuidance,
     ProfessionalStockDossier,
+    RiskItem,
 )
 
 _FINANCIAL_SNAPSHOT_FIELDS = {
@@ -127,6 +131,16 @@ def build_professional_stock_dossier(
         capital,
         event_block,
     )
+    scenarios = _scenarios(
+        raw,
+        financial=financial,
+        technical=technical_block,
+        risks=risks,
+        paused=paused,
+        resistance=technical.resistance,
+        invalid_line=technical.invalid_line,
+    )
+    evidence = _evidence_ledger(raw, diagnostics)
     return ProfessionalStockDossier(
         code=raw.code,
         name=raw.name,
@@ -137,8 +151,8 @@ def build_professional_stock_dossier(
         diagnostics=diagnostics,
         risks=risks,
         position=position,
-        scenarios=(),
-        evidence=(),
+        scenarios=scenarios,
+        evidence=evidence,
     )
 
 
@@ -314,3 +328,118 @@ def _thesis(
     if stance == "风险规避":
         return f"{financial.conclusion}；{technical.conclusion}；{counter}，当前风险收益不匹配。"
     return f"{financial.conclusion}；{technical.conclusion}；最大反证为 {counter}。"
+
+
+def _scenarios(
+    raw: StockRawData,
+    *,
+    financial: DiagnosticBlock,
+    technical: DiagnosticBlock,
+    risks: tuple[RiskItem, ...],
+    paused: bool,
+    resistance: float,
+    invalid_line: float,
+) -> tuple[DossierScenario, ...]:
+    risk_text = risks[0].evidence if risks else "当前未识别高等级标题风险"
+    risk_repair = (
+        f"{risks[0].category}得到原文证伪或风险解除"
+        if risks
+        else "没有新增高等级事件风险"
+    )
+    technical_20 = next(
+        (fact for fact in technical.facts if fact.startswith("20日 ")),
+        technical.conclusion,
+    )
+    if paused:
+        action = "暂停执行，刷新行情后重新生成情景"
+    else:
+        action = "仅在经营、事件和价格同时确认后小仓验证"
+    return (
+        DossierScenario(
+            name="改善",
+            premise=f"当前财务状态为：{financial.conclusion}；事件反证为：{risk_text}。",
+            confirmation=(
+                f"亏损收窄或转盈，{risk_repair}，"
+                f"且收盘站稳 {resistance:.2f}；当前 {technical_20}。"
+            ),
+            action=action,
+            invalidation="净利润继续为负、事件风险未解除或突破后快速跌回压力位下方。",
+            evidence_source="财务截面、公告新闻、20日价格结构",
+        ),
+        DossierScenario(
+            name="基准",
+            premise=f"维持当前财务与价格状态：{financial.conclusion}；{technical.conclusion}",
+            confirmation=f"价格未跌破 {invalid_line:.2f}，但经营与事件证据没有方向性改善。",
+            action="保持当前研究或持仓管理等级，不因单日反弹提高仓位。",
+            invalidation="财务、事件或20日价格结构任一项发生方向性恶化。",
+            evidence_source="当前财务、技术与风险登记表",
+        ),
+        DossierScenario(
+            name="恶化",
+            premise=f"亏损或现金流压力扩大，同时 {risk_text} 继续发酵。",
+            confirmation=f"收盘跌破 {invalid_line:.2f}，20日价格损伤扩大或新增高等级公告。",
+            action="未持仓继续规避；已持仓优先降低风险，不用补仓摊低成本。",
+            invalidation="风险事件证伪、盈利修复且价格重新站稳压力位。",
+            evidence_source="财务风险、事件原文与失效价格",
+        ),
+    )
+
+
+def _evidence_ledger(
+    raw: StockRawData,
+    diagnostics: tuple[DiagnosticBlock, ...],
+) -> tuple[EvidenceItem, ...]:
+    sources = ", ".join(raw.data_sources) or "unknown"
+    trade_date = raw.bars[-1].date if raw.bars else ""
+    items: list[EvidenceItem] = []
+    for diagnostic in diagnostics:
+        source, as_of = _diagnostic_source(raw, diagnostic.name, sources, trade_date)
+        risk_detail = (
+            f" 风险：{'；'.join(diagnostic.risks)}。" if diagnostic.risks else ""
+        )
+        items.append(
+            EvidenceItem(
+                block=diagnostic.name,
+                source=source,
+                as_of=as_of,
+                status=_diagnostic_status(diagnostic.status),
+                detail=f"{diagnostic.conclusion}{risk_detail} {diagnostic.limitation}".strip(),
+            )
+        )
+    return tuple(items)
+
+
+def _diagnostic_source(
+    raw: StockRawData,
+    block: str,
+    fallback: str,
+    trade_date: str,
+) -> tuple[str, str]:
+    if block == "财务质量":
+        return (
+            str(raw.fundamental_metrics.get("source") or fallback),
+            str(raw.fundamental_metrics.get("date") or ""),
+        )
+    if block == "估值":
+        return (
+            str(raw.valuation.get("source") or fallback),
+            str(raw.valuation.get("date") or trade_date),
+        )
+    if block == "资金与交易":
+        return (
+            str(raw.fund_flow_detail.get("source") or fallback),
+            str(raw.fund_flow_detail.get("date") or trade_date),
+        )
+    if block == "事件风险":
+        dates = [str(item.get("date") or "") for item in raw.announcements]
+        dates.extend(item.date for item in raw.news_items)
+        return fallback, max((date for date in dates if date), default=trade_date)
+    return fallback, trade_date
+
+
+def _diagnostic_status(status: str) -> EvidenceStatus:
+    return {
+        "complete": EvidenceStatus.COMPLETE,
+        "missing": EvidenceStatus.MISSING,
+        "blocked": EvidenceStatus.BLOCKED,
+    }.get(status, EvidenceStatus.DEGRADED)

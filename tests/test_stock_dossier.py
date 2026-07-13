@@ -290,3 +290,47 @@ def test_decision_rail_has_exactly_five_ordered_steps() -> None:
         "降级触发",
         "失效退出",
     ]
+
+
+def test_scenarios_reference_actual_stock_evidence() -> None:
+    closes = [15.0] * 60 + [15.0 - index * 0.28 for index in range(19)] + [10.5]
+    dossier = _build(
+        _raw_stock(
+            bars=_bars_from_closes(closes),
+            pe_ttm=-79.96,
+            fundamental_metrics={"net_profit": -24_557.6},
+            news_items=[
+                NewsItem(
+                    "2026-05-25",
+                    "fixture",
+                    "控股股东累计质押占其持股65.72%",
+                    "质押融资用于公司生产经营",
+                    sentiment="negative",
+                )
+            ],
+        )
+    )
+    text = " ".join(
+        f"{item.premise} {item.confirmation} {item.action} {item.invalidation}"
+        for item in dossier.scenarios
+    )
+
+    assert [item.name for item in dossier.scenarios] == ["改善", "基准", "恶化"]
+    assert "亏损" in text
+    assert "质押" in text
+    assert "20日" in text or "MA20" in text
+    assert "盈利质量改善，事件无新增风险" not in text
+
+
+def test_evidence_ledger_preserves_valuation_conflict() -> None:
+    dossier = _build(
+        _raw_stock(
+            close=10.05,
+            valuation={"pb": 0.177, "source": "tdx.profile.finance"},
+            fundamental_metrics={"net_asset_per_share": 5.665},
+        )
+    )
+
+    valuation = next(item for item in dossier.evidence if item.block == "估值")
+    assert valuation.status == EvidenceStatus.DEGRADED
+    assert "口径冲突" in valuation.detail
