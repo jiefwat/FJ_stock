@@ -40,6 +40,10 @@ CLI / Dashboard
 - `src/stock_ts/deep_analysis.py`：深度分析规则层，组合市场、板块、舆情、持仓和个股基础报告，输出多角度评分、未来上涨潜力观察分和 TradingAgents 式多角色对抗；最终结论必须由个股自身优势、主要矛盾、动作倾向和失效条件组合生成，禁止只按分数档位输出固定套话；保留旧渲染函数 re-export，兼容已有调用方。
 - `src/stock_ts/deep_report.py`：深度分析 Markdown 渲染层，负责单股、批量和每日深度复盘文本输出，并对缺失对抗轮次做防御性兜底。
 - `src/stock_ts/research_playbook.py`：专业研究仪表盘层，组合深度个股、大盘、板块、持仓、候选池和数据质量，输出策略透镜、研究团队分工、数据块完整性、观察点位和交易纪律。
+- `src/stock_ts/research/evidence.py`：研究证据审计契约，统一 complete、degraded、missing、stale、blocked 状态，确保结论能回溯到来源、日期和缺口。
+- `src/stock_ts/research/market_regime.py`：大盘市场状态机，把趋势、宽度、流动性、风格和情绪合成为市场阶段、风险预算、反证、失效条件和三情景。
+- `src/stock_ts/research/stock_memo.py`：个股投资备忘录，分离经营质量、估值参照、预期差、技术、资金、事件和组合上下文；缺少比较数据时禁止输出无依据的高估/低估判断。
+- `src/stock_ts/webapp/market_workspace.py` 与 `src/stock_ts/webapp/stock_workspace.py`：只消费结构化研究模型并渲染 HTML，不在页面层推导研究结论；`web.py` 保留编排和兼容入口。
 - `src/stock_ts/research_run_card.py`：研究运行卡层，参考 Vibe-Trading / Vibe-Research / Longbridge 类产品的“目标-证据-动作-边界”范式，把日报和流水线状态压缩成可审计的盘前任务卡；坚持只读研究和纸面推演，不接真实下单。
 - `src/stock_ts/professional_research.py`：单股专业研究附录层，输出支撑/压力/失效线、均线、RSI、MACD、量能比、盘口技术结构、公告事件雷达和复核动作；Web 和 CLI `research` 复用。
 - `src/stock_ts/trade_plan.py`：明确操作计划层，把深度分析、技术结构、公告事件和数据质量转换成当前动作、目标仓位、买入/加仓触发、止损/减仓触发、止盈计划、禁止动作和盘中执行清单。
