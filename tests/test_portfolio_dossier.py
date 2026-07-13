@@ -196,6 +196,14 @@ def test_stale_quote_suppresses_numeric_portfolio_actions() -> None:
         for item in dossier.queue
     )
     assert all("行情时效未通过" in item.reason for item in dossier.queue)
+    assert [item.label for item in dossier.metrics] == [
+        "账本成本",
+        "持仓数量",
+        "第一大仓位（历史）",
+        "最高行业暴露（历史）",
+        "行情状态",
+    ]
+    assert all("盈亏" not in item.label and "市值" not in item.label for item in dossier.metrics)
     assert all(item.target_range == "待刷新" for item in dossier.boundaries)
     assert all(item.invalidation == "待刷新" for item in dossier.boundaries)
 

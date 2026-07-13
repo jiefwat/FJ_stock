@@ -43,13 +43,18 @@ def build_opportunity_dossier(
     blocked = quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}
     blocked = blocked or market.stage == "数据暂停" or market.risk_budget == "0%"
     pool_blocked = blocked or not pool.price_reliable
+    effective_status = (
+        quote_status
+        if quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}
+        else EvidenceStatus.BLOCKED if pool_blocked else quote_status
+    )
     decisions = [
         _candidate_decision(
             item,
             raw=raw_by_code.get(item.code),
             trade_date=pool.trade_date,
             blocked=pool_blocked,
-            quote_status=quote_status,
+            quote_status=effective_status,
         )
         for item in pool.candidates[:30]
     ]
@@ -66,7 +71,7 @@ def build_opportunity_dossier(
     gate = _gate(
         market=market,
         blocked=pool_blocked,
-        quote_status=quote_status,
+        quote_status=effective_status,
         scanned_count=scanned_count,
         evidence_ready_count=evidence_ready_count,
         eligible_count=eligible_count,

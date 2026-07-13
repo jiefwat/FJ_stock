@@ -70,7 +70,7 @@ def test_personal_writable_mode_keeps_portfolio_controls(monkeypatch) -> None:
     assert 'name="portfolio_action" value="delete"' in html
     assert "保存持仓" in html
     assert "确认删除这条持仓记录？" in html
-    assert "持仓分析" in html
+    assert "组合风控结论" in html
 
 
 def test_web_shell_listens_and_routes_legacy_hashes() -> None:
@@ -88,7 +88,7 @@ def test_each_workspace_contains_its_own_core_module_content() -> None:
 
     expected = {
         "market": "股票涨跌统计",
-        "portfolio": "持仓分析",
+        "portfolio": "组合风控结论",
         "stock": "分析内容",
         "opportunity": "研究候选",
     }

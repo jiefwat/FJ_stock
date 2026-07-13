@@ -93,6 +93,7 @@ def test_stale_quote_blocks_all_opportunity_candidates() -> None:
     )
 
     assert dossier.gate.state == "数据暂停"
+    assert dossier.gate.data_status == EvidenceStatus.STALE.value
     assert dossier.gate.eligible_count == 0
     assert dossier.gate.scanned_count == 5200
     assert all(item.state == "待补数据" for item in dossier.candidates)
@@ -148,5 +149,20 @@ def test_market_data_pause_cannot_be_relaxed_by_fresh_candidate_pool() -> None:
 
     assert dossier.gate.state == "数据暂停"
     assert dossier.gate.risk_budget == "0%"
+    assert dossier.gate.data_status == EvidenceStatus.BLOCKED.value
     assert dossier.gate.scanned_count is None
     assert all(item.state == "待补数据" for item in dossier.candidates)
+
+
+def test_unreliable_candidate_pool_reports_effective_blocked_status() -> None:
+    dossier = build_opportunity_dossier(
+        _pool(),
+        market=assess_market_regime(_market()),
+        quote_status=EvidenceStatus.COMPLETE,
+        candidate_universe=_raw_candidates(),
+        metadata={},
+    )
+
+    assert dossier.gate.state == "数据暂停"
+    assert dossier.gate.data_status == EvidenceStatus.BLOCKED.value
+    assert all(item.data_status is EvidenceStatus.BLOCKED for item in dossier.candidates)

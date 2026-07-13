@@ -43,7 +43,7 @@ def build_portfolio_dossier(
     )
     return PortfolioDossier(
         verdict=_verdict(portfolio, advice, market=market, blocked=blocked),
-        metrics=_metrics(portfolio),
+        metrics=_metrics(portfolio, blocked=blocked),
         queue=tuple(queue),
         exposures=_exposures(portfolio),
         boundaries=boundaries,
@@ -93,8 +93,45 @@ def _verdict(
     )
 
 
-def _metrics(portfolio: PortfolioAnalysisReport) -> tuple[PortfolioMetric, ...]:
+def _metrics(
+    portfolio: PortfolioAnalysisReport,
+    *,
+    blocked: bool,
+) -> tuple[PortfolioMetric, ...]:
     top_sector = portfolio.sector_weights[0] if portfolio.sector_weights else ("未分类", 0.0)
+    if blocked:
+        return (
+            PortfolioMetric(
+                "账本成本",
+                f"{portfolio.total_cost:,.2f}",
+                "audit",
+                "来自持仓成本账本，不依赖当前行情",
+            ),
+            PortfolioMetric(
+                "持仓数量",
+                f"{len(portfolio.positions)} 只",
+                "audit",
+                "仅统计已录入股票",
+            ),
+            PortfolioMetric(
+                "第一大仓位（历史）",
+                f"{portfolio.top_position_weight:.1%}",
+                "watch",
+                "来自最近可用行情快照",
+            ),
+            PortfolioMetric(
+                "最高行业暴露（历史）",
+                f"{top_sector[0]} {top_sector[1]:.1%}",
+                "watch",
+                "来自最近可用行情快照",
+            ),
+            PortfolioMetric(
+                "行情状态",
+                "待刷新",
+                "critical",
+                "不展示旧市值、旧盈亏或价格动作",
+            ),
+        )
     weak_count = sum(
         item.trend == "下降趋势" or item.risk_level == "高"
         for item in portfolio.positions
