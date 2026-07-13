@@ -141,3 +141,21 @@ def test_dense_research_records_use_shared_disclosure_visuals() -> None:
         assert selector in CSS
     assert "position:sticky" in CSS.replace(" ", "")
     assert ".opportunity-risk-register" in CSS
+
+
+def test_data_command_center_has_operations_rail_and_mobile_ledger_rules() -> None:
+    for selector in [
+        ".data-readiness-brief",
+        ".data-recovery-rail",
+        ".data-recovery-step::before",
+        ".data-impact-grid",
+        ".data-source-ledger",
+        ".data-ledger-card",
+    ]:
+        assert selector in CSS
+    mobile = CSS.split("@media (max-width:680px)")[-1]
+    compact_mobile = mobile.replace(" ", "")
+    assert ".data-operations-grid" in mobile
+    assert "grid-template-columns:1fr" in compact_mobile
+    assert ".data-ledger-table" in mobile
+    assert "display:block" in compact_mobile
