@@ -123,7 +123,7 @@ def test_research_tape_and_mobile_shell_have_explicit_density_rules() -> None:
         assert selector in CSS
     mobile = CSS.split("@media (max-width: 680px)")[-1]
     assert ".quick-stock-search" in mobile
-    assert "grid-template-columns:minmax(0,1fr) auto" in mobile.replace(" ", "")
+    assert "grid-template-columns:minmax(0,1fr)auto" in mobile.replace(" ", "")
     assert ".research-tape-item.secondary" in mobile
     assert "display:none" in mobile.replace(" ", "")
 ```
