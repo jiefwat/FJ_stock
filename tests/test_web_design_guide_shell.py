@@ -159,3 +159,19 @@ def test_data_command_center_has_operations_rail_and_mobile_ledger_rules() -> No
     assert "grid-template-columns:1fr" in compact_mobile
     assert ".data-ledger-table" in mobile
     assert "display:block" in compact_mobile
+
+
+def test_market_session_playbook_has_ruler_disclosure_and_mobile_sequence() -> None:
+    for selector in [
+        ".market-session-ruler",
+        ".market-session-phase",
+        ".market-session-heading",
+        ".market-intraday-ledger",
+        ".market-intraday-ledger summary:focus-visible",
+    ]:
+        assert selector in CSS
+    mobile = CSS.split("@media (max-width:680px)")[-1]
+    compact_mobile = mobile.replace(" ", "")
+    assert ".market-session-ruler" in mobile
+    assert ".market-session-phase" in mobile
+    assert "grid-template-columns:1fr" in compact_mobile
