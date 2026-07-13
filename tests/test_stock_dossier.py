@@ -164,6 +164,15 @@ def test_stale_quote_forces_grade_d_and_zero_confidence() -> None:
     assert dossier.verdict.evidence_grade == "D"
     assert dossier.verdict.confidence == 0
     assert dossier.position.position_cap == "0%"
+    assert all(
+        "暂停" in item.condition or "刷新" in item.condition
+        for item in dossier.decision_steps
+    )
+    assert all("10.80" not in item.condition for item in dossier.decision_steps)
+    evidence_status = {item.block: item.status for item in dossier.evidence}
+    assert evidence_status["技术结构"] is EvidenceStatus.STALE
+    assert evidence_status["估值"] is EvidenceStatus.STALE
+    assert evidence_status["资金与交易"] is EvidenceStatus.STALE
 
 
 def test_absolute_financial_snapshot_is_not_reported_missing() -> None:
@@ -266,6 +275,37 @@ def test_high_pledge_and_loss_constrain_non_holder_to_zero_position() -> None:
     assert "追反弹" in dossier.position.prohibited_action
 
 
+def test_critical_event_is_ranked_as_strongest_counter_evidence() -> None:
+    dossier = _build(
+        _raw_stock(
+            news_items=[
+                NewsItem("2026-07-09", "fixture", "股东减持结果公告", "减持完成"),
+                NewsItem("2026-07-10", "fixture", "收到立案调查通知", "监管立案调查"),
+            ],
+        )
+    )
+
+    assert dossier.risks[0].severity == "critical"
+    assert "立案调查" in dossier.verdict.strongest_counter_evidence
+
+
+def test_pledge_release_is_not_mislabeled_as_high_risk() -> None:
+    dossier = _build(
+        _raw_stock(
+            news_items=[
+                NewsItem(
+                    "2026-07-10",
+                    "fixture",
+                    "控股股东部分股份解除质押公告",
+                    "本次解除质押后质押比例下降",
+                )
+            ],
+        )
+    )
+
+    assert all(item.category != "股权质押" for item in dossier.risks)
+
+
 def test_holder_guidance_uses_cost_without_calling_cost_bullish() -> None:
     dossier = _build(
         _raw_stock(close=9.5, financial=True, events=True),
@@ -278,6 +318,17 @@ def test_holder_guidance_uses_cost_without_calling_cost_bullish() -> None:
     assert "成本优势" not in dossier.verdict.thesis
     assert dossier.position.reduce_trigger
     assert dossier.position.invalidation
+
+
+def test_holder_guidance_handles_missing_cost_basis() -> None:
+    dossier = _build(
+        _raw_stock(close=9.5, financial=True, events=True),
+        holding=Holding("603278", "大业股份", 1_000, 0.0, "高端装备"),
+    )
+
+    assert dossier.verdict.stance == "持仓管理"
+    assert "成本待补录" in dossier.position.current_action
+    assert "相对成本" not in dossier.position.current_action
 
 
 def test_decision_rail_has_exactly_five_ordered_steps() -> None:

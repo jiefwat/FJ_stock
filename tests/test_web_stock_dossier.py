@@ -154,3 +154,11 @@ def test_dossier_styles_define_desktop_mobile_and_reduced_motion() -> None:
     assert "font-variant-numeric: tabular-nums" in CSS
     assert "@media (max-width: 760px)" in CSS
     assert "prefers-reduced-motion" in CSS
+
+
+def test_mobile_data_quality_summary_uses_readable_grid() -> None:
+    mobile_css = CSS.split("@media (max-width: 680px)", 1)[1]
+
+    assert ".data-center-summary" in mobile_css
+    assert "grid-template-columns:minmax(0,1fr) auto" in mobile_css
+    assert ".data-center-summary > strong" in mobile_css

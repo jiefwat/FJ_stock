@@ -315,6 +315,8 @@ def build_event_diagnostic(
             continue
         risks.append(risk)
         seen.add((risk.category, risk.evidence))
+    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    risks.sort(key=lambda item: severity_order.get(item.severity, 4))
     if not rows:
         return (
             DiagnosticBlock(
@@ -368,7 +370,8 @@ def _event_risk(title: str, summary: str) -> RiskItem | None:
                 "暂停新开仓并优先核对影响范围",
                 "等待公告原文、金额与处置进度",
             )
-    if "质押" in text:
+    pledge_release = any(marker in text for marker in ("解除质押", "质押解除"))
+    if "质押" in text and not pledge_release:
         percentages = [float(value) for value in re.findall(r"(\d+(?:\.\d+)?)%", text)]
         pledge = max(percentages, default=None)
         evidence = f"{title}（识别质押比例 {pledge:.2f}%）" if pledge is not None else title

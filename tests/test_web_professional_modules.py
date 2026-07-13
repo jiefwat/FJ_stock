@@ -16,7 +16,9 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "仓位/成本分析" not in html
     assert "个股分析" in html
     assert "分析入口" in html
-    assert "未来涨跌预测" in html
+    assert "三种情景" in html
+    assert "五步决策轨道" in html
+    assert "风险登记表" in html
     assert "热点机会" in html
     assert "推荐板块" in html
     assert "推荐板块" in html

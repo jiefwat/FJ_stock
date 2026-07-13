@@ -47,8 +47,10 @@ def test_web_renders_concrete_trade_plan_not_generic_words() -> None:
         ),
     )
 
-    assert "后续建议" in html
-    assert "仓位" in html
-    assert "买入/加仓" in html
-    assert "未来涨跌预测" in html
-    assert "止损" in html
+    assert "仓位与执行边界" in html
+    assert "入场触发" in html
+    assert "加仓确认" in html
+    assert "减仓触发" in html
+    assert "失效条件" in html
+    assert "禁止动作" in html
+    assert "上涨概率" not in html

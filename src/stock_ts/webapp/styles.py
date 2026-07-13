@@ -1923,6 +1923,27 @@ h1 {
   .market-index-row { grid-template-columns: 1fr; }
   .market-gate-copy { max-width:100%; }
   .market-heat-dial { position:relative; right:auto; top:auto; margin:18px 0 74px; }
+  .data-center-summary {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:6px 12px;
+    align-items:start;
+  }
+  .data-center-summary > strong {
+    grid-column:1 / -1;
+    grid-row:2;
+    line-height:1.45;
+  }
+  .data-center-summary > span:nth-of-type(2) {
+    grid-column:1;
+    grid-row:3;
+  }
+  .data-center-summary > a {
+    grid-column:2;
+    grid-row:1 / 4;
+    align-self:center;
+    white-space:nowrap;
+  }
   .data-table { font-size:12px; }
   .compare-value { text-align: left; }
 }

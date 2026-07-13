@@ -76,9 +76,11 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     assert "板块/主题" in html
     assert "仓位成本" in html
     assert "分析入口" in html
-    assert "综合结论" in html
-    assert "后续建议" in html
-    assert "未来涨跌预测" in html
+    assert "投委会结论" in html
+    assert "五步决策轨道" in html
+    assert "仓位与执行边界" in html
+    assert "诊断底稿" in html
+    assert "三种情景" in html
 
 
 def test_four_module_grid_drops_home_specific_rules() -> None:

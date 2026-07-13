@@ -140,7 +140,11 @@ def build_professional_stock_dossier(
         resistance=technical.resistance,
         invalid_line=technical.invalid_line,
     )
-    evidence = _evidence_ledger(raw, diagnostics)
+    evidence = _evidence_ledger(
+        raw,
+        diagnostics,
+        quote_status=quality.quote_status,
+    )
     return ProfessionalStockDossier(
         code=raw.code,
         name=raw.name,
@@ -235,12 +239,16 @@ def _position_guidance(
     else:
         position_cap = "5%" if grade in {"A", "B"} else "0%"
     audience = "已持仓" if holding else "未持仓"
-    current = (
-        f"持仓 {holding.shares:g} 股，成本 {holding.cost_price:.2f}，"
-        f"当前相对成本 {(latest_close / holding.cost_price - 1) * 100:+.1f}%，按失效线管理"
-        if holding
-        else "未持仓，等待价格与证据双重触发"
-    )
+    if holding and holding.cost_price > 0:
+        pnl = (latest_close / holding.cost_price - 1) * 100
+        current = (
+            f"持仓 {holding.shares:g} 股，成本 {holding.cost_price:.2f}，"
+            f"当前相对成本 {pnl:+.1f}%，按失效线管理"
+        )
+    elif holding:
+        current = f"持仓 {holding.shares:g} 股，成本待补录；先按失效线管理"
+    else:
+        current = "未持仓，等待价格与证据双重触发"
     return PositionGuidance(
         audience=audience,
         current_action=current,
@@ -263,9 +271,17 @@ def _decision_steps(
     *,
     paused: bool,
 ) -> tuple[DecisionStep, ...]:
+    if paused:
+        return (
+            DecisionStep("当前状态", "paused", "暂停执行", "行情时效未通过"),
+            DecisionStep("转强触发", "paused", "刷新行情后重算", "旧压力位不作为触发"),
+            DecisionStep("加仓确认", "paused", "暂停加仓", "不增加风险"),
+            DecisionStep("降级触发", "paused", "刷新行情后重算", "持仓转人工风控"),
+            DecisionStep("失效退出", "paused", "暂停使用旧价格", "刷新后重建失效线"),
+        )
     return (
         DecisionStep(
-            "当前状态", "paused" if paused else "current", technical.structure, "决定当前动作"
+            "当前状态", "current", technical.structure, "决定当前动作"
         ),
         DecisionStep("转强触发", "upgrade", f"站稳 {technical.resistance:.2f}", "允许重新评估"),
         DecisionStep("加仓确认", "confirm", "回踩不破且事件风险未升级", "才允许增加风险"),
@@ -388,12 +404,21 @@ def _scenarios(
 def _evidence_ledger(
     raw: StockRawData,
     diagnostics: tuple[DiagnosticBlock, ...],
+    *,
+    quote_status: EvidenceStatus,
 ) -> tuple[EvidenceItem, ...]:
     sources = ", ".join(raw.data_sources) or "unknown"
     trade_date = raw.bars[-1].date if raw.bars else ""
     items: list[EvidenceItem] = []
     for diagnostic in diagnostics:
         source, as_of = _diagnostic_source(raw, diagnostic.name, sources, trade_date)
+        status = _diagnostic_status(diagnostic.status)
+        if quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED} and diagnostic.name in {
+            "估值",
+            "技术结构",
+            "资金与交易",
+        }:
+            status = quote_status
         risk_detail = (
             f" 风险：{'；'.join(diagnostic.risks)}。" if diagnostic.risks else ""
         )
@@ -402,7 +427,7 @@ def _evidence_ledger(
                 block=diagnostic.name,
                 source=source,
                 as_of=as_of,
-                status=_diagnostic_status(diagnostic.status),
+                status=status,
                 detail=f"{diagnostic.conclusion}{risk_detail} {diagnostic.limitation}".strip(),
             )
         )
