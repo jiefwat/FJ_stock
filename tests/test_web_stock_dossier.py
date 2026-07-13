@@ -15,6 +15,7 @@ from stock_ts.research.stock_dossier_models import (
     RiskItem,
 )
 from stock_ts.webapp.stock_workspace import render_stock_workspace
+from stock_ts.webapp.styles import CSS
 
 
 def _dossier() -> ProfessionalStockDossier:
@@ -144,3 +145,12 @@ def test_stock_page_has_no_duplicate_primary_trade_conclusion() -> None:
     assert html.count('data-primary-stock-verdict="true"') == 1
     assert html.count("投委会结论") == 1
     assert "多角色分析方法" not in html.split("诊断底稿", 1)[0]
+
+
+def test_dossier_styles_define_desktop_mobile_and_reduced_motion() -> None:
+    assert ".stock-dossier-grid" in CSS
+    assert ".decision-rail-step" in CSS
+    assert ".risk-register" in CSS
+    assert "font-variant-numeric: tabular-nums" in CSS
+    assert "@media (max-width: 760px)" in CSS
+    assert "prefers-reduced-motion" in CSS
