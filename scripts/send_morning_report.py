@@ -81,18 +81,7 @@ def build_morning_report(
     generated_at = datetime.now().isoformat(timespec="seconds")
     first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
     execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
-    market_lines = _yesterday_market_lines(
-        conclusion=first_conclusion,
-        market=market,
-        sectors=sectors,
-        execution_guard=execution_guard,
-    )
-    holding_lines = _subway_holding_lines(portfolio_actions, portfolio)
-    opportunity_lines = _subway_market_opportunity_lines(
-        sectors=sectors,
-        opportunity_actions=opportunity_actions,
-        opportunities=opportunities,
-    )
+    holding_lines = _commuter_holding_lines(portfolio_actions, portfolio)
     action_limit_lines = _decision_action_limit_lines(decisions)
     automation_lines = _decision_automation_lines(decisions)
     data_lines = _subway_data_risk_lines(
@@ -102,27 +91,44 @@ def build_morning_report(
         announcements=announcement_actions,
         extra_limits=action_limit_lines + automation_lines,
     )
+    quick_lines = _commuter_decision_brief(
+        conclusion=first_conclusion,
+        market=market,
+        sectors=sectors,
+        portfolio_actions=portfolio_actions,
+        opportunity_actions=opportunity_actions,
+        pipeline=pipeline,
+        execution_guard=execution_guard,
+    )
+    candidate_lines = [_shorten_line(item, limit=90) for item in opportunity_actions[:3]]
+    if not candidate_lines:
+        candidate_lines = _compact_block(
+            opportunities,
+            fallback="暂无满足条件的观察票；今天不为了交易而交易。",
+            max_items=3,
+        ).splitlines()
+    discipline_lines = _commuter_discipline_lines(
+        execution_guard=execution_guard,
+        data_lines=data_lines,
+    )
+    review_lines = _commuter_review_links(site_url, trade_date)
     lines = [
-        f"# StockTS 早间简报（地铁版｜{generated_at[:10]}，基于交易日：{trade_date}）",
+        f"# StockTS 30秒晨报（{generated_at[:10]}｜交易日 {trade_date}）",
         "",
-        "## 昨天大盘总结",
-        "\n".join(market_lines),
+        "## 30秒结论",
+        "\n".join(quick_lines),
         "",
-        "## 我的持仓",
-        "\n".join(holding_lines),
+        "## 先处理持仓",
+        "\n".join(holding_lines[:4]),
         "",
-        "## 今日市场机会",
-        "\n".join(opportunity_lines),
+        "## 今日只看3只",
+        "\n".join(candidate_lines),
         "",
-        "## 投资建议 15只票",
-        "\n".join(opportunity_actions)
-        if opportunity_actions
-        else _compact_block(
-            opportunities, fallback="未读取到候选摘要，请检查日报生成状态。", max_items=15
-        ),
+        "## 三条纪律",
+        "\n".join(discipline_lines),
         "",
-        "## 数据与风险提示",
-        "\n".join(data_lines),
+        "## 到公司再看",
+        "\n".join(review_lines),
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -1253,6 +1259,19 @@ def _subway_holding_lines(portfolio_actions: list[str], portfolio: str) -> list[
     return [_short_bullet(item, limit=112) for item in items]
 
 
+def _commuter_holding_lines(portfolio_actions: list[str], portfolio: str) -> list[str]:
+    lines = _subway_holding_lines(portfolio_actions, portfolio)
+    compact: list[str] = []
+    for item in lines[:4]:
+        clean = _strip_bullet(item)
+        if "；风险：" in clean and "；离场：" in clean:
+            decision = clean.split("；风险：", 1)[0]
+            exit_line = clean.rsplit("；离场：", 1)[1]
+            clean = f"{decision}；离场：{exit_line}"
+        compact.append(_short_bullet(clean, limit=96))
+    return compact
+
+
 def _subway_market_opportunity_lines(
     *,
     sectors: str,
@@ -1376,11 +1395,18 @@ def _commuter_decision_brief(
     *,
     conclusion: str,
     market: str,
+    sectors: str,
     portfolio_actions: list[str],
     opportunity_actions: list[str],
     pipeline: str,
+    execution_guard: list[str],
 ) -> list[str]:
-    risk = _data_gap_sentence(pipeline) or _risk_sentence_from_text(conclusion + "\n" + market)
+    guard = (
+        _strip_bullet(execution_guard[0])
+        if execution_guard
+        else _data_gap_sentence(pipeline)
+        or "数据状态未知，今天只观察、不执行。"
+    )
     first_holding = (
         _strip_bullet(portfolio_actions[0])
         if portfolio_actions
@@ -1391,12 +1417,56 @@ def _commuter_decision_brief(
         if opportunity_actions
         else "暂无可读机会；今天不为了交易而交易。"
     )
+    conclusion_line = _strip_bullet(conclusion)
+    market_line = _strip_bullet(_first_content_line(market))
+    market_summary = conclusion_line
+    if market_line and market_line not in conclusion_line:
+        market_summary = f"{conclusion_line}；{market_line}"
+    sector_line = _strip_bullet(_first_content_line(sectors))
+    if sector_line and sector_line not in market_summary:
+        market_summary = f"{market_summary}；主线：{sector_line}"
     return [
-        f"大盘：{_strip_bullet(_first_content_line(market)) or _strip_bullet(conclusion)}",
-        f"风险：{risk}",
-        f"持仓：{first_holding}",
-        f"机会：{first_opportunity}",
-        "今天不要做：不追高、不补亏、不用数据缺口当买入理由；不是买点不交易。",
+        _short_bullet(f"行动：{guard}", limit=68),
+        _short_bullet(f"大盘：{market_summary or market_line}", limit=68),
+        _short_bullet(f"持仓优先：{first_holding}", limit=68),
+        _short_bullet(f"观察首位：{first_opportunity}", limit=68),
+    ]
+
+
+def _commuter_discipline_lines(
+    *, execution_guard: list[str], data_lines: list[str]
+) -> list[str]:
+    guard = (
+        _strip_bullet(execution_guard[0])
+        if execution_guard
+        else "数据状态未知，只观察、不执行。"
+    )
+    lines = [
+        _short_bullet(guard, limit=72),
+        _bullet("不追高、不因亏损补仓；没有价格触发，不交易。"),
+    ]
+    ranked = sorted(
+        (_strip_bullet(item) for item in data_lines),
+        key=lambda item: 0
+        if any(
+            keyword in item
+            for keyword in ("数据缺口", "公告", "不可用", "失败", "只观察", "补强")
+        )
+        else 1,
+    )
+    for clean in ranked:
+        if clean and clean != guard and "内容仅用于研究复盘" not in clean:
+            lines.append(_short_bullet(clean, limit=72))
+            break
+    return lines[:3]
+
+
+def _commuter_review_links(site_url: str, trade_date: str) -> list[str]:
+    base = site_url.rstrip("/")
+    return [
+        _bullet(f"先复核：[大盘]({base}/#market) · [持仓]({base}/#portfolio)"),
+        _bullet(f"再深挖：[机会]({base}/#opportunity) · [数据]({base}/#data-center)"),
+        _bullet(f"基于交易日 {trade_date}；内容仅用于研究复盘，不构成投资建议。"),
     ]
 
 
