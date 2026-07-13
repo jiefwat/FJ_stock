@@ -1269,24 +1269,27 @@ def test_opportunity_stocks_hide_dual_git_method_chain_summary_only() -> None:
         assert text not in opportunity_html
 
 
-def test_stock_module_keeps_single_entry_and_four_result_blocks() -> None:
+def test_stock_module_leads_from_entry_to_research_memo_and_execution() -> None:
     html = _sample_html(stock_code="603278")
     stock_html = _workspace(html, "stock")
 
     for text in [
         "分析入口",
         "开始分析",
-        "综合结论",
+        "研究结论",
+        "投资备忘录",
+        "三情景推演",
+        "六类证据",
         "分析内容",
-        "后续建议",
-        "未来涨跌预测",
+        "交易计划",
     ]:
         assert text in stock_html
 
-    assert stock_html.index("分析入口") < stock_html.index("综合结论")
-    assert stock_html.index("综合结论") < stock_html.index("分析内容")
-    assert stock_html.index("分析内容") < stock_html.index("后续建议")
-    assert stock_html.index("后续建议") < stock_html.index("未来涨跌预测")
+    assert stock_html.index("分析入口") < stock_html.index("研究结论")
+    assert stock_html.index("研究结论") < stock_html.index("投资备忘录")
+    assert stock_html.index("投资备忘录") < stock_html.index("三情景推演")
+    assert stock_html.index("三情景推演") < stock_html.index("六类证据")
+    assert stock_html.index("六类证据") < stock_html.index("交易计划")
     assert "K线数据" not in stock_html
     kline_table_header = (
         "<th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>成交量</th>"
@@ -1328,7 +1331,7 @@ def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
     ]:
         assert text in stock_html
 
-    assert stock_html.index("综合结论") < stock_html.index("多角色分析方法")
+    assert stock_html.index("研究结论") < stock_html.index("多角色分析方法")
     assert stock_html.index("多角色分析方法") < stock_html.index("后续建议")
     assert "完整方法链" not in stock_html
 
@@ -1432,7 +1435,6 @@ def test_stock_module_removes_extra_research_panels() -> None:
     for text in {
         "专业个股结论",
         "多维诊断",
-        "六类证据",
         "综合总结",
         "个股证据抽屉",
         "股票摘要",

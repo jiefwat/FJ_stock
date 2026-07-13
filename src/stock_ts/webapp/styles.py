@@ -3732,6 +3732,291 @@ body {
   font-size:12px;
   line-height:1.55;
 }
+.market-research-workspace,
+.stock-research-workspace {
+  display:grid;
+  gap:18px;
+}
+.market-state-strip,
+.stock-identity-strip {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr)) auto;
+  gap:1px;
+  overflow:hidden;
+  border:1px solid #23364a;
+  border-radius:22px;
+  background:#23364a;
+  box-shadow:0 18px 44px rgba(16,32,51,.14);
+}
+.market-state-strip > div,
+.stock-identity-strip > div {
+  min-width:0;
+  padding:16px 18px;
+  background:linear-gradient(145deg,#142b41,#102033);
+  color:#edf5fb;
+}
+.market-state-strip span,
+.stock-identity-strip span,
+.market-thesis-board span,
+.stock-thesis-board span,
+.investment-memo-card > span,
+.research-scenario-card > span,
+.stock-evidence-card span,
+.research-actions > span {
+  display:block;
+  color:#8ea7ba;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.market-state-strip strong,
+.stock-identity-strip strong {
+  display:block;
+  margin-top:7px;
+  font-family:var(--mono);
+  font-size:18px;
+  line-height:1.2;
+}
+.market-state-strip .module-refresh-tools,
+.stock-identity-strip .module-refresh-tools {
+  align-self:center;
+  padding:0 12px;
+}
+.market-thesis-board,
+.stock-thesis-board {
+  display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);
+  gap:1px;
+  overflow:hidden;
+  border:1px solid #d7c49d;
+  border-radius:26px;
+  background:#d7c49d;
+}
+.market-thesis-main,
+.market-risk-card,
+.stock-thesis-status,
+.thesis-conflict {
+  padding:22px;
+  background:linear-gradient(145deg,#fffdf7,#f4ead6);
+}
+.market-risk-card,
+.thesis-conflict {
+  background:linear-gradient(145deg,#192f43,#112337);
+  color:#f4f8fb;
+}
+.market-thesis-board h3,
+.stock-thesis-board h3,
+.research-actions h3 {
+  margin:8px 0 12px;
+  max-width:900px;
+  font-family:var(--display);
+  font-size:clamp(20px,2.3vw,32px);
+  line-height:1.18;
+}
+.market-thesis-board ul {
+  margin:10px 0 0;
+  padding-left:18px;
+  line-height:1.65;
+}
+.market-risk-card > strong,
+.thesis-conflict > strong {
+  display:block;
+  margin-top:8px;
+  font-size:17px;
+  line-height:1.45;
+}
+.market-risk-card small {
+  display:block;
+  margin-top:12px;
+  color:#d7b978;
+  line-height:1.55;
+}
+.research-section-heading {
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  margin:4px 0 12px;
+}
+.research-section-heading > span {
+  display:grid;
+  width:34px;
+  height:34px;
+  place-items:center;
+  flex:0 0 auto;
+  border-radius:50%;
+  background:#b4853a;
+  color:#fff;
+  font-family:var(--mono);
+  font-size:11px;
+  font-weight:900;
+}
+.research-section-heading h3,
+.research-section-heading p {
+  margin:0;
+}
+.research-section-heading h3 {
+  font-family:var(--display);
+  font-size:20px;
+}
+.research-section-heading p {
+  margin-top:4px;
+  color:var(--muted);
+  font-size:12px;
+}
+.market-dimension-grid {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:14px;
+}
+.market-dimension-card,
+.stock-evidence-card,
+.investment-memo-card,
+.research-scenario-card {
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:15px;
+  background:linear-gradient(180deg,#fff,#f6f9fb);
+}
+.market-dimension-card > div,
+.stock-evidence-card > div {
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:center;
+}
+.market-dimension-card strong,
+.stock-evidence-card strong,
+.investment-memo-card strong,
+.research-scenario-card strong {
+  display:block;
+  margin-top:10px;
+  line-height:1.45;
+}
+.market-dimension-card p,
+.investment-memo-card p,
+.research-scenario-card p {
+  margin:8px 0 0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.55;
+}
+.market-dimension-card small,
+.stock-evidence-card small,
+.research-scenario-card small {
+  display:block;
+  margin-top:10px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.45;
+}
+.evidence-status {
+  border-radius:999px;
+  padding:4px 7px;
+  background:#e5edf2;
+  color:#405970;
+  font-family:var(--mono);
+  font-size:9px;
+  font-style:normal;
+  font-weight:800;
+  letter-spacing:.04em;
+}
+.evidence-status.complete { background:#dfeee9; color:#24624d; }
+.evidence-status.degraded,
+.evidence-status.stale { background:#f0e4ca; color:#865b16; }
+.evidence-status.missing,
+.evidence-status.blocked { background:#f5dfdc; color:#8f3f37; }
+.research-scenario-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+.research-scenario-card:nth-child(1) { border-top:3px solid #2c8061; }
+.research-scenario-card:nth-child(2) { border-top:3px solid #b4853a; }
+.research-scenario-card:nth-child(3) { border-top:3px solid #b4483d; }
+.stock-thesis-status {
+  display:grid;
+  align-content:center;
+}
+.stock-thesis-status > strong {
+  color:#8b682f;
+  font-family:var(--mono);
+}
+.thesis-evidence-pair {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:14px;
+}
+.thesis-evidence-pair p {
+  margin:0;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;
+  padding:12px;
+  color:#dbe6ee;
+  font-size:12px;
+  line-height:1.55;
+}
+.thesis-evidence-pair b {
+  display:block;
+  margin-bottom:5px;
+  color:#d7b978;
+}
+.investment-memo-grid {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+}
+.investment-memo-card ul {
+  margin:9px 0 0;
+  padding-left:17px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.55;
+}
+.investment-memo-card .memo-next-checks {
+  border-top:1px dashed var(--line);
+  padding-top:8px;
+  color:var(--brand);
+}
+.stock-evidence-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:14px;
+}
+.research-actions {
+  border-left:4px solid #b4853a;
+  border-radius:0 18px 18px 0;
+  padding:17px 20px;
+  background:#f4ead6;
+}
+.research-actions h3 {
+  margin-bottom:0;
+  font-size:20px;
+}
+.trade-plan-section {
+  display:grid;
+  gap:10px;
+}
+.evidence-audit,
+.agent-debate {
+  border:1px solid var(--line);
+  border-radius:18px;
+  overflow:hidden;
+  background:#fff;
+}
+.evidence-audit summary,
+.agent-debate summary {
+  cursor:pointer;
+  padding:14px 16px;
+  color:var(--ink-soft);
+  font-weight:800;
+}
+.evidence-audit[open] summary,
+.agent-debate[open] summary { border-bottom:1px solid var(--line); }
+.evidence-audit .data-table { margin:12px; width:calc(100% - 24px); }
 @media (max-width:1080px) {
   .stock-data-block-grid,
   .stock-pro-grid,
@@ -3739,11 +4024,27 @@ body {
   .stock-pro-head,
   .stock-pro-bear,
   .stock-summary-lines { grid-template-columns:1fr; }
+  .market-state-strip,
+  .stock-identity-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .market-thesis-board,
+  .stock-thesis-board { grid-template-columns:1fr; }
+  .market-dimension-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .investment-memo-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width:680px) {
   .stock-data-block-grid,
   .stock-pro-grid,
   .stock-diagnosis-grid { grid-template-columns:1fr; }
+  .market-state-strip,
+  .stock-identity-strip,
+  .market-dimension-grid,
+  .research-scenario-grid,
+  .investment-memo-grid,
+  .stock-evidence-grid,
+  .thesis-evidence-pair { grid-template-columns:1fr; }
+  .market-risk-card { order:-1; }
+  .market-state-strip > div,
+  .stock-identity-strip > div { padding:13px 15px; }
 }
 
 """

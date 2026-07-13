@@ -59,6 +59,9 @@ from .professional_research import (
 )
 from .providers import create_provider
 from .providers.base import StockDataProvider
+from .research.evidence import EvidenceStatus
+from .research.market_regime import assess_market_regime
+from .research.stock_memo import build_stock_research_memo
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
@@ -69,6 +72,8 @@ from .webapp import (
 from .webapp import (
     build_workspace_sections,
     render_document,
+    render_market_workspace,
+    render_stock_workspace,
     workspace_action,
 )
 from .webapp import (
@@ -1076,6 +1081,7 @@ def render_page(
             stock_code=resolved.query,
             provider_name=provider_name,
             holdings_path=holdings_path,
+            quality=quality,
         ),
         "portfolio": _render_compact_portfolio_module(
             portfolio,
@@ -6506,6 +6512,7 @@ def _render_compact_market_module(
     stock_code: str,
     provider_name: str,
     holdings_path: str,
+    quality: DataQualityView | None = None,
 ) -> str:
     candidate_universe = candidate_universe or []
     trade_guidance = _render_market_buy_sell_guidance(market, sectors, candidate_universe)
@@ -6531,6 +6538,36 @@ def _render_compact_market_module(
         holdings_path=holdings_path,
     )
     event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
+    stale = bool(
+        quality
+        and any(
+            "数据已滞后" in warning or "大盘行情滞后" in warning
+            for warning in quality.warnings
+        )
+    )
+    assessment = assess_market_regime(
+        market,
+        quote_status=EvidenceStatus.STALE if stale else EvidenceStatus.COMPLETE,
+    )
+    refresh_tools = _render_module_refresh_tools(
+        refresh_time=refresh_time,
+        stock_code=stock_code,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+        workspace="market",
+    )
+    research_workspace = render_market_workspace(
+        assessment,
+        distribution_html=distribution,
+        sectors_html=(
+            f"{sector_heatmap}{mainline_panel}{wide_move_panel}"
+            f"<div class='market-sector-duo'>{strong_sectors}{weak_sectors}</div>"
+            f"{analysis_panel}"
+        ),
+        events_html=event_panel,
+        refresh_html=refresh_tools,
+        supporting_html=trade_guidance,
+    )
     return f"""
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
@@ -6540,20 +6577,9 @@ def _render_compact_market_module(
         </div>
         <div class="module-header-meta">
           <span class="market-state-pill {_market_risk_tone(market)}">{escape(market.trade_date)}</span>
-          {_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="market")}
         </div>
       </div>
-      {trade_guidance}
-      {distribution}
-      {sector_heatmap}
-      {mainline_panel}
-      {wide_move_panel}
-      <div class="market-sector-duo">
-        {strong_sectors}
-        {weak_sectors}
-      </div>
-      {analysis_panel}
-      {event_panel}
+      {research_workspace}
     </section>"""
 
 
@@ -9665,25 +9691,56 @@ def _render_compact_stock_module(
         trade_plan=trade_plan,
         invalid=invalid,
     )
-    return f"""
-    <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先给最终判断，再给方法、证据和预测。</p></div><div class="module-header-meta"><span class="risk-pill mid">机会评分 {stock.upside.score}/100</span><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=resolved.query, provider_name=provider_name, holdings_path=holdings_path, workspace="stock")}</div></div>
-      {_render_stock_simple_entry(resolved, provider_name, holdings_path)}
-      {_render_stock_top_conclusion(
-        stock=stock,
-        stock_raw=stock_raw,
-        portfolio=portfolio,
-        quality=quality,
+    holding = next(
+        (
+            position.holding
+            for position in portfolio.positions
+            if position.holding.code == stock.code
+        ),
+        None,
+    )
+    memo = build_stock_research_memo(
+        stock_raw,
+        holding=holding,
         technical=technical,
         event_radar=event_radar,
-        trade_plan=trade_plan,
-        driver=driver,
-        risk=risk,
-        invalid=invalid,
-      )}
-      {analysis_content}
-      {_render_stock_simple_next_advice(stock, trade_plan, driver, risk, invalid, event_radar)}
-      {_render_stock_simple_forecast(stock, technical, event_radar, quality)}
+    )
+    refresh_tools = _render_module_refresh_tools(
+        refresh_time=refresh_time,
+        stock_code=resolved.query,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+        workspace="stock",
+    )
+    legacy_trade_plan = (
+        _render_stock_top_conclusion(
+            stock=stock,
+            stock_raw=stock_raw,
+            portfolio=portfolio,
+            quality=quality,
+            technical=technical,
+            event_radar=event_radar,
+            trade_plan=trade_plan,
+            driver=driver,
+            risk=risk,
+            invalid=invalid,
+        )
+        + _render_stock_simple_next_advice(
+            stock, trade_plan, driver, risk, invalid, event_radar
+        )
+        + _render_stock_simple_forecast(stock, technical, event_radar, quality)
+    )
+    research_workspace = render_stock_workspace(
+        memo,
+        identity_html=_render_stock_simple_entry(resolved, provider_name, holdings_path),
+        technical_html=analysis_content,
+        trade_plan_html=legacy_trade_plan,
+        refresh_html=refresh_tools,
+    )
+    return f"""
+    <section class="module" id="module-stock">
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先建立投资论点，再审计证据、情景与交易边界。</p></div><div class="module-header-meta"><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      {research_workspace}
     </section>"""
 
 
