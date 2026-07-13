@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
@@ -306,6 +307,42 @@ class RichTushare:
         return MiniFrame([{"trade_date": "20260618", "net_mf_amount": 12345}])
 
 
+class MultiPeriodTushare(RichTushare):
+    def fina_indicator(self, ts_code: str, limit: int, fields: str):
+        assert limit == 8
+        return MiniFrame(
+            [
+                {
+                    "end_date": "20260331",
+                    "or_yoy": 18,
+                    "netprofit_yoy": 24,
+                    "roe": 16,
+                    "grossprofit_margin": 32,
+                    "debt_to_assets": 42,
+                    "ocf_to_profit": 1.2,
+                },
+                {
+                    "end_date": "20251231",
+                    "or_yoy": 14,
+                    "netprofit_yoy": 19,
+                    "roe": 15,
+                    "grossprofit_margin": 31,
+                    "debt_to_assets": 43,
+                    "ocf_to_profit": 1.1,
+                },
+                {
+                    "end_date": "20250930",
+                    "or_yoy": 10,
+                    "netprofit_yoy": 13,
+                    "roe": 14,
+                    "grossprofit_margin": 30,
+                    "debt_to_assets": 44,
+                    "ocf_to_profit": 1.0,
+                },
+            ]
+        )
+
+
 class RestrictedTushare(RichTushare):
     def daily_basic(self, ts_code: str, limit: int, fields: str):
         raise RuntimeError("daily_basic frequency limited")
@@ -337,6 +374,35 @@ class FinancialFallbackAk(RichAk):
                     "PARENTNETPROFITTZ": 18.4,
                     "MGJYXJJE": 0.96,
                 }
+            ]
+        )
+
+
+class MultiPeriodFinancialFallbackAk(FinancialFallbackAk):
+    def stock_financial_analysis_indicator_em(
+        self, symbol: str = "301389.SZ", indicator: str = "按报告期"
+    ) -> MiniFrame:
+        base = super().stock_financial_analysis_indicator_em(symbol, indicator)._rows[0]
+        return MiniFrame(
+            [
+                dict(
+                    base,
+                    REPORT_DATE="2026-03-31 00:00:00",
+                    TOTALOPERATEREVETZ=18,
+                    PARENTNETPROFITTZ=24,
+                ),
+                dict(
+                    base,
+                    REPORT_DATE="2025-12-31 00:00:00",
+                    TOTALOPERATEREVETZ=14,
+                    PARENTNETPROFITTZ=19,
+                ),
+                dict(
+                    base,
+                    REPORT_DATE="2025-09-30 00:00:00",
+                    TOTALOPERATEREVETZ=10,
+                    PARENTNETPROFITTZ=13,
+                ),
             ]
         )
 
@@ -514,6 +580,51 @@ def test_enrich_tdx_snapshot_uses_tushare_for_kline_and_valuation(tmp_path: Path
     assert stock["fundamental_metrics"]["roe"] == 29.6
 
 
+def test_tushare_enrichment_keeps_multiple_financial_periods(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+
+    module.enrich_snapshot(
+        snapshot,
+        codes=["688362"],
+        ak=TushareOnlyAk(),
+        tushare_client=MultiPeriodTushare(),
+        market_news_limit=0,
+    )
+
+    stock = json.loads(snapshot.read_text(encoding="utf-8"))["stocks"]["688362"]
+    assert stock["fundamental_metrics"]["date"] == "2026-03-31"
+    assert [row["date"] for row in stock["fundamental_history"]] == [
+        "2026-03-31",
+        "2025-12-31",
+        "2025-09-30",
+    ]
+
+
+def test_valuation_enrichment_preserves_previous_dated_value(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    payload["stocks"]["688362"]["valuation"] = {
+        "date": "2026-06-17",
+        "source": "previous",
+        "pe_ttm": 35.0,
+        "pb": 4.0,
+    }
+    snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    module.enrich_snapshot(snapshot, codes=["688362"], ak=RichAk(), market_news_limit=0)
+
+    stock = json.loads(snapshot.read_text(encoding="utf-8"))["stocks"]["688362"]
+    assert [row["date"] for row in stock["valuation_history"]] == [
+        "2026-06-18",
+        "2026-06-17",
+    ]
+    assert stock["valuation_history"][0]["pe_ttm"] == 36.5
+
+
 def test_enrich_tdx_snapshot_falls_back_to_akshare_financials_when_tushare_lacks_permission(
     tmp_path: Path,
 ) -> None:
@@ -539,6 +650,53 @@ def test_enrich_tdx_snapshot_falls_back_to_akshare_financials_when_tushare_lacks
     assert stock["fundamental_metrics"]["revenue_yoy"] == 15.2
     assert stock["fundamental_metrics"]["net_profit_yoy"] == 18.4
     assert stock["fundamental_metrics"]["roe"] == 1.12
+
+
+def test_akshare_fallback_keeps_multiple_financial_periods(tmp_path: Path) -> None:
+    module = _load_enrichment_module()
+    snapshot = tmp_path / "tdx.json"
+    _write_snapshot(snapshot)
+
+    module.enrich_snapshot(
+        snapshot,
+        codes=["688362"],
+        ak=MultiPeriodFinancialFallbackAk(),
+        tushare_client=RestrictedTushare(),
+        market_news_limit=0,
+    )
+
+    stock = json.loads(snapshot.read_text(encoding="utf-8"))["stocks"]["688362"]
+    assert [row["date"] for row in stock["fundamental_history"]] == [
+        "2026-03-31",
+        "2025-12-31",
+        "2025-09-30",
+    ]
+
+
+def test_dated_history_deduplicates_and_keeps_latest_250() -> None:
+    module = _load_enrichment_module()
+    start = date(2025, 1, 1)
+    rows = [
+        {
+            "date": (start + timedelta(days=offset)).isoformat(),
+            "source": "old",
+            "pe_ttm": 10 + offset,
+        }
+        for offset in range(260)
+    ]
+    duplicate_date = str(rows[-1]["date"])
+
+    result = module._merge_dated_history(
+        rows,
+        {"date": duplicate_date, "source": "new", "pe_ttm": 999},
+        {"date": "bad-date", "source": "bad", "pe_ttm": 1},
+        limit=250,
+    )
+
+    assert len(result) == 250
+    assert result[0]["date"] == duplicate_date
+    assert result[0]["source"] == "new"
+    assert result[0]["pe_ttm"] == 999
 
 
 def test_tdx_provider_and_web_use_enriched_stock_fields(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ import os
 import signal
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -173,6 +173,7 @@ def _enrich_stock_payload(
     payload.setdefault("name", code)
     field_errors: dict[str, str] = {}
     is_hk_stock = _is_hk_code(code)
+    financial_history_refreshed = False
 
     if is_hk_stock:
         opener = yahoo_opener or _open_url_bytes
@@ -221,6 +222,13 @@ def _enrich_stock_payload(
             with _time_limit(field_timeout):
                 valuation = _fetch_tushare_daily_basic(tushare_client, code)
             if valuation:
+                previous_valuation = payload.get("valuation")
+                payload["valuation_history"] = _merge_dated_history(
+                    payload.get("valuation_history", []),
+                    previous_valuation,
+                    valuation,
+                    limit=250,
+                )
                 payload["valuation"] = valuation
                 payload["pe_ttm"] = valuation.get("pe_ttm")
                 if valuation.get("turnover_rate") is not None:
@@ -229,9 +237,16 @@ def _enrich_stock_payload(
             field_errors["tushare_daily_basic"] = str(exc)[:180]
         try:
             with _time_limit(field_timeout):
-                fundamentals = _fetch_tushare_fina_indicator(tushare_client, code)
-            if fundamentals:
-                payload["fundamental_metrics"] = fundamentals
+                financial_history = _fetch_tushare_fina_history(tushare_client, code)
+            if financial_history:
+                payload["fundamental_history"] = _merge_dated_history(
+                    payload.get("fundamental_history", []),
+                    payload.get("fundamental_metrics"),
+                    financial_history,
+                    limit=8,
+                )
+                payload["fundamental_metrics"] = payload["fundamental_history"][0]
+                financial_history_refreshed = True
         except Exception as exc:
             field_errors["tushare_fina_indicator"] = str(exc)[:180]
         if tushare_moneyflow:
@@ -268,12 +283,18 @@ def _enrich_stock_payload(
             field_errors["itick_tick"] = str(exc)[:180]
 
     if akshare_stock_fields and not is_hk_stock:
-        if not payload.get("fundamental_metrics"):
+        if not financial_history_refreshed:
             try:
                 with _time_limit(field_timeout):
-                    fundamentals = _fetch_akshare_financial_indicators(ak, code)
-                if fundamentals:
-                    payload["fundamental_metrics"] = fundamentals
+                    financial_history = _fetch_akshare_financial_history(ak, code)
+                if financial_history:
+                    payload["fundamental_history"] = _merge_dated_history(
+                        payload.get("fundamental_history", []),
+                        payload.get("fundamental_metrics"),
+                        financial_history,
+                        limit=8,
+                    )
+                    payload["fundamental_metrics"] = payload["fundamental_history"][0]
             except Exception as exc:
                 field_errors["akshare_financial"] = str(exc)[:180]
 
@@ -291,12 +312,16 @@ def _enrich_stock_payload(
             field_errors["daily_bars"] = str(exc)[:180]
 
         try:
-            if not payload.get("valuation"):
-                with _time_limit(field_timeout):
-                    valuation = _fetch_valuation(ak, code)
-            else:
-                valuation = {}
+            with _time_limit(field_timeout):
+                valuation = _fetch_valuation(ak, code)
             if valuation:
+                previous_valuation = payload.get("valuation")
+                payload["valuation_history"] = _merge_dated_history(
+                    payload.get("valuation_history", []),
+                    previous_valuation,
+                    valuation,
+                    limit=250,
+                )
                 payload["valuation"] = valuation
                 payload["pe_ttm"] = valuation.get("pe_ttm")
         except Exception as exc:
@@ -545,53 +570,54 @@ def _fetch_tushare_daily_basic(ts_client: object, code: str) -> dict[str, Any]:
     }
 
 
-def _fetch_tushare_fina_indicator(ts_client: object, code: str) -> dict[str, Any]:
+def _fetch_tushare_fina_history(ts_client: object, code: str) -> list[dict[str, Any]]:
     frame = ts_client.fina_indicator(  # type: ignore[attr-defined]
         ts_code=_tushare_code(code),
-        limit=1,
+        limit=8,
         fields=(
             "ts_code,end_date,or_yoy,netprofit_yoy,roe,grossprofit_margin,"
             "debt_to_assets,ocf_to_profit"
         ),
     )
-    rows = _records(frame)
-    if not rows:
-        return {}
-    latest = rows[0]
-    return {
-        "source": "tushare.fina_indicator",
-        "date": _format_tushare_date(str(latest.get("end_date") or "")),
-        "revenue_yoy": _optional_float(latest.get("or_yoy")),
-        "net_profit_yoy": _optional_float(latest.get("netprofit_yoy")),
-        "roe": _optional_float(latest.get("roe")),
-        "gross_margin": _optional_float(latest.get("grossprofit_margin")),
-        "debt_to_assets": _optional_float(latest.get("debt_to_assets")),
-        "ocf_to_profit": _optional_float(latest.get("ocf_to_profit")),
-    }
+    normalized = [
+        {
+            "source": "tushare.fina_indicator",
+            "date": _format_tushare_date(str(row.get("end_date") or "")),
+            "revenue_yoy": _optional_float(row.get("or_yoy")),
+            "net_profit_yoy": _optional_float(row.get("netprofit_yoy")),
+            "roe": _optional_float(row.get("roe")),
+            "gross_margin": _optional_float(row.get("grossprofit_margin")),
+            "debt_to_assets": _optional_float(row.get("debt_to_assets")),
+            "ocf_to_profit": _optional_float(row.get("ocf_to_profit")),
+        }
+        for row in _records(frame)
+    ]
+    return _merge_dated_history(normalized, limit=8)
 
 
-def _fetch_akshare_financial_indicators(ak: object, code: str) -> dict[str, Any]:
+def _fetch_akshare_financial_history(ak: object, code: str) -> list[dict[str, Any]]:
     frame = ak.stock_financial_analysis_indicator_em(  # type: ignore[attr-defined]
         symbol=_akshare_em_symbol(code), indicator="按报告期"
     )
-    rows = _records(frame)
-    if not rows:
-        return {}
-    latest = rows[0]
-    return {
-        "source": "akshare.stock_financial_analysis_indicator_em",
-        "date": _format_report_date(str(latest.get("REPORT_DATE") or "")),
-        "eps": _optional_float(latest.get("EPSJB")),
-        "net_asset_per_share": _optional_float(latest.get("BPS")),
-        "operating_revenue": _optional_float(latest.get("TOTALOPERATEREVE")),
-        "net_profit": _optional_float(latest.get("PARENTNETPROFIT")),
-        "revenue_yoy": _optional_float(latest.get("TOTALOPERATEREVETZ")),
-        "net_profit_yoy": _optional_float(latest.get("PARENTNETPROFITTZ")),
-        "roe": _optional_float(latest.get("ROEJQ")),
-        "gross_margin": _optional_float(latest.get("XSMLL")),
-        "debt_to_assets": _optional_float(latest.get("ZCFZL")),
-        "operating_cash_flow_per_share": _optional_float(latest.get("MGJYXJJE")),
-    }
+    normalized = [
+        {
+            "source": "akshare.stock_financial_analysis_indicator_em",
+            "date": _format_report_date(str(row.get("REPORT_DATE") or "")),
+            "eps": _optional_float(row.get("EPSJB")),
+            "net_asset_per_share": _optional_float(row.get("BPS")),
+            "operating_revenue": _optional_float(row.get("TOTALOPERATEREVE")),
+            "net_profit": _optional_float(row.get("PARENTNETPROFIT")),
+            "revenue_yoy": _optional_float(row.get("TOTALOPERATEREVETZ")),
+            "net_profit_yoy": _optional_float(row.get("PARENTNETPROFITTZ")),
+            "roe": _optional_float(row.get("ROEJQ")),
+            "gross_margin": _optional_float(row.get("XSMLL")),
+            "debt_to_assets": _optional_float(row.get("ZCFZL")),
+            "ocf_to_profit": None,
+            "operating_cash_flow_per_share": _optional_float(row.get("MGJYXJJE")),
+        }
+        for row in _records(frame)[:8]
+    ]
+    return _merge_dated_history(normalized, limit=8)
 
 
 def _fetch_tushare_moneyflow(ts_client: object, code: str) -> dict[str, Any]:
@@ -966,6 +992,26 @@ def _format_report_date(value: str) -> str:
     if len(text) >= 10 and text[4] == "-" and text[7] == "-":
         return text[:10]
     return _format_tushare_date(text[:8])
+
+
+def _merge_dated_history(*values: object, limit: int) -> list[dict[str, Any]]:
+    by_date: dict[str, dict[str, Any]] = {}
+    for value in values:
+        rows = value if isinstance(value, list) else [value]
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            normalized = dict(row)
+            report_date = _format_report_date(str(normalized.get("date") or ""))
+            try:
+                date.fromisoformat(report_date)
+            except ValueError:
+                continue
+            normalized["date"] = report_date
+            by_date[report_date] = normalized
+    if limit <= 0:
+        return []
+    return [by_date[key] for key in sorted(by_date, reverse=True)[:limit]]
 
 
 def _format_rss_datetime(value: str) -> str:
