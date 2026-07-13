@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -13,6 +14,83 @@ def _load_refresh_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _market_payload(
+    trade_date: str,
+    *,
+    advancing: int = 2200,
+    declining: int = 2500,
+) -> dict[str, object]:
+    return {
+        "trade_date": trade_date,
+        "indices": [
+            {
+                "code": "000001",
+                "name": "上证指数",
+                "close": 3500,
+                "pct_chg": 0.5,
+                "amount": 5000,
+            }
+        ],
+        "advancing": advancing,
+        "declining": declining,
+        "limit_up": 60,
+        "limit_down": 12,
+        "top_sectors": [],
+    }
+
+
+def test_refresh_snapshot_accumulates_market_history(tmp_path: Path) -> None:
+    module = _load_refresh_module()
+    output = tmp_path / "snapshot.json"
+    output.write_text(
+        json.dumps({"market": _market_payload("2026-07-09")}),
+        encoding="utf-8",
+    )
+
+    def runner(operation: str, payload: dict[str, object], python_executable: str):
+        if operation == "market":
+            return _market_payload("2026-07-10", advancing=2700, declining=2100)
+        if operation == "sectors":
+            return {"sectors": []}
+        if operation == "candidate_universe":
+            return {"scanned_count": 0, "items": []}
+        raise AssertionError(operation)
+
+    module.refresh_snapshot(output, runner=runner, python_executable="python")
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert [row["trade_date"] for row in payload["market_history"]] == [
+        "2026-07-09",
+        "2026-07-10",
+    ]
+    assert payload["market_history"][-1]["breadth_ratio"] == 1.2857
+    assert payload["market_history"][-1]["amount"] == 5000.0
+
+
+def test_market_history_deduplicates_bad_rows_and_keeps_latest_60() -> None:
+    module = _load_refresh_module()
+    start = date(2026, 4, 1)
+    rows = [
+        _market_payload((start + timedelta(days=offset)).isoformat())
+        for offset in range(70)
+    ]
+    latest_date = str(rows[-1]["trade_date"])
+    rows.extend(
+        [
+            _market_payload(latest_date, advancing=3000, declining=1000),
+            {"trade_date": "bad-date"},
+            {"trade_date": "2026-07-11", "advancing": 1, "declining": "bad"},
+        ]
+    )
+
+    result = module._merge_market_history(rows, limit=60)
+
+    assert len(result) == 60
+    assert result[-1]["trade_date"] == latest_date
+    assert result[-1]["advancing"] == 3000
+    assert result[-1]["breadth_ratio"] == 3.0
 
 
 def test_refresh_tdx_snapshot_merges_full_market_candidate_metadata(tmp_path: Path) -> None:

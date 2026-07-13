@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -39,11 +40,17 @@ def refresh_snapshot(
         },
         python_executable,
     )
+    market_history = _merge_market_history(
+        existing.get("market_history", []),
+        existing.get("market"),
+        market,
+    )
     snapshot = {
         **existing,
         "source": "tdx-mcp-eltdx-bridge",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "market": market,
+        "market_history": market_history,
         "sectors": sectors.get("sectors", sectors),
         "candidate_universe": candidates,
         "stocks": existing.get("stocks", {}),
@@ -162,6 +169,63 @@ def _read_existing_snapshot(path: Path) -> dict[str, Any]:
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def _merge_market_history(*values: object, limit: int = 60) -> list[dict[str, Any]]:
+    by_date: dict[str, dict[str, Any]] = {}
+    for value in values:
+        rows = value if isinstance(value, list) else [value]
+        for row in rows:
+            normalized = _market_history_row(row)
+            if normalized is not None:
+                by_date[normalized["trade_date"]] = normalized
+    if limit <= 0:
+        return []
+    return [by_date[key] for key in sorted(by_date)][-limit:]
+
+
+def _market_history_row(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    trade_date = str(value.get("trade_date") or "").strip()[:10]
+    try:
+        date.fromisoformat(trade_date)
+        advancing = int(value.get("advancing", 0))
+        declining = int(value.get("declining", 0))
+        limit_up = int(value.get("limit_up", 0))
+        limit_down = int(value.get("limit_down", 0))
+    except (TypeError, ValueError):
+        return None
+    if advancing < 0 or declining <= 0:
+        return None
+    try:
+        amount = _market_amount(value)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "trade_date": trade_date,
+        "advancing": advancing,
+        "declining": declining,
+        "breadth_ratio": round(advancing / declining, 4),
+        "limit_up": limit_up,
+        "limit_down": limit_down,
+        "amount": round(amount, 4),
+    }
+
+
+def _market_amount(value: dict[str, Any]) -> float:
+    if value.get("amount") not in {None, ""}:
+        amount = float(value["amount"])
+        return amount if math.isfinite(amount) and amount >= 0 else 0.0
+    indices = value.get("indices") if isinstance(value.get("indices"), list) else []
+    amount = 0.0
+    for item in indices:
+        if not isinstance(item, dict):
+            continue
+        item_amount = float(item.get("amount", 0.0))
+        if math.isfinite(item_amount) and item_amount > 0:
+            amount += item_amount
+    return amount
 
 
 def _candidate_universe_dict(snapshot: dict[str, Any]) -> dict[str, Any]:
