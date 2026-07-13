@@ -69,3 +69,13 @@ The former sixth baseline failure for stale opportunity ranking now passes becau
 - Desktop `1440x1000`: no horizontal overflow; market rail uses five columns; portfolio uses one verdict, 11 queue items, 10 exposure rows, and 11 boundary cards.
 - Mobile `390x844`: no horizontal overflow; market rail, portfolio grid, boundary grid, funnel, and candidate grid all collapse to one column.
 - Final stale portfolio smoke confirmed `账本成本=true`, `累计盈亏指标=false`, and one primary portfolio verdict.
+
+## Deployment Verification
+
+- GitHub `origin/main`, local `main`, and server `main` all resolved to the code release commit `212b22684c3ce5ac0193fb392f183b980c47369e` before the deployment record commit.
+- Server tracked worktree remained clean; only pre-existing ignored/untracked runtime assets were present.
+- Server source contained all three primary-verdict markers, the five-step market rail, and stale portfolio ledger metrics.
+- Server services: StockTs active, Signal Desk active, Nginx active; no post-restart traceback was found.
+- Server-local `/healthz`: HTTP 200, body `ok`.
+- Public `https://stock.jiewat-kaka-fj.com/healthz`: HTTP 200, body `ok`.
+- Public root: HTTP 200 after the expected redirect to `https://stock.jiewat-kaka-fj.com/login?next=%2F`.
