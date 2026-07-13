@@ -83,3 +83,24 @@ def test_assessment_always_builds_three_testable_scenarios() -> None:
     assert result.stage == "风险释放"
     assert [item.name for item in result.scenarios] == ["偏强", "基准", "偏弱"]
     assert all(item.trigger and item.action and item.invalidation for item in result.scenarios)
+
+
+def test_extreme_limit_down_risk_overrides_rotation() -> None:
+    result = assess_market_regime(
+        _market(heat=60, advancing=2500, declining=2500, limit_down=80)
+    )
+
+    assert result.stage == "风险释放"
+    assert result.risk_budget == "10%-30%"
+
+
+def test_contradictory_high_heat_risk_release_reduces_confidence() -> None:
+    conflicted = assess_market_regime(
+        _market(heat=60, advancing=2500, declining=2500, limit_down=80)
+    )
+    consistent = assess_market_regime(
+        _market(heat=40, advancing=1000, declining=3000, limit_down=80)
+    )
+
+    assert conflicted.stage == consistent.stage == "风险释放"
+    assert conflicted.confidence < consistent.confidence

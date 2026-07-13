@@ -63,7 +63,10 @@ def assess_market_regime(
     stage, risk_budget = _classify(market)
     dimensions = _dimensions(market, blocked=False)
     degraded_count = sum(item.status != EvidenceStatus.COMPLETE for item in dimensions)
-    confidence = max(35, 82 - degraded_count * 4)
+    confidence = max(
+        0,
+        min(100, 82 - degraded_count * 4 - _contradiction_penalty(market, stage)),
+    )
     support = _supporting_evidence(market, stage)
     counter = _counter_evidence(market, stage)
     return MarketRegimeAssessment(
@@ -82,15 +85,24 @@ def assess_market_regime(
 
 
 def _classify(market: MarketSnapshot) -> tuple[str, str]:
+    if market.limit_down_count >= 30 or market.breadth_ratio < 0.55:
+        return "风险释放", "10%-30%"
     if market.heat_score >= 70 and market.breadth_ratio >= 1.5 and market.limit_down_count < 10:
         return "进攻", "70%-85%"
     if market.heat_score >= 55 and market.breadth_ratio >= 0.9:
         return "轮动", "50%-70%"
-    if market.limit_down_count >= 30 or market.breadth_ratio < 0.55:
-        return "风险释放", "10%-30%"
     if market.heat_score < 45:
         return "防守", "20%-40%"
     return "震荡", "40%-60%"
+
+
+def _contradiction_penalty(market: MarketSnapshot, stage: str) -> int:
+    penalty = 0
+    if stage == "风险释放" and market.heat_score >= 55:
+        penalty += 12
+    if stage in {"进攻", "轮动"} and market.limit_down_count >= 20:
+        penalty += 10
+    return penalty
 
 
 def _dimensions(
