@@ -1,4 +1,5 @@
 from stock_ts.models import DailyBar, StockRawData
+from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 from stock_ts.research.stock_memo import build_stock_research_memo
 from stock_ts.webapp.stock_workspace import render_stock_workspace
 
@@ -55,3 +56,20 @@ def test_stock_workspace_shows_missing_blocks_without_false_confidence() -> None
     assert "投资逻辑成立" not in html
     assert "低估" not in html
     assert "missing" in html
+
+
+def test_stock_workspace_surfaces_stale_quote_pause() -> None:
+    memo = build_stock_research_memo(
+        _raw(complete=True),
+        input_quality=ResearchInputQuality(
+            quote_status=EvidenceStatus.STALE,
+            blockers=("行情日期落后",),
+        ),
+    )
+
+    html = render_stock_workspace(memo)
+
+    assert 'data-research-status="数据暂停"' in html
+    assert "置信度 0/100" in html
+    assert "刷新最近交易日行情后重新评估" in html
+    assert "等待技术触发后再分配风险预算" not in html

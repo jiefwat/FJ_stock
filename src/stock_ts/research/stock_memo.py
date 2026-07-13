@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
 from stock_ts.models import Holding, StockRawData
 
-from .evidence import EvidenceItem, EvidenceStatus
+from .evidence import (
+    EvidenceItem,
+    EvidenceStatus,
+    ResearchInputQuality,
+    fundamental_metric_coverage,
+    has_comparable_valuation,
+    has_usable_events,
+)
 
 
 @dataclass(frozen=True)
@@ -61,15 +69,30 @@ def build_stock_research_memo(
     holding: Holding | None = None,
     technical: Any | None = None,
     event_radar: Any | None = None,
+    input_quality: ResearchInputQuality | None = None,
 ) -> StockResearchMemo:
     latest = raw.bars[-1] if raw.bars else None
     trade_date = latest.date if latest else ""
     latest_close = latest.close if latest else 0.0
+    quality_gate = input_quality or _derive_input_quality(raw)
     quality = _quality_section(raw.fundamental_metrics)
     valuation = _valuation_section(raw)
     events = _event_section(raw, event_radar)
-    evidence = _evidence_items(raw, holding, trade_date, quality, valuation, events)
-    verdict = _verdict(raw, quality, valuation, events)
+    evidence = _evidence_items(
+        raw,
+        holding,
+        trade_date,
+        quality,
+        valuation,
+        events,
+        quality_gate,
+    )
+    verdict = _verdict(quality, valuation, events, quality_gate)
+    scenarios = (
+        _paused_scenarios()
+        if quality_gate.quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}
+        else _scenarios(raw, quality, events)
+    )
     return StockResearchMemo(
         code=raw.code,
         name=raw.name,
@@ -84,8 +107,22 @@ def build_stock_research_memo(
         capital=_capital_section(raw),
         events=events,
         portfolio=_portfolio_section(holding, latest_close),
-        scenarios=_scenarios(raw, quality, events),
+        scenarios=scenarios,
         evidence=evidence,
+    )
+
+
+def _derive_input_quality(raw: StockRawData) -> ResearchInputQuality:
+    return ResearchInputQuality(
+        quote_status=EvidenceStatus.COMPLETE if raw.bars else EvidenceStatus.BLOCKED,
+        fundamental_coverage=fundamental_metric_coverage(raw.fundamental_metrics),
+        valuation_comparable=has_comparable_valuation(raw.valuation, pe_ttm=raw.pe_ttm),
+        event_status=(
+            EvidenceStatus.DEGRADED
+            if has_usable_events(raw.announcements, raw.news_items)
+            else EvidenceStatus.MISSING
+        ),
+        blockers=("缺少 K 线",) if not raw.bars else (),
     )
 
 
@@ -102,7 +139,7 @@ def _business_section(raw: StockRawData) -> ResearchSection:
 
 
 def _quality_section(metrics: dict[str, float | str | None]) -> ResearchSection:
-    if not metrics:
+    if fundamental_metric_coverage(metrics) == 0:
         return ResearchSection(
             "经营质量",
             "经营质量数据缺失，不能判断盈利能力和现金流质量。",
@@ -154,10 +191,10 @@ def _valuation_section(raw: StockRawData) -> ResearchSection:
         for text in (_metric("PE(TTM)", pe, "x"), _metric("PB", pb, "x"), _metric("PS", ps, "x"))
         if text
     )
-    if percentile is not None:
+    if percentile is not None and 0 <= percentile <= 100:
         conclusion = f"PE 历史分位 {percentile:.0f}%，估值判断具备历史参照。"
         limitation = "历史分位仍需结合盈利周期和口径变化。"
-    elif industry_median is not None and pe is not None:
+    elif industry_median is not None and industry_median > 0 and pe is not None and pe > 0:
         conclusion = f"PE {pe:.2f}x，对比行业中位数 {industry_median:.2f}x。"
         limitation = "行业对比不能替代公司盈利质量和增长持续性判断。"
     else:
@@ -275,16 +312,28 @@ def _portfolio_section(holding: Holding | None, latest_close: float) -> Research
 
 
 def _verdict(
-    raw: StockRawData,
     quality: ResearchSection,
     valuation: ResearchSection,
     events: ResearchSection,
+    quality_gate: ResearchInputQuality,
 ) -> ResearchVerdict:
-    has_fundamentals = bool(raw.fundamental_metrics)
-    has_comparison = any(
-        raw.valuation.get(key) is not None for key in ("pe_percentile", "industry_pe_median")
-    )
-    has_events = bool(raw.announcements or raw.news_items)
+    if quality_gate.quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}:
+        blocker = quality_gate.blockers[0] if quality_gate.blockers else "行情时效未通过"
+        return ResearchVerdict(
+            status="数据暂停",
+            confidence=0,
+            core_conflict="行情时效未通过，当前价格与研究证据不在同一有效时点。",
+            strongest_evidence="保留已有事实用于审计，不形成当前交易判断。",
+            strongest_counter_evidence=blocker,
+            next_review="刷新最近交易日行情后重新评估。",
+        )
+
+    has_fundamentals = quality_gate.fundamental_coverage > 0
+    has_comparison = quality_gate.valuation_comparable
+    has_events = quality_gate.event_status in {
+        EvidenceStatus.COMPLETE,
+        EvidenceStatus.DEGRADED,
+    }
     missing_count = sum(not value for value in (has_fundamentals, has_comparison, has_events))
     status = "技术性观察" if missing_count >= 2 else "条件研究"
     confidence = max(25, 78 - missing_count * 18)
@@ -328,6 +377,19 @@ def _scenarios(
     )
 
 
+def _paused_scenarios() -> tuple[ResearchScenario, ...]:
+    return tuple(
+        ResearchScenario(
+            name,
+            "行情时效恢复并与研究证据对齐。",
+            "等待最近交易日价格、成交量和数据流水线通过校验。",
+            "暂停形成交易判断，仅保留事实核对。",
+            "行情仍过期或刷新后证据发生变化。",
+        )
+        for name in ("乐观", "基准", "悲观")
+    )
+
+
 def _evidence_items(
     raw: StockRawData,
     holding: Holding | None,
@@ -335,31 +397,41 @@ def _evidence_items(
     quality: ResearchSection,
     valuation: ResearchSection,
     events: ResearchSection,
+    quality_gate: ResearchInputQuality,
 ) -> tuple[EvidenceItem, ...]:
     source = ", ".join(raw.data_sources)
-    valuation_comparable = any(
-        raw.valuation.get(key) is not None for key in ("pe_percentile", "industry_pe_median")
-    )
+    if not raw.bars:
+        quote_status = EvidenceStatus.BLOCKED
+    else:
+        quote_status = quality_gate.quote_status
+    if quality_gate.fundamental_coverage <= 0:
+        fundamental_status = EvidenceStatus.MISSING
+    elif quality_gate.fundamental_coverage >= 1:
+        fundamental_status = EvidenceStatus.COMPLETE
+    else:
+        fundamental_status = EvidenceStatus.DEGRADED
     return (
         EvidenceItem(
             "行情",
             source,
             trade_date,
-            EvidenceStatus.COMPLETE if raw.bars else EvidenceStatus.BLOCKED,
+            quote_status,
             "日线价格与成交量" if raw.bars else "缺少 K 线",
         ),
         EvidenceItem(
             "经营质量",
             str(raw.fundamental_metrics.get("source") or ""),
             str(raw.fundamental_metrics.get("date") or ""),
-            EvidenceStatus.DEGRADED if raw.fundamental_metrics else EvidenceStatus.MISSING,
+            fundamental_status,
             quality.limitations,
         ),
         EvidenceItem(
             "估值",
             str(raw.valuation.get("source") or ""),
             str(raw.valuation.get("date") or trade_date),
-            EvidenceStatus.COMPLETE if valuation_comparable else EvidenceStatus.DEGRADED,
+            EvidenceStatus.COMPLETE
+            if quality_gate.valuation_comparable
+            else EvidenceStatus.DEGRADED,
             valuation.limitations,
         ),
         EvidenceItem(
@@ -375,9 +447,7 @@ def _evidence_items(
             "新闻公告",
             source,
             trade_date,
-            EvidenceStatus.DEGRADED
-            if raw.announcements or raw.news_items
-            else EvidenceStatus.MISSING,
+            quality_gate.event_status,
             events.limitations,
         ),
         EvidenceItem(
@@ -394,9 +464,10 @@ def _number(value: float | str | None) -> float | None:
     if value in (None, ""):
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None
 
 
 def _metric(label: str, value: float | None, suffix: str) -> str:
