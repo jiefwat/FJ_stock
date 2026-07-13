@@ -5,4 +5,4 @@
 - [x] Add failing report-structure and density tests.
 - [x] Implement the concise report composition.
 - [x] Run local and server dry-run verification.
-- [ ] Review, merge, push, and deploy.
+- [x] Review, merge, push, and deploy.

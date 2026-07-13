@@ -53,3 +53,16 @@ Production-artifact result:
 - legacy 15-stock heading absent;
 - market/data workspace links and research disclaimer present;
 - dispatch dry-run exited `0`.
+
+## Deployment Verification
+
+Initial deployed commit: `8966ceac30920de79e04264213bc7a11bc2dd661`
+
+- Local `main` and GitHub `main` were fast-forwarded to the accepted branch.
+- Server `/opt/stock-ts` was clean on `main` and advanced through a complete Git bundle with `--ff-only`.
+- The deployed `scripts/send_morning_report.py` compiled successfully.
+- A post-deployment dispatch dry-run exited `0`; no real email was sent.
+- The deployed production-artifact report remained `1050` characters, `23` non-empty lines, and `111` characters at maximum line length.
+- Candidate numbering was exactly `1,2,3`; the legacy 15-stock heading was absent.
+- Morning-email timer, daily-data timer, StockTS, Signal Desk, and Nginx all reported `active`.
+- Server health returned `ok`; public health returned HTTP `200 ok`.
