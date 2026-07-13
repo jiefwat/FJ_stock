@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stock_ts.models import DailyBar, NewsItem, StockRawData
+from stock_ts.models import DailyBar, Holding, NewsItem, StockRawData
 from stock_ts.professional_research import EventRadar, TechnicalProfile
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 
@@ -30,6 +30,7 @@ def _raw_stock(
     bars: list[DailyBar] | None = None,
     fund_flow: float | None = None,
     fund_flow_detail: dict[str, float | str | None] | None = None,
+    news_items: list[NewsItem] | None = None,
 ) -> StockRawData:
     default_metrics: dict[str, float | str | None] = (
         {
@@ -63,7 +64,13 @@ def _raw_stock(
             else {"source": "tdx.quote.turnover", "amount_yuan": 100_000_000.0}
         ),
         news_items=(
-            [NewsItem("2026-07-10", "fixture", "季度经营公告", "经营保持稳定")] if events else []
+            news_items
+            if news_items is not None
+            else (
+                [NewsItem("2026-07-10", "fixture", "季度经营公告", "经营保持稳定")]
+                if events
+                else []
+            )
         ),
         data_sources=["tdx", "fixture"],
     )
@@ -111,13 +118,19 @@ def _event_radar() -> EventRadar:
     )
 
 
-def _build(raw: StockRawData, *, quality: ResearchInputQuality | None = None):
+def _build(
+    raw: StockRawData,
+    *,
+    quality: ResearchInputQuality | None = None,
+    holding: Holding | None = None,
+):
     from stock_ts.research.stock_dossier import build_professional_stock_dossier
 
     return build_professional_stock_dossier(
         raw,
         technical=_technical(),
         event_radar=_event_radar(),
+        holding=holding,
         input_quality=quality or ResearchInputQuality(quote_status=EvidenceStatus.COMPLETE),
         sector_context="高端装备",
     )
@@ -227,3 +240,53 @@ def test_turnover_proxy_is_not_called_main_fund_flow() -> None:
     assert "成交活跃" in capital.conclusion
     assert "主力净流入" not in capital.conclusion
     assert "单日" in capital.limitation
+
+
+def test_high_pledge_and_loss_constrain_non_holder_to_zero_position() -> None:
+    raw = _raw_stock(
+        fundamental_metrics={"net_profit": -24_557.6},
+        news_items=[
+            NewsItem(
+                date="2026-05-25",
+                source="fixture",
+                title="控股股东累计质押占其持股65.72%",
+                summary="质押融资用于公司生产经营",
+                sentiment="negative",
+            )
+        ],
+    )
+    dossier = _build(raw)
+
+    assert dossier.verdict.stance == "风险规避"
+    assert dossier.position.position_cap == "0%"
+    assert any(
+        item.severity == "high" and item.category == "股权质押"
+        for item in dossier.risks
+    )
+    assert "追反弹" in dossier.position.prohibited_action
+
+
+def test_holder_guidance_uses_cost_without_calling_cost_bullish() -> None:
+    dossier = _build(
+        _raw_stock(close=9.5, financial=True, events=True),
+        holding=Holding("603278", "大业股份", 1_000, 11.0, "高端装备"),
+    )
+
+    assert dossier.verdict.stance == "持仓管理"
+    assert dossier.position.audience == "已持仓"
+    assert "成本 11.00" in dossier.position.current_action
+    assert "成本优势" not in dossier.verdict.thesis
+    assert dossier.position.reduce_trigger
+    assert dossier.position.invalidation
+
+
+def test_decision_rail_has_exactly_five_ordered_steps() -> None:
+    dossier = _build(_raw_stock(financial=True, events=True))
+
+    assert [item.label for item in dossier.decision_steps] == [
+        "当前状态",
+        "转强触发",
+        "加仓确认",
+        "降级触发",
+        "失效退出",
+    ]

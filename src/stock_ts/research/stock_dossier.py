@@ -11,6 +11,7 @@ from .evidence import (
 )
 from .stock_diagnostics import (
     build_capital_diagnostic,
+    build_event_diagnostic,
     build_financial_diagnostic,
     build_technical_diagnostic,
     build_valuation_diagnostic,
@@ -69,12 +70,34 @@ def build_professional_stock_dossier(
         usable_events=usable_events,
         valuation_comparable=valuation_comparable,
     )
+    financial = build_financial_diagnostic(raw)
+    valuation = build_valuation_diagnostic(raw)
+    technical_block = build_technical_diagnostic(raw, technical)
+    capital = build_capital_diagnostic(raw)
+    event_block, risks = build_event_diagnostic(raw, event_radar)
+    loss_making = _is_loss_making(raw)
+    weak_technical = any(
+        marker in technical_block.conclusion
+        for marker in ("破位风险", "趋势走弱", "反弹尝试")
+    )
+    critical_risk = any(item.severity == "critical" for item in risks)
+    high_risk = any(item.severity == "high" for item in risks)
+    combined_high_risk = critical_risk or high_risk and (loss_making or weak_technical)
     blocker = quality.blockers[0] if quality.blockers else "行情时效未通过"
-    stance = "数据暂停" if paused else ("条件观察" if grade in {"A", "B"} else "等待修复")
-    action = (
-        "刷新数据后重评"
-        if paused
-        else ("等待触发后小仓验证" if grade in {"A", "B"} else "只观察，不建仓")
+    stance = _stance(
+        paused=paused,
+        combined_high_risk=combined_high_risk,
+        holding=holding,
+        grade=grade,
+        weak_technical=weak_technical,
+    )
+    action = _action(stance)
+    counter = risks[0].evidence if risks else event_radar.gate
+    thesis = _thesis(
+        stance,
+        financial=financial,
+        technical=technical_block,
+        counter=counter,
     )
     verdict = DossierVerdict(
         stance=stance,
@@ -82,13 +105,9 @@ def build_professional_stock_dossier(
         evidence_grade=grade,
         confidence=0 if paused else confidence,
         horizon="5-20 个交易日，并在下一份财报或重大公告后重评",
-        thesis=(
-            "行情时效未通过，当前证据只用于审计。"
-            if paused
-            else "以经营事实、价格结构和事件风险共同验证，不用单一分数代替结论。"
-        ),
-        strongest_evidence=technical.structure,
-        strongest_counter_evidence=blocker if paused else event_radar.gate,
+        thesis=thesis,
+        strongest_evidence=technical_block.conclusion,
+        strongest_counter_evidence=blocker if paused else counter,
         next_review="刷新最近交易日行情后重新评估。"
         if paused
         else "下一交易日收盘或重大公告后复核。",
@@ -98,12 +117,15 @@ def build_professional_stock_dossier(
         holding=holding,
         paused=paused,
         grade=grade,
+        stance=stance,
+        latest_close=latest.close if latest else 0.0,
     )
     diagnostics = (
-        build_financial_diagnostic(raw),
-        build_valuation_diagnostic(raw),
-        build_technical_diagnostic(raw, technical),
-        build_capital_diagnostic(raw),
+        financial,
+        valuation,
+        technical_block,
+        capital,
+        event_block,
     )
     return ProfessionalStockDossier(
         code=raw.code,
@@ -113,7 +135,7 @@ def build_professional_stock_dossier(
         verdict=verdict,
         decision_steps=_decision_steps(technical, paused=paused),
         diagnostics=diagnostics,
-        risks=(),
+        risks=risks,
         position=position,
         scenarios=(),
         evidence=(),
@@ -177,6 +199,8 @@ def _position_guidance(
     holding: Holding | None,
     paused: bool,
     grade: str,
+    stance: str,
+    latest_close: float,
 ) -> PositionGuidance:
     if paused:
         return PositionGuidance(
@@ -190,10 +214,16 @@ def _position_guidance(
             invalidation="行情时效未通过",
             prohibited_action="禁止使用旧价格追涨、抄底或补仓",
         )
-    position_cap = "5%" if grade in {"A", "B"} else "0%"
+    if stance == "风险规避":
+        position_cap = "0% 新增" if holding else "0%"
+    elif holding:
+        position_cap = "不高于当前仓位"
+    else:
+        position_cap = "5%" if grade in {"A", "B"} else "0%"
     audience = "已持仓" if holding else "未持仓"
     current = (
-        f"持仓 {holding.shares:g} 股，成本 {holding.cost_price:.2f}，按失效线管理"
+        f"持仓 {holding.shares:g} 股，成本 {holding.cost_price:.2f}，"
+        f"当前相对成本 {(latest_close / holding.cost_price - 1) * 100:+.1f}%，按失效线管理"
         if holding
         else "未持仓，等待价格与证据双重触发"
     )
@@ -201,12 +231,16 @@ def _position_guidance(
         audience=audience,
         current_action=current,
         position_cap=position_cap,
-        risk_budget="单次账户风险不超过 0.5%" if position_cap != "0%" else "不分配新增风险",
+        risk_budget=(
+            "不分配新增风险"
+            if stance == "风险规避" or position_cap == "0%"
+            else "单次账户风险不超过 0.5%"
+        ),
         entry_trigger=f"站稳 {technical.resistance:.2f} 且量能确认",
         add_trigger="首次触发后回踩不破，再确认经营与事件风险",
         reduce_trigger=f"跌破 {technical.support:.2f} 或事件风险升级",
         invalidation=f"跌破 {technical.invalid_line:.2f}",
-        prohibited_action="禁止追单日反弹、未修复失效前摊低成本",
+        prohibited_action="禁止追反弹、未修复失效前摊低成本、不能把低 PB 单独当买点",
     )
 
 
@@ -226,3 +260,57 @@ def _decision_steps(
         ),
         DecisionStep("失效退出", "invalid", f"跌破 {technical.invalid_line:.2f}", "终止当前论点"),
     )
+
+
+def _is_loss_making(raw: StockRawData) -> bool:
+    value = raw.fundamental_metrics.get("net_profit")
+    try:
+        net_profit = float(value) if value not in {None, ""} else None
+    except (TypeError, ValueError):
+        net_profit = None
+    return (net_profit is not None and net_profit < 0) or (
+        raw.pe_ttm is not None and raw.pe_ttm <= 0
+    )
+
+
+def _stance(
+    *,
+    paused: bool,
+    combined_high_risk: bool,
+    holding: Holding | None,
+    grade: str,
+    weak_technical: bool,
+) -> str:
+    if paused:
+        return "数据暂停"
+    if combined_high_risk:
+        return "风险规避"
+    if holding is not None:
+        return "持仓管理"
+    if grade == "C" or weak_technical:
+        return "等待修复"
+    return "条件观察"
+
+
+def _action(stance: str) -> str:
+    return {
+        "数据暂停": "刷新数据后重评",
+        "风险规避": "不新开仓；已有仓位优先降低风险",
+        "持仓管理": "按成本、支撑和事件风险管理，不盲目加仓",
+        "等待修复": "只观察，不建仓",
+        "条件观察": "等待价格与证据触发后小仓验证",
+    }[stance]
+
+
+def _thesis(
+    stance: str,
+    *,
+    financial,
+    technical,
+    counter: str,
+) -> str:
+    if stance == "数据暂停":
+        return "行情时效未通过，当前证据只用于审计。"
+    if stance == "风险规避":
+        return f"{financial.conclusion}；{technical.conclusion}；{counter}，当前风险收益不匹配。"
+    return f"{financial.conclusion}；{technical.conclusion}；最大反证为 {counter}。"

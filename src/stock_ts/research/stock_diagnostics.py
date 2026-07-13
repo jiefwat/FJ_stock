@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import math
+import re
 from statistics import pstdev
 
 from stock_ts.models import StockRawData
-from stock_ts.professional_research import TechnicalProfile
+from stock_ts.professional_research import EventRadar, TechnicalProfile
 
-from .stock_dossier_models import DiagnosticBlock
+from .stock_dossier_models import DiagnosticBlock, RiskItem
 
 
 def build_financial_diagnostic(raw: StockRawData) -> DiagnosticBlock:
@@ -289,6 +290,117 @@ def build_capital_diagnostic(raw: StockRawData) -> DiagnosticBlock:
         risks=risk,
         limitation="单日成交活跃不等同主力净流入，也不能证明资金持续性。",
     )
+
+
+def build_event_diagnostic(
+    raw: StockRawData,
+    event_radar: EventRadar,
+) -> tuple[DiagnosticBlock, tuple[RiskItem, ...]]:
+    rows: list[tuple[str, str]] = []
+    for item in raw.announcements:
+        title = str(item.get("title") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        if title:
+            rows.append((title, summary))
+    rows.extend(
+        (item.title.strip(), item.summary.strip())
+        for item in raw.news_items
+        if item.title.strip()
+    )
+    risks: list[RiskItem] = []
+    seen: set[tuple[str, str]] = set()
+    for title, summary in rows:
+        risk = _event_risk(title, summary)
+        if risk is None or (risk.category, risk.evidence) in seen:
+            continue
+        risks.append(risk)
+        seen.add((risk.category, risk.evidence))
+    if not rows:
+        return (
+            DiagnosticBlock(
+                name="事件风险",
+                status="missing",
+                conclusion="新闻公告缺失，不能排除事件风险。",
+                facts=(),
+                risks=("事件证据缺口",),
+                limitation="缺少事件数据不代表没有事件风险。",
+            ),
+            (),
+        )
+    high_count = sum(item.severity in {"critical", "high"} for item in risks)
+    if any(item.severity == "critical" for item in risks):
+        conclusion = "存在关键级事件风险，新开仓必须暂停。"
+        status = "blocked"
+    elif high_count:
+        conclusion = f"识别到 {high_count} 项高等级事件风险，动作必须降级。"
+        status = "degraded"
+    else:
+        conclusion = "未识别关键级标题风险，但仍需复核公告原文。"
+        status = "degraded"
+    facts = tuple(title for title, _ in rows[:5])
+    return (
+        DiagnosticBlock(
+            name="事件风险",
+            status=status,
+            conclusion=f"{conclusion} 事件闸门：{event_radar.gate}。",
+            facts=facts,
+            risks=tuple(item.evidence for item in risks),
+            limitation="标题与摘要分类只用于筛查，未代替公告原文复核。",
+        ),
+        tuple(risks),
+    )
+
+
+def _event_risk(title: str, summary: str) -> RiskItem | None:
+    text = f"{title} {summary}".strip()
+    critical_markers = {
+        "退市": "退市风险",
+        "立案调查": "监管立案",
+        "重大诉讼": "重大诉讼",
+        "重大处罚": "监管处罚",
+    }
+    for marker, category in critical_markers.items():
+        if marker in text:
+            return RiskItem(
+                "critical",
+                category,
+                title,
+                "暂停新开仓并优先核对影响范围",
+                "等待公告原文、金额与处置进度",
+            )
+    if "质押" in text:
+        percentages = [float(value) for value in re.findall(r"(\d+(?:\.\d+)?)%", text)]
+        pledge = max(percentages, default=None)
+        evidence = f"{title}（识别质押比例 {pledge:.2f}%）" if pledge is not None else title
+        monitor = (
+            "复核累计质押比例、补充质押用途与平仓风险"
+            if pledge is not None
+            else "原文复核累计质押比例与平仓风险"
+        )
+        return RiskItem(
+            "high",
+            "股权质押",
+            evidence,
+            "限制新开仓与加仓，防止控制权或流动性风险扩散",
+            monitor,
+        )
+    high_markers = {
+        "减持": "股东减持",
+        "财务资助": "财务资助",
+        "担保": "对外担保",
+        "业绩预亏": "业绩亏损",
+        "亏损": "业绩亏损",
+    }
+    for marker, category in high_markers.items():
+        if marker in text:
+            return RiskItem(
+                "high",
+                category,
+                title,
+                "动作上限降为等待或风险控制",
+                "复核金额、期限、对象与实际影响",
+            )
+    return None
 
 
 def _number(value: object) -> float | None:
