@@ -1,4 +1,5 @@
 import inspect
+from dataclasses import replace
 
 from stock_ts import web
 from stock_ts.models import IndexQuote, MarketHistoryPoint, MarketSnapshot
@@ -50,6 +51,43 @@ def test_market_workspace_orders_decision_before_evidence() -> None:
     assert html.index("最大风险") < html.index("三情景推演")
     assert "市场风险预算" in html
     assert "买卖指导" not in html
+
+
+def test_market_workspace_has_one_ordered_five_step_decision_rail() -> None:
+    html = render_market_workspace(_assessment())
+
+    assert html.count('data-primary-market-verdict="true"') == 1
+    assert html.count('class="market-decision-rail-step') == 5
+    labels = ["当前市场阶段", "进攻确认", "仓位预算", "降级触发", "重新评估"]
+    assert [html.index(label) for label in labels] == sorted(
+        html.index(label) for label in labels
+    )
+    assert html.index("核心判断") < html.index("五步风险决策轨道")
+    assert html.index("五步风险决策轨道") < html.index("趋势与宽度")
+
+
+def test_stale_market_rail_pauses_every_step_and_hides_old_triggers() -> None:
+    stale = replace(
+        _assessment(),
+        stage="数据暂停",
+        risk_budget="0%",
+        confidence=0,
+        thesis="行情时效未通过，暂停按当前盘面形成市场判断。",
+        primary_risk="行情已过期，任何进攻性结论都可能基于错误时点。",
+        supporting_evidence=("数据质量闸门已阻断",),
+        counter_evidence=("等待最近交易日行情后重新评估",),
+        invalidate_condition="最近交易日行情、宽度和指数数据刷新并通过校验。",
+    )
+
+    html = render_market_workspace(stale)
+    rail = html.split('data-market-rail-state="paused"', 1)[1].split(
+        "趋势与宽度", 1
+    )[0]
+
+    assert rail.count('class="market-decision-rail-step') == 5
+    assert rail.count("暂停") + rail.count("刷新") >= 5
+    assert "70%-85%" not in rail
+    assert "宽度回落或主线前排破位" not in rail
 
 
 def test_market_workspace_exposes_snapshot_limitations() -> None:

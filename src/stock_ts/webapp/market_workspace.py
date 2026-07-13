@@ -14,6 +14,16 @@ def render_market_workspace(
     refresh_html: str = "",
     supporting_html: str = "",
 ) -> str:
+    rail_state, rail_items = _market_decision_steps(assessment)
+    decision_rail = "".join(
+        '<article class="market-decision-rail-step '
+        f'{escape(state)}"><span>{index:02d}</span><div>'
+        f"<small>{escape(label)}</small><strong>{escape(condition)}</strong>"
+        f"<p>{escape(consequence)}</p></div></article>"
+        for index, (label, condition, consequence, state) in enumerate(
+            rail_items, start=1
+        )
+    )
     support = "".join(f"<li>{escape(item)}</li>" for item in assessment.supporting_evidence)
     counters = "".join(f"<li>{escape(item)}</li>" for item in assessment.counter_evidence)
     dimensions = "".join(
@@ -54,7 +64,8 @@ def render_market_workspace(
         <div><span>数据日期</span><strong>{escape(assessment.trade_date)}</strong></div>
         {refresh_html}
       </header>
-      <section class="market-thesis-board" aria-labelledby="market-thesis-title">
+      <section class="market-thesis-board" data-primary-market-verdict="true"
+        aria-labelledby="market-thesis-title">
         <div class="market-thesis-main">
           <span>核心判断</span><h3 id="market-thesis-title">{escape(assessment.thesis)}</h3>
           <ul>{support}</ul>
@@ -64,6 +75,13 @@ def render_market_workspace(
           <ul>{counters}</ul>
           <small>判断失效：{escape(assessment.invalidate_condition)}</small>
         </div>
+      </section>
+      <section class="market-decision-panel" data-market-rail-state="{rail_state}"
+        aria-labelledby="market-decision-rail-title">
+        <div class="dossier-section-title"><span>RISK GOVERNANCE</span>
+          <h3 id="market-decision-rail-title">五步风险决策轨道</h3>
+          <p>大盘判断只在这条链路中转化为总风险预算，不直接生成个股动作。</p></div>
+        <div class="market-decision-rail">{decision_rail}</div>
       </section>
       <section aria-labelledby="market-structure-title">
         <div class="research-section-heading">
@@ -102,3 +120,45 @@ def render_market_workspace(
         </tr></thead><tbody>{audit_rows}</tbody></table>
       </details>
     </section>"""
+
+
+def _market_decision_steps(
+    assessment: MarketRegimeAssessment,
+) -> tuple[str, tuple[tuple[str, str, str, str], ...]]:
+    if assessment.stage == "数据暂停":
+        return (
+            "paused",
+            (
+                ("当前市场阶段", "数据暂停", "暂停沿用旧盘面结论，等待行情刷新。", "paused"),
+                ("进攻确认", "暂停确认", "刷新宽度、情绪和指数证据后重新确认。", "paused"),
+                ("仓位预算", "暂停新增风险", "刷新行情前不开放新的市场风险预算。", "paused"),
+                ("降级触发", "暂停沿用旧触发", "刷新数据后重建风险触发条件。", "paused"),
+                ("重新评估", "等待刷新", "最近交易日数据刷新并通过校验后重评。", "paused"),
+            ),
+        )
+    support = assessment.supporting_evidence[0] if assessment.supporting_evidence else "证据待补"
+    return (
+        "active",
+        (
+            ("当前市场阶段", assessment.stage, assessment.thesis, "current"),
+            ("进攻确认", support, "支持证据持续成立，才允许使用当前风险预算。", "confirm"),
+            (
+                "仓位预算",
+                assessment.risk_budget,
+                "该预算是组合总风险上限，下游模块只能收紧，不能放松。",
+                "budget",
+            ),
+            (
+                "降级触发",
+                assessment.primary_risk,
+                f"触发后收紧预算；判断失效条件：{assessment.invalidate_condition}",
+                "downgrade",
+            ),
+            (
+                "重新评估",
+                f"{assessment.trade_date} 后续交易日",
+                "收盘后重检数据质量、市场宽度、流动性、风格和情绪。",
+                "review",
+            ),
+        ),
+    )
