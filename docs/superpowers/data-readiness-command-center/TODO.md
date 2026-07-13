@@ -6,4 +6,4 @@
 - [x] Render the gate, recovery runbook, impact matrix, and source ledger.
 - [x] Add desktop and mobile visual hierarchy.
 - [x] Complete focused, full-suite, and browser verification.
-- [ ] Review, merge, push, and deploy.
+- [x] Review, merge, push, and deploy.

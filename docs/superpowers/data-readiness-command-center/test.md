@@ -72,3 +72,16 @@ Mobile `390x844`:
 - all nine ledger rows remain in the DOM.
 
 Visual inspection also found and corrected one operations-order defect: full-chain validation originally appeared before repairable sources. The final order restores market/K-line and other upstream evidence first, then uses full-chain validation as the acceptance check.
+
+## Deployment Verification
+
+Initial deployed commit: `c455ed372b2c1616260bd7c9d6d8b6e62a1f66eb`
+
+- Local `HEAD`, local `main`, local `origin/main`, live GitHub `main`, server `HEAD`, and server `refs/remotes/origin/main` all resolved to the initial deployed commit before this deployment record was added.
+- Server remained on branch `main` with no tracked-file modifications.
+- Source backup: `/opt/stock-ts/.deploy_backups/20260713-211433-4e4e00b/source-4e4e00b.tar.gz`.
+- Server compile and imports for `stock_ts.web`, `data_center_dossier`, and `data_center_workspace` exited `0` before restart.
+- `stock-ts.service`, `stock-ts-signal-desk.service`, and `nginx` all reported `active` after restart.
+- Server `http://127.0.0.1:8501/healthz` returned `ok`.
+- Public `https://stock.jiewat-kaka-fj.com/healthz` returned HTTP `200` with body `ok`.
+- Public root returned HTTP `303`, matching the existing login redirect boundary.
