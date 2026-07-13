@@ -1,3 +1,3 @@
 # Plan
 
-Detailed plan: pending design commit and self-review.
+Detailed plan: `../plans/2026-07-13-professional-core-workspaces.md`
