@@ -21,6 +21,15 @@ from .opportunity_dossier_models import (
     OpportunityGate,
     OpportunityRisk,
 )
+from .portfolio_dossier import build_portfolio_dossier
+from .portfolio_dossier_models import (
+    PortfolioBoundary,
+    PortfolioDossier,
+    PortfolioExposure,
+    PortfolioMetric,
+    PortfolioQueueItem,
+    PortfolioVerdict,
+)
 from .stock_dossier import build_professional_stock_dossier
 from .stock_dossier_models import (
     DecisionStep,
@@ -54,6 +63,12 @@ __all__ = [
     "OpportunityDossier",
     "OpportunityGate",
     "OpportunityRisk",
+    "PortfolioBoundary",
+    "PortfolioDossier",
+    "PortfolioExposure",
+    "PortfolioMetric",
+    "PortfolioQueueItem",
+    "PortfolioVerdict",
     "ResearchScenario",
     "ResearchSection",
     "ResearchInputQuality",
@@ -66,6 +81,7 @@ __all__ = [
     "audit_status",
     "build_stock_research_memo",
     "build_opportunity_dossier",
+    "build_portfolio_dossier",
     "build_professional_stock_dossier",
     "fundamental_metric_coverage",
     "has_comparable_valuation",
