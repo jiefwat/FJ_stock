@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import inspect
+
+from stock_ts import web
+from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research.evidence import EvidenceItem, EvidenceStatus
 from stock_ts.research.stock_dossier_models import (
     DecisionStep,
@@ -119,3 +123,24 @@ def test_workspace_places_risk_before_scenarios_and_labels_confidence() -> None:
     assert "上涨概率" not in html
     assert "仓位上限" in html
     assert "禁止动作" in html
+
+
+def test_real_stock_orchestration_builds_one_dossier() -> None:
+    source = inspect.getsource(web._render_compact_stock_module)
+
+    assert "build_professional_stock_dossier" in source
+    assert source.count("render_stock_workspace(") == 1
+    assert "legacy_trade_plan =" not in source
+
+
+def test_stock_page_has_no_duplicate_primary_trade_conclusion() -> None:
+    html = web.render_page(
+        stock_code="603278",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+
+    assert html.count('data-primary-stock-verdict="true"') == 1
+    assert html.count("投委会结论") == 1
+    assert "多角色分析方法" not in html.split("诊断底稿", 1)[0]

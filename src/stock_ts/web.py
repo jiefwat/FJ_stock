@@ -67,7 +67,7 @@ from .research.evidence import (
     has_usable_events,
 )
 from .research.market_regime import assess_market_regime
-from .research.stock_memo import build_stock_research_memo
+from .research.stock_dossier import build_professional_stock_dossier
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
@@ -9681,8 +9681,6 @@ def _render_compact_stock_module(
     refresh_time: str,
 ) -> str:
     del candidates, candidate_source, candidate_strategy_label, candidate_evidence
-    driver = stock.upside.drivers[0] if stock.upside.drivers else stock.final_conclusion
-    risk = stock.risks[0] if stock.risks else "暂无"
     invalid = stock.invalid_conditions[0] if stock.invalid_conditions else trade_plan.stop_loss
     analysis_content = _render_stock_simple_analysis_content(
         stock=stock,
@@ -9722,12 +9720,14 @@ def _render_compact_stock_module(
             else ()
         ),
     )
-    memo = build_stock_research_memo(
+    dossier = build_professional_stock_dossier(
         stock_raw,
         holding=holding,
         technical=technical,
         event_radar=event_radar,
         input_quality=input_quality,
+        sector_context=_stock_sector_comparison_text(stock, sectors),
+        market_context=quality.status,
     )
     refresh_tools = _render_module_refresh_tools(
         refresh_time=refresh_time,
@@ -9736,34 +9736,15 @@ def _render_compact_stock_module(
         holdings_path=holdings_path,
         workspace="stock",
     )
-    legacy_trade_plan = (
-        _render_stock_top_conclusion(
-            stock=stock,
-            stock_raw=stock_raw,
-            portfolio=portfolio,
-            quality=quality,
-            technical=technical,
-            event_radar=event_radar,
-            trade_plan=trade_plan,
-            driver=driver,
-            risk=risk,
-            invalid=invalid,
-        )
-        + _render_stock_simple_next_advice(
-            stock, trade_plan, driver, risk, invalid, event_radar
-        )
-        + _render_stock_simple_forecast(stock, technical, event_radar, quality)
-    )
     research_workspace = render_stock_workspace(
-        memo,
+        dossier,
         identity_html=_render_stock_simple_entry(resolved, provider_name, holdings_path),
-        technical_html=analysis_content,
-        trade_plan_html=legacy_trade_plan,
+        supporting_evidence_html=analysis_content,
         refresh_html=refresh_tools,
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">先建立投资论点，再审计证据、情景与交易边界。</p></div><div class="module-header-meta"><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">用一份投委会档案统一研究立场、风险、触发与失效边界。</p></div><div class="module-header-meta"><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
       {research_workspace}
     </section>"""
 

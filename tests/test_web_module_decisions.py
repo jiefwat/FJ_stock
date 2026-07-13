@@ -1179,9 +1179,12 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
     stock_html = _workspace(html, "stock")
     opportunity_html = _workspace(html, "opportunity")
 
-    for section in [portfolio_html, stock_html, opportunity_html]:
+    for section in [portfolio_html, opportunity_html]:
         for text in ["动作：", "主因：", "触发：", "失效："]:
             assert text in section
+
+    for text in ["投委会结论", "转强触发", "失效退出", "最大反证"]:
+        assert text in stock_html
 
     for stale_phrase in [
         "趋势和风险结构较好，可继续跟踪。",
@@ -1194,16 +1197,19 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
 
 def test_core_modules_show_explicit_buy_sell_guidance_not_only_analysis() -> None:
     html = _sample_html(stock_code="603278")
-    sections = [
+    legacy_sections = [
         _workspace(html, "market"),
         _workspace(html, "portfolio"),
-        _workspace(html, "stock"),
         _workspace(html, "opportunity"),
     ]
 
-    for section in sections:
+    for section in legacy_sections:
         for text in ["买卖指导", "买入触发", "卖出/减仓", "仓位上限", "止损/失效"]:
             assert text in section
+
+    stock_html = _workspace(html, "stock")
+    for text in ["仓位与执行边界", "入场触发", "减仓触发", "仓位上限", "失效条件"]:
+        assert text in stock_html
 
     for vague_text in [
         "继续观察即可",
@@ -1276,20 +1282,22 @@ def test_stock_module_leads_from_entry_to_research_memo_and_execution() -> None:
     for text in [
         "分析入口",
         "开始分析",
-        "研究结论",
-        "投资备忘录",
-        "三情景推演",
-        "六类证据",
-        "分析内容",
-        "交易计划",
+        "投委会结论",
+        "五步决策轨道",
+        "风险登记表",
+        "仓位与执行边界",
+        "诊断底稿",
+        "三种情景",
+        "证据账本",
     ]:
         assert text in stock_html
 
-    assert stock_html.index("分析入口") < stock_html.index("研究结论")
-    assert stock_html.index("研究结论") < stock_html.index("投资备忘录")
-    assert stock_html.index("投资备忘录") < stock_html.index("三情景推演")
-    assert stock_html.index("三情景推演") < stock_html.index("六类证据")
-    assert stock_html.index("六类证据") < stock_html.index("交易计划")
+    assert stock_html.index("分析入口") < stock_html.index("投委会结论")
+    assert stock_html.index("投委会结论") < stock_html.index("五步决策轨道")
+    assert stock_html.index("五步决策轨道") < stock_html.index("风险登记表")
+    assert stock_html.index("风险登记表") < stock_html.index("仓位与执行边界")
+    assert stock_html.index("仓位与执行边界") < stock_html.index("诊断底稿")
+    assert stock_html.index("诊断底稿") < stock_html.index("三种情景")
     assert "K线数据" not in stock_html
     kline_table_header = (
         "<th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>成交量</th>"
@@ -1314,7 +1322,7 @@ def test_stock_analysis_uses_multi_day_theme_and_relative_comparison() -> None:
     assert "近一日 " not in stock_html
 
 
-def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
+def test_stock_analysis_keeps_multi_role_method_in_supporting_evidence() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
@@ -1331,8 +1339,9 @@ def test_stock_analysis_shows_compact_multi_role_method_chain() -> None:
     ]:
         assert text in stock_html
 
-    assert stock_html.index("研究结论") < stock_html.index("多角色分析方法")
-    assert stock_html.index("多角色分析方法") < stock_html.index("后续建议")
+    assert stock_html.index("投委会结论") < stock_html.index("诊断底稿")
+    assert stock_html.index("诊断底稿") < stock_html.index("多角色分析方法")
+    assert stock_html.index("展开原始诊断与支持证据") < stock_html.index("多角色分析方法")
     assert "完整方法链" not in stock_html
 
 
@@ -1411,22 +1420,23 @@ def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_miss
     assert "消息面：未接入个股新闻" not in opportunity_html
 
 
-def test_stock_forecast_outputs_prediction_not_only_scenarios() -> None:
+def test_stock_scenarios_avoid_false_probability_precision() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "预测方向",
-        "上涨概率",
-        "震荡概率",
-        "下跌概率",
-        "预测区间",
-        "预测原因",
-        "置信度",
+        "三种情景",
+        "改善",
+        "基准",
+        "恶化",
+        "确认",
+        "动作",
+        "失效",
+        "证据完整度",
     ]:
         assert text in stock_html
 
-    for old_text in ["未来5日情景", "触发条件", "目标/风险位"]:
-        assert old_text not in stock_html
+    for false_precision in ["上涨概率", "震荡概率", "下跌概率", "目标价"]:
+        assert false_precision not in stock_html
 
 
 def test_stock_module_removes_extra_research_panels() -> None:
