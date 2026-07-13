@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research.portfolio_dossier_models import (
@@ -109,3 +110,27 @@ def test_stale_web_portfolio_page_pauses_price_actions() -> None:
     assert "价格动作待刷新" in portfolio_html
     assert "持仓证据" in portfolio_html
     assert "买入触发" not in portfolio_html
+
+
+def test_portfolio_workspace_limits_front_row_without_losing_audit_records() -> None:
+    dossier = _dossier()
+    queue_seed = dossier.queue[0]
+    boundary_seed = dossier.boundaries[0]
+    queue = tuple(
+        replace(queue_seed, code=f"6000{index:02d}", name=f"持仓{index:02d}")
+        for index in range(1, 8)
+    )
+    boundaries = tuple(
+        replace(boundary_seed, code=f"6000{index:02d}", name=f"持仓{index:02d}")
+        for index in range(1, 7)
+    )
+    html = render_portfolio_workspace(
+        replace(dossier, queue=queue, boundaries=boundaries)
+    )
+
+    assert html.count('class="portfolio-queue-item') == 7
+    front_queue = html.split('class="portfolio-queue-overflow', 1)[0]
+    assert front_queue.count('class="portfolio-queue-item') == 5
+    assert "查看其余 2 项处置" in html
+    assert html.count('class="portfolio-boundary-card') == 6
+    assert "查看其余 2 项边界" in html
