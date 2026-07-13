@@ -3755,15 +3755,26 @@ def _render_global_freshness_bar(
     provider_label = (
         "TDX MCP" if quality.requested_provider == WEB_DATA_PROVIDER else provider_class
     )
+    trade_date = market.trade_date or quality.market_date or "待确认"
     return f"""
-      <div class="freshness-bar" aria-label="全局数据新鲜度">
-        <div><span>交易日</span><strong>{escape(market.trade_date or quality.market_date or "待确认")}</strong></div>
-        <div><span>行情</span><strong>{escape(quality.latest_date or "待确认")}</strong></div>
-        <div><span>K线/资金/新闻/公告</span><strong>{escape(data_detail)}</strong></div>
-        <div><span>数据状态</span><strong>{escape(quality.signal)}</strong></div>
-        <div><span>来源</span><strong>{escape(provider_label)}</strong></div>
-        <div><span>动作闸门</span><strong>{escape(risk_gate.gate)}</strong></div>
-      </div>"""
+      <section class="freshness-bar research-tape"
+        data-gate-level="{escape(risk_gate.level)}" aria-label="全局研究状态">
+        <div class="research-tape-primary">
+          <span>动作闸门</span><strong>{escape(risk_gate.gate)}</strong>
+          <small>{escape(risk_gate.reason)}</small>
+        </div>
+        <div class="research-tape-item core"><span>数据状态</span>
+          <strong>{escape(quality.signal)}</strong></div>
+        <div class="research-tape-item core"><span>交易日</span>
+          <strong>{escape(trade_date)}</strong></div>
+        <div class="research-tape-item secondary"><span>行情日期</span>
+          <strong>{escape(quality.latest_date or '待确认')}</strong></div>
+        <div class="research-tape-item secondary"><span>证据覆盖</span>
+          <strong>{escape(data_detail)}</strong></div>
+        <div class="research-tape-item secondary"><span>来源</span>
+          <strong>{escape(provider_label)}</strong></div>
+        <a class="research-tape-data-link" href="#data-center">数据详情 <span>→</span></a>
+      </section>"""
 
 
 def _render_module_refresh_tools(

@@ -89,3 +89,18 @@ def test_four_module_grid_drops_home_specific_rules() -> None:
 
     assert "#module-home > .action-desk" not in CSS
     assert "#module-home > .home-brief" not in CSS
+
+
+def test_global_freshness_surface_is_action_first_research_tape() -> None:
+    html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
+    start = html.index('class="freshness-bar research-tape"')
+    end = html.index("</section>", start)
+    tape = html[start:end]
+
+    assert "data-gate-level=" in tape
+    assert tape.index("动作闸门") < tape.index("数据状态")
+    assert tape.index("数据状态") < tape.index("交易日")
+    assert 'class="research-tape-primary"' in tape
+    assert tape.count('class="research-tape-item core"') == 2
+    assert tape.count('class="research-tape-item secondary"') == 3
+    assert 'class="research-tape-data-link" href="#data-center"' in tape

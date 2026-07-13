@@ -382,6 +382,8 @@ def test_web_blocks_opportunity_ranking_when_snapshot_trade_date_is_stale(
     assert 'data-research-status="数据暂停"' in html
     assert "数据暂停" in html
     assert "停止排序，只保留证据审计" in html
+    assert 'data-gate-level="high"' in html
+    assert "暂停行动" in html
 
 
 def test_web_blocks_actions_when_pipeline_refresh_is_stale(
