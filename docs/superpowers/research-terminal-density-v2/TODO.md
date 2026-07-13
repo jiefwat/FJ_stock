@@ -8,4 +8,4 @@
 - [x] Add opportunity progressive disclosure.
 - [x] Complete focused and visual verification.
 - [x] Complete final lint, contract, and full-suite verification.
-- [ ] Review, merge, push, and deploy.
+- [x] Review, merge, push, and deploy.

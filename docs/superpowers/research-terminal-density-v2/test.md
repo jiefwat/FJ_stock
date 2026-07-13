@@ -81,3 +81,15 @@ Mobile `390x844`:
 - opportunity front row remains `6`, overflow `24`, and the risk register returns to static flow.
 
 Visual inspection confirmed the action gate is the global signature, module verdicts remain dominant, and disclosure controls do not visually compete with the research front row.
+
+## Deployment Verification
+
+Initial deployed commit: `7439f99c5ee3b53ce64fd73f91481efb87db5eaa`
+
+- Local `main`, local `origin/main`, live GitHub `main`, server `HEAD`, and server `refs/remotes/origin/main` all resolved to the initial deployed commit before this deployment record was added.
+- Server `/opt/stock-ts` remained on branch `main`; only the existing `.codex-backups/`, `.deploy_backups/`, `.env.bak.email-merge-20260711170050`, and `.secrets/` paths were untracked.
+- Source backup: `/opt/stock-ts/.deploy_backups/20260713-201858-504fd08/source-504fd08.tar.gz`.
+- Server compile and import checks exited `0` before restart.
+- `stock-ts.service`, `stock-ts-signal-desk.service`, and `nginx` all reported `active` after restart.
+- Server `http://127.0.0.1:8501/healthz` returned `ok`.
+- Public `https://stock.jiewat-kaka-fj.com/healthz` returned HTTP `200` with body `ok`.
