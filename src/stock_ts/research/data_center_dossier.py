@@ -161,7 +161,13 @@ def _next_step(recovery_steps: tuple[DataRecoveryStep, ...]) -> str:
     if not recovery_steps:
         return "维持日常校验，关注下次交易日刷新"
     first = recovery_steps[0]
-    return f"先处理{first.category}：{first.issue}"
+    return f"先处理{first.category}：{_compact_text(first.issue, limit=46)}"
+
+
+def _compact_text(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip("；、，。 ") + "…"
 
 
 def _build_impacts(

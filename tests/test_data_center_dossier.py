@@ -115,3 +115,25 @@ def test_empty_dossier_is_blocked_with_directed_recovery() -> None:
     assert dossier.recovery_steps[0].category == "数据域清单"
     assert dossier.recovery_steps[0].issue == "数据域清单为空"
     assert dossier.ledger == ()
+
+
+def test_gate_next_step_compacts_long_issue_without_truncating_ledger() -> None:
+    long_issue = "持仓缺少基本面、资金面、个股新闻、公告；" * 5
+    dossier = build_data_center_dossier(
+        status="影响分析",
+        updated_at="待确认",
+        rows=[
+            Row(
+                "全链路校验",
+                status="影响分析",
+                missing=long_issue,
+                impact="全链路存在阻断节点",
+                level="blocked",
+            )
+        ],
+    )
+
+    assert dossier.gate.next_step.endswith("…")
+    assert len(dossier.gate.next_step) <= 64
+    assert dossier.recovery_steps[0].issue == long_issue
+    assert dossier.ledger[0].missing == long_issue
