@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `commuter-morning-brief-v2/`：把每日晨报压缩为适合地铁单手阅读的 30 秒行动简报
 - `market-session-playbook/`：把每日大盘收敛为盘前、盘中、收盘三段式市场剧本
 - `data-readiness-command-center/`：把数据中台升级为影响优先的恢复指挥台
 - `professional-core-workspaces/`：统一每日大盘、我的持仓与热点机会的专业决策链
@@ -14,6 +15,9 @@
 
 ## 默认可读目录
 
+- `commuter-morning-brief-v2/README.md`
+- `commuter-morning-brief-v2/TODO.md`
+- `commuter-morning-brief-v2/plan.md`
 - `market-session-playbook/README.md`
 - `market-session-playbook/TODO.md`
 - `market-session-playbook/plan.md`
