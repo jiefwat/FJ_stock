@@ -5093,6 +5093,14 @@ body {
   .market-session-phase { grid-template-columns:1fr; padding:14px; border-radius:16px; }
   .market-session-heading { align-items:flex-start; }
   .market-intraday-ledger-body { padding:0 9px 9px; }
+  .market-intraday-ledger .data-table {
+    width:100%;
+    overflow-x:auto;
+  }
+  .market-intraday-ledger .data-table th,
+  .market-intraday-ledger .data-table td { min-width:92px; }
+  .market-intraday-ledger .data-table th:last-child,
+  .market-intraday-ledger .data-table td:last-child { min-width:260px; }
   .market-decision-rail { grid-template-columns:1fr; }
   .market-decision-rail-step { min-height:0; border-right:0; }
   .market-decision-rail-step:not(:last-child)::after { display:none; }

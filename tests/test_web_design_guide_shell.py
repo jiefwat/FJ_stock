@@ -174,4 +174,8 @@ def test_market_session_playbook_has_ruler_disclosure_and_mobile_sequence() -> N
     compact_mobile = mobile.replace(" ", "")
     assert ".market-session-ruler" in mobile
     assert ".market-session-phase" in mobile
+    assert ".market-intraday-ledger .data-table" in mobile
+    assert ".market-intraday-ledger .data-table th:last-child" in mobile
     assert "grid-template-columns:1fr" in compact_mobile
+    assert "min-width:92px" in compact_mobile
+    assert "min-width:260px" in compact_mobile
