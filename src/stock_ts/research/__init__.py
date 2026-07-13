@@ -13,6 +13,14 @@ from .market_regime import (
     MarketScenario,
     assess_market_regime,
 )
+from .opportunity_dossier import build_opportunity_dossier
+from .opportunity_dossier_models import (
+    CandidateDecision,
+    FunnelStage,
+    OpportunityDossier,
+    OpportunityGate,
+    OpportunityRisk,
+)
 from .stock_dossier import build_professional_stock_dossier
 from .stock_dossier_models import (
     DecisionStep,
@@ -38,9 +46,14 @@ __all__ = [
     "DiagnosticBlock",
     "DossierScenario",
     "DossierVerdict",
+    "CandidateDecision",
+    "FunnelStage",
     "MarketRegimeAssessment",
     "MarketRegimeDimension",
     "MarketScenario",
+    "OpportunityDossier",
+    "OpportunityGate",
+    "OpportunityRisk",
     "ResearchScenario",
     "ResearchSection",
     "ResearchInputQuality",
@@ -52,6 +65,7 @@ __all__ = [
     "assess_market_regime",
     "audit_status",
     "build_stock_research_memo",
+    "build_opportunity_dossier",
     "build_professional_stock_dossier",
     "fundamental_metric_coverage",
     "has_comparable_valuation",
