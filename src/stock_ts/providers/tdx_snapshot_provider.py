@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any, ClassVar
 
 from stock_ts.models import (
     CandidateStockRawData,
     DailyBar,
+    FundamentalPeriod,
     IndexQuote,
     LimitDownStock,
+    MarketHistoryPoint,
     MarketRawData,
     NewsItem,
     SectorRawData,
     StockRawData,
+    ValuationPoint,
 )
 from stock_ts.providers.base import DataProviderError, StockDataProvider
 from stock_ts.sector_labels import localize_theme_name
@@ -72,6 +77,12 @@ class TdxSnapshotProvider(StockDataProvider):
             data_sources=[
                 str(item) for item in _as_list(stock_payload.get("data_sources")) if item
             ],
+            fundamental_history=_fundamental_history_from_payload(
+                stock_payload.get("fundamental_history")
+            ),
+            valuation_history=_valuation_history_from_payload(
+                stock_payload.get("valuation_history")
+            ),
         )
 
     def fetch_market(self) -> MarketRawData:
@@ -116,6 +127,7 @@ class TdxSnapshotProvider(StockDataProvider):
             ],
             northbound_net_inflow=_optional_float(market_payload.get("northbound_net_inflow")),
             limit_down_details=limit_down_details,
+            history=_market_history_from_payload(payload.get("market_history")),
         )
 
     def fetch_sectors(self) -> list[SectorRawData]:
@@ -474,6 +486,97 @@ def _dict_from_payload(value: object) -> dict[str, float | str | None]:
 
 def _dict_object_from_payload(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _market_history_from_payload(value: object) -> list[MarketHistoryPoint]:
+    points: list[MarketHistoryPoint] = []
+    for row in _as_list(value):
+        if not isinstance(row, dict):
+            continue
+        trade_date = _valid_iso_date(row.get("trade_date"))
+        if not trade_date:
+            continue
+        try:
+            advancing = int(row.get("advancing", 0))
+            declining = int(row.get("declining", 0))
+            breadth_ratio = float(row.get("breadth_ratio", 0.0))
+            amount = float(row.get("amount", 0.0))
+            if advancing < 0 or declining <= 0:
+                continue
+            if not math.isfinite(breadth_ratio) or not math.isfinite(amount):
+                continue
+            points.append(
+                MarketHistoryPoint(
+                    trade_date=trade_date,
+                    advancing=advancing,
+                    declining=declining,
+                    breadth_ratio=breadth_ratio,
+                    limit_up=int(row.get("limit_up", 0)),
+                    limit_down=int(row.get("limit_down", 0)),
+                    amount=amount,
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return sorted(points, key=lambda item: item.trade_date)
+
+
+def _fundamental_history_from_payload(value: object) -> list[FundamentalPeriod]:
+    periods: list[FundamentalPeriod] = []
+    for row in _as_list(value):
+        if not isinstance(row, dict):
+            continue
+        report_date = _valid_iso_date(row.get("date"))
+        if not report_date:
+            continue
+        try:
+            periods.append(
+                FundamentalPeriod(
+                    date=report_date,
+                    source=str(row.get("source") or ""),
+                    revenue_yoy=_optional_float(row.get("revenue_yoy")),
+                    net_profit_yoy=_optional_float(row.get("net_profit_yoy")),
+                    roe=_optional_float(row.get("roe")),
+                    gross_margin=_optional_float(row.get("gross_margin")),
+                    debt_to_assets=_optional_float(row.get("debt_to_assets")),
+                    ocf_to_profit=_optional_float(row.get("ocf_to_profit")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return sorted(periods, key=lambda item: item.date, reverse=True)
+
+
+def _valuation_history_from_payload(value: object) -> list[ValuationPoint]:
+    points: list[ValuationPoint] = []
+    for row in _as_list(value):
+        if not isinstance(row, dict):
+            continue
+        point_date = _valid_iso_date(row.get("date"))
+        if not point_date:
+            continue
+        try:
+            points.append(
+                ValuationPoint(
+                    date=point_date,
+                    source=str(row.get("source") or ""),
+                    pe_ttm=_optional_float(row.get("pe_ttm")),
+                    pb=_optional_float(row.get("pb")),
+                    ps=_optional_float(row.get("ps")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return sorted(points, key=lambda item: item.date, reverse=True)
+
+
+def _valid_iso_date(value: object) -> str:
+    text = str(value or "").strip()[:10]
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return ""
+    return text
 
 
 def _as_list(value: object) -> list[Any]:

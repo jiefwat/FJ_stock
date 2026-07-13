@@ -23,6 +23,38 @@ class DailyBar:
 
 
 @dataclass(frozen=True)
+class MarketHistoryPoint:
+    trade_date: str
+    advancing: int
+    declining: int
+    breadth_ratio: float
+    limit_up: int
+    limit_down: int
+    amount: float
+
+
+@dataclass(frozen=True)
+class FundamentalPeriod:
+    date: str
+    source: str
+    revenue_yoy: float | None = None
+    net_profit_yoy: float | None = None
+    roe: float | None = None
+    gross_margin: float | None = None
+    debt_to_assets: float | None = None
+    ocf_to_profit: float | None = None
+
+
+@dataclass(frozen=True)
+class ValuationPoint:
+    date: str
+    source: str
+    pe_ttm: float | None = None
+    pb: float | None = None
+    ps: float | None = None
+
+
+@dataclass(frozen=True)
 class MarketRawData:
     trade_date: str
     indices: list[IndexQuote]
@@ -34,6 +66,7 @@ class MarketRawData:
     top_sectors: list[tuple[str, float]] = field(default_factory=list)
     northbound_net_inflow: float | None = None
     limit_down_details: list[LimitDownStock] = field(default_factory=list)
+    history: list[MarketHistoryPoint] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -56,6 +89,7 @@ class MarketSnapshot:
     declining_count: int = 0
     unchanged_count: int = 0
     limit_down_details: list[LimitDownStock] = field(default_factory=list)
+    history: list[MarketHistoryPoint] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -89,6 +123,8 @@ class StockRawData:
     news_items: list[NewsItem] = field(default_factory=list)
     announcements: list[dict[str, object]] = field(default_factory=list)
     data_sources: list[str] = field(default_factory=list)
+    fundamental_history: list[FundamentalPeriod] = field(default_factory=list)
+    valuation_history: list[ValuationPoint] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

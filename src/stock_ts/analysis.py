@@ -98,6 +98,7 @@ def analyze_market(raw: MarketRawData) -> MarketSnapshot:
         declining_count=raw.declining,
         unchanged_count=raw.unchanged,
         limit_down_details=raw.limit_down_details,
+        history=raw.history,
     )
 
 

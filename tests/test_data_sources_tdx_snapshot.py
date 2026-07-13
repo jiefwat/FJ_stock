@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from stock_ts.data_sources import build_data_source_matrix
+from stock_ts.models import FundamentalPeriod, MarketHistoryPoint, ValuationPoint
 from stock_ts.providers.base import DataProviderError
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 
@@ -32,6 +33,97 @@ EXCHANGE_BOARD_THEME_LABELS = {
     "含可转债",
     "次新股",
 }
+
+
+def test_tdx_snapshot_parses_typed_research_history_and_skips_bad_rows(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "history.json"
+    bar = {
+        "date": "2026-07-10",
+        "open": 10,
+        "high": 11,
+        "low": 9,
+        "close": 10.5,
+        "volume": 1000,
+    }
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {
+                    "trade_date": "2026-07-10",
+                    "indices": [],
+                    "advancing": 2500,
+                    "declining": 2200,
+                    "limit_up": 65,
+                    "limit_down": 12,
+                },
+                "market_history": [
+                    {
+                        "trade_date": "2026-07-10",
+                        "advancing": 2500,
+                        "declining": 2200,
+                        "breadth_ratio": 1.1364,
+                        "limit_up": 65,
+                        "limit_down": 12,
+                        "amount": 10200.0,
+                    },
+                    {"trade_date": "bad-date"},
+                    {"trade_date": "2026-07-09", "breadth_ratio": "bad"},
+                ],
+                "stocks": {
+                    "600519": {
+                        "name": "贵州茅台",
+                        "bars": [bar],
+                        "fundamental_history": [
+                            {
+                                "date": "2026-03-31",
+                                "source": "tushare.fina_indicator",
+                                "revenue_yoy": 12.0,
+                                "net_profit_yoy": 18.0,
+                            },
+                            {"date": "bad-date"},
+                        ],
+                        "valuation_history": [
+                            {
+                                "date": "2026-07-10",
+                                "source": "tushare.daily_basic",
+                                "pe_ttm": 18.0,
+                                "pb": 2.1,
+                            },
+                            {"date": "bad-date"},
+                        ],
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    provider = TdxSnapshotProvider(snapshot)
+    market = provider.fetch_market()
+    stock = provider.fetch_stock("600519")
+
+    assert market.history == [
+        MarketHistoryPoint("2026-07-10", 2500, 2200, 1.1364, 65, 12, 10200.0)
+    ]
+    assert stock.fundamental_history == [
+        FundamentalPeriod(
+            date="2026-03-31",
+            source="tushare.fina_indicator",
+            revenue_yoy=12.0,
+            net_profit_yoy=18.0,
+        )
+    ]
+    assert stock.valuation_history == [
+        ValuationPoint(
+            date="2026-07-10",
+            source="tushare.daily_basic",
+            pe_ttm=18.0,
+            pb=2.1,
+        )
+    ]
 
 
 def test_data_source_matrix_mentions_skills_and_mcp() -> None:
@@ -125,6 +217,8 @@ def test_tdx_snapshot_provider_reads_local_mcp_export(tmp_path: Path) -> None:
     assert stock.bars[-1].date == "2026-06-12"
     assert stock.bars[-1].close == 11.83
     assert stock.fund_flow == -0.43
+    assert stock.fundamental_history == []
+    assert stock.valuation_history == []
 
 
 def test_bundled_tdx_snapshot_uses_thematic_sector_labels() -> None:
