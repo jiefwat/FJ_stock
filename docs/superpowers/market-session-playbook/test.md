@@ -76,3 +76,16 @@ Mobile `390x844`:
 - the first evidence table uses a `245px` viewport with `536px` internal scroll width, so key columns remain readable without widening the page.
 
 Visual inspection found and corrected one mobile readability defect: evidence tables previously compressed columns into single-character lines. A focused CSS contract was added before the fix, and the final browser smoke confirms internal scrolling instead of page overflow.
+
+## Deployment Verification
+
+Initial deployed commit: `692facd3e9088cbc0b5bcde62f399a82d0e4ddd2`
+
+- Local `HEAD`, local `main`, local `origin/main`, live GitHub `main`, server `HEAD`, and server `refs/remotes/origin/main` all resolved to the initial deployed commit before this deployment record was added.
+- Server `/opt/stock-ts` remained on branch `main` with zero tracked-file modifications.
+- The release used a complete Git bundle and a server-side `--ff-only` merge; `.env`, `.secrets`, `data`, `reports`, Nginx, timers, Signal Desk, and DSA were not modified.
+- Server compileall and imports for `stock_ts.web`, `stock_ts.webapp.market_workspace`, and `stock_ts.webapp.styles` exited `0` before restart.
+- Only `stock-ts.service` was restarted. `stock-ts.service`, `stock-ts-signal-desk.service`, and `nginx` all reported `active` afterward.
+- Server `http://127.0.0.1:8501/healthz` returned `ok`.
+- Public `https://stock.jiewat-kaka-fj.com/healthz` returned HTTP `200` with body `ok`.
+- Public root returned HTTP `303` to the existing login route, so public content inspection correctly stops at the authentication boundary; deployed source and health are verified separately.
