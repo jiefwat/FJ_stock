@@ -134,6 +134,77 @@ The current fixture market has an extreme limit-down signal, so `风险释放` c
 
 ## 7. Deployment Verification
 
-Status: pending incremental server deployment.
+Status: deployed and verified on 2026-07-13.
 
-The deployment record must add the remote baseline hashes, patch-check result, backup path, explicit compile/import behavior, temporary history-rich preview markers, service PID transition, protected public-route status, and rollback archive hashes.
+Deployment target:
+
+```text
+host=47.82.145.207
+application=/opt/stock-ts
+service=stock-ts.service
+public_url=https://stock.jiewat-kaka-fj.com/
+```
+
+The incremental source patch contained seven Python files (42,605 bytes; 619 insertions and 94 deletions). `git apply --check` passed before the patch was applied. The production `.env`, market snapshot, holdings, accounts, reports, Nginx configuration, timers, and separate DSA service were preserved.
+
+Rollback material:
+
+```text
+backup=/opt/stock-ts/.deploy_backups/research-data-depth-20260713133543
+archive=/opt/stock-ts/.deploy_backups/research-data-depth-20260713133543/phase2-source-before.tgz
+patch=/opt/stock-ts/.deploy_backups/research-data-depth-20260713133543/change.patch
+```
+
+The archive contains the pre-deployment source. Representative archive hashes:
+
+```text
+models.py=9e76fcc2b9c8720175a27dc8a8b21c45b7bcb660e301d5aac85c62cc1a38fb0a
+stock_memo.py=f22c5ba915e37e98352060e8d85a4a1a572784d55e2a3d31fe8d479fe392a772
+enrich_tdx_snapshot.py=5374cdab3e9777e5f58d4ec42a7695d6499598597837ac5d7fe4fa83df7d2dbd
+```
+
+Remote compile and import verification:
+
+```text
+Python 3.12.3
+FundamentalPeriod MarketHistoryPoint ValuationPoint
+phase2_import=ok
+```
+
+A temporary history-rich snapshot was served on port 18501 without modifying the production snapshot:
+
+```text
+preview_http=200
+preview_bytes=297330
+近 3 个交易日=4
+财务 3 期=3
+基于 20 个观察点=1
+连续改善=3
+data-market-stage="风险释放"
+data-research-status="条件研究"
+```
+
+The preview process was then stopped and port 18501 was confirmed released.
+
+Production service transition:
+
+```text
+before_pid=1609689
+after_pid=1612349
+service=active
+started=Mon 2026-07-13 13:38:25 CST
+direct_root=303
+direct_login=200
+```
+
+Public-route verification:
+
+```text
+public_root=303
+location=/login?next=%2F
+public_login=200
+public_login_bytes=107484
+public_title=Jiewat Kaka FJ 研究分析平台
+```
+
+The root redirect is the expected authentication boundary. A first 15-second login download timed out after receiving 81,745 of 107,484 bytes; a second GET with a 45-second timeout completed with HTTP 200 and the expected title. The production snapshot remains unchanged and will accumulate bounded history through subsequent normal pipeline refreshes.
