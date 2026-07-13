@@ -52,7 +52,9 @@ textarea:focus-visible,
 .ghost-button:focus-visible,
 .primary-button:focus-visible,
 .danger-button:focus-visible,
-.mini-button:focus-visible {
+.mini-button:focus-visible,
+.research-tape-data-link:focus-visible,
+.research-overflow summary:focus-visible {
   outline: 3px solid rgba(180, 133, 58, .28);
   outline-offset: 2px;
 }
@@ -1039,35 +1041,84 @@ h1 {
   top: 10px;
   z-index: 20;
   display:grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap:10px;
+  grid-template-columns:minmax(190px,1.35fr) repeat(5,minmax(110px,1fr)) auto;
+  gap:0;
   margin: 0 0 14px;
-  padding:10px;
+  padding:0;
+  overflow:hidden;
   border:1px solid var(--line);
-  border-radius:20px;
-  background:rgba(248,251,253,.90);
+  border-radius:18px;
+  background:#fffdf8;
   backdrop-filter:blur(16px);
   box-shadow:0 12px 34px rgba(19,39,58,.08);
 }
-.freshness-bar div {
-  border:1px solid rgba(13,59,102,.08);
-  border-radius:14px;
-  padding:9px 10px;
-  background:rgba(255,255,255,.78);
+.research-tape-primary {
+  display:grid;
+  align-content:center;
+  gap:4px;
+  min-width:0;
+  padding:13px 16px;
+  color:#edf5fa;
+  background:linear-gradient(135deg,#10283d,#173a55);
 }
-.freshness-bar span {
+.research-tape-primary span,
+.research-tape-item span {
   display:block;
-  color:var(--muted);
-  font-size:11px;
-  margin-bottom:4px;
+  font-family:var(--mono);
+  font-size:9px;
+  font-weight:850;
+  letter-spacing:.07em;
+  text-transform:uppercase;
 }
-.freshness-bar strong {
+.research-tape-primary span { color:#d7b978; }
+.research-tape-primary strong {
   display:block;
-  font-size:13px;
+  font-family:var(--display);
+  font-size:18px;
+  line-height:1.15;
+  color:#fff;
+}
+.research-tape-primary small {
+  color:#b9cad6;
+  font-size:10px;
+  line-height:1.35;
+}
+.research-tape-item {
+  display:grid;
+  align-content:center;
+  gap:5px;
+  min-width:0;
+  padding:12px;
+  border-left:1px solid var(--line);
+  background:rgba(255,253,248,.78);
+}
+.research-tape-item span { color:var(--muted); }
+.research-tape-item strong {
+  display:block;
   color:var(--ink);
+  font-family:var(--mono);
+  font-size:12px;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
+}
+.research-tape-data-link {
+  display:grid;
+  place-items:center;
+  gap:8px;
+  padding:12px;
+  color:var(--brand);
+  background:var(--accent-soft);
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.research-tape-data-link span { color:var(--accent); font-family:var(--mono); }
+.research-tape[data-gate-level="high"] .research-tape-primary {
+  background:linear-gradient(135deg,#472527,#7d342f);
+}
+.research-tape[data-gate-level="mid"] .research-tape-primary {
+  background:linear-gradient(135deg,#3d321c,#76551f);
 }
 .data-center-summary {
   display:flex;
@@ -4584,6 +4635,12 @@ body {
   .market-decision-rail-step { border-bottom:1px solid var(--line); }
   .investment-memo-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+@media (max-width:1120px) and (min-width:681px) {
+  .research-tape {
+    grid-template-columns:minmax(190px,1.4fr) repeat(2,minmax(130px,1fr)) auto;
+  }
+  .research-tape-item.secondary { display:none; }
+}
 @media (max-width:680px) {
   .stock-data-block-grid,
   .stock-pro-grid,
@@ -4595,6 +4652,28 @@ body {
   .investment-memo-grid,
   .stock-evidence-grid,
   .thesis-evidence-pair { grid-template-columns:1fr; }
+  .brand-subtitle { display:none; }
+  .quick-stock-search {
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:7px;
+    padding:8px;
+  }
+  .quick-stock-search button { padding-inline:14px; white-space:nowrap; }
+  .nav-item { flex-basis:112px; }
+  .research-tape {
+    position:relative;
+    top:auto;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    margin-bottom:9px;
+  }
+  .research-tape-primary,
+  .research-tape-data-link { grid-column:1 / -1; }
+  .research-tape-item.secondary { display:none; }
+  .research-tape-data-link {
+    grid-template-columns:auto auto;
+    justify-content:space-between;
+    place-items:center stretch;
+  }
   .market-decision-rail { grid-template-columns:1fr; }
   .market-decision-rail-step { min-height:0; border-right:0; }
   .market-decision-rail-step:not(:last-child)::after { display:none; }

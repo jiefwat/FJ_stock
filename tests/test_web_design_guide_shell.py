@@ -111,3 +111,20 @@ def test_dense_pages_use_compact_readable_layout_rules() -> None:
 
 def test_home_specific_grid_rules_are_retired() -> None:
     assert "#module-home > .precision-brief" not in CSS
+
+
+def test_research_tape_and_mobile_shell_have_explicit_density_rules() -> None:
+    for selector in [
+        ".research-tape-primary",
+        ".research-tape-item.secondary",
+        ".research-tape-data-link",
+        '.research-tape[data-gate-level="high"]',
+    ]:
+        assert selector in CSS
+    mobile = CSS.split("@media (max-width: 680px)")[-1]
+    compact_mobile = mobile.replace(" ", "")
+    assert ".quick-stock-search" in mobile
+    assert "grid-template-columns:minmax(0,1fr)auto" in compact_mobile
+    assert ".research-tape-item.secondary" in mobile
+    assert "display:none" in compact_mobile
+    assert ".research-tape-data-link:focus-visible" in CSS
