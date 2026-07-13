@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from stock_ts.models import Holding, StockRawData
+from stock_ts.models import FundamentalPeriod, Holding, StockRawData
 
 from .evidence import (
     EvidenceItem,
@@ -74,9 +74,29 @@ def build_stock_research_memo(
     latest = raw.bars[-1] if raw.bars else None
     trade_date = latest.date if latest else ""
     latest_close = latest.close if latest else 0.0
-    quality_gate = input_quality or _derive_input_quality(raw)
-    quality = _quality_section(raw.fundamental_metrics)
-    valuation = _valuation_section(raw)
+    fundamental_history = tuple(
+        item
+        for item in sorted(raw.fundamental_history, key=lambda item: item.date, reverse=True)
+        if fundamental_metric_coverage(_period_metrics(item)) > 0
+    )
+    quality_metrics = _quality_metrics(raw, fundamental_history)
+    fundamental_period_count = (
+        len(fundamental_history)
+        if fundamental_history
+        else int(fundamental_metric_coverage(quality_metrics) > 0)
+    )
+    effective_valuation, valuation_observation_count = _effective_valuation(raw)
+    quality_gate = input_quality or _derive_input_quality(
+        raw,
+        quality_metrics=quality_metrics,
+        effective_valuation=effective_valuation,
+    )
+    quality = _quality_section(quality_metrics, fundamental_history)
+    valuation = _valuation_section(
+        raw,
+        effective_valuation,
+        valuation_observation_count,
+    )
     events = _event_section(raw, event_radar)
     evidence = _evidence_items(
         raw,
@@ -86,8 +106,15 @@ def build_stock_research_memo(
         valuation,
         events,
         quality_gate,
+        fundamental_period_count,
     )
-    verdict = _verdict(quality, valuation, events, quality_gate)
+    verdict = _verdict(
+        quality,
+        valuation,
+        events,
+        quality_gate,
+        fundamental_period_count=fundamental_period_count,
+    )
     scenarios = (
         _paused_scenarios()
         if quality_gate.quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}
@@ -112,11 +139,19 @@ def build_stock_research_memo(
     )
 
 
-def _derive_input_quality(raw: StockRawData) -> ResearchInputQuality:
+def _derive_input_quality(
+    raw: StockRawData,
+    *,
+    quality_metrics: dict[str, float | str | None],
+    effective_valuation: dict[str, float | str | None],
+) -> ResearchInputQuality:
     return ResearchInputQuality(
         quote_status=EvidenceStatus.COMPLETE if raw.bars else EvidenceStatus.BLOCKED,
-        fundamental_coverage=fundamental_metric_coverage(raw.fundamental_metrics),
-        valuation_comparable=has_comparable_valuation(raw.valuation, pe_ttm=raw.pe_ttm),
+        fundamental_coverage=fundamental_metric_coverage(quality_metrics),
+        valuation_comparable=has_comparable_valuation(
+            effective_valuation,
+            pe_ttm=raw.pe_ttm,
+        ),
         event_status=(
             EvidenceStatus.DEGRADED
             if has_usable_events(raw.announcements, raw.news_items)
@@ -124,6 +159,55 @@ def _derive_input_quality(raw: StockRawData) -> ResearchInputQuality:
         ),
         blockers=("缺少 K 线",) if not raw.bars else (),
     )
+
+
+def _quality_metrics(
+    raw: StockRawData,
+    history: tuple[FundamentalPeriod, ...],
+) -> dict[str, float | str | None]:
+    if fundamental_metric_coverage(raw.fundamental_metrics) > 0:
+        return dict(raw.fundamental_metrics)
+    return _period_metrics(history[0]) if history else dict(raw.fundamental_metrics)
+
+
+def _period_metrics(period: FundamentalPeriod) -> dict[str, float | str | None]:
+    return {
+        "date": period.date,
+        "source": period.source,
+        "revenue_yoy": period.revenue_yoy,
+        "net_profit_yoy": period.net_profit_yoy,
+        "roe": period.roe,
+        "gross_margin": period.gross_margin,
+        "debt_to_assets": period.debt_to_assets,
+        "ocf_to_profit": period.ocf_to_profit,
+    }
+
+
+def _effective_valuation(
+    raw: StockRawData,
+) -> tuple[dict[str, float | str | None], int]:
+    valuation = dict(raw.valuation)
+    points_by_date = {item.date: item for item in raw.valuation_history if item.date}
+    valid_points = [
+        item.pe_ttm
+        for item in points_by_date.values()
+        if item.pe_ttm is not None and math.isfinite(item.pe_ttm) and item.pe_ttm > 0
+    ]
+    explicit = _number(valuation.get("pe_percentile"))
+    explicit_valid = explicit is not None and 0 <= explicit <= 100
+    current = raw.pe_ttm if raw.pe_ttm is not None else _number(valuation.get("pe_ttm"))
+    if (
+        not explicit_valid
+        and current is not None
+        and math.isfinite(current)
+        and current > 0
+        and len(valid_points) >= 20
+    ):
+        valuation["pe_percentile"] = (
+            sum(point <= current for point in valid_points) / len(valid_points) * 100
+        )
+        valuation["pe_percentile_basis"] = len(valid_points)
+    return valuation, len(valid_points)
 
 
 def _business_section(raw: StockRawData) -> ResearchSection:
@@ -138,13 +222,17 @@ def _business_section(raw: StockRawData) -> ResearchSection:
     )
 
 
-def _quality_section(metrics: dict[str, float | str | None]) -> ResearchSection:
+def _quality_section(
+    metrics: dict[str, float | str | None],
+    history: tuple[FundamentalPeriod, ...],
+) -> ResearchSection:
+    period_count = len(history) if history else int(fundamental_metric_coverage(metrics) > 0)
     if fundamental_metric_coverage(metrics) == 0:
         return ResearchSection(
             "经营质量",
             "经营质量数据缺失，不能判断盈利能力和现金流质量。",
             (),
-            "缺少营收、利润、ROE、负债与经营现金流字段。",
+            f"财务 {period_count} 期；缺少营收、利润、ROE、负债与经营现金流字段。",
             ("补充最近财报和至少一个可比期间",),
         )
     revenue = _number(metrics.get("revenue_yoy"))
@@ -165,41 +253,107 @@ def _quality_section(metrics: dict[str, float | str | None]) -> ResearchSection:
         )
         if text
     )
-    if revenue is not None and profit is not None and profit > revenue:
+    history_conclusion = _fundamental_history_conclusion(history)
+    if history_conclusion:
+        conclusion = history_conclusion
+    elif revenue is not None and profit is not None and profit > revenue:
         conclusion = "盈利增速高于收入增速，但仍需拆解利润质量和基数影响。"
     elif revenue is not None and profit is not None and profit < revenue:
         conclusion = "利润增速落后于收入增速，盈利质量需要重点复核。"
     else:
         conclusion = "已有部分经营指标，但不足以形成完整盈利质量判断。"
+    if period_count >= 3:
+        limitation = f"财务 {period_count} 期；跨期方向仍需结合基数和报告口径复核。"
+    elif period_count == 2:
+        limitation = "财务 2 期；仅能描述较上一期变化，不能声称长期趋势。"
+    else:
+        limitation = "财务 1 期；单期数据只能描述当前截面，不能声称趋势改善或恶化。"
     return ResearchSection(
         "经营质量",
         conclusion,
         facts,
-        "单期数据只能描述当前截面，不能声称趋势改善或恶化。",
+        limitation,
         ("对比最近四个报告期", "核对经营现金流与净利润匹配度"),
     )
 
 
-def _valuation_section(raw: StockRawData) -> ResearchSection:
-    pe = raw.pe_ttm if raw.pe_ttm is not None else _number(raw.valuation.get("pe_ttm"))
-    pb = _number(raw.valuation.get("pb"))
-    ps = _number(raw.valuation.get("ps"))
-    percentile = _number(raw.valuation.get("pe_percentile"))
-    industry_median = _number(raw.valuation.get("industry_pe_median"))
+def _fundamental_history_conclusion(
+    history: tuple[FundamentalPeriod, ...],
+) -> str:
+    recent = history[:3]
+    if len(recent) < 2:
+        return ""
+    chronological = tuple(reversed(recent))
+    revenues = [item.revenue_yoy for item in chronological]
+    profits = [item.net_profit_yoy for item in chronological]
+    if any(value is None for value in (*revenues, *profits)):
+        return ""
+    revenue_values = [float(value) for value in revenues if value is not None]
+    profit_values = [float(value) for value in profits if value is not None]
+    if len(recent) == 2:
+        return (
+            f"较上一期变化：营收同比 {revenue_values[0]:.2f}% -> "
+            f"{revenue_values[-1]:.2f}%，净利润同比 {profit_values[0]:.2f}% -> "
+            f"{profit_values[-1]:.2f}%。"
+        )
+    revenue_direction = _strict_direction(revenue_values)
+    profit_direction = _strict_direction(profit_values)
+    if revenue_direction == profit_direction == "improving":
+        return "最近三期营收与净利润增速连续改善，但仍需复核基数和现金流质量。"
+    if revenue_direction == profit_direction == "weakening":
+        return "最近三期营收与净利润增速连续走弱，经营压力需要优先复核。"
+    if revenue_direction != profit_direction:
+        return "最近三期收入与利润增速分化，不能把单一利润改善视为整体经营改善。"
+    return "最近三期经营增速波动，尚未形成一致方向。"
+
+
+def _strict_direction(values: list[float]) -> str:
+    if len(values) < 3:
+        return "insufficient"
+    pairs = zip(values, values[1:])
+    if all(current > previous for previous, current in pairs):
+        return "improving"
+    pairs = zip(values, values[1:])
+    if all(current < previous for previous, current in pairs):
+        return "weakening"
+    return "mixed"
+
+
+def _valuation_section(
+    raw: StockRawData,
+    valuation: dict[str, float | str | None],
+    observation_count: int,
+) -> ResearchSection:
+    pe = raw.pe_ttm if raw.pe_ttm is not None else _number(valuation.get("pe_ttm"))
+    pb = _number(valuation.get("pb"))
+    ps = _number(valuation.get("ps"))
+    percentile = _number(valuation.get("pe_percentile"))
+    percentile_basis = int(_number(valuation.get("pe_percentile_basis")) or 0)
+    industry_median = _number(valuation.get("industry_pe_median"))
     facts = tuple(
         text
         for text in (_metric("PE(TTM)", pe, "x"), _metric("PB", pb, "x"), _metric("PS", ps, "x"))
         if text
     )
     if percentile is not None and 0 <= percentile <= 100:
-        conclusion = f"PE 历史分位 {percentile:.0f}%，估值判断具备历史参照。"
-        limitation = "历史分位仍需结合盈利周期和口径变化。"
+        if percentile_basis >= 20:
+            conclusion = (
+                f"基于 {percentile_basis} 个观察点的 PE 历史分位 {percentile:.0f}%，"
+                "估值判断具备内部历史参照。"
+            )
+            limitation = "内部历史分位仍需结合盈利周期、样本跨度和口径变化。"
+        else:
+            conclusion = f"PE 历史分位 {percentile:.0f}%，估值判断具备历史参照。"
+            limitation = "提供方历史分位仍需结合盈利周期和口径变化。"
     elif industry_median is not None and industry_median > 0 and pe is not None and pe > 0:
         conclusion = f"PE {pe:.2f}x，对比行业中位数 {industry_median:.2f}x。"
         limitation = "行业对比不能替代公司盈利质量和增长持续性判断。"
     else:
         conclusion = "；".join(facts) if facts else "估值字段缺失。"
-        limitation = "缺少历史分位或行业对比，只描述绝对估值水平。"
+        limitation = (
+            "缺少历史分位或行业对比，只描述绝对估值水平；"
+            f"估值历史积累中 {observation_count}/20。"
+        )
     return ResearchSection(
         "估值与预期",
         conclusion,
@@ -316,6 +470,8 @@ def _verdict(
     valuation: ResearchSection,
     events: ResearchSection,
     quality_gate: ResearchInputQuality,
+    *,
+    fundamental_period_count: int,
 ) -> ResearchVerdict:
     if quality_gate.quote_status in {EvidenceStatus.STALE, EvidenceStatus.BLOCKED}:
         blocker = quality_gate.blockers[0] if quality_gate.blockers else "行情时效未通过"
@@ -336,7 +492,8 @@ def _verdict(
     }
     missing_count = sum(not value for value in (has_fundamentals, has_comparison, has_events))
     status = "技术性观察" if missing_count >= 2 else "条件研究"
-    confidence = max(25, 78 - missing_count * 18)
+    depth_bonus = min(6, max(0, fundamental_period_count - 2) * 2)
+    confidence = max(25, min(100, 78 - missing_count * 18 + depth_bonus))
     positive = quality.conclusion if has_fundamentals else "价格与技术数据可用于观察"
     counter = events.conclusion if has_events else valuation.limitations
     return ResearchVerdict(
@@ -398,6 +555,7 @@ def _evidence_items(
     valuation: ResearchSection,
     events: ResearchSection,
     quality_gate: ResearchInputQuality,
+    fundamental_period_count: int,
 ) -> tuple[EvidenceItem, ...]:
     source = ", ".join(raw.data_sources)
     if not raw.bars:
@@ -406,10 +564,21 @@ def _evidence_items(
         quote_status = quality_gate.quote_status
     if quality_gate.fundamental_coverage <= 0:
         fundamental_status = EvidenceStatus.MISSING
-    elif quality_gate.fundamental_coverage >= 1:
+    elif quality_gate.fundamental_coverage >= 1 and fundamental_period_count >= 3:
         fundamental_status = EvidenceStatus.COMPLETE
     else:
         fundamental_status = EvidenceStatus.DEGRADED
+    latest_fundamental = (
+        max(raw.fundamental_history, key=lambda item: item.date)
+        if raw.fundamental_history
+        else None
+    )
+    fundamental_source = str(raw.fundamental_metrics.get("source") or "") or (
+        latest_fundamental.source if latest_fundamental else ""
+    )
+    fundamental_date = str(raw.fundamental_metrics.get("date") or "") or (
+        latest_fundamental.date if latest_fundamental else ""
+    )
     return (
         EvidenceItem(
             "行情",
@@ -420,8 +589,8 @@ def _evidence_items(
         ),
         EvidenceItem(
             "经营质量",
-            str(raw.fundamental_metrics.get("source") or ""),
-            str(raw.fundamental_metrics.get("date") or ""),
+            fundamental_source,
+            fundamental_date,
             fundamental_status,
             quality.limitations,
         ),

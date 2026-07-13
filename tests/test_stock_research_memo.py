@@ -1,4 +1,10 @@
-from stock_ts.models import DailyBar, Holding, StockRawData
+from stock_ts.models import (
+    DailyBar,
+    FundamentalPeriod,
+    Holding,
+    StockRawData,
+    ValuationPoint,
+)
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 from stock_ts.research.stock_memo import build_stock_research_memo
 
@@ -19,6 +25,37 @@ def _raw_stock(**changes) -> StockRawData:
     )
     values.update(changes)
     return StockRawData(**values)
+
+
+def _fundamental_history(values: list[tuple[float, float]]) -> list[FundamentalPeriod]:
+    dates = ["2025-09-30", "2025-12-31", "2026-03-31"][-len(values) :]
+    chronological = [
+        FundamentalPeriod(
+            date=period_date,
+            source="fixture",
+            revenue_yoy=revenue,
+            net_profit_yoy=profit,
+            roe=12 + index,
+            gross_margin=30 + index,
+            debt_to_assets=45 - index,
+            ocf_to_profit=1 + index / 10,
+        )
+        for index, (period_date, (revenue, profit)) in enumerate(zip(dates, values))
+    ]
+    return list(reversed(chronological))
+
+
+def _valuation_history(count: int) -> list[ValuationPoint]:
+    return [
+        ValuationPoint(
+            date=f"2026-06-{index + 1:02d}",
+            source="fixture",
+            pe_ttm=10 + index,
+            pb=2.0,
+            ps=3.0,
+        )
+        for index in range(count)
+    ]
 
 
 def test_memo_does_not_call_absolute_multiples_undervalued() -> None:
@@ -169,3 +206,107 @@ def test_valid_complete_inputs_remain_conditional_research() -> None:
 
     assert memo.verdict.status == "条件研究"
     assert memo.verdict.confidence > 0
+
+
+def test_one_financial_period_never_claims_trend() -> None:
+    history = _fundamental_history([(12, 18)])
+    memo = build_stock_research_memo(
+        _raw_stock(
+            fundamental_metrics={},
+            fundamental_history=history,
+        )
+    )
+
+    assert "连续改善" not in memo.quality.conclusion
+    assert "财务 1 期" in memo.quality.limitations
+
+
+def test_three_improving_periods_support_improvement_statement() -> None:
+    history = _fundamental_history([(8, 9), (12, 14), (18, 24)])
+    memo = build_stock_research_memo(
+        _raw_stock(
+            fundamental_metrics={},
+            fundamental_history=history,
+        )
+    )
+
+    assert "连续改善" in memo.quality.conclusion
+    quality_evidence = next(item for item in memo.evidence if item.block == "经营质量")
+    assert "财务 3 期" in quality_evidence.detail
+
+
+def test_revenue_profit_divergence_is_not_overall_improvement() -> None:
+    history = _fundamental_history([(18, 8), (14, 12), (10, 20)])
+    memo = build_stock_research_memo(
+        _raw_stock(
+            fundamental_metrics={},
+            fundamental_history=history,
+        )
+    )
+
+    assert "分化" in memo.quality.conclusion
+    assert "连续改善" not in memo.quality.conclusion
+
+
+def test_nineteen_pe_points_do_not_create_history_percentile() -> None:
+    memo = build_stock_research_memo(
+        _raw_stock(
+            pe_ttm=18,
+            valuation={"pe_ttm": 18},
+            valuation_history=_valuation_history(19),
+        )
+    )
+
+    assert "估值历史积累中 19/20" in memo.valuation.limitations
+    assert "历史分位" not in memo.valuation.conclusion
+
+
+def test_twenty_pe_points_create_descriptive_history_percentile() -> None:
+    memo = build_stock_research_memo(
+        _raw_stock(
+            pe_ttm=18,
+            valuation={"pe_ttm": 18},
+            valuation_history=_valuation_history(20),
+        )
+    )
+
+    assert "基于 20 个观察点" in memo.valuation.conclusion
+    assert "低估" not in memo.valuation.conclusion
+    assert "高估" not in memo.valuation.conclusion
+
+
+def test_duplicate_valuation_dates_do_not_inflate_sample_count() -> None:
+    duplicate_points = [
+        ValuationPoint("2026-06-01", "fixture", 10 + index, 2, 3)
+        for index in range(20)
+    ]
+    memo = build_stock_research_memo(
+        _raw_stock(
+            pe_ttm=18,
+            valuation={"pe_ttm": 18},
+            valuation_history=duplicate_points,
+        )
+    )
+
+    assert "估值历史积累中 1/20" in memo.valuation.limitations
+    assert "历史分位" not in memo.valuation.conclusion
+
+
+def test_stale_quote_still_overrides_complete_history() -> None:
+    memo = build_stock_research_memo(
+        _raw_stock(
+            fundamental_metrics={},
+            fundamental_history=_fundamental_history([(8, 9), (12, 14), (18, 24)]),
+            valuation={"pe_ttm": 18},
+            valuation_history=_valuation_history(20),
+        ),
+        input_quality=ResearchInputQuality(
+            quote_status=EvidenceStatus.STALE,
+            fundamental_coverage=1.0,
+            valuation_comparable=True,
+            event_status=EvidenceStatus.COMPLETE,
+        ),
+    )
+
+    assert memo.verdict.status == "数据暂停"
+    assert memo.verdict.confidence == 0

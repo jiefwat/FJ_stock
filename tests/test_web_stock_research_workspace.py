@@ -1,7 +1,8 @@
 import inspect
+from dataclasses import replace
 
 from stock_ts import web
-from stock_ts.models import DailyBar, StockRawData
+from stock_ts.models import DailyBar, FundamentalPeriod, StockRawData, ValuationPoint
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 from stock_ts.research.stock_memo import build_stock_research_memo
 from stock_ts.webapp.stock_workspace import render_stock_workspace
@@ -83,3 +84,43 @@ def test_stock_orchestration_passes_typed_input_quality() -> None:
 
     assert "quality.quote_status" in source
     assert "input_quality=" in source
+
+
+def test_stock_workspace_renders_cross_period_financial_and_valuation_evidence() -> None:
+    fundamentals = [
+        FundamentalPeriod(
+            date=period_date,
+            source="fixture",
+            revenue_yoy=revenue,
+            net_profit_yoy=profit,
+            roe=14 + index,
+            gross_margin=30 + index,
+            debt_to_assets=45 - index,
+            ocf_to_profit=1 + index / 10,
+        )
+        for index, (period_date, revenue, profit) in enumerate(
+            [
+                ("2026-03-31", 18, 24),
+                ("2025-12-31", 12, 14),
+                ("2025-09-30", 8, 9),
+            ]
+        )
+    ]
+    valuations = [
+        ValuationPoint(f"2026-06-{index + 1:02d}", "fixture", 10 + index, 2, 3)
+        for index in range(20)
+    ]
+    raw = replace(
+        _raw(complete=True),
+        pe_ttm=18,
+        valuation={"pe_ttm": 18},
+        fundamental_metrics={},
+        fundamental_history=fundamentals,
+        valuation_history=valuations,
+    )
+
+    html = render_stock_workspace(build_stock_research_memo(raw))
+
+    assert "财务 3 期" in html
+    assert "基于 20 个观察点" in html
+    assert "连续改善" in html
