@@ -127,7 +127,7 @@ def test_web_pauses_candidate_ranking_when_tdx_snapshot_uses_synthetic_bars(
     assert "股票涨跌统计" in html
     assert "涨停" in html
     assert "跌停" in html
-    assert "推荐股票" in html
+    assert "研究候选" in html
     assert "待补数据" in html or "价格可靠" in html
     assert "最强上涨" not in html
     assert "最弱下跌" not in html
@@ -212,9 +212,10 @@ def test_web_quality_gate_marks_candidate_prices_available_when_dates_are_real(
         holdings_path=str(holdings),
     )
 
-    assert "推荐股票" in html
-    assert "价格链路可靠" in html
-    assert "排序暂停" not in html
+    assert "研究候选" in html
+    assert 'data-opportunity-state="开放验证"' in html
+    assert "数据状态：complete" in html
+    assert "停止排序" not in html
 
 
 def test_web_quality_gate_warns_when_market_snapshot_is_older_than_stock_kline(
@@ -379,8 +380,8 @@ def test_web_blocks_opportunity_ranking_when_snapshot_trade_date_is_stale(
     assert "数据已滞后：最近应为 2026-07-10" in html
     assert "不能按今天盘面执行" in html
     assert 'data-research-status="数据暂停"' in html
-    assert "数据质量：已滞后，不能排到前列" in html
-    assert "排序暂停" in html
+    assert "数据暂停" in html
+    assert "停止排序，只保留证据审计" in html
 
 
 def test_web_blocks_actions_when_pipeline_refresh_is_stale(
@@ -482,7 +483,7 @@ def test_web_blocks_actions_when_pipeline_refresh_is_stale(
 
     assert "自动更新已滞后：超过 8 小时" in html
     assert "先刷新数据流水线" in html
-    assert "排序暂停" in html
+    assert "停止排序，只保留证据审计" in html
 
 
 def test_web_blocks_when_kline_bars_are_stale_even_if_dates_are_real(
@@ -565,7 +566,7 @@ def test_web_blocks_when_kline_bars_are_stale_even_if_dates_are_real(
     assert "K线已滞后：最近应为 2026-07-10" in html
     assert "个股K线最晚 2026-06-26" in html
     assert "候选池K线最晚 2026-06-23" in html
-    assert "排序暂停" in html
+    assert "停止排序，只保留证据审计" in html
 
 
 def test_web_warns_when_multisource_context_is_missing_or_stale(

@@ -67,6 +67,7 @@ from .research.evidence import (
     has_usable_events,
 )
 from .research.market_regime import assess_market_regime
+from .research.opportunity_dossier import build_opportunity_dossier
 from .research.stock_dossier import build_professional_stock_dossier
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
@@ -79,6 +80,7 @@ from .webapp import (
     build_workspace_sections,
     render_document,
     render_market_workspace,
+    render_opportunity_workspace,
     render_stock_workspace,
     workspace_action,
 )
@@ -4727,44 +4729,54 @@ def _render_hot_opportunity_module(
     quality: DataQualityView | None = None,
     refresh_time: str = "",
 ) -> str:
-    del candidate_code, candidate_group, candidate_strategy, candidate_universe_metadata
-    rows = _render_opportunity_recommendation_rows(
-        sectors=sectors,
-        candidates=candidates,
-        candidate_universe=candidate_universe,
-        provider_name=provider_name,
-        holdings_path=holdings_path,
-        quality=quality,
-    )
-    if not rows:
-        rows = "<tr><td colspan='6'>暂无推荐买入候选；等待资金、K线、消息和买点同时满足。</td></tr>"
+    del candidate_code, candidate_group, candidate_strategy
     mainline = "、".join(sectors.market_mainline[:3]) or (
         sectors.sectors[0].name if sectors.sectors else "待确认"
     )
-    buy_count = _opportunity_recommended_buy_count(
-        sectors=sectors,
-        candidates=candidates,
-        candidate_universe=candidate_universe,
-        quality=quality,
+    assessment = assess_market_regime(
+        market,
+        quote_status=quality.quote_status if quality else EvidenceStatus.COMPLETE,
     )
-    candidate_state = "排序暂停" if quality and quality.gate_level == "blocked" else f"推荐买入候选 {min(buy_count, 30)} 只"
+    dossier = build_opportunity_dossier(
+        candidates,
+        market=assessment,
+        quote_status=quality.quote_status if quality else EvidenceStatus.COMPLETE,
+        candidate_universe=candidate_universe,
+        metadata=candidate_universe_metadata or {},
+    )
+    workspace = render_opportunity_workspace(
+        dossier,
+        provider_name=provider_name,
+        holdings_path=holdings_path,
+        supporting_html=_render_opportunity_sector_context(sectors, candidate_universe),
+    )
     sector_risk = _render_opportunity_sector_risk_chip(sectors)
-    guidance = _render_opportunity_buy_sell_guidance(
-        sectors=sectors,
-        candidates=candidates,
-        candidate_universe=candidate_universe,
-        quality=quality,
-    )
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">这里只放推荐买入候选；没有买入计划的观察票、资金流出票和剔除票不放上面。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(candidate_state)}</span>{sector_risk}{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
-      {guidance}
-      <div class="panel opportunity-focus-panel">
-        <div class="opportunity-table-scroll">
-          <table class="data-table candidates-table opportunity-dimension-table"><thead><tr><th>推荐板块</th><th>推荐股票</th><th>重点结论</th><th>简单原因</th><th>后续观察</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table>
-        </div>
-      </div>
+      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">先过市场与数据闸门，再把候选送入个股档案验证；这里不形成买卖结论。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(dossier.gate.state)}</span>{sector_risk}{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
+      {workspace}
     </section>"""
+
+
+def _render_opportunity_sector_context(
+    sectors: SectorAnalysisReport,
+    candidate_universe: list[CandidateStockRawData],
+) -> str:
+    rows = "".join(
+        _render_opportunity_sector_row(item, candidate_universe)
+        for item in sectors.sectors[:5]
+    )
+    if not rows:
+        rows = "<tr><td colspan='5'>板块证据缺失；候选不得使用虚构主题补位。</td></tr>"
+    return f"""
+      <details class="opportunity-source-ledger opportunity-sector-context">
+        <summary>板块与市场支持证据</summary>
+        <div class="opportunity-table-scroll">
+          <table class="data-table"><thead><tr>
+            <th>方向</th><th>热度与状态</th><th>扩散</th><th>代表股</th><th>风险复核</th>
+          </tr></thead><tbody>{rows}</tbody></table>
+        </div>
+      </details>"""
 
 
 def _render_opportunity_buy_sell_guidance(

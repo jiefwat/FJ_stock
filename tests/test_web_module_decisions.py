@@ -73,7 +73,11 @@ def test_four_workspaces_do_not_repeat_global_precision_summary() -> None:
     for workspace in ["market", "portfolio", "stock", "opportunity"]:
         section = _workspace(html, workspace)
         assert "module-title" in section
-        assert "detail-shell" in section or "data-table" in section
+        assert (
+            "detail-shell" in section
+            or "data-table" in section
+            or "opportunity-dossier" in section
+        )
 
 
 def test_core_modules_show_decision_state_not_just_raw_data() -> None:
@@ -83,8 +87,8 @@ def test_core_modules_show_decision_state_not_just_raw_data() -> None:
     assert "每日大盘" in html
     assert "持仓分析" in html
     assert "分析内容" in html
-    assert "推荐板块" in html
-    assert "推荐股票" in html
+    assert "机会总闸门" in html
+    assert "研究候选" in html
 
 
 def test_four_modules_keep_copy_functional_and_simple() -> None:
@@ -121,7 +125,7 @@ def test_pages_show_data_statistics_analysis_without_narrator_blocks() -> None:
     for text in [
         "数据链路：",
         "缺失的数据只作为风险提示",
-        "下一步：",
+        "<h3>下一步：",
         "验证条件：",
         "失效条件：",
         "异动清单：",
@@ -553,16 +557,10 @@ def test_daily_market_uses_professional_market_diagnosis_not_shallow_summary() -
         assert shallow_text not in market_html
 
 
-def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
+def test_opportunity_module_focuses_on_gate_candidates_and_evidence() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in [
-        "推荐板块",
-        "推荐股票",
-        "重点结论",
-        "简单原因",
-        "未来趋势",
-    ]:
+    for text in ["机会总闸门", "证据漏斗", "研究候选", "支持证据", "最大反证"]:
         assert text in opportunity_html
 
     for noisy_text in [
@@ -571,29 +569,23 @@ def test_opportunity_module_focuses_only_on_themes_stocks_and_reasons() -> None:
         "候选列表",
         "板块方向",
         "策略通道",
-        "机会总闸门",
         "情绪温度",
         "赚钱效应",
         "亏钱效应",
         "方法说明",
         "数据链路",
+        "推荐买入",
+        "推荐股票",
     ]:
         assert noisy_text not in opportunity_html
 
 
-def test_opportunity_reasons_explain_cause_not_metric_stack() -> None:
+def test_opportunity_reasons_show_support_and_counter_evidence() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["重点结论", "简单原因", "入选原因", "未来趋势"]:
+    for text in ["支持证据", "最大反证", "下一步：", "数据："]:
         assert text in opportunity_html
-
-    for shallow_text in [
-        "涨跌 3.80%；扩散",
-        "成交变化 22.5亿",
-        "扩散 78%；持续性强",
-        "强度 100/100",
-    ]:
-        assert shallow_text not in opportunity_html
+    assert "上涨概率" not in opportunity_html
 
 
 def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> None:
@@ -648,16 +640,13 @@ def test_opportunity_stock_reasons_use_week_trend_fund_technical_and_news() -> N
         "opportunity",
     )
 
-    for text in ["简单原因", "一周趋势", "资金面", "技术面", "消息面"]:
+    for text in ["支持证据", "最大反证", "资金面", "消息面"]:
         assert text in opportunity_html
 
     assert "趋势强股" in opportunity_html
-    assert "冲高回落" not in opportunity_html
-    assert "近5日上涨" in opportunity_html
+    assert "冲高回落" in opportunity_html
     assert "净流入" in opportunity_html
-    assert "东方财富最新消息" in opportunity_html
     assert "趋势强股获得机器人订单" in opportunity_html
-    assert opportunity_html.count("个股原因：所属板块强度靠前，具备主线筛选价值") <= 1
 
 
 def test_opportunity_reasons_do_not_use_repeated_fallback_copy() -> None:
@@ -677,12 +666,7 @@ def test_opportunity_module_surfaces_theme_stocks_and_reasons() -> None:
     html = _sample_html()
     opportunity_html = _workspace(html, "opportunity")
 
-    for text in [
-        "推荐板块",
-        "推荐股票",
-        "重点结论",
-        "简单原因",
-    ]:
+    for text in ["板块与市场支持证据", "研究候选", "支持证据", "最大反证"]:
         assert text in opportunity_html
 
 
@@ -702,26 +686,21 @@ def test_opportunity_module_hides_abnormal_sector_pct_as_trade_signal() -> None:
     assert "涨跌异常" in opportunity_html or "复核真实板块指数" in opportunity_html
 
 
-def test_opportunity_module_removes_strategy_funnel_noise() -> None:
+def test_opportunity_module_uses_auditable_funnel_without_strategy_tabs() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["推荐板块", "推荐股票", "重点结论", "简单原因"]:
+    for text in ["机会总闸门", "证据漏斗", "研究候选", "筛选与来源账本"]:
         assert text in opportunity_html
-    for removed in ["策略通道", "机会总闸门", "筛选条件", "方法说明"]:
+    for removed in ["策略通道", "推荐买入", "推荐股票"]:
         assert removed not in opportunity_html
 
 
-def test_opportunity_module_renders_candidate_rows_with_research_links() -> None:
+def test_opportunity_module_renders_candidate_cards_with_research_links() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in [
-        "推荐板块",
-        "推荐股票",
-        "重点结论",
-        "简单原因",
-    ]:
+    for text in ["研究候选", "支持证据", "最大反证", "进入个股分析"]:
         assert text in opportunity_html
-    for removed in ["策略：", "入选证据", "主要风险", "候选列表"]:
+    for removed in ["推荐买入", "推荐股票", "买入条件"]:
         assert removed not in opportunity_html
 
 
@@ -729,28 +708,21 @@ def test_opportunity_candidate_links_carry_source_strategy_and_evidence() -> Non
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     assert 'href="/?code=' in opportunity_html
-    assert "candidate_source=opportunity" not in opportunity_html
-    assert "candidate_strategy_label=" not in opportunity_html
-    assert "candidate_evidence=" not in opportunity_html
+    assert "candidate_source=opportunity" in opportunity_html
+    assert "candidate_strategy_label=" in opportunity_html
+    assert "candidate_evidence=" in opportunity_html
 
 
-def test_opportunity_recommendation_table_uses_dimension_columns_not_one_long_reason() -> None:
+def test_opportunity_primary_surface_uses_evidence_cards_not_recommendation_table() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
     assert "<th>推荐原因</th>" not in opportunity_html
-    for header in [
-        "<th>推荐板块</th>",
-        "<th>推荐股票</th>",
-        "<th>重点结论</th>",
-        "<th>简单原因</th>",
-        "<th>后续观察</th>",
-        "<th>操作</th>",
-    ]:
-        assert header in opportunity_html
-    assert "opportunity-dimension-table" in opportunity_html
+    assert "candidate-decision-card" in opportunity_html
+    assert "candidate-evidence-pair" in opportunity_html
+    assert "opportunity-dimension-table" not in opportunity_html
 
 
-def test_opportunity_recommendations_include_buyable_candidates_and_stock_analysis_button(
+def test_opportunity_candidates_open_stock_analysis_without_buy_rating(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -829,13 +801,15 @@ def test_opportunity_recommendations_include_buyable_candidates_and_stock_analys
         "opportunity",
     )
 
-    assert "动作：建议买入" in opportunity_html or "动作：可小仓买入" in opportunity_html
+    assert "可买强股" in opportunity_html
     assert "个股分析" in opportunity_html
-    assert 'class="primary-button opportunity-analysis-button"' in opportunity_html
-    assert 'href="/?code=300777&provider=sample' in opportunity_html
+    assert 'class="primary-button"' in opportunity_html
+    assert 'href="/?code=300777&amp;provider=sample' in opportunity_html
+    assert "动作：建议买入" not in opportunity_html
+    assert "动作：可小仓买入" not in opportunity_html
 
 
-def test_opportunity_top_list_only_contains_recommended_buy_candidates() -> None:
+def test_opportunity_list_keeps_counter_evidence_instead_of_hiding_candidates() -> None:
     class MixedOpportunityProvider(SampleDataProvider):
         def fetch_market(self) -> MarketRawData:
             return MarketRawData(
@@ -919,14 +893,14 @@ def test_opportunity_top_list_only_contains_recommended_buy_candidates() -> None
         "opportunity",
     )
 
-    assert "推荐买入候选" in opportunity_html
+    assert "研究候选" in opportunity_html
     assert "推荐买入票" in opportunity_html
-    assert "动作：可小仓买入" in opportunity_html
-    assert "负资金票" not in opportunity_html
-    assert "动作：资金转强再买" not in opportunity_html
+    assert "负资金票" in opportunity_html
+    assert "资金面：净流出" in opportunity_html
+    assert "推荐买入候选" not in opportunity_html
 
 
-def test_opportunity_overheated_candidates_explain_why_ranked_and_wait_for_buy_point() -> None:
+def test_opportunity_overheated_candidates_surface_chase_risk_before_validation() -> None:
     class OverheatedOpportunityProvider(SampleDataProvider):
         def fetch_market(self) -> MarketRawData:
             return MarketRawData(
@@ -994,22 +968,17 @@ def test_opportunity_overheated_candidates_explain_why_ranked_and_wait_for_buy_p
         "opportunity",
     )
 
-    assert "为什么推荐买：" in opportunity_html
-    assert "动作：回踩买入候选" in opportunity_html
-    assert "买入条件：" in opportunity_html
-    assert "不能追高" in opportunity_html
+    assert "高位强股" in opportunity_html
+    assert "最大反证" in opportunity_html
+    assert "短线涨幅较大" in opportunity_html
+    assert "进入个股分析" in opportunity_html
+    assert "为什么推荐买" not in opportunity_html
 
 
-def test_opportunity_uses_stock_analysis_method_and_current_future_trend() -> None:
+def test_opportunity_uses_support_counter_and_next_verification_contract() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in [
-        "重点结论",
-        "简单原因",
-        "一周趋势",
-        "资金面",
-        "未来趋势",
-    ]:
+    for text in ["支持证据", "最大反证", "下一步：", "进入个股分析"]:
         assert text in opportunity_html
 
     for old_header in [
@@ -1025,7 +994,7 @@ def test_opportunity_uses_stock_analysis_method_and_current_future_trend() -> No
         assert old_header not in opportunity_html
 
 
-def test_opportunity_page_ranks_top_stocks_without_probability_wording() -> None:
+def test_opportunity_page_prioritizes_research_without_probability_wording() -> None:
     class ForwardOpportunityProvider(SampleDataProvider):
         def fetch_sectors(self) -> list[SectorRawData]:
             return [
@@ -1112,19 +1081,17 @@ def test_opportunity_page_ranks_top_stocks_without_probability_wording() -> None
         _sample_html(provider=ForwardOpportunityProvider()), "opportunity"
     )
 
-    assert "综合排序" in opportunity_html
-    assert "近5日K线" in opportunity_html
-    assert "资金净流入" in opportunity_html
-    assert "消息催化" in opportunity_html
-    assert "基本面" in opportunity_html
-    assert "热点：先进制造" in opportunity_html
+    assert "研究候选" in opportunity_html
+    assert "支持证据" in opportunity_html
+    assert "资金面：净流入" in opportunity_html
+    assert "消息面" in opportunity_html
+    assert "先进制造" in opportunity_html
     assert "概率" not in opportunity_html
     assert "综合排序 71/100" not in opportunity_html
-    assert "趋势潜力" in opportunity_html
-    assert "单日追高" not in opportunity_html
+    assert "最大反证" in opportunity_html
 
 
-def test_opportunity_focus_conclusion_is_future_trade_guidance_not_empty_verdict() -> None:
+def test_opportunity_focus_conclusion_is_gate_and_verification_not_trade_advice() -> None:
     class GuidanceProvider(SampleDataProvider):
         def fetch_sectors(self) -> list[SectorRawData]:
             return [
@@ -1164,13 +1131,10 @@ def test_opportunity_focus_conclusion_is_future_trade_guidance_not_empty_verdict
 
     assert "重点结论：未来指导观察，等确认" not in opportunity_html
     assert "重点结论：未来指导" not in opportunity_html
-    assert "动作：" in opportunity_html
-    assert "买入条件：" in opportunity_html
-    assert "风控：" in opportunity_html
-    assert any(
-        action in opportunity_html
-        for action in ["暂停买入", "低吸确认", "仅观察", "先不买", "不买"]
-    )
+    assert "机会总闸门" in opportunity_html
+    assert "下一步：" in opportunity_html
+    assert "最大反证" in opportunity_html
+    assert "买入条件：" not in opportunity_html
 
 
 def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> None:
@@ -1179,9 +1143,12 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
     stock_html = _workspace(html, "stock")
     opportunity_html = _workspace(html, "opportunity")
 
-    for section in [portfolio_html, opportunity_html]:
+    for section in [portfolio_html]:
         for text in ["动作：", "主因：", "触发：", "失效："]:
             assert text in section
+
+    for text in ["机会总闸门", "支持证据", "最大反证", "下一步："]:
+        assert text in opportunity_html
 
     for text in ["投委会结论", "转强触发", "失效退出", "最大反证"]:
         assert text in stock_html
@@ -1200,7 +1167,6 @@ def test_core_modules_show_explicit_buy_sell_guidance_not_only_analysis() -> Non
     legacy_sections = [
         _workspace(html, "market"),
         _workspace(html, "portfolio"),
-        _workspace(html, "opportunity"),
     ]
 
     for section in legacy_sections:
@@ -1210,6 +1176,12 @@ def test_core_modules_show_explicit_buy_sell_guidance_not_only_analysis() -> Non
     stock_html = _workspace(html, "stock")
     for text in ["仓位与执行边界", "入场触发", "减仓触发", "仓位上限", "失效条件"]:
         assert text in stock_html
+
+    opportunity_html = _workspace(html, "opportunity")
+    assert "机会总闸门" in opportunity_html
+    assert "进入个股分析" in opportunity_html
+    assert "买入触发" not in opportunity_html
+    assert "卖出/减仓" not in opportunity_html
 
     for vague_text in [
         "继续观察即可",
@@ -1261,7 +1233,7 @@ def test_opportunity_page_limits_full_market_to_top_30_stocks() -> None:
 def test_opportunity_stocks_hide_dual_git_method_chain_summary_only() -> None:
     opportunity_html = _workspace(_sample_html(), "opportunity")
 
-    for text in ["重点结论", "简单原因", "未来趋势"]:
+    for text in ["支持证据", "最大反证", "下一步："]:
         assert text in opportunity_html
 
     for text in [
@@ -1415,7 +1387,7 @@ def test_live_stock_news_fallback_feeds_stock_and_opportunity_when_snapshot_miss
     opportunity_html = _workspace(html, "opportunity")
 
     assert "联网新闻：603278 签订机器人订单" in stock_html
-    assert "消息面：联网新闻最新消息" in opportunity_html
+    assert "消息面：300222 签订机器人订单" in opportunity_html
     assert "300222 签订机器人订单" in opportunity_html
     assert "消息面：未接入个股新闻" not in opportunity_html
 
@@ -1789,8 +1761,9 @@ def test_opportunity_module_handles_limit_down_details_from_snapshot(tmp_path) -
     )
     opportunity_html = _workspace(html, "opportunity")
 
-    assert "暂无推荐买入候选" in opportunity_html
-    assert "二十厘米跌停" not in opportunity_html
+    assert "二十厘米跌停" in opportunity_html
+    assert "风险排除" in opportunity_html or "待补数据" in opportunity_html
+    assert "推荐买入" not in opportunity_html
 
 
 def test_structured_daily_decisions_do_not_recreate_home_module(tmp_path, monkeypatch) -> None:

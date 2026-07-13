@@ -20,10 +20,10 @@ def test_web_renders_professional_four_module_framework() -> None:
     assert "五步决策轨道" in html
     assert "风险登记表" in html
     assert "热点机会" in html
-    assert "推荐板块" in html
-    assert "推荐板块" in html
-    assert "推荐股票" in html
-    assert "推荐股票" in html
+    assert "机会总闸门" in html
+    assert "证据漏斗" in html
+    assert "研究候选" in html
+    assert "风险排除" in html
     assert "主要数据源" not in html
 
 
@@ -39,7 +39,7 @@ def test_web_keeps_professional_modules_connected_to_existing_data() -> None:
     assert "贵州茅台" in html
     assert "持仓/成本" in html
     assert 'href="/?code=' in html
-    assert "不构成投资建议" not in html
+    assert "不构成投资建议" in html
 
 
 def test_web_candidate_workspace_uses_observation_actions() -> None:
@@ -49,9 +49,10 @@ def test_web_candidate_workspace_uses_observation_actions() -> None:
         holdings_path="data/portfolio/holdings.csv",
     )
 
-    assert "推荐股票" in html
-    assert "原因" in html
-    assert "推荐股票" in html
+    assert "研究候选" in html
+    assert "支持证据" in html
+    assert "最大反证" in html
+    assert "推荐买入" not in html
     assert 'href="/?code=' in html
 
 

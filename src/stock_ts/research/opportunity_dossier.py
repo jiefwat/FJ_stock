@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from stock_ts.models import (
     CandidatePoolReport,
     CandidateStockAnalysis,
@@ -49,7 +51,7 @@ def build_opportunity_dossier(
             blocked=pool_blocked,
             quote_status=quote_status,
         )
-        for item in pool.candidates
+        for item in pool.candidates[:30]
     ]
     if not pool_blocked:
         decisions.sort(key=lambda item: (_STATE_PRIORITY[item.state], -_score(pool, item.code)))
@@ -125,14 +127,15 @@ def _candidate_decision(
         "风险排除": "先解除明确风险，不进入当前研究前排",
         "待补数据": "刷新最近交易日行情与候选证据后重新分类",
     }[state]
+    evidence, counter_evidence = _candidate_evidence(item, raw)
     return CandidateDecision(
         code=item.code,
         name=item.name,
         sector=item.sector or "未识别主题",
         state=state,
         strategy=_strategy(item),
-        evidence=tuple(item.reasons[:3]) or ("缺少可用支持证据",),
-        counter_evidence=tuple(item.risks[:3]) or ("缺少独立反证，仍需复核公告与流动性",),
+        evidence=evidence,
+        counter_evidence=counter_evidence,
         data_date=trade_date,
         data_status=data_status,
         next_verification=next_verification,
@@ -157,6 +160,30 @@ def _strategy(item: CandidateStockAnalysis) -> str:
     if item.score >= 75:
         return "主线强势与资金承接"
     return "主线观察"
+
+
+def _candidate_evidence(
+    item: CandidateStockAnalysis,
+    raw: CandidateStockRawData | None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    support = list(item.reasons[:3])
+    counter = list(item.risks[:3])
+    if raw is not None and raw.fund_flow is not None:
+        direction = "净流入" if raw.fund_flow >= 0 else "净流出"
+        target = support if raw.fund_flow >= 0 else counter
+        target.append(f"资金面：{direction} {abs(raw.fund_flow):.2f} 亿")
+    if raw is not None and raw.news_items:
+        latest_news = raw.news_items[0]
+        target = counter if latest_news.sentiment == "negative" else support
+        target.append(f"消息面：{latest_news.title}")
+    if raw is not None and raw.announcements:
+        title = str(raw.announcements[0].get("title") or "").strip()
+        if title:
+            counter.append(f"公告复核：{title}")
+    return (
+        tuple(support[:5]) or ("缺少可用支持证据",),
+        tuple(counter[:5]) or ("缺少独立反证，仍需复核公告与流动性",),
+    )
 
 
 def _gate(
@@ -244,7 +271,11 @@ def _risk_register(
 
 
 def _scanned_count(metadata: dict[str, str]) -> int | None:
-    value = metadata.get("universe_size") or metadata.get("scanned")
+    value = (
+        metadata.get("universe_size")
+        or metadata.get("scanned")
+        or metadata.get("scanned_count")
+    )
     try:
         return int(value) if value not in {None, ""} else None
     except (TypeError, ValueError):
@@ -253,10 +284,22 @@ def _scanned_count(metadata: dict[str, str]) -> int | None:
 
 def _metadata_notes(metadata: dict[str, str]) -> list[str]:
     return [
-        f"{key}={value}"
+        f"{key}={_metadata_value(value)}"
         for key, value in sorted(metadata.items())
         if value not in {None, ""}
     ][:8]
+
+
+def _metadata_value(value: object) -> str:
+    text = str(value)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    beijing = parsed.astimezone(timezone(timedelta(hours=8)))
+    return f"{beijing:%Y-%m-%d %H:%M:%S} 北京时间"
 
 
 def _score(pool: CandidatePoolReport, code: str) -> int:

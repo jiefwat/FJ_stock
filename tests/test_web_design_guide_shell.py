@@ -70,7 +70,7 @@ def test_four_modules_keep_module_owned_actions() -> None:
         'class="stock-form" method="get"',
         "持仓分析",
         "分析内容",
-        "推荐股票",
+        "研究候选",
         'href="/?code=',
     ]:
         assert text in html
@@ -92,12 +92,7 @@ def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     opportunity_start = html.index('id="opportunity"')
     opportunity_html = html[opportunity_start:]
 
-    for text in [
-        "推荐板块",
-        "推荐股票",
-        "重点结论",
-        "简单原因",
-    ]:
+    for text in ["板块与市场支持证据", "研究候选", "支持证据", "最大反证"]:
         assert text in opportunity_html
 
 

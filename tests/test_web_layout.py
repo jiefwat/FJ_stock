@@ -49,9 +49,9 @@ def test_four_modules_explain_professional_data_flow() -> None:
     assert "对应板块分析" not in html
     assert "仓位/成本分析" not in html
     assert "分析内容" in html
-    assert "推荐板块" in html
-    assert "推荐股票" in html
-    assert "推荐股票" in html
+    assert "板块与市场支持证据" in html
+    assert "研究候选" in html
+    assert "证据漏斗" in html
 
 
 def test_web_page_renders_visual_components_instead_of_markdown_blocks() -> None:
@@ -69,12 +69,11 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     html = render_page(stock_code="600519", holdings_path="data/portfolio/holdings.csv")
 
     assert "持仓分析" in html
-    assert "技术面" in html
-    assert "资金面" in html
-    assert "基本面" in html
-    assert "消息面" in html
-    assert "板块/主题" in html
-    assert "仓位成本" in html
+    assert "技术结构" in html
+    assert "资金与交易" in html
+    assert "财务质量" in html
+    assert "事件风险" in html
+    assert "估值" in html
     assert "分析入口" in html
     assert "投委会结论" in html
     assert "五步决策轨道" in html
