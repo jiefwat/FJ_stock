@@ -1,11 +1,13 @@
 import inspect
 
 from stock_ts import web
+from stock_ts.models import IndexQuote, MarketHistoryPoint, MarketSnapshot
 from stock_ts.research.evidence import EvidenceStatus
 from stock_ts.research.market_regime import (
     MarketRegimeAssessment,
     MarketRegimeDimension,
     MarketScenario,
+    assess_market_regime,
 )
 from stock_ts.webapp.market_workspace import render_market_workspace
 
@@ -63,3 +65,41 @@ def test_market_orchestration_consumes_typed_quote_status() -> None:
 
     assert "quality.quote_status" in source
     assert '"数据已滞后" in warning' not in source
+
+
+def test_market_workspace_renders_cross_period_evidence() -> None:
+    history = [
+        MarketHistoryPoint(
+            f"2026-07-{10 + index:02d}",
+            2000 + index * 300,
+            2800 - index * 250,
+            (2000 + index * 300) / (2800 - index * 250),
+            50 + index * 5,
+            24 - index * 4,
+            9000 + index * 600,
+        )
+        for index in range(3)
+    ]
+    market = MarketSnapshot(
+        trade_date="2026-07-12",
+        heat_score=58,
+        breadth_ratio=1.2,
+        summary="测试",
+        regime="轮动",
+        indices=[IndexQuote("000001", "上证指数", 3500, 0.5, 10200)],
+        top_sectors=[("机器人", 2.1)],
+        dimensions=[],
+        opportunities=[],
+        risks=[],
+        tomorrow_watch=[],
+        limit_up_count=60,
+        limit_down_count=16,
+        advancing_count=2600,
+        declining_count=2200,
+        history=history,
+    )
+
+    html = render_market_workspace(assess_market_regime(market))
+
+    assert "近 3 个交易日" in html
+    assert "流动性代理" in html

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from stock_ts.models import MarketSnapshot
+from stock_ts.models import MarketHistoryPoint, MarketSnapshot
 
 from .evidence import EvidenceStatus
 
@@ -65,7 +65,13 @@ def assess_market_regime(
     degraded_count = sum(item.status != EvidenceStatus.COMPLETE for item in dimensions)
     confidence = max(
         0,
-        min(100, 82 - degraded_count * 4 - _contradiction_penalty(market, stage)),
+        min(
+            100,
+            86
+            - degraded_count * 4
+            + _history_depth_bonus(market)
+            - _contradiction_penalty(market, stage),
+        ),
     )
     support = _supporting_evidence(market, stage)
     counter = _counter_evidence(market, stage)
@@ -137,6 +143,9 @@ def _dimensions(
     ) or "缺少主要指数"
     amount = sum(item.amount for item in market.indices if item.amount)
     top_style = "、".join(name for name, _ in market.top_sectors[:3]) or "主线缺失"
+    history = _recent_history(market)
+    breadth_dimension = _breadth_dimension(market, history)
+    liquidity_dimension = _liquidity_dimension(amount, history)
     return (
         MarketRegimeDimension(
             "趋势",
@@ -146,24 +155,8 @@ def _dimensions(
             62,
             ("指数历史序列",),
         ),
-        MarketRegimeDimension(
-            "宽度",
-            EvidenceStatus.COMPLETE,
-            "参与度偏强" if market.breadth_ratio >= 1 else "参与度偏弱",
-            (
-                f"上涨 {market.advancing_count} / 下跌 {market.declining_count}，"
-                f"宽度比 {market.breadth_ratio:.2f}。"
-            ),
-            88,
-        ),
-        MarketRegimeDimension(
-            "流动性",
-            EvidenceStatus.DEGRADED,
-            "成交截面可见，放缩量待验证",
-            f"主要指数成交额合计 {amount:.2f}；仅有当日截面，不能判断放量或缩量。",
-            55,
-            ("前一交易日成交额",),
-        ),
+        breadth_dimension,
+        liquidity_dimension,
         MarketRegimeDimension(
             "风格",
             EvidenceStatus.DEGRADED,
@@ -180,6 +173,119 @@ def _dimensions(
             86,
         ),
     )
+
+
+def _breadth_dimension(
+    market: MarketSnapshot,
+    history: tuple[MarketHistoryPoint, ...],
+) -> MarketRegimeDimension:
+    if len(history) >= 3:
+        first, latest = history[0], history[-1]
+        direction = _direction(first.breadth_ratio, latest.breadth_ratio)
+        risk_direction = _risk_direction(first.limit_down, latest.limit_down)
+        return MarketRegimeDimension(
+            "宽度",
+            EvidenceStatus.COMPLETE,
+            f"近{len(history)}日参与度{direction}",
+            (
+                f"近 {len(history)} 个交易日宽度比 {first.breadth_ratio:.2f} -> "
+                f"{latest.breadth_ratio:.2f}；跌停 {first.limit_down} -> "
+                f"{latest.limit_down}（{risk_direction}）。"
+            ),
+            90,
+        )
+    if len(history) == 2:
+        first, latest = history
+        return MarketRegimeDimension(
+            "宽度",
+            EvidenceStatus.DEGRADED,
+            "参与度短样本可比",
+            (
+                f"短样本：近 2 个交易日宽度比 {first.breadth_ratio:.2f} -> "
+                f"{latest.breadth_ratio:.2f}，不足以确认持续性。"
+            ),
+            68,
+            ("至少 3 个交易日宽度",),
+        )
+    return MarketRegimeDimension(
+        "宽度",
+        EvidenceStatus.DEGRADED,
+        "参与度偏强" if market.breadth_ratio >= 1 else "参与度偏弱",
+        (
+            f"上涨 {market.advancing_count} / 下跌 {market.declining_count}，"
+            f"宽度比 {market.breadth_ratio:.2f}；仅有当日截面。"
+        ),
+        62,
+        ("至少 3 个交易日宽度",),
+    )
+
+
+def _liquidity_dimension(
+    current_amount: float,
+    history: tuple[MarketHistoryPoint, ...],
+) -> MarketRegimeDimension:
+    amounts = [item.amount for item in history if item.amount > 0]
+    if len(amounts) >= 3:
+        direction = _direction(amounts[0], amounts[-1], tolerance=max(amounts[0] * 0.03, 1))
+        return MarketRegimeDimension(
+            "流动性",
+            EvidenceStatus.COMPLETE,
+            f"主要指数流动性代理{direction}",
+            (
+                f"近 {len(amounts)} 个交易日流动性代理 {amounts[0]:.2f} -> "
+                f"{amounts[-1]:.2f}；该值为主要指数成交额代理。"
+            ),
+            82,
+        )
+    if len(amounts) == 2:
+        return MarketRegimeDimension(
+            "流动性",
+            EvidenceStatus.DEGRADED,
+            "成交短样本可比",
+            (
+                f"短样本：近 2 个交易日流动性代理 {amounts[0]:.2f} -> "
+                f"{amounts[-1]:.2f}，不足以确认放缩量趋势。"
+            ),
+            64,
+            ("至少 3 个交易日成交额代理",),
+        )
+    return MarketRegimeDimension(
+        "流动性",
+        EvidenceStatus.DEGRADED,
+        "成交截面可见，放缩量待验证",
+        f"主要指数成交额合计 {current_amount:.2f}；仅有当日截面，不能判断放量或缩量。",
+        55,
+        ("至少 3 个交易日成交额代理",),
+    )
+
+
+def _recent_history(market: MarketSnapshot) -> tuple[MarketHistoryPoint, ...]:
+    return tuple(sorted(market.history, key=lambda item: item.trade_date)[-5:])
+
+
+def _direction(first: float, latest: float, *, tolerance: float = 0.05) -> str:
+    if latest > first + tolerance:
+        return "改善"
+    if latest < first - tolerance:
+        return "回落"
+    return "平稳"
+
+
+def _risk_direction(first: int, latest: int) -> str:
+    if latest < first:
+        return "收敛"
+    if latest > first:
+        return "扩散"
+    return "持平"
+
+
+def _history_depth_bonus(market: MarketSnapshot) -> int:
+    count = len(_recent_history(market))
+    if count >= 5:
+        return 8
+    if count >= 3:
+        return 4
+    return 0
 
 
 def _supporting_evidence(market: MarketSnapshot, stage: str) -> tuple[str, ...]:

@@ -1,4 +1,6 @@
-from stock_ts.models import IndexQuote, MarketSnapshot
+from dataclasses import replace
+
+from stock_ts.models import IndexQuote, MarketHistoryPoint, MarketSnapshot
 from stock_ts.research.evidence import EvidenceStatus
 from stock_ts.research.market_regime import assess_market_regime
 
@@ -27,6 +29,33 @@ def _market(
         limit_down_count=limit_down,
         advancing_count=advancing,
         declining_count=declining,
+    )
+
+
+def _history(count: int) -> list[MarketHistoryPoint]:
+    return [
+        MarketHistoryPoint(
+            trade_date=f"2026-07-{8 + index:02d}",
+            advancing=1800 + index * 250,
+            declining=2800 - index * 200,
+            breadth_ratio=(1800 + index * 250) / (2800 - index * 200),
+            limit_up=45 + index * 5,
+            limit_down=25 - index * 3,
+            amount=9000 + index * 500,
+        )
+        for index in range(count)
+    ]
+
+
+def _market_with_history(
+    history: list[MarketHistoryPoint],
+    *,
+    heat: int = 58,
+    limit_down: int = 12,
+) -> MarketSnapshot:
+    return replace(
+        _market(heat=heat, advancing=2600, declining=2300, limit_down=limit_down),
+        history=history,
     )
 
 
@@ -104,3 +133,34 @@ def test_contradictory_high_heat_risk_release_reduces_confidence() -> None:
 
     assert conflicted.stage == consistent.stage == "风险释放"
     assert conflicted.confidence < consistent.confidence
+
+
+def test_one_market_history_point_keeps_single_day_limitations() -> None:
+    result = assess_market_regime(_market_with_history(_history(1)))
+    breadth = next(item for item in result.dimensions if item.name == "宽度")
+    liquidity = next(item for item in result.dimensions if item.name == "流动性")
+
+    assert breadth.status == EvidenceStatus.DEGRADED
+    assert liquidity.status == EvidenceStatus.DEGRADED
+    assert "仅有当日截面" in breadth.evidence
+
+
+def test_three_market_history_points_create_cross_period_evidence() -> None:
+    result = assess_market_regime(_market_with_history(_history(3)))
+    breadth = next(item for item in result.dimensions if item.name == "宽度")
+    liquidity = next(item for item in result.dimensions if item.name == "流动性")
+
+    assert breadth.status == EvidenceStatus.COMPLETE
+    assert liquidity.status == EvidenceStatus.COMPLETE
+    assert "近 3 个交易日" in breadth.evidence
+    assert "流动性代理" in liquidity.evidence
+    assert "跌停" in breadth.evidence
+
+
+def test_positive_history_never_overrides_current_extreme_risk() -> None:
+    result = assess_market_regime(
+        _market_with_history(_history(5), heat=60, limit_down=80)
+    )
+
+    assert result.stage == "风险释放"
+    assert result.risk_budget == "10%-30%"
