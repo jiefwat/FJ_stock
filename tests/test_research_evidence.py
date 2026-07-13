@@ -1,4 +1,12 @@
-from stock_ts.research.evidence import EvidenceItem, EvidenceStatus, audit_status
+from stock_ts.research.evidence import (
+    EvidenceItem,
+    EvidenceStatus,
+    ResearchInputQuality,
+    audit_status,
+    fundamental_metric_coverage,
+    has_comparable_valuation,
+    has_usable_events,
+)
 
 
 def test_audit_status_blocks_stale_required_data() -> None:
@@ -26,3 +34,38 @@ def test_audit_status_is_complete_when_every_block_is_complete() -> None:
     ]
 
     assert audit_status(items, required={"行情"}) == EvidenceStatus.COMPLETE
+
+
+def test_research_input_quality_defaults_to_safe_empty_evidence() -> None:
+    quality = ResearchInputQuality()
+
+    assert quality.quote_status == EvidenceStatus.COMPLETE
+    assert quality.fundamental_coverage == 0.0
+    assert quality.valuation_comparable is False
+    assert quality.event_status == EvidenceStatus.MISSING
+
+
+def test_metadata_only_fundamentals_have_zero_coverage() -> None:
+    assert fundamental_metric_coverage(
+        {"source": "tushare", "date": "2026-03-31", "industry": "银行"}
+    ) == 0.0
+
+
+def test_fundamental_coverage_counts_only_numeric_quality_metrics() -> None:
+    coverage = fundamental_metric_coverage(
+        {"revenue_yoy": 12.0, "roe": "8.5", "gross_margin": "invalid"}
+    )
+
+    assert coverage == 2 / 6
+
+
+def test_comparable_valuation_requires_valid_numeric_reference() -> None:
+    assert has_comparable_valuation({"pe_percentile": 20}) is True
+    assert has_comparable_valuation({"pe_percentile": 120}) is False
+    assert has_comparable_valuation({"pe_ttm": 12, "industry_pe_median": 15}) is True
+    assert has_comparable_valuation({"industry_pe_median": "invalid"}) is False
+
+
+def test_events_require_a_non_blank_title() -> None:
+    assert has_usable_events([{"title": "  "}], []) is False
+    assert has_usable_events([{"title": "季度经营公告"}], []) is True
