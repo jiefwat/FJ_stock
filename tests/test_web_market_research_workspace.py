@@ -1,3 +1,6 @@
+import inspect
+
+from stock_ts import web
 from stock_ts.research.evidence import EvidenceStatus
 from stock_ts.research.market_regime import (
     MarketRegimeAssessment,
@@ -53,3 +56,10 @@ def test_market_workspace_exposes_snapshot_limitations() -> None:
     assert "仅有当日截面" in html
     assert "持续增强" not in html
     assert "指数历史序列" in html
+
+
+def test_market_orchestration_consumes_typed_quote_status() -> None:
+    source = inspect.getsource(web._render_compact_market_module)
+
+    assert "quality.quote_status" in source
+    assert '"数据已滞后" in warning' not in source

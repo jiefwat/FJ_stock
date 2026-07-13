@@ -59,7 +59,13 @@ from .professional_research import (
 )
 from .providers import create_provider
 from .providers.base import StockDataProvider
-from .research.evidence import EvidenceStatus
+from .research.evidence import (
+    EvidenceStatus,
+    ResearchInputQuality,
+    fundamental_metric_coverage,
+    has_comparable_valuation,
+    has_usable_events,
+)
 from .research.market_regime import assess_market_regime
 from .research.stock_memo import build_stock_research_memo
 from .research_playbook import DecisionDashboard
@@ -910,6 +916,7 @@ class DataQualityView:
     gate_level: str
     signal: str
     summary: str
+    quote_status: EvidenceStatus
     blocked_actions: list[str]
     data_center: DataCenterView
 
@@ -2810,13 +2817,13 @@ def _assess_data_quality(
     blocked_actions: list[str] = []
     candidate_price_reliable = candidates.price_reliable
     candidate_universe_reliable = _candidate_universe_prices_reliable(candidate_universe)
-    freshness_warnings = _trade_date_freshness_warnings(
+    quote_freshness_warnings = _trade_date_freshness_warnings(
         requested_provider=requested_provider,
         actual_provider=actual_provider,
         stock_date=stock.trade_date,
         market_date=market.trade_date,
     )
-    freshness_warnings.extend(
+    quote_freshness_warnings.extend(
         _kline_freshness_warnings(
             requested_provider=requested_provider,
             actual_provider=actual_provider,
@@ -2824,7 +2831,11 @@ def _assess_data_quality(
             candidate_universe=candidate_universe,
         )
     )
-    freshness_warnings.extend(_pipeline_freshness_warnings())
+    pipeline_freshness_warnings = _pipeline_freshness_warnings()
+    freshness_warnings = [*quote_freshness_warnings, *pipeline_freshness_warnings]
+    quote_status = (
+        EvidenceStatus.STALE if freshness_warnings else EvidenceStatus.COMPLETE
+    )
     if freshness_warnings:
         warnings.extend(freshness_warnings)
         blocked_actions.extend(["候选排序", "评分展示", "按今天盘面执行"])
@@ -2904,6 +2915,7 @@ def _assess_data_quality(
         gate_level=gate_level,
         signal=signal,
         summary=summary,
+        quote_status=quote_status,
         blocked_actions=blocked_actions,
         data_center=data_center,
     )
@@ -6538,16 +6550,9 @@ def _render_compact_market_module(
         holdings_path=holdings_path,
     )
     event_panel = _render_market_sentiment_panel(news, candidate_universe=candidate_universe)
-    stale = bool(
-        quality
-        and any(
-            "数据已滞后" in warning or "大盘行情滞后" in warning
-            for warning in quality.warnings
-        )
-    )
     assessment = assess_market_regime(
         market,
-        quote_status=EvidenceStatus.STALE if stale else EvidenceStatus.COMPLETE,
+        quote_status=quality.quote_status if quality else EvidenceStatus.COMPLETE,
     )
     refresh_tools = _render_module_refresh_tools(
         refresh_time=refresh_time,
@@ -9699,11 +9704,30 @@ def _render_compact_stock_module(
         ),
         None,
     )
+    input_quality = ResearchInputQuality(
+        quote_status=quality.quote_status,
+        fundamental_coverage=fundamental_metric_coverage(stock_raw.fundamental_metrics),
+        valuation_comparable=has_comparable_valuation(
+            stock_raw.valuation,
+            pe_ttm=stock_raw.pe_ttm,
+        ),
+        event_status=(
+            EvidenceStatus.DEGRADED
+            if has_usable_events(stock_raw.announcements, stock_raw.news_items)
+            else EvidenceStatus.MISSING
+        ),
+        blockers=(
+            tuple(quality.warnings)
+            if quality.quote_status != EvidenceStatus.COMPLETE
+            else ()
+        ),
+    )
     memo = build_stock_research_memo(
         stock_raw,
         holding=holding,
         technical=technical,
         event_radar=event_radar,
+        input_quality=input_quality,
     )
     refresh_tools = _render_module_refresh_tools(
         refresh_time=refresh_time,

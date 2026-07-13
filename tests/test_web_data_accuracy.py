@@ -1,8 +1,23 @@
+import inspect
 import json
 from pathlib import Path
+from typing import get_type_hints
 
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
-from stock_ts.web import _safe_fetch_announcements, render_page
+from stock_ts.research.evidence import EvidenceStatus
+from stock_ts.web import (
+    DataQualityView,
+    _assess_data_quality,
+    _safe_fetch_announcements,
+    render_page,
+)
+
+
+def test_data_quality_exposes_typed_research_quote_status() -> None:
+    assert get_type_hints(DataQualityView)["quote_status"] is EvidenceStatus
+    source = inspect.getsource(_assess_data_quality)
+    assert "quote_freshness_warnings" in source
+    assert "quote_status=" in source
 
 
 def test_web_default_does_not_block_on_live_announcement_fetch(monkeypatch) -> None:
@@ -363,6 +378,7 @@ def test_web_blocks_opportunity_ranking_when_snapshot_trade_date_is_stale(
 
     assert "数据已滞后：最近应为 2026-07-10" in html
     assert "不能按今天盘面执行" in html
+    assert 'data-research-status="数据暂停"' in html
     assert "数据质量：已滞后，不能排到前列" in html
     assert "排序暂停" in html
 

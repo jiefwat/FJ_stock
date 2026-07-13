@@ -1,3 +1,6 @@
+import inspect
+
+from stock_ts import web
 from stock_ts.models import DailyBar, StockRawData
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 from stock_ts.research.stock_memo import build_stock_research_memo
@@ -73,3 +76,10 @@ def test_stock_workspace_surfaces_stale_quote_pause() -> None:
     assert "置信度 0/100" in html
     assert "刷新最近交易日行情后重新评估" in html
     assert "等待技术触发后再分配风险预算" not in html
+
+
+def test_stock_orchestration_passes_typed_input_quality() -> None:
+    source = inspect.getsource(web._render_compact_stock_module)
+
+    assert "quality.quote_status" in source
+    assert "input_quality=" in source
