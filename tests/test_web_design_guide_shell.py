@@ -128,3 +128,16 @@ def test_research_tape_and_mobile_shell_have_explicit_density_rules() -> None:
     assert ".research-tape-item.secondary" in mobile
     assert "display:none" in compact_mobile
     assert ".research-tape-data-link:focus-visible" in CSS
+
+
+def test_dense_research_records_use_shared_disclosure_visuals() -> None:
+    for selector in [
+        ".research-overflow",
+        ".research-overflow summary",
+        ".candidate-overflow",
+        ".portfolio-queue-overflow",
+        ".portfolio-boundary-overflow",
+    ]:
+        assert selector in CSS
+    assert "position:sticky" in CSS.replace(" ", "")
+    assert ".opportunity-risk-register" in CSS

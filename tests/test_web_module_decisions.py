@@ -2056,7 +2056,7 @@ def test_global_freshness_bar_stays_ok_when_only_optional_stock_context_is_missi
         provider_name="tdx-snapshot",
         stock_code="600519",
     )
-    freshness_start = html.index('aria-label="全局数据新鲜度"')
+    freshness_start = html.index('aria-label="全局研究状态"')
     freshness_end = html.index('aria-label="数据中台摘要"')
     freshness_html = html[freshness_start:freshness_end]
     data_center_html = _workspace(html, "data-center")
