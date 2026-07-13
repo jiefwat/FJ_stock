@@ -2264,7 +2264,7 @@ def test_market_sector_direction_explains_catalyst_not_market_snapshot() -> None
 def test_professional_market_diagnosis_uses_reason_chain_not_metric_snapshot() -> None:
     market_html = _workspace(_sample_html(), "market")
     diagnosis_html = market_html[
-        market_html.index("专业大盘研判") : market_html.index("异动事件")
+        market_html.index("专业大盘研判") : market_html.index("买卖指导")
     ]
 
     for text in ["资金行为", "催化核验", "基本面", "代表股"]:
@@ -2277,6 +2277,19 @@ def test_professional_market_diagnosis_uses_reason_chain_not_metric_snapshot() -
         ">6%资金流入样本",
     ]:
         assert shallow_text not in diagnosis_html
+
+
+def test_daily_market_moves_dense_evidence_into_session_specific_surfaces() -> None:
+    market_html = _workspace(_sample_html(), "market")
+    intraday_start = market_html.index('<details class="market-intraday-ledger">')
+    close_start = market_html.index('class="market-session-phase phase-close"')
+
+    assert market_html.index("板块热力图") < intraday_start
+    assert intraday_start < market_html.index("大涨大跌分析") < close_start
+    assert intraday_start < market_html.index("强势板块Top5") < close_start
+    assert intraday_start < market_html.index("异动事件") < close_start
+    assert close_start < market_html.index("专业大盘研判")
+    assert close_start < market_html.index("买卖指导")
 
 
 def test_market_mainline_summary_does_not_restate_price_results_as_reason() -> None:

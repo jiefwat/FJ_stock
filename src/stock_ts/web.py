@@ -6515,14 +6515,14 @@ def _render_compact_market_module(
     research_workspace = render_market_workspace(
         assessment,
         distribution_html=distribution,
-        sectors_html=(
-            f"{sector_heatmap}{mainline_panel}{wide_move_panel}"
+        sectors_html=f"{sector_heatmap}{mainline_panel}",
+        intraday_detail_html=(
+            f"{wide_move_panel}"
             f"<div class='market-sector-duo'>{strong_sectors}{weak_sectors}</div>"
-            f"{analysis_panel}"
         ),
         events_html=event_panel,
         refresh_html=refresh_tools,
-        supporting_html=trade_guidance,
+        close_html=f"{analysis_panel}{trade_guidance}",
     )
     return f"""
     <section class="module market-console" id="module-market">

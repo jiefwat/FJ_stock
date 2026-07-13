@@ -66,6 +66,35 @@ def test_market_workspace_has_one_ordered_five_step_decision_rail() -> None:
     assert html.index("五步风险决策轨道") < html.index("趋势与宽度")
 
 
+def test_market_workspace_uses_three_session_playbook_and_preserves_details() -> None:
+    html = render_market_workspace(
+        _assessment(),
+        distribution_html="DISTRIBUTION-EVIDENCE",
+        sectors_html="MAINLINE-EVIDENCE",
+        intraday_detail_html="INTRADAY-DETAIL-EVIDENCE",
+        close_html="CLOSE-REVIEW-EVIDENCE",
+    )
+
+    assert html.count('class="market-session-phase') == 3
+    phase_labels = ["盘前框架", "盘中验证", "收盘复核"]
+    assert [html.index(label) for label in phase_labels] == sorted(
+        html.index(label) for label in phase_labels
+    )
+    live_phase_start = html.index('class="market-session-phase phase-live"')
+    assert html.index("核心判断") < live_phase_start
+    assert html.index("三情景推演") < live_phase_start
+    assert "DISTRIBUTION-EVIDENCE" in html
+    assert "MAINLINE-EVIDENCE" in html
+    assert '<details class="market-intraday-ledger">' in html
+    assert "展开盘中异动、强弱板块与事件底稿" in html
+    assert html.index("INTRADAY-DETAIL-EVIDENCE") < html.index(
+        "CLOSE-REVIEW-EVIDENCE"
+    )
+    details_start = html.index('<details class="market-intraday-ledger">')
+    details_tag_end = html.index(">", details_start)
+    assert " open" not in html[details_start:details_tag_end]
+
+
 def test_stale_market_rail_pauses_every_step_and_hides_old_triggers() -> None:
     stale = replace(
         _assessment(),
