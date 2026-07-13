@@ -9,7 +9,12 @@ from .evidence import (
     has_comparable_valuation,
     has_usable_events,
 )
-from .stock_diagnostics import build_financial_diagnostic, build_valuation_diagnostic
+from .stock_diagnostics import (
+    build_capital_diagnostic,
+    build_financial_diagnostic,
+    build_technical_diagnostic,
+    build_valuation_diagnostic,
+)
 from .stock_dossier_models import (
     DecisionStep,
     DossierVerdict,
@@ -97,6 +102,8 @@ def build_professional_stock_dossier(
     diagnostics = (
         build_financial_diagnostic(raw),
         build_valuation_diagnostic(raw),
+        build_technical_diagnostic(raw, technical),
+        build_capital_diagnostic(raw),
     )
     return ProfessionalStockDossier(
         code=raw.code,

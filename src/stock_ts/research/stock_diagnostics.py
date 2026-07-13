@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+from statistics import pstdev
 
 from stock_ts.models import StockRawData
+from stock_ts.professional_research import TechnicalProfile
 
 from .stock_dossier_models import DiagnosticBlock
 
@@ -155,6 +157,140 @@ def build_valuation_diagnostic(raw: StockRawData) -> DiagnosticBlock:
     )
 
 
+def build_technical_diagnostic(
+    raw: StockRawData,
+    technical: TechnicalProfile,
+) -> DiagnosticBlock:
+    closes = [bar.close for bar in raw.bars]
+    if not closes:
+        return DiagnosticBlock(
+            name="技术结构",
+            status="missing",
+            conclusion="K 线缺失，不能判断价格结构。",
+            facts=(),
+            risks=("价格证据缺口",),
+            limitation="需要至少两个交易日；多周期判断需要至少 61 个收盘价。",
+        )
+    return_1 = _period_return(closes, 1)
+    return_5 = _period_return(closes, 5)
+    return_20 = _period_return(closes, 20)
+    return_60 = _period_return(closes, 60)
+    recent_60 = closes[-60:]
+    high_60 = max(recent_60)
+    low_20 = min(closes[-20:])
+    latest = closes[-1]
+    drawdown_60 = (latest / high_60 - 1) * 100 if high_60 else None
+    volatility_20 = _realized_volatility(closes[-21:])
+    if (
+        technical.ma20 is not None
+        and latest < technical.ma20
+        and latest <= low_20 * 1.03
+    ):
+        regime = "破位风险"
+    elif return_20 is not None and return_20 <= -10 and (
+        (return_1 is not None and return_1 > 0)
+        or (return_5 is not None and return_5 > 0)
+    ):
+        regime = "反弹尝试，尚未修复中期趋势"
+    elif (
+        technical.ma20 is not None
+        and latest < technical.ma20
+        and return_20 is not None
+        and return_20 < 0
+    ):
+        regime = "趋势走弱"
+    elif (
+        technical.ma20 is not None
+        and latest >= technical.ma20
+        and return_20 is not None
+        and return_20 > 0
+        and technical.volume_ratio >= 1.0
+    ):
+        regime = "趋势延续"
+    else:
+        regime = "区间整理"
+    facts = tuple(
+        item
+        for item in (
+            _return_fact("5日", return_5),
+            _return_fact("20日", return_20),
+            _return_fact("60日", return_60),
+            _return_fact("距60日高点", drawdown_60),
+            _return_fact("20日年化波动", volatility_20),
+            f"支撑 {technical.support:.2f} / 压力 {technical.resistance:.2f}",
+            f"RSI14 {technical.rsi14:.1f}" if technical.rsi14 is not None else "",
+            technical.macd_status,
+            f"量能比 {technical.volume_ratio:.2f}x",
+        )
+        if item
+    )
+    risks = []
+    if return_20 is not None and return_20 <= -10:
+        risks.append("20日价格损伤")
+    if drawdown_60 is not None and drawdown_60 <= -20:
+        risks.append("距60日高点回撤较大")
+    status = "complete" if len(closes) >= 61 else "degraded"
+    return DiagnosticBlock(
+        name="技术结构",
+        status=status,
+        conclusion=f"{regime}；{technical.structure}。",
+        facts=facts,
+        risks=tuple(risks),
+        limitation="技术结构定义触发与失效，不证明盈利质量或长期价值。",
+    )
+
+
+def build_capital_diagnostic(raw: StockRawData) -> DiagnosticBlock:
+    detail = raw.fund_flow_detail
+    source = str(detail.get("source") or "")
+    true_money_flow = raw.fund_flow is not None and any(
+        marker in source.lower() for marker in ("moneyflow", "fund_flow")
+    )
+    if true_money_flow:
+        direction = "主力净流入" if raw.fund_flow >= 0 else "主力净流出"
+        facts = [f"{direction} {abs(raw.fund_flow):.2f} 亿"]
+        main_pct = _number(detail.get("main_net_pct"))
+        if main_pct is not None:
+            facts.append(f"主力净占比 {main_pct:.2f}%")
+        return DiagnosticBlock(
+            name="资金与交易",
+            status="degraded",
+            conclusion=f"{direction}证据可用，但仍需价格确认。",
+            facts=tuple(facts),
+            risks=(),
+            limitation="单日资金流不能证明持续性。",
+        )
+    amount = _number(detail.get("amount_yuan"))
+    turnover = _number(detail.get("turnover_rate"))
+    facts = tuple(
+        item
+        for item in (
+            f"成交额 {amount / 100_000_000:.2f} 亿" if amount is not None else "",
+            f"换手率 {turnover:.2f}%" if turnover is not None else "",
+            f"来源 {source}" if source else "",
+        )
+        if item
+    )
+    if not facts:
+        return DiagnosticBlock(
+            name="资金与交易",
+            status="missing",
+            conclusion="资金与成交活跃度证据缺失。",
+            facts=(),
+            risks=("资金证据缺口",),
+            limitation="不能用成交量代理主力净流入。",
+        )
+    risk = ("高换手可能代表分歧",) if turnover is not None and turnover >= 8 else ()
+    return DiagnosticBlock(
+        name="资金与交易",
+        status="degraded",
+        conclusion="成交活跃度可用，只用于判断交易分歧与承接。",
+        facts=facts,
+        risks=risk,
+        limitation="单日成交活跃不等同主力净流入，也不能证明资金持续性。",
+    )
+
+
 def _number(value: object) -> float | None:
     if value in {None, ""}:
         return None
@@ -181,3 +317,24 @@ def _ratio(
     if numerator is None or denominator is None or denominator == 0:
         return ""
     return f"{label} {numerator / denominator * 100:.2f}%"
+
+
+def _period_return(closes: list[float], sessions: int) -> float | None:
+    if len(closes) <= sessions or closes[-sessions - 1] == 0:
+        return None
+    return (closes[-1] / closes[-sessions - 1] - 1) * 100
+
+
+def _realized_volatility(closes: list[float]) -> float | None:
+    if len(closes) < 3:
+        return None
+    returns = [
+        current / previous - 1
+        for previous, current in zip(closes, closes[1:])
+        if previous > 0
+    ]
+    return pstdev(returns) * math.sqrt(252) * 100 if len(returns) >= 2 else None
+
+
+def _return_fact(label: str, value: float | None) -> str:
+    return "" if value is None else f"{label} {value:+.2f}%"

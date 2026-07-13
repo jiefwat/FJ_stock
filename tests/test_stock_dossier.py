@@ -27,6 +27,9 @@ def _raw_stock(
     pe_ttm: float | None = 12.0,
     valuation: dict[str, float | str | None] | None = None,
     fundamental_metrics: dict[str, float | str | None] | None = None,
+    bars: list[DailyBar] | None = None,
+    fund_flow: float | None = None,
+    fund_flow_detail: dict[str, float | str | None] | None = None,
 ) -> StockRawData:
     default_metrics: dict[str, float | str | None] = (
         {
@@ -43,7 +46,8 @@ def _raw_stock(
     return StockRawData(
         code="603278",
         name="大业股份",
-        bars=_bars(close=close),
+        bars=bars if bars is not None else _bars(close=close),
+        fund_flow=fund_flow,
         pe_ttm=pe_ttm,
         valuation=(
             valuation
@@ -53,7 +57,11 @@ def _raw_stock(
         fundamental_metrics=(
             fundamental_metrics if fundamental_metrics is not None else default_metrics
         ),
-        fund_flow_detail={"source": "tdx.quote.turnover", "amount_yuan": 100_000_000.0},
+        fund_flow_detail=(
+            fund_flow_detail
+            if fund_flow_detail is not None
+            else {"source": "tdx.quote.turnover", "amount_yuan": 100_000_000.0}
+        ),
         news_items=(
             [NewsItem("2026-07-10", "fixture", "季度经营公告", "经营保持稳定")] if events else []
         ),
@@ -75,6 +83,20 @@ def _technical() -> TechnicalProfile:
         structure="站上 20 日线",
         checkpoints=["站稳 10.80 后确认"],
     )
+
+
+def _bars_from_closes(closes: list[float]) -> list[DailyBar]:
+    return [
+        DailyBar(
+            date=f"2026-{(index // 28) + 1:02d}-{(index % 28) + 1:02d}",
+            open=value * 0.99,
+            high=value * 1.02,
+            low=value * 0.98,
+            close=value,
+            volume=1_000_000 + index * 10_000,
+        )
+        for index, value in enumerate(closes)
+    ]
 
 
 def _event_radar() -> EventRadar:
@@ -176,3 +198,32 @@ def test_reported_pb_conflict_is_exposed() -> None:
     assert "来源 PB 0.18x" in valuation.conclusion
     assert "价格/每股净资产反算 1.77x" in valuation.conclusion
     assert "口径冲突" in valuation.risks
+
+
+def test_one_day_rebound_after_twenty_day_damage_is_not_reversal() -> None:
+    closes = [15.0] * 60 + [15.0 - index * 0.28 for index in range(19)] + [10.5]
+    dossier = _build(_raw_stock(bars=_bars_from_closes(closes)))
+    technical = _diagnostic(dossier, "技术结构")
+
+    assert "反弹尝试" in technical.conclusion
+    assert "趋势反转" not in technical.conclusion
+    assert any("20日" in fact for fact in technical.facts)
+    assert any("60日高点" in fact for fact in technical.facts)
+
+
+def test_turnover_proxy_is_not_called_main_fund_flow() -> None:
+    dossier = _build(
+        _raw_stock(
+            fund_flow=None,
+            fund_flow_detail={
+                "source": "tdx.quote.turnover",
+                "amount_yuan": 306_457_952.0,
+                "turnover_rate": 8.84,
+            },
+        )
+    )
+    capital = _diagnostic(dossier, "资金与交易")
+
+    assert "成交活跃" in capital.conclusion
+    assert "主力净流入" not in capital.conclusion
+    assert "单日" in capital.limitation
