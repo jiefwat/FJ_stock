@@ -52,6 +52,7 @@ CLI / Dashboard
 - Web 个股页必须以 6 维判断组织精华信息：技术面、基本面、资金面、消息/公告、概念板块、成本位置；成本位置必须结合当前账号持仓成本，未持仓时明确标注。
 - Web 个股页和 Markdown 个股报告必须展示 `TradingAgents 决策链`：先展示 daily_stock_analysis 风格的信号归因与数据包，再展示技术、基本面、新闻/情绪、资金/成交四类分析师证据，最后输出多空观点、交易员触发/失效、组合经理最终意见；若数据缺失，结论必须降级并写明缺口。
 - `src/stock_ts/llm.py`：可选大模型增强层，使用 OpenAI-compatible chat completions 接口；无 Key 时输出降级说明，有 Key 时在结构化分析基础上生成 AI 研报。
+- `src/stock_ts/iwencai.py`：问财 SkillHub 官方数据技能适配层，统一技能路由、OpenAPI 请求头、动态响应压缩和安全配置摘要；财务/机构/行业等数据技能走 `/v1/query2data`，公告/研报/新闻走 `/v1/comprehensive/search`。个股页只把结果作为外部证据，不改写本地研究结论、stale 闸门或仓位边界。
 - `src/stock_ts/watchlist.py`：自选股研究工作台，读取轻量 YAML-like 清单，沉淀研究假设、标签、价格/评分提醒，并复用深度分析生成观察排序。
 - `src/stock_ts/backtest.py`：轻量策略验证层，当前支持本地日线 CSV 的 MA 均线回测，输出收益、买入持有对照、最大回撤、胜率、交易明细和限制说明。
 - `src/stock_ts/indicators.py`：均线、涨跌幅、波动率等可测试指标函数。
@@ -109,6 +110,7 @@ CLI / Dashboard
 - 专业单股研究包必须覆盖：技术结构、公告事件、持仓/风控复核动作和 Web 可见性；公告接口不可用时要安全降级，不能阻断核心行情分析。
 - watchlist/backtest 类研究工作流必须保持离线可用，不能依赖真实行情接口才能通过测试。
 - LLM 集成必须覆盖：无 Key 降级、configured/missing 安全摘要、Key 不出现在输出、CLI 烟测。
+- 问财集成必须覆盖：官方 endpoint 与 payload 路由、64 位 trace id、无 Key/超时/网关错误降级、响应大小限制、登录与限流、Key 不出现在 HTML/JSON/错误信息。
 
 
 ## 持仓输入

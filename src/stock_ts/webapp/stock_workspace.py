@@ -15,6 +15,7 @@ def render_stock_workspace(
     trade_plan_html: str = "",
     agent_debate_html: str = "",
     refresh_html: str = "",
+    iwencai_status: str = "missing",
 ) -> str:
     if isinstance(dossier, StockResearchMemo):
         return _render_memo_workspace(
@@ -24,6 +25,7 @@ def render_stock_workspace(
             trade_plan_html=trade_plan_html,
             agent_debate_html=agent_debate_html,
             refresh_html=refresh_html,
+            iwencai_status=iwencai_status,
         )
     supporting = supporting_evidence_html + technical_html + trade_plan_html + agent_debate_html
     return _render_dossier_workspace(
@@ -31,6 +33,7 @@ def render_stock_workspace(
         identity_html=identity_html,
         supporting_evidence_html=supporting,
         refresh_html=refresh_html,
+        iwencai_status=iwencai_status,
     )
 
 
@@ -40,6 +43,7 @@ def _render_dossier_workspace(
     identity_html: str,
     supporting_evidence_html: str,
     refresh_html: str,
+    iwencai_status: str,
 ) -> str:
     verdict = dossier.verdict
     decision_conditions = "".join(
@@ -187,6 +191,9 @@ def _render_dossier_workspace(
         <h3 id="weighted-evidence-title">关键证据</h3>
         <div class="weighted-evidence-list">{weighted_evidence}</div>
       </section>
+      {_render_iwencai_research_console(
+          dossier.code, dossier.name, dossier.trade_date, iwencai_status
+      )}
       <section class="dossier-panel risk-register" aria-labelledby="risk-register-title">
         <h3 id="risk-register-title">风险反证</h3>
         {risk_rows}
@@ -221,6 +228,7 @@ def _render_memo_workspace(
     trade_plan_html: str = "",
     agent_debate_html: str = "",
     refresh_html: str = "",
+    iwencai_status: str = "missing",
 ) -> str:
     scenario_html = "".join(
         "<article class='research-scenario-card'>"
@@ -294,6 +302,7 @@ def _render_memo_workspace(
         <h3 id="stock-evidence-title">六类证据</h3>
         <div class="stock-evidence-grid">{evidence_html}</div>
       </section>
+      {_render_iwencai_research_console(memo.code, memo.name, memo.trade_date, iwencai_status)}
       <section class="research-actions" aria-labelledby="research-actions-title">
         <span>下一步研究动作</span>
         <h3 id="research-actions-title">{escape(memo.verdict.next_review)}</h3>
@@ -328,3 +337,50 @@ def _render_section(section: ResearchSection) -> str:
         f"<ul class='memo-next-checks'>{checks}</ul>"
         "</article>"
     )
+
+
+def _render_iwencai_research_console(
+    code: str,
+    name: str,
+    local_as_of: str,
+    status: str,
+) -> str:
+    configured = status == "configured"
+    blocked = status == "requires_login"
+    status_label = "已连接" if configured else ("需启用登录" if blocked else "未配置")
+    status_class = "connected" if configured else ("blocked" if blocked else "missing")
+    disabled = " disabled" if blocked else ""
+    suggestions = (
+        ("财务质量", "收入、利润和现金流质量是否同步改善？"),
+        ("机构预期", "未来两年盈利预期和机构评级如何变化？"),
+        ("事件风险", "近期是否有解禁、质押、监管或业绩预告风险？"),
+        ("行业位置", "当前行业估值和盈利排名处于什么位置？"),
+    )
+    suggestion_html = "".join(
+        '<button type="button" class="iwencai-question-chip" '
+        f'data-iwencai-question="{escape(question)}"{disabled}>{escape(label)}</button>'
+        for label, question in suggestions
+    )
+    return f"""
+      <section class="iwencai-research-console" data-iwencai-research="true"
+        data-stock-code="{escape(code)}" data-stock-name="{escape(name)}"
+        data-local-as-of="{escape(local_as_of)}" data-config-status="{escape(status)}"
+        aria-labelledby="iwencai-research-title">
+        <header class="iwencai-research-header">
+          <div><span>股票研究 · 外部证据</span>
+            <h3 id="iwencai-research-title">问财研究追问</h3></div>
+          <strong class="iwencai-connection {status_class}">
+            {status_label}</strong>
+        </header>
+        <div class="iwencai-question-rail">{suggestion_html}</div>
+        <form class="iwencai-research-form" data-iwencai-form>
+          <label class="sr-only" for="iwencai-question-{escape(code)}">研究问题</label>
+          <textarea id="iwencai-question-{escape(code)}" name="question" maxlength="200"
+            rows="2" required data-iwencai-input{disabled}
+            placeholder="例如：未来两年盈利预期是否改善？"></textarea>
+          <button type="submit" data-iwencai-submit{disabled}>查询问财</button>
+        </form>
+        <p class="iwencai-console-state" data-iwencai-state>
+          {'启用登录后可查询问财。' if blocked else '问财结果只作证据补充，不改写本地结论。'}</p>
+        <div class="iwencai-research-result" data-iwencai-result hidden aria-live="polite"></div>
+      </section>"""

@@ -8,7 +8,7 @@
 
 - SkillHub 能力广场公开列出 160 个技能。
 - “股票研究”版本为 `1.0.0`，UUID 为 `c72bf7b5-580d-487f-8977-2e82c1705671`。它是第三方编排说明，依赖 IBES、公司财务、历史价格和宏观 MCP 工具，不是独立 HTTP 对话接口。
-- 问财官方数据技能通过 `POST https://openapi.iwencai.com/v1/query2data` 调用，使用 `IWENCAI_API_KEY` 和 `X-Claw-*` 请求头。
+- 问财财务、机构、行业、事件等数据技能通过 `POST /v1/query2data` 调用；公告、研报、新闻通过 `POST /v1/comprehensive/search` 调用。两类请求都使用 `IWENCAI_API_KEY` 和 `X-Claw-*` 请求头。
 - 首期只接官方、无第三方配置的数据技能。社区技能不能直接改变 StockTs 评分、仓位或买卖结论。
 
 ## 方案比较
@@ -80,7 +80,7 @@
   -> 同源 POST endpoint
   -> 意图路由
   -> 服务端生成 64 位 trace id
-  -> 问财官方技能 OpenAPI
+  -> 问财官方技能 OpenAPI（query2data 或 comprehensive/search）
   -> 压缩动态字段
   -> 事实 / 关系 / 未知 / 来源 JSON
   -> 页面证据卡
@@ -96,7 +96,7 @@
 - 外部返回最多读取 1 MiB，最多展示 5 条数据；不把原始 HTML 注入页面。
 - 网关错误、无 Key、超时或无数据均返回可读降级，个股主页面保持可用。
 - 问财结果是外部证据，不得绕过 stale 闸门，不自动改写仓位，不提供自动交易。
-- 公网只允许已登录用户调用，并使用进程内按客户端地址的短周期限流。
+- 公网只允许已登录用户调用，并按用户 ID 做进程内短周期限流；匿名调用默认关闭，仅本地显式设置 `STOCK_TS_IWENCAI_ALLOW_ANONYMOUS=1` 时启用。
 
 ## 验收标准
 

@@ -293,7 +293,119 @@ def app_script() -> str:
       buffer.select();
     }}
 
+    function iwencaiNode(tag, className, value) {{
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (value !== undefined && value !== null) node.textContent = String(value);
+      return node;
+    }}
+
+    function renderIwencaiResult(consoleElement, payload) {{
+      const researchResult = consoleElement.querySelector('[data-iwencai-result]');
+      researchResult.replaceChildren();
+      researchResult.hidden = false;
+
+      const heading = iwencaiNode('div', 'iwencai-result-heading');
+      const skill = payload.skill || {{}};
+      heading.append(
+        iwencaiNode('span', '', skill.label || '问财研究'),
+        iwencaiNode('strong', '', payload.summary || '查询完成')
+      );
+      researchResult.append(heading);
+
+      const facts = Array.isArray(payload.facts) ? payload.facts : [];
+      if (facts.length) {{
+        const grid = iwencaiNode('div', 'iwencai-fact-grid');
+        facts.forEach((row) => {{
+          const card = iwencaiNode('article', 'iwencai-fact-card');
+          Object.entries(row || {{}}).forEach(([label, value]) => {{
+            const item = iwencaiNode('div', '');
+            item.append(iwencaiNode('span', '', label), iwencaiNode('strong', '', value));
+            card.append(item);
+          }});
+          grid.append(card);
+        }});
+        researchResult.append(grid);
+      }}
+
+      if (payload.relationship) {{
+        researchResult.append(iwencaiNode('p', 'iwencai-relationship', payload.relationship));
+      }}
+      const unknowns = Array.isArray(payload.unknowns) ? payload.unknowns : [];
+      if (unknowns.length) {{
+        const unknownBlock = iwencaiNode('div', 'iwencai-unknowns');
+        unknownBlock.append(iwencaiNode('span', '', '未知与限制'));
+        const list = iwencaiNode('ul', '');
+        unknowns.forEach((item) => list.append(iwencaiNode('li', '', item)));
+        unknownBlock.append(list);
+        researchResult.append(unknownBlock);
+      }}
+      const source = payload.source || {{}};
+      const audit = [source.name, source.queried_at, source.trace ? 'trace ' + source.trace : '']
+        .filter(Boolean).join(' · ');
+      if (audit) researchResult.append(iwencaiNode('small', 'iwencai-audit', audit));
+      if (payload.boundary) {{
+        researchResult.append(iwencaiNode('small', 'iwencai-boundary', payload.boundary));
+      }}
+    }}
+
+    function bootstrapIwencaiResearch() {{
+      document.querySelectorAll('[data-iwencai-research]').forEach((consoleElement) => {{
+        const form = consoleElement.querySelector('[data-iwencai-form]');
+        const input = consoleElement.querySelector('[data-iwencai-input]');
+        const submit = consoleElement.querySelector('[data-iwencai-submit]');
+        const state = consoleElement.querySelector('[data-iwencai-state]');
+        consoleElement.querySelectorAll('[data-iwencai-question]').forEach((chip) => {{
+          chip.addEventListener('click', () => {{
+            input.value = chip.dataset.iwencaiQuestion || '';
+            input.focus();
+            form.requestSubmit();
+          }});
+        }});
+        form.addEventListener('submit', async (event) => {{
+          event.preventDefault();
+          const question = input.value.trim();
+          if (!question) {{
+            state.textContent = '请输入一个具体研究问题。';
+            input.focus();
+            return;
+          }}
+          submit.disabled = true;
+          submit.textContent = '查询中';
+          state.textContent = '正在调用问财官方数据技能…';
+          try {{
+            const response = await fetch('/api/iwencai/research', {{
+              method: 'POST',
+              headers: {{'Content-Type': 'application/json'}},
+              credentials: 'same-origin',
+              body: JSON.stringify({{
+                code: consoleElement.dataset.stockCode || '',
+                name: consoleElement.dataset.stockName || '',
+                local_as_of: consoleElement.dataset.localAsOf || '',
+                question: question
+              }})
+            }});
+            const payload = await response.json().catch(() => ({{}}));
+            if (!response.ok) throw new Error(payload.message || '外部研究暂不可用');
+            renderIwencaiResult(consoleElement, payload);
+            state.textContent = '查询完成 · 外部证据不会自动改变 StockTs 结论';
+          }} catch (error) {{
+            const researchResult = consoleElement.querySelector('[data-iwencai-result]');
+            researchResult.replaceChildren(
+              iwencaiNode('strong', 'iwencai-error', error.message || '外部研究暂不可用')
+            );
+            researchResult.hidden = false;
+            state.textContent = 'StockTs 本地分析仍可正常使用。';
+          }} finally {{
+            submit.disabled = false;
+            submit.textContent = '查询问财';
+          }}
+        }});
+      }});
+    }}
+
     function bootstrapShell() {{
+      bootstrapIwencaiResearch();
       document.querySelectorAll('.nav-item[data-workspace]').forEach((button) => {{
         button.addEventListener('click', (event) => {{
           event.preventDefault();

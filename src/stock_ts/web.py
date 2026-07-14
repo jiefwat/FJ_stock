@@ -1,6 +1,7 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -8,7 +9,8 @@ import shlex
 import subprocess
 import sys
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -31,6 +33,14 @@ from .daily_decisions import read_decision_artifact
 from .data_sources import build_data_source_matrix
 from .deep_models import DeepStockReport
 from .indicators import pct_change, sma
+from .iwencai import (
+    IwencaiConfigurationError,
+    IwencaiError,
+    IwencaiSkillClient,
+    build_stock_research_response,
+    iwencai_config_summary,
+    route_stock_research_skill,
+)
 from .models import (
     CandidatePoolReport,
     CandidateStockAnalysis,
@@ -102,6 +112,30 @@ from .workflows import DailyWorkflowResult, build_daily_report, build_deep_stock
 
 DEFAULT_HOLDINGS_PATH = "data/portfolio/holdings.csv"
 DEFAULT_USER_DATA_DIR = "data/auth/users"
+MAX_IWENCAI_REQUEST_BYTES = 16 * 1024
+
+
+class ResearchRateLimiter:
+    def __init__(self, *, limit: int = 12, window_seconds: float = 60) -> None:
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self._requests: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, *, now: float | None = None) -> bool:
+        current = time.monotonic() if now is None else now
+        cutoff = current - self.window_seconds
+        with self._lock:
+            recent = [stamp for stamp in self._requests.get(key, []) if stamp > cutoff]
+            if len(recent) >= self.limit:
+                self._requests[key] = recent
+                return False
+            recent.append(current)
+            self._requests[key] = recent
+            return True
+
+
+IWENCAI_RESEARCH_RATE_LIMITER = ResearchRateLimiter()
 
 
 CSS = """
@@ -9708,6 +9742,7 @@ def _render_compact_stock_module(
         identity_html=_render_stock_simple_entry(resolved, provider_name, holdings_path),
         supporting_evidence_html=analysis_content,
         refresh_html=refresh_tools,
+        iwencai_status=_iwencai_research_ui_status(),
     )
     return f"""
     <section class="module" id="module-stock">
@@ -12858,6 +12893,102 @@ def _can_manage_global_settings(
     return bool(user and user.role == "owner")
 
 
+def _parse_iwencai_research_payload(payload: bytes) -> dict[str, str]:
+    try:
+        parsed = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("请求体必须是有效 JSON。") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("请求体必须是 JSON 对象。")
+    result = {
+        "code": _clean_iwencai_text(parsed.get("code"), 32),
+        "name": _clean_iwencai_text(parsed.get("name"), 64),
+        "question": _clean_iwencai_text(parsed.get("question"), 500),
+        "local_as_of": _clean_iwencai_text(parsed.get("local_as_of"), 40),
+    }
+    if not result["question"]:
+        raise ValueError("请输入研究问题。")
+    if len(result["question"]) > 200:
+        raise ValueError("研究问题不能超过 200 个字符。")
+    if not result["code"] and not result["name"]:
+        raise ValueError("缺少当前股票代码或名称。")
+    return result
+
+
+def _clean_iwencai_text(value: object, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = "".join(character if character.isprintable() else " " for character in value)
+    return " ".join(cleaned.split())[:limit]
+
+
+def _build_iwencai_stock_query(*, code: str, name: str, question: str) -> str:
+    values = (
+        _clean_iwencai_text(name, 64),
+        _clean_iwencai_text(code, 32),
+        _clean_iwencai_text(question, 200),
+    )
+    return " ".join(value for value in values if value)
+
+
+def _research_client_key(
+    headers: Mapping[str, str],
+    client_address: tuple[str, int] | None,
+) -> str:
+    peer = client_address[0] if client_address else "0.0.0.0"
+    candidate = peer
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return f"ip:{peer}"
+    if peer_ip.is_loopback:
+        forwarded = (headers.get("X-Real-IP") or "").strip()
+        if not forwarded:
+            forwarded = (headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        if forwarded:
+            try:
+                candidate = str(ipaddress.ip_address(forwarded))
+            except ValueError:
+                candidate = peer
+    return f"ip:{candidate}"
+
+
+def _allow_anonymous_iwencai() -> bool:
+    return os.getenv("STOCK_TS_IWENCAI_ALLOW_ANONYMOUS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _iwencai_research_ui_status(config: AuthConfig | None = None) -> str:
+    config = config or AuthConfig.from_env()
+    if not is_auth_enabled(config) and (_is_public_readonly() or not _allow_anonymous_iwencai()):
+        return "requires_login"
+    return iwencai_config_summary()["status"]
+
+
+def _ask_iwencai_stock_research(payload: dict[str, str]) -> dict[str, object]:
+    question = payload["question"]
+    skill = route_stock_research_skill(question)
+    query = _build_iwencai_stock_query(
+        code=payload["code"],
+        name=payload["name"],
+        question=question,
+    )
+    raw = IwencaiSkillClient().query(skill, query)
+    queried_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+    return build_stock_research_response(
+        raw,
+        skill=skill,
+        question=question,
+        query=query,
+        local_as_of=payload["local_as_of"],
+        queried_at=queried_at,
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -12968,6 +13099,31 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         config = AuthConfig.from_env()
+        if parsed.path == "/api/iwencai/research":
+            if not is_auth_enabled(config) and (
+                _is_public_readonly() or not _allow_anonymous_iwencai()
+            ):
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "公网模式未启用登录，外部研究已禁用。",
+                    },
+                )
+                return
+            if should_require_login(self.path, headers=self.headers, config=config):
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "请先登录后使用问财研究。",
+                    },
+                )
+                return
+            self._handle_iwencai_research_post()
+            return
         if should_require_login(self.path, headers=self.headers, config=config):
             self.send_response(303)
             self.send_header(
@@ -13023,6 +13179,98 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_dispatch_daily_post(form)
             return
         self._handle_holdings_post(form)
+
+    def _handle_iwencai_research_post(self) -> None:
+        config = AuthConfig.from_env()
+        user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+        client_key = (
+            f"user:{user.id}"
+            if user is not None
+            else _research_client_key(self.headers, self.client_address)
+        )
+        if not IWENCAI_RESEARCH_RATE_LIMITER.allow(client_key):
+            self._send_json(
+                429,
+                {
+                    "ok": False,
+                    "status": "rate_limited",
+                    "message": "请求过于频繁，请稍后再试。",
+                },
+            )
+            return
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json(
+                415,
+                {"ok": False, "status": "invalid_request", "message": "仅接受 JSON 请求。"},
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": "请求长度无效。"},
+            )
+            return
+        if length > MAX_IWENCAI_REQUEST_BYTES:
+            self._send_json(
+                413,
+                {"ok": False, "status": "too_large", "message": "研究请求超过 16 KiB。"},
+            )
+            return
+        try:
+            payload = _parse_iwencai_research_payload(self.rfile.read(length))
+            result = _ask_iwencai_stock_research(payload)
+        except ValueError as exc:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": str(exc)},
+            )
+            return
+        except IwencaiConfigurationError as exc:
+            self._send_json(
+                503,
+                {
+                    "ok": False,
+                    "status": "missing_config",
+                    "message": str(exc),
+                    "config": iwencai_config_summary(),
+                },
+            )
+            return
+        except IwencaiError as exc:
+            self._send_json(
+                502,
+                {"ok": False, "status": "unavailable", "message": str(exc)},
+            )
+            return
+        except Exception:
+            self._send_json(
+                502,
+                {
+                    "ok": False,
+                    "status": "unavailable",
+                    "message": "外部研究暂不可用，StockTs 本地分析不受影响。",
+                },
+            )
+            return
+        self._send_json(200, result)
+
+    def _send_json(self, status: int, payload: dict[str, object]) -> None:
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def _handle_login_post(self) -> None:
         config = AuthConfig.from_env()

@@ -5,7 +5,9 @@ from stock_ts import web
 from stock_ts.models import DailyBar, FundamentalPeriod, StockRawData, ValuationPoint
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 from stock_ts.research.stock_memo import build_stock_research_memo
+from stock_ts.webapp.shell import app_script
 from stock_ts.webapp.stock_workspace import render_stock_workspace
+from stock_ts.webapp.styles import CSS
 
 
 def _raw(*, complete: bool) -> StockRawData:
@@ -124,3 +126,57 @@ def test_stock_workspace_renders_cross_period_financial_and_valuation_evidence()
     assert "财务 3 期" in html
     assert "基于 20 个观察点" in html
     assert "连续改善" in html
+
+
+def test_stock_workspace_adds_compact_iwencai_research_console_after_evidence() -> None:
+    html = render_stock_workspace(
+        build_stock_research_memo(_raw(complete=True)),
+        iwencai_status="configured",
+    )
+
+    assert html.index("六类证据") < html.index("问财研究追问")
+    assert html.index("问财研究追问") < html.index("下一步研究动作")
+    assert 'data-iwencai-research="true"' in html
+    assert 'data-stock-code="600000"' in html
+    assert 'data-stock-name="示例银行"' in html
+    assert 'data-local-as-of="2026-07-11"' in html
+    assert 'data-config-status="configured"' in html
+    assert "已连接" in html
+    assert "财务质量" in html
+    assert "机构预期" in html
+    assert "事件风险" in html
+    assert "行业位置" in html
+    assert "欢迎使用" not in html
+    assert "智能助手随时为你服务" not in html
+
+
+def test_stock_workspace_disables_iwencai_console_when_login_is_unavailable() -> None:
+    html = render_stock_workspace(
+        build_stock_research_memo(_raw(complete=True)),
+        iwencai_status="requires_login",
+    )
+
+    console = html.split('data-iwencai-research="true"', 1)[1].split("</section>", 1)[0]
+    assert 'data-config-status="requires_login"' in console
+    assert "需启用登录" in console
+    assert "启用登录后可查询问财" in console
+    assert console.count(" disabled") >= 6
+
+
+def test_iwencai_console_script_uses_same_origin_json_and_safe_dom_rendering() -> None:
+    script = app_script()
+
+    assert "fetch('/api/iwencai/research'" in script
+    assert "Content-Type': 'application/json'" in script
+    assert "researchResult.replaceChildren" in script
+    assert ".textContent =" in script
+    assert "data-iwencai-form" in script
+    assert "外部研究暂不可用" in script
+
+
+def test_iwencai_console_has_mobile_and_reduced_motion_rules() -> None:
+    assert ".iwencai-research-console" in CSS
+    assert ".iwencai-fact-grid" in CSS
+    assert "@media (max-width: 760px)" in CSS
+    assert ".iwencai-research-form" in CSS
+    assert "@media (prefers-reduced-motion: reduce)" in CSS
