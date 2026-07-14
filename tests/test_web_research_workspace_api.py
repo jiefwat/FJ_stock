@@ -4,6 +4,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -197,6 +198,42 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
 
     assert response["verdict"] == "快照判断"
     assert response["delivery"] == "snapshot"
+
+
+def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    generated_at = (
+        datetime.now(timezone(timedelta(hours=8))) - timedelta(days=2)
+    ).isoformat(timespec="seconds")
+    ResearchSnapshotStore(snapshot_dir).save(
+        "market",
+        {
+            "ok": True,
+            "status": "partial",
+            "module": "market",
+            "generated_at": generated_at,
+            "verdict": "历史快照判断",
+            "action": "等待服务恢复",
+            "primary_risk": "数据已过期",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+            "module_items": [],
+        },
+    )
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": True}
+    )
+
+    assert response["verdict"] == "历史快照判断"
+    assert response["delivery"] == "stale_snapshot"
+    assert response["stale"] is True
 
 
 def test_workspace_endpoint_requires_login_when_auth_is_enabled(

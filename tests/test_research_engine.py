@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from stock_ts.iwencai import SKILLS
 from stock_ts.research_engine import (
@@ -374,6 +375,31 @@ def test_refresh_bypasses_workspace_cache() -> None:
     assert len(client.calls) == 8
 
 
+def test_portfolio_cache_key_includes_every_analyzed_holding() -> None:
+    client = FakeClient()
+    service = ResearchWorkspaceService(client_factory=lambda: client, cache_ttl=300)
+    shared = (
+        ResearchTarget(code="600001", name="持仓一"),
+        ResearchTarget(code="600002", name="持仓二"),
+        ResearchTarget(code="600003", name="持仓三"),
+    )
+
+    service.research(
+        "portfolio",
+        ResearchContext(
+            holdings=shared + (ResearchTarget(code="600004", name="持仓四"),)
+        ),
+    )
+    service.research(
+        "portfolio",
+        ResearchContext(
+            holdings=shared + (ResearchTarget(code="600005", name="持仓五"),)
+        ),
+    )
+
+    assert len(client.calls) == 24
+
+
 def test_public_result_caps_findings_and_fact_fields() -> None:
     fixture = stock_research_fixture()
     service = ResearchWorkspaceService(
@@ -626,6 +652,55 @@ def test_index_risk_names_the_affected_index() -> None:
     assert result.primary_risk == "深证成指 · 涨跌幅：-0.33%"
 
 
+def test_index_risk_keeps_the_date_range_for_period_change() -> None:
+    client = FakeClient(
+        results={
+            "index": {
+                "datas": [
+                    {
+                        "指数简称": "上证指数",
+                        "最新价": 3967.13,
+                        "最新涨跌幅:前复权": 1.36,
+                        "涨跌幅[20260708-20260714]": -0.58,
+                    }
+                ]
+            }
+        }
+    )
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "market", ResearchContext()
+    )
+
+    assert result.primary_risk == "上证指数 · 涨跌幅（07-08至07-14）：-0.58%"
+
+
+def test_market_index_card_shows_daily_and_period_trend() -> None:
+    client = FakeClient(
+        results={
+            "index": {
+                "datas": [
+                    {
+                        "指数代码": "000001.SH",
+                        "指数简称": "上证指数",
+                        "最新价": 3967.13,
+                        "最新涨跌幅:前复权": 1.36,
+                        "涨跌幅[20260708-20260714]": -0.58,
+                    }
+                ]
+            }
+        }
+    )
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "market", ResearchContext()
+    )
+
+    assert result.module_items[0].summary == (
+        "上证指数 点位 3967.13，涨跌幅 1.36%，涨跌幅（07-08至07-14） -0.58%"
+    )
+
+
 def test_sector_risk_names_the_affected_sector() -> None:
     client = FakeClient(
         results={
@@ -705,6 +780,9 @@ def test_document_summary_is_capped_and_does_not_repeat_title() -> None:
                         {
                             "title": title,
                             "summary": f"{title}{'成交确认仍需观察。' * 40}",
+                            "publish_date": datetime.now(
+                                timezone(timedelta(hours=8))
+                            ).strftime("%Y%m%d"),
                         }
                     ]
                 }
@@ -717,6 +795,36 @@ def test_document_summary_is_capped_and_does_not_repeat_title() -> None:
 
     assert len(news.summary) <= 80
     assert news.summary.count(title) == 1
+
+
+def test_documents_older_than_thirty_days_stay_out_of_front_judgment() -> None:
+    old_date = (
+        datetime.now(timezone(timedelta(hours=8))) - timedelta(days=31)
+    ).strftime("%Y%m%d")
+    title = "重大风险事件仍在发酵"
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "news": {
+                    "datas": [
+                        {
+                            "title": title,
+                            "summary": "风险影响仍需核查。",
+                            "publish_date": old_date,
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    result = service.research("market", ResearchContext())
+    news_detail = next(item for item in result.details if item.section == "市场事件")
+
+    assert news_detail.findings
+    assert all(item.title != "市场事件" for item in result.findings)
+    assert title not in result.verdict
+    assert title not in result.primary_risk
 
 
 def test_summary_backed_findings_drop_repeated_identity_and_text_facts() -> None:

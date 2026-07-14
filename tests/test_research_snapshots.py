@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Barrier
 
 from stock_ts.research_delivery import deliver_research
 from stock_ts.research_engine import ResearchContext, ResearchWorkspaceResult
@@ -55,6 +58,11 @@ class FakeService:
         return self.result
 
 
+class ExplodingService:
+    def research(self, *_args, **_kwargs):
+        raise RuntimeError("upstream unavailable")
+
+
 def test_snapshot_store_writes_latest_and_date_archive_atomically(tmp_path) -> None:
     store = ResearchSnapshotStore(tmp_path, clock=lambda: NOW)
     payload = _payload()
@@ -63,6 +71,36 @@ def test_snapshot_store_writes_latest_and_date_archive_atomically(tmp_path) -> N
 
     assert json.loads((tmp_path / "market/latest.json").read_text()) == payload
     assert json.loads((tmp_path / "market/2026-07-15.json").read_text()) == payload
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_concurrent_snapshot_writers_use_independent_temp_files(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = ResearchSnapshotStore(tmp_path, clock=lambda: NOW)
+    barrier = Barrier(2)
+    original_write_text = Path.write_text
+
+    def delayed_write_text(path, content, *args, **kwargs):
+        written = original_write_text(path, content, *args, **kwargs)
+        if path.name == "latest.json.tmp":
+            barrier.wait(timeout=2)
+        return written
+
+    monkeypatch.setattr(Path, "write_text", delayed_write_text)
+    payloads = [
+        _payload() | {"verdict": "并发写入一"},
+        _payload() | {"verdict": "并发写入二"},
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(store.save, "market", payload) for payload in payloads]
+        for future in futures:
+            future.result()
+
+    latest = json.loads((tmp_path / "market/latest.json").read_text())
+    assert latest["verdict"] in {"并发写入一", "并发写入二"}
     assert not list(tmp_path.rglob("*.tmp"))
 
 
@@ -100,6 +138,22 @@ def test_delivery_falls_back_to_stale_snapshot_after_live_failure(tmp_path) -> N
     assert delivered["delivery"] == "stale_snapshot"
     assert delivered["stale"] is True
     assert service.calls == 1
+
+
+def test_delivery_falls_back_to_stale_snapshot_after_live_exception(tmp_path) -> None:
+    store = ResearchSnapshotStore(tmp_path, clock=lambda: NOW)
+    store.save("market", _payload(generated_at="2026-07-13T07:20:00+08:00"))
+
+    delivered = deliver_research(
+        ExplodingService(),
+        store,
+        "market",
+        ResearchContext(),
+        refresh=True,
+    )
+
+    assert delivered["delivery"] == "stale_snapshot"
+    assert delivered["stale"] is True
 
 
 def test_live_success_replaces_global_snapshot(tmp_path) -> None:

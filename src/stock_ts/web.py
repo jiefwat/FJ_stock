@@ -13189,11 +13189,15 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
     )
     refresh = bool(payload["refresh"])
     if iwencai_config_summary()["status"] != "configured":
-        snapshot = store.load(module) if module in {"market", "opportunity"} else None
-        if snapshot is not None and not refresh:
+        snapshot = (
+            store.load(module, allow_stale=True)
+            if module in {"market", "opportunity"}
+            else None
+        )
+        if snapshot is not None:
             result = dict(snapshot.payload)
-            result["delivery"] = "snapshot"
-            result["stale"] = False
+            result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
+            result["stale"] = snapshot.stale
             return result
         raise IwencaiConfigurationError("研究服务尚未配置。")
     return deliver_research(

@@ -297,7 +297,13 @@ def engine_app_script() -> str:
           engineNode('span', '', item.code || item.label || '研究项'),
           engineNode('i', '', item.status === 'ready' ? '已确认' : '待补')
         );
-        const title = engineNode('strong', '', item.name || item.label || '研究项');
+        const title = engineNode(
+          'strong',
+          '',
+          payload.module === 'stock'
+            ? item.label || '研究维度'
+            : item.name || item.label || '研究项'
+        );
         card.append(meta, title, engineNode('p', '', item.summary || '证据待补。'));
         if (item.risk) card.append(engineNode('small', '', item.risk));
         if (payload.module === 'opportunity' && item.code) {

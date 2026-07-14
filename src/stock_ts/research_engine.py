@@ -482,7 +482,11 @@ def _build_workspace_result(
     module: str,
     outcomes: tuple[_CapabilityOutcome, ...],
 ) -> ResearchWorkspaceResult:
+    now = datetime.now(timezone(timedelta(hours=8)))
     successful = [outcome for outcome in outcomes if outcome.rows]
+    front_successful = [
+        outcome for outcome in successful if _is_front_evidence_current(outcome, now)
+    ]
     failed = [outcome for outcome in outcomes if outcome.failed or not outcome.rows]
     if successful:
         if module == "stock":
@@ -492,7 +496,7 @@ def _build_workspace_result(
     else:
         status = "unavailable" if any(item.failed for item in outcomes) else "empty"
     details = tuple(_outcome_detail(outcome) for outcome in outcomes)
-    findings = _front_findings(module, successful)
+    findings = _front_findings(module, front_successful)
     copy = MODULE_COPY[module]
     if status == "unavailable":
         verdict = "研究服务暂时不可用，当前没有可执行结论。"
@@ -501,7 +505,7 @@ def _build_workspace_result(
         verdict = "本次没有返回足够证据，当前判断暂停。"
         action = "调整研究对象或稍后重新分析。"
     else:
-        verdict = _workspace_verdict(module, successful, findings, copy[status])
+        verdict = _workspace_verdict(module, front_successful, findings, copy[status])
         action = copy["action"]
     missing_sections = tuple(
         _detail_label(outcome.request)
@@ -513,19 +517,58 @@ def _build_workspace_result(
         ok=bool(successful),
         status=status,
         module=module,
-        generated_at=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+        generated_at=now.isoformat(timespec="seconds"),
         verdict=verdict,
         action=action,
-        primary_risk=_primary_risk(module, successful, copy["risk"]),
+        primary_risk=_primary_risk(module, front_successful, copy["risk"]),
         findings=findings,
         details=details,
         missing_sections=missing_sections,
         subject_count=subject_count,
         coverage_ready=len(successful),
         coverage_total=len(outcomes),
-        as_of=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+        as_of=now.isoformat(timespec="seconds"),
         module_items=module_items,
     )
+
+
+def _is_front_evidence_current(
+    outcome: _CapabilityOutcome,
+    now: datetime,
+) -> bool:
+    if outcome.request.capability not in {"news", "announcement", "report"}:
+        return True
+    published = next(
+        (
+            parsed
+            for row in outcome.rows
+            for fact in row
+            if any(term in fact.label for term in ("发布日期", "公告日期", "发布时间", "日期"))
+            if (parsed := _parse_evidence_datetime(fact.value, now.tzinfo)) is not None
+        ),
+        None,
+    )
+    if published is None:
+        return False
+    age = now - published.astimezone(now.tzinfo)
+    return timedelta(0) <= age <= timedelta(days=30)
+
+
+def _parse_evidence_datetime(value: str, tzinfo: Any) -> datetime | None:
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        digits = re.sub(r"\D", "", normalized)
+        if len(digits) != 8:
+            return None
+        try:
+            parsed = datetime.strptime(digits, "%Y%m%d")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tzinfo)
+    return parsed
 
 
 def _build_module_items(
@@ -842,9 +885,14 @@ def _index_summary(row: tuple[ResearchFact, ...]) -> str:
     name = _fact_matching(row, ("指数简称", "指数名称"))
     price = _fact_matching(row, ("最新点位", "收盘价", "最新价"))
     change = _fact_matching(row, ("涨跌幅", "涨跌"))
+    period_changes = [
+        fact
+        for fact in row
+        if "涨跌幅[" in fact.label and "-" in fact.label
+    ][:2]
     metrics = [
         f"{_short_metric(fact.label)} {fact.value}"
-        for fact in (price, change)
+        for fact in (price, change, *period_changes)
         if fact is not None
     ]
     if name and metrics:
@@ -1031,9 +1079,13 @@ def _label_year(label: str) -> str:
 
 
 def _short_metric(label: str) -> str:
+    period = re.search(r"\[(20\d{6})-(20\d{6})]", label)
     cleaned = re.sub(r"\[[^]]+]", "", label)
     cleaned = cleaned.replace(":前复权", "").replace("_前复权", "")
     cleaned = cleaned.replace("增长率", "")
+    if period:
+        start, end = period.groups()
+        cleaned += f"（{start[4:6]}-{start[6:]}至{end[4:6]}-{end[6:]}）"
     if cleaned == "最新涨跌幅":
         return "涨跌幅"
     if cleaned == "最新价":
@@ -1142,7 +1194,7 @@ def _research_cache_key(
 ) -> tuple[object, ...]:
     holdings = tuple(
         (_clean_text(item.code, 32), _clean_text(item.name, 64))
-        for item in context.holdings[:3]
+        for item in context.holdings[:20]
     )
     return (
         module,

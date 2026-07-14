@@ -221,6 +221,8 @@ def test_engine_script_renders_module_items_without_inner_html() -> None:
 
     assert "renderEngineModuleItems" in script
     assert "payload.module_items" in script
+    assert "payload.module === 'stock'" in script
+    assert "item.label || '研究维度'" in script
     assert "encodeURIComponent" in script
     assert ".innerHTML" not in script
 

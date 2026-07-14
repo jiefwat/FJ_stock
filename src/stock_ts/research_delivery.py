@@ -21,7 +21,14 @@ def deliver_research(
         if fresh is not None:
             return _with_delivery(fresh.payload, "snapshot", stale=False)
 
-    result = service.research(normalized, context, refresh=refresh)
+    try:
+        result = service.research(normalized, context, refresh=refresh)
+    except Exception:
+        if is_global:
+            stale = store.load(normalized, allow_stale=True)
+            if stale is not None:
+                return _with_delivery(stale.payload, "stale_snapshot", stale=True)
+        raise
     payload = result.to_public_dict()
     if result.ok:
         delivered = _with_delivery(payload, "live", stale=False)
