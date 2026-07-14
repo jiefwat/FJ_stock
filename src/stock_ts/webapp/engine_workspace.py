@@ -364,7 +364,8 @@ def engine_app_script() -> str:
         target.open = true;
         focusTarget = target.querySelector('summary') || target;
       }
-      focusTarget.scrollIntoView({behavior: 'smooth', block: 'start'});
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      focusTarget.scrollIntoView({behavior: reducedMotion ? 'auto' : 'smooth', block: 'start'});
       focusTarget.focus({preventScroll: true});
     }
 

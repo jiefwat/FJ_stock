@@ -146,6 +146,7 @@ def test_engine_script_coordinates_navigation_and_shortcuts() -> None:
         "scrollIntoView",
         "event.key === 'Escape'",
         "正在逐只核对，可能需要几秒",
+        "window.matchMedia('(prefers-reduced-motion: reduce)')",
     ):
         assert fragment in script
 
@@ -154,6 +155,17 @@ def test_engine_workspace_uses_full_parent_width_on_mobile() -> None:
     engine_css = CSS.split(".engine-module,", 1)[1].split("}", 1)[0]
 
     assert "width:100%" in engine_css.replace(" ", "")
+
+
+def test_mobile_research_dock_is_fixed_safe_and_touchable() -> None:
+    compact_css = CSS.replace(" ", "")
+
+    assert ".engine-mobile-dock" in CSS
+    assert "env(safe-area-inset-bottom)" in CSS
+    assert "position:fixed" in compact_css
+    assert "min-height:44px" in compact_css
+    for state in ("idle", "loading", "complete", "partial", "unavailable"):
+        assert f'[data-engine-nav-state="{state}"]' in CSS
 
 
 def test_engine_workspace_exposes_evidence_completeness() -> None:
