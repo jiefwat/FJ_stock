@@ -269,18 +269,19 @@ def _extract_ranked_facts(
             continue
         rendered = _render_value(label, value)
         if rendered:
+            fact = EvidenceFact(label=_public_label(label), value=rendered)
             if context_index is not None:
                 context_by_group.setdefault(context_index, []).append(
-                    (source_index, EvidenceFact(label=label, value=rendered))
+                    (source_index, fact)
                 )
             elif evidence_index is not None:
                 evidence_count += 1
                 evidence_by_group.setdefault(int(evidence_index), []).append(
-                    (source_index, EvidenceFact(label=label, value=rendered))
+                    (source_index, fact)
                 )
             else:
                 support_by_group.setdefault(int(support_index), []).append(
-                    (source_index, EvidenceFact(label=label, value=rendered))
+                    (source_index, fact)
                 )
 
     facts: list[EvidenceFact] = []
@@ -352,6 +353,17 @@ def _matching_groups(groups: tuple[tuple[str, ...], ...], label: str) -> int | N
 
 def _is_excluded_field(label: str) -> bool:
     return any(token in label for token in IDENTITY_FIELD_TOKENS + INTERNAL_FIELD_TOKENS)
+
+
+def _public_label(label: str) -> str:
+    replacements = {
+        "title": "标题",
+        "summary": "摘要",
+        "publish_date": "发布日期",
+        "publish_time": "发布时间",
+        "url": "链接",
+    }
+    return replacements.get(label.strip().lower(), label)
 
 
 def _render_value(label: str, value: object) -> str:

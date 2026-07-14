@@ -180,7 +180,8 @@ def test_news_prioritizes_content_before_date_and_url() -> None:
         },
     )
 
-    assert [fact.label for fact in rows[0]][:2] == ["title", "summary"]
+    assert [fact.label for fact in rows[0]][:2] == ["标题", "摘要"]
+    assert rows[0][2].label == "发布日期"
     assert rows[0][2].value == "2026-07-14"
 
 
@@ -198,7 +199,7 @@ def test_english_announcement_fields_count_as_evidence() -> None:
         },
     )
 
-    assert [fact.label for fact in rows[0]][:2] == ["title", "summary"]
+    assert [fact.label for fact in rows[0]][:2] == ["标题", "摘要"]
 
 
 def test_growth_rate_formats_as_percent_before_profit_amount() -> None:

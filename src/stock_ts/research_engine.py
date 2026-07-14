@@ -133,6 +133,7 @@ class ResearchFinding:
     summary: str
     target: str = ""
     facts: tuple[ResearchFact, ...] = ()
+    evidence_key: tuple[tuple[str, str], ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -502,7 +503,8 @@ def _outcome_findings(outcome: _CapabilityOutcome) -> tuple[ResearchFinding, ...
             title=title,
             summary=_finding_summary(capability, row),
             target=target,
-            facts=row[:4],
+            facts=_display_facts(capability, row),
+            evidence_key=tuple((fact.label, fact.value) for fact in row),
         )
         for row in outcome.rows
     )
@@ -674,7 +676,7 @@ def _document_summary(row: tuple[ResearchFact, ...]) -> str:
         summary_text = summary.value
         if summary_text.startswith(title.value):
             summary_text = summary_text[len(title.value) :].lstrip(" ：:，,。")
-        return _public_text(f"{title.value}：{summary_text}", 180)
+        return _public_text(f"{title.value}：{summary_text}", 80)
     if title:
         return _public_text(title.value, 180)
     return _compact_facts(row)
@@ -689,6 +691,69 @@ def _market_summary(row: tuple[ResearchFact, ...]) -> str:
             f"{_short_metric(volume.label)} {volume.value}"
         )
     return _compact_facts(row)
+
+
+def _display_facts(
+    capability: str,
+    row: tuple[ResearchFact, ...],
+) -> tuple[ResearchFact, ...]:
+    excluded_terms = {
+        "index": ("指数代码", "指数简称", "指数名称", "最新价", "最新点位", "收盘价", "涨跌幅"),
+        "sector_selector": (
+            "指数代码",
+            "指数简称",
+            "板块名称",
+            "行业名称",
+            "概念名称",
+            "热度",
+            "排名",
+            "成交额",
+            "成交量",
+            "涨跌幅",
+        ),
+        "astock_selector": (
+            "股票代码",
+            "证券代码",
+            "股票简称",
+            "证券简称",
+            "股票名称",
+            "净利润同比",
+            "营业收入同比",
+            "营收同比",
+            "成交额",
+            "成交量",
+            "换手率",
+        ),
+        "news": (
+            "title",
+            "标题",
+            "summary",
+            "摘要",
+            "内容",
+            "url",
+            "链接",
+            "publish_time",
+            "发布时间",
+        ),
+        "announcement": (
+            "title",
+            "标题",
+            "公告名称",
+            "summary",
+            "摘要",
+            "内容",
+            "url",
+            "链接",
+            "publish_time",
+            "发布时间",
+        ),
+    }
+    terms = excluded_terms.get(capability, ())
+    return tuple(
+        fact
+        for fact in row
+        if not any(term.lower() in fact.label.lower() for term in terms)
+    )[:4]
 
 
 def _workspace_verdict(
@@ -717,9 +782,7 @@ def _deduplicate_findings(
     unique: list[ResearchFinding] = []
     seen: set[tuple[tuple[str, str], ...]] = set()
     for finding in findings:
-        fingerprint = (("target", finding.target),) + tuple(
-            (fact.label, fact.value) for fact in finding.facts
-        )
+        fingerprint = (("target", finding.target),) + finding.evidence_key
         if not fingerprint or fingerprint in seen:
             continue
         unique.append(finding)
@@ -801,21 +864,46 @@ def _primary_risk(
     )
     for outcome in ordered:
         for row in outcome.rows:
-            text = "；".join(f"{fact.label}：{fact.value}" for fact in row)
             negative = next((fact for fact in row if _fact_is_negative(fact)), None)
             if negative:
-                if outcome.request.capability == "index":
-                    name = _fact_matching(row, ("指数简称", "指数名称"))
+                if outcome.request.capability in {"index", "sector_selector"}:
+                    name = _fact_matching(
+                        row,
+                        (
+                            "指数简称",
+                            "指数名称",
+                            "板块名称",
+                            "行业名称",
+                            "概念名称",
+                        ),
+                    )
                     if name:
                         return _public_text(
                             f"{name.value} · {_short_metric(negative.label)}：{negative.value}",
                             180,
                         )
-                return _public_text(f"{negative.label}：{negative.value}", 180)
-            if any(term in text for term in risk_terms):
-                return _public_text(
-                    _finding_summary(outcome.request.capability, row), 180
-                )
+                description = f"{negative.label}：{negative.value}"
+                target = _target_label(outcome.request.target)
+                if module == "portfolio" and target:
+                    description = f"{target} · {description}"
+                return _public_text(description, 180)
+            risk_fact = next(
+                (
+                    fact
+                    for fact in row
+                    if any(term in f"{fact.label} {fact.value}" for term in risk_terms)
+                ),
+                None,
+            )
+            if risk_fact:
+                if outcome.request.capability in {"news", "announcement"}:
+                    description = _finding_summary(outcome.request.capability, row)
+                else:
+                    description = f"{_short_metric(risk_fact.label)}：{risk_fact.value}"
+                target = _target_label(outcome.request.target)
+                if module == "portfolio" and target:
+                    description = f"{target} · {description}"
+                return _public_text(description, 180)
     return fallback
 
 

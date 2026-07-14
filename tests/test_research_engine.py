@@ -524,6 +524,75 @@ def test_index_risk_names_the_affected_index() -> None:
     assert result.primary_risk == "深证成指 · 涨跌幅：-0.33%"
 
 
+def test_sector_risk_names_the_affected_sector() -> None:
+    client = FakeClient(
+        results={
+            "sector_selector": {
+                "datas": [
+                    {
+                        "指数简称": "通信设备",
+                        "板块热度": 860,
+                        "最新涨跌幅:前复权": -0.3301,
+                    }
+                ]
+            }
+        }
+    )
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "market", ResearchContext()
+    )
+
+    assert result.primary_risk == "通信设备 · 涨跌幅：-0.33%"
+
+
+def test_portfolio_primary_risk_names_the_holding() -> None:
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "event": {
+                    "datas": [
+                        {
+                            "净利润增长率上限[20260630]": -241.516,
+                            "变动类型[20260630]": "预减",
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    context = ResearchContext(
+        holdings=(ResearchTarget(code="600519", name="贵州茅台"),)
+    )
+
+    result = service.research("portfolio", context)
+
+    assert result.primary_risk.startswith("贵州茅台 · 净利润增长率上限")
+
+
+def test_positive_event_summary_is_not_presented_as_primary_risk() -> None:
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "event": {
+                    "datas": [
+                        {
+                            "净利润增长率上限[20260630]": 800,
+                            "变动类型[20260630]": "预增",
+                            "变动原因[20260630]": "上年同期亏损，本期订单恢复。",
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    result = service.research("opportunity", ResearchContext())
+
+    assert "最新变化改善" not in result.primary_risk
+    assert result.primary_risk.startswith("变动原因")
+
+
 def test_document_summary_is_capped_and_does_not_repeat_title() -> None:
     title = "重要政策推动风险偏好改善"
     service = ResearchWorkspaceService(
@@ -544,8 +613,27 @@ def test_document_summary_is_capped_and_does_not_repeat_title() -> None:
     result = service.research("market", ResearchContext())
     news = next(item for item in result.findings if item.title == "市场事件")
 
-    assert len(news.summary) <= 180
+    assert len(news.summary) <= 80
     assert news.summary.count(title) == 1
+
+
+def test_summary_backed_findings_drop_repeated_identity_and_text_facts() -> None:
+    service = ResearchWorkspaceService(client_factory=lambda: FakeClient())
+
+    market = service.research("market", ResearchContext())
+    opportunity = service.research("opportunity", ResearchContext())
+
+    index = next(item for item in market.findings if item.title == "指数状态")
+    news = next(item for item in market.findings if item.title == "市场事件")
+    candidate = next(
+        item for item in opportunity.findings if item.title == "候选线索"
+    )
+    assert all("指数" not in fact.label for fact in index.facts)
+    assert all(
+        fact.label.lower() not in {"title", "summary", "url"}
+        for fact in news.facts
+    )
+    assert all("股票" not in fact.label for fact in candidate.facts)
 
 
 def test_finance_summary_handles_negative_profit_and_cash_flow() -> None:

@@ -59,7 +59,13 @@ def render_engine_workspace(
         </div>
       </section>
       <section class="engine-findings-block" aria-label="关键发现">
-        <div class="engine-section-heading"><h3>关键发现</h3><small>最多三条</small></div>
+        <div class="engine-section-heading">
+          <h3>关键发现</h3>
+          <div class="engine-section-meta">
+            <span class="engine-coverage" data-engine-coverage>已确认维度 0/4</span>
+            <small>最多三条</small>
+          </div>
+        </div>
         <div class="engine-findings" data-engine-findings>
           <div class="engine-empty">生成后显示最重要的三条事实。</div>
         </div>
@@ -132,10 +138,14 @@ def engine_app_script() -> str:
       if (live && loading) live.textContent = '正在生成判断…';
     }
 
-    function renderEngineFinding(item) {
+    function renderEngineFinding(item, index = 0) {
       const card = engineNode('article', 'engine-finding-card');
-      card.append(engineNode('span', '', item.target || '研究发现'));
-      card.append(engineNode('strong', '', item.title || '关键变化'));
+      const meta = engineNode('div', 'engine-finding-meta');
+      meta.append(
+        engineNode('span', 'engine-finding-rank', String(index + 1).padStart(2, '0')),
+        engineNode('span', 'engine-evidence-tag', item.target || '研究证据')
+      );
+      card.append(meta, engineNode('strong', '', item.title || '关键变化'));
       card.append(engineNode('p', '', item.summary || '证据已返回。'));
       const facts = Array.isArray(item.facts) ? item.facts.slice(0, 4) : [];
       if (facts.length) {
@@ -161,7 +171,13 @@ def engine_app_script() -> str:
       details.forEach((detail) => {
         const section = engineNode('section', 'engine-detail-section');
         const heading = engineNode('div', 'engine-detail-heading');
-        const detailState = detail.status === 'ready' ? '已返回' : '缺失';
+        const detailStates = {
+          ready: '已确认',
+          insufficient: '证据不足',
+          failed: '获取失败',
+          missing: '暂无数据'
+        };
+        const detailState = detailStates[detail.status] || '暂无数据';
         heading.append(
           engineNode('strong', '', [detail.target, detail.section].filter(Boolean).join(' · ')),
           engineNode('span', `state-${detail.status || 'missing'}`, detailState)
@@ -169,7 +185,7 @@ def engine_app_script() -> str:
         section.append(heading);
         const findings = Array.isArray(detail.findings) ? detail.findings : [];
         if (findings.length) {
-          findings.forEach((item) => section.append(renderEngineFinding(item)));
+          findings.forEach((item, index) => section.append(renderEngineFinding(item, index)));
         } else {
           section.append(engineNode('p', 'engine-detail-empty', '本维度暂未返回可展示事实。'));
         }
@@ -197,6 +213,8 @@ def engine_app_script() -> str:
       const risk = workspace.querySelector('[data-engine-risk]');
       const generated = workspace.querySelector('[data-engine-generated]');
       const live = workspace.querySelector('[data-engine-live-state]');
+      const details = Array.isArray(payload.details) ? payload.details : [];
+      const coverage = workspace.querySelector('[data-engine-coverage]');
       if (verdict) verdict.textContent = payload.verdict || '本次证据不足，判断暂停。';
       if (action) action.textContent = payload.action || '稍后重新分析。';
       if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
@@ -206,12 +224,17 @@ def engine_app_script() -> str:
           ? date.toLocaleString('zh-CN', {hour12: false})
           : '刚刚生成';
       }
+      if (coverage) {
+        const ready = details.filter((detail) => detail.status === 'ready').length;
+        coverage.textContent = `已确认维度 ${ready}/${details.length || 4}`;
+        coverage.classList.toggle('is-complete', ready > 0 && ready === details.length);
+      }
       const findingsRoot = workspace.querySelector('[data-engine-findings]');
       if (findingsRoot) {
         findingsRoot.replaceChildren();
         const findings = Array.isArray(payload.findings) ? payload.findings.slice(0, 3) : [];
         if (findings.length) {
-          findings.forEach((item) => findingsRoot.append(renderEngineFinding(item)));
+          findings.forEach((item, index) => findingsRoot.append(renderEngineFinding(item, index)));
         } else {
           findingsRoot.append(engineNode('div', 'engine-empty', '本次没有足够的关键事实。'));
         }

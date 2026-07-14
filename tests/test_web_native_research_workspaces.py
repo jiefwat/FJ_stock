@@ -5,7 +5,7 @@ import json
 from bs4 import BeautifulSoup
 
 from stock_ts.web import render_page
-from stock_ts.webapp.engine_workspace import engine_app_script
+from stock_ts.webapp.engine_workspace import engine_app_script, render_engine_workspace
 from stock_ts.webapp.styles import CSS
 
 
@@ -89,3 +89,20 @@ def test_engine_workspace_uses_full_parent_width_on_mobile() -> None:
     engine_css = CSS.split(".engine-module,", 1)[1].split("}", 1)[0]
 
     assert "width:100%" in engine_css.replace(" ", "")
+
+
+def test_engine_workspace_exposes_evidence_completeness() -> None:
+    html = render_engine_workspace("stock", status="configured")
+
+    assert "data-engine-coverage" in html
+    assert "已确认维度" in html
+
+
+def test_finding_cards_have_rank_and_evidence_role() -> None:
+    script = engine_app_script()
+
+    assert "engine-finding-rank" in script
+    assert "engine-evidence-tag" in script
+    assert "item.title" in script
+    assert "证据不足" in script
+    assert "获取失败" in script
