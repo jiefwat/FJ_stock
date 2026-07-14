@@ -61,9 +61,21 @@ def render_iwencai_research_console(
         raise ValueError("不支持的研究模块。")
     configured = status == "configured"
     blocked = status == "requires_login"
-    status_label = "已连接" if configured else ("需启用登录" if blocked else "未配置")
-    status_class = "connected" if configured else ("blocked" if blocked else "missing")
-    disabled = " disabled" if blocked else ""
+    missing_context = (
+        module in {"portfolio", "opportunity"}
+        and not context_options
+        and not any((code, name, sector))
+    )
+    if blocked:
+        status_label, status_class = "需启用登录", "blocked"
+    elif missing_context:
+        status_label = "暂无持仓可核查" if module == "portfolio" else "暂无板块或候选"
+        status_class = "blocked"
+    elif configured:
+        status_label, status_class = "已连接", "connected"
+    else:
+        status_label, status_class = "未配置", "missing"
+    disabled = " disabled" if blocked or missing_context else ""
     kicker, title = MODULE_META[module]
     suggestions = "".join(
         '<button type="button" class="iwencai-question-chip" '
@@ -74,6 +86,12 @@ def render_iwencai_research_console(
     context_select = _render_context_select(module, context_options, disabled)
     form_class = "iwencai-research-form has-context" if context_options else "iwencai-research-form"
     question_id = f"iwencai-question-{module}"
+    if blocked:
+        state_message = "启用登录后可查询问财。"
+    elif missing_context:
+        state_message = "先录入持仓后再核查。" if module == "portfolio" else "先刷新候选后再核查。"
+    else:
+        state_message = "问财结果只作证据补充，不改写本地结论。"
     return f"""
       <section class="iwencai-research-console" data-iwencai-research="true"
         data-iwencai-module="{escape(module)}"
@@ -97,7 +115,7 @@ def render_iwencai_research_console(
           <button type="submit" data-iwencai-submit{disabled}>核查问财</button>
         </form>
         <p class="iwencai-console-state" data-iwencai-state>
-          {'启用登录后可查询问财。' if blocked else '问财结果只作证据补充，不改写本地结论。'}</p>
+          {state_message}</p>
         <div class="iwencai-research-result" data-iwencai-result hidden aria-live="polite"></div>
       </section>"""
 

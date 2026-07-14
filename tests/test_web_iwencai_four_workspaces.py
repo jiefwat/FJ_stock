@@ -69,6 +69,18 @@ def test_research_console_escapes_context_and_disables_when_login_is_unavailable
     assert html.count(" disabled") == 7
 
 
+def test_context_modules_disable_queries_when_no_target_exists() -> None:
+    portfolio = render_iwencai_research_console(module="portfolio", status="configured")
+    opportunity = render_iwencai_research_console(module="opportunity", status="configured")
+
+    assert "暂无持仓可核查" in portfolio
+    assert "先录入持仓" in portfolio
+    assert portfolio.count(" disabled") == 6
+    assert "暂无板块或候选" in opportunity
+    assert "先刷新候选" in opportunity
+    assert opportunity.count(" disabled") == 6
+
+
 def test_four_workspaces_each_render_one_research_console_in_decision_order() -> None:
     html = render_page(
         stock_code="600519",

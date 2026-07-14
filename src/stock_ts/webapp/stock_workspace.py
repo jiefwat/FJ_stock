@@ -348,4 +348,3 @@ def _render_section(section: ResearchSection) -> str:
         f"<ul class='memo-next-checks'>{checks}</ul>"
         "</article>"
     )
-
