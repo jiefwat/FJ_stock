@@ -16,15 +16,20 @@
 | 公网登录保护 | 通过 | 根路径返回 HTTP 303，并跳转 `/login?next=%2F` |
 | 公网匿名研究请求 | 通过 | `POST /api/iwencai/research` 返回 HTTP 401、`login_required`，响应中无 Key |
 | 回滚包 | 通过 | `/opt/stock-ts/.deploy_backups/iwencai-20260714-153500-a6a1f05/source-a6a1f05.tar.gz` 存在 |
+| 真实问财网关 | 通过 | 财务质量请求路由到 `hithink-finance-query`，返回 `complete`、1 条结构化事实和 trace 尾号，响应中无 Key |
+| 生产登录态端到端 | 通过 | 本机生产服务登录返回 HTTP 303，携带会话请求 `/api/iwencai/research` 返回 HTTP 200、`complete` 和 1 条事实 |
+| 网关兼容修复部署 | 通过 | 运行提交 `c72f70d176f8a489e220878356ae1540a5ae9d48`；回滚包位于 `/opt/stock-ts/.deploy_backups/iwencai-status-fix-20260714-155431/source-before.tar.gz` |
 
-## 待完成
+## 真实联调发现与修复
 
-- 服务器 `.env` 和当前 `stock-ts.service` 进程均未配置 `IWENCAI_API_KEY`；配置后执行一次不回显密钥的登录态真实问财查询。
+- 问财 `query2data` 的成功响应使用浮点数 `status_code=0.0`；原客户端只接受字符串 `0` / `200`，会误判为业务错误。
+- 已用失败测试复现，再统一按数值语义兼容 `0` / `200` 的整数、浮点数和字符串形式；专项测试由 68 增至 69 个。
+- 服务器 `.env` 权限为 `600`，systemd 通过只包含文件路径的 drop-in 注入环境；主进程确认存在变量，但验证过程不输出变量值。
 
 ## 部署边界
 
-- 功能代码、鉴权、安全降级和页面已部署到公网。
-- 未配置 Key 时，问财外部调用不可用，但 StockTs 本地个股分析、数据闸门和其他页面不受影响。
+- 功能代码、鉴权、安全降级、页面和真实问财调用均已部署到公网。
+- 问财调用失败时，StockTs 本地个股分析、数据闸门和其他页面仍不受影响。
 - 本轮没有提交、上传或输出任何真实 Key，也没有向问财发送持仓、成本、Cookie 或账号信息。
 
 ## 已知基线失败
