@@ -13,6 +13,8 @@ from stock_ts.research.stock_dossier_models import (
     PositionGuidance,
     ProfessionalStockDossier,
     RiskItem,
+    ThesisFramework,
+    WeightedEvidence,
 )
 from stock_ts.webapp.stock_workspace import render_stock_workspace
 from stock_ts.webapp.styles import CSS
@@ -38,11 +40,11 @@ def _dossier() -> ProfessionalStockDossier:
         decision_steps=tuple(
             DecisionStep(label, state, condition, consequence)
             for label, state, condition, consequence in (
-                ("当前状态", "current", "风险规避", "不新开仓"),
-                ("转强触发", "upgrade", "站稳 10.80", "重新评估"),
-                ("加仓确认", "confirm", "回踩不破", "小仓验证"),
-                ("降级触发", "downgrade", "跌破 9.50", "降低风险"),
-                ("失效退出", "invalid", "跌破 9.40", "终止论点"),
+                ("当前判断", "current", "风险规避", "不新开仓"),
+                ("研究转强", "upgrade", "盈利修复且质押解除", "进入价格确认"),
+                ("价格确认", "confirm", "站稳 10.80", "小仓验证"),
+                ("降级条件", "downgrade", "跌破 9.50", "降低风险"),
+                ("论点失效", "invalid", "跌破 9.40", "终止论点"),
             )
         ),
         diagnostics=(
@@ -100,29 +102,76 @@ def _dossier() -> ProfessionalStockDossier:
                 "PB 口径冲突",
             ),
         ),
+        thesis=ThesisFramework(
+            headline="投资假设尚未成立：盈利修复与质押风险解除必须同时发生",
+            core_conflict="盈利修复能否覆盖股权质押造成的风险折价。",
+            causal_chain=(
+                "事实：净利润为负，存在高比例质押",
+                "推断：只有盈利修复且风险解除，估值锚才可能恢复",
+                "验证：站稳 10.80；跌破 9.40 论点失效",
+            ),
+            expectation_gap="未接入一致预期，预期差不可量化。",
+            valuation_fit="亏损阶段 PE 失效，PB 口径仍需核对。",
+            catalyst_window="下一份财报或重大公告",
+            key_unknown="质押影响范围与盈利修复节奏",
+            falsifier="质押风险升级、盈利恶化或跌破 9.40。",
+        ),
+        weighted_evidence=tuple(
+            WeightedEvidence(dimension, importance, direction, fact, inference, unknown)
+            for dimension, importance, direction, fact, inference, unknown in (
+                ("盈利质量", "高", "反证", "净利润为负", "盈利压低风险预算", "下一财报"),
+                ("估值与预期差", "高", "未知", "PE 失效", "不能判断低估", "一致预期"),
+                ("事件与治理", "高", "反证", "高比例质押", "约束新风险", "公告原文"),
+                ("行业位置", "中", "未知", "排名缺失", "不自动加分", "同业比较"),
+                ("资金与价格", "中", "中性", "反弹未反转", "只确认时点", "持续资金"),
+            )
+        ),
     )
+
+
+def test_workspace_reads_as_thesis_conditions_execution_evidence_and_scenarios() -> None:
+    html = render_stock_workspace(_dossier())
+    labels = [
+        "投资判断",
+        "核心矛盾",
+        "决策条件",
+        "执行边界",
+        "论点链",
+        "关键证据",
+        "风险反证",
+        "三情景",
+        "证据账本",
+    ]
+
+    assert all(label in html for label in labels)
+    assert [html.index(label) for label in labels] == sorted(
+        html.index(label) for label in labels
+    )
+    assert "诊断底稿" not in html.split("证据账本", 1)[0]
+    assert "多角色分析方法" not in html
+    assert html.count('data-primary-stock-verdict="true"') == 1
 
 
 def test_workspace_leads_with_one_decision_and_five_step_rail() -> None:
     html = render_stock_workspace(_dossier())
 
-    assert html.index("投委会结论") < html.index("诊断底稿")
+    assert html.index("投资判断") < html.index("关键证据")
     assert html.count('data-primary-stock-verdict="true"') == 1
     assert html.count('class="decision-rail-step') == 5
-    assert "当前状态" in html
-    assert "转强触发" in html
-    assert "加仓确认" in html
-    assert "降级触发" in html
-    assert "失效退出" in html
+    assert "当前判断" in html
+    assert "研究转强" in html
+    assert "价格确认" in html
+    assert "降级条件" in html
+    assert "论点失效" in html
 
 
 def test_workspace_places_risk_before_scenarios_and_labels_confidence() -> None:
     html = render_stock_workspace(_dossier())
 
-    assert html.index("风险登记表") < html.index("三种情景")
-    assert "证据完整度" in html
+    assert html.index("风险反证") < html.index("三情景")
+    assert "完整度" in html
     assert "上涨概率" not in html
-    assert "仓位上限" in html
+    assert "仓位 / 风险预算" in html
     assert "禁止动作" in html
     assert html.count('class="stock-evidence essence-evidence"') == 1
     assert "RISK FIRST" not in html
@@ -146,8 +195,8 @@ def test_stock_page_has_no_duplicate_primary_trade_conclusion() -> None:
     )
 
     assert html.count('data-primary-stock-verdict="true"') == 1
-    assert html.count("投委会结论") == 1
-    assert "多角色分析方法" not in html.split("诊断底稿", 1)[0]
+    assert html.count("投资判断") == 1
+    assert "多角色分析方法" not in html
 
 
 def test_dossier_styles_define_desktop_mobile_and_reduced_motion() -> None:

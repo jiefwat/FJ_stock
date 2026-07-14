@@ -1141,7 +1141,7 @@ def test_final_conclusions_use_research_style_action_driver_trigger_risk() -> No
     for text in ["机会总闸门", "支持证据", "最大反证", "下一步："]:
         assert text in opportunity_html
 
-    for text in ["投委会结论", "转强触发", "失效退出", "最大反证"]:
+    for text in ["投资判断", "研究转强", "论点失效", "风险反证"]:
         assert text in stock_html
 
     for stale_phrase in [
@@ -1166,7 +1166,7 @@ def test_core_modules_show_explicit_execution_boundaries_not_only_analysis() -> 
     assert "买入触发" not in portfolio_html
 
     stock_html = _workspace(html, "stock")
-    for text in ["仓位与执行边界", "入场触发", "减仓触发", "仓位上限", "失效条件"]:
+    for text in ["执行边界", "入场 / 加仓", "减仓 / 退出", "仓位 / 风险预算", "论点失效"]:
         assert text in stock_html
 
     opportunity_html = _workspace(html, "opportunity")
@@ -1246,22 +1246,25 @@ def test_stock_module_leads_from_entry_to_research_memo_and_execution() -> None:
     for text in [
         "分析入口",
         "开始分析",
-        "投委会结论",
-        "五步决策轨道",
-        "风险登记表",
-        "仓位与执行边界",
-        "诊断底稿",
-        "三种情景",
+        "投资判断",
+        "决策条件",
+        "执行边界",
+        "论点链",
+        "关键证据",
+        "风险反证",
+        "三情景",
         "证据账本",
     ]:
         assert text in stock_html
 
-    assert stock_html.index("投委会结论") < stock_html.index("分析入口")
-    assert stock_html.index("投委会结论") < stock_html.index("五步决策轨道")
-    assert stock_html.index("五步决策轨道") < stock_html.index("风险登记表")
-    assert stock_html.index("风险登记表") < stock_html.index("仓位与执行边界")
-    assert stock_html.index("仓位与执行边界") < stock_html.index("诊断底稿")
-    assert stock_html.index("诊断底稿") < stock_html.index("三种情景")
+    assert stock_html.index("投资判断") < stock_html.index("分析入口")
+    assert stock_html.index("分析入口") < stock_html.index("决策条件")
+    assert stock_html.index("决策条件") < stock_html.index("执行边界")
+    assert stock_html.index("执行边界") < stock_html.index("论点链")
+    assert stock_html.index("论点链") < stock_html.index("关键证据")
+    assert stock_html.index("关键证据") < stock_html.index("风险反证")
+    assert stock_html.index("风险反证") < stock_html.index("三情景")
+    assert stock_html.index("三情景") < stock_html.index("证据账本")
     assert "K线数据" not in stock_html
     kline_table_header = (
         "<th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>成交量</th>"
@@ -1286,39 +1289,25 @@ def test_stock_analysis_uses_multi_day_theme_and_relative_comparison() -> None:
     assert "近一日 " not in stock_html
 
 
-def test_stock_analysis_keeps_multi_role_method_in_supporting_evidence() -> None:
+def test_stock_analysis_replaces_method_narration_with_weighted_evidence() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
-    for text in [
-        "多角色分析方法",
-        "技术分析师",
-        "基本面分析师",
-        "新闻事件分析师",
-        "情绪/资金分析师",
-        "多空辩论",
-        "交易员",
-        "风控经理",
-        "输入",
-        "判断",
-    ]:
+    for text in ["关键证据", "盈利质量", "估值与预期差", "事件与治理", "行业位置", "资金与价格"]:
         assert text in stock_html
 
-    assert stock_html.index("投委会结论") < stock_html.index("诊断底稿")
-    assert stock_html.index("诊断底稿") < stock_html.index("多角色分析方法")
-    assert stock_html.index("证据账本") < stock_html.index("多角色分析方法")
-    assert "完整方法链" not in stock_html
+    for narration in ["多角色分析方法", "技术分析师", "多空辩论", "交易员", "风控经理", "完整方法链"]:
+        assert narration not in stock_html
 
 
-def test_stock_bull_bear_debate_does_not_use_user_position_as_bullish_reason() -> None:
+def test_weighted_evidence_does_not_use_user_position_as_support() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
-    debate_start = stock_html.index("多空辩论")
-    debate_end = stock_html.index("交易员", debate_start)
-    debate_html = stock_html[debate_start:debate_end]
+    evidence_start = stock_html.index("weighted-evidence-list")
+    evidence_end = stock_html.index("风险反证", evidence_start)
+    evidence_html = stock_html[evidence_start:evidence_end]
 
-    assert "看多依据：仓位" not in debate_html
-    assert "看多依据：持仓影响" not in debate_html
-    assert "浮动盈亏" not in debate_html
+    assert "持仓影响" not in evidence_html
+    assert "浮动盈亏" not in evidence_html
     assert "仓位" in stock_html
 
 
@@ -1388,14 +1377,14 @@ def test_stock_scenarios_avoid_false_probability_precision() -> None:
     stock_html = _workspace(_sample_html(stock_code="603278"), "stock")
 
     for text in [
-        "三种情景",
+        "三情景",
         "改善",
         "基准",
         "恶化",
         "确认",
         "动作",
         "失效",
-        "证据完整度",
+        "完整度",
     ]:
         assert text in stock_html
 

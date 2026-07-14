@@ -138,12 +138,12 @@ def test_web_stock_page_surfaces_tradingagents_chain_and_signal_attribution() ->
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
     assert "分析入口" in stock_html
-    assert "投委会结论" in stock_html
+    assert "投资判断" in stock_html
     assert "分析内容" in stock_html
-    assert "五步决策轨道" in stock_html
-    assert "仓位与执行边界" in stock_html
-    assert "三种情景" in stock_html
-    assert "诊断底稿" in stock_html
+    assert "决策条件" in stock_html
+    assert "执行边界" in stock_html
+    assert "三情景" in stock_html
+    assert "关键证据" in stock_html
     assert "大业股份" in stock_html
 
 
@@ -187,9 +187,10 @@ def test_stock_page_keeps_agentic_method_but_hides_noisy_detail_by_default() -> 
     stock_html = html[stock_start:] if next_workspace == -1 else html[stock_start:next_workspace]
 
     assert "分析内容" in stock_html
-    assert "投委会结论" in stock_html
-    assert "五步决策轨道" in stock_html
-    assert "诊断底稿" in stock_html
+    assert "投资判断" in stock_html
+    assert "决策条件" in stock_html
+    assert "关键证据" in stock_html
+    assert "诊断底稿" not in stock_html.split("证据账本", 1)[0]
     assert "上涨概率" not in stock_html
     assert "机会评分" not in stock_html
     assert stock_html.count('data-primary-stock-verdict="true"') == 1

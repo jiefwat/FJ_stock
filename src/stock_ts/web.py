@@ -9890,17 +9890,6 @@ def _render_stock_simple_analysis_content(
     )
     data_rows = _stock_simple_data_rows(stock_raw)
     warning_html = _stock_simple_quality_warning(quality)
-    method_chain = _render_stock_method_chain(
-        stock=stock,
-        stock_raw=stock_raw,
-        sectors=sectors,
-        technical=technical,
-        event_radar=event_radar,
-        announcement_report=announcement_report,
-        quality=quality,
-        trade_plan=trade_plan,
-        invalid=invalid,
-    )
     return f"""
       <div class="panel stock-analysis-simple-panel">
         <div class="editor-toolbar">
@@ -9908,7 +9897,6 @@ def _render_stock_simple_analysis_content(
           <span class="portfolio-chip">{escape(quality.signal)}</span>
         </div>
         {warning_html}
-        {method_chain}
         <table class="data-table">
           <thead><tr><th>维度</th><th>原因分析</th><th>影响/验证</th></tr></thead>
           <tbody>{rows}</tbody>

@@ -77,11 +77,11 @@ def test_portfolio_and_stock_surfaces_keep_action_content() -> None:
     assert "事件风险" in html
     assert "估值" in html
     assert "分析入口" in html
-    assert "投委会结论" in html
-    assert "五步决策轨道" in html
-    assert "仓位与执行边界" in html
-    assert "诊断底稿" in html
-    assert "三种情景" in html
+    assert "投资判断" in html
+    assert "决策条件" in html
+    assert "执行边界" in html
+    assert "关键证据" in html
+    assert "三情景" in html
 
 
 def test_four_module_grid_drops_home_specific_rules() -> None:

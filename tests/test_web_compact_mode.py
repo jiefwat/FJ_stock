@@ -54,10 +54,10 @@ def test_compact_stock_module_has_single_core_surface() -> None:
     assert 'class="stock-tabs"' not in html
     assert "data-stock-tab-trigger" not in html
     assert "当前动作" in html
-    assert "加仓确认" in html
-    assert "投委会结论" in html
-    assert "仓位与执行边界" in html
-    assert "诊断底稿" in html
+    assert "入场 / 加仓" in html
+    assert "投资判断" in html
+    assert "执行边界" in html
+    assert "关键证据" in html
     assert "分析内容" in html
 
 
