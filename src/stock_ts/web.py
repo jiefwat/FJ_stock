@@ -4665,6 +4665,7 @@ def _render_hot_opportunity_module(
         provider_name=provider_name,
         holdings_path=holdings_path,
         supporting_html=_render_opportunity_sector_context(sectors, candidate_universe),
+        iwencai_status=_iwencai_research_ui_status(),
     )
     sector_risk = _render_opportunity_sector_risk_chip(sectors)
     return f"""
@@ -6500,6 +6501,7 @@ def _render_compact_market_module(
         events_html=event_panel,
         refresh_html=refresh_tools,
         close_html=f"{analysis_panel}{trade_guidance}",
+        iwencai_status=_iwencai_research_ui_status(),
     )
     return f"""
     <section class="module market-console" id="module-market">
@@ -8551,6 +8553,7 @@ def _render_compact_portfolio_module(
     workspace = render_portfolio_workspace(
         dossier,
         supporting_evidence_html=analysis_list,
+        iwencai_status=_iwencai_research_ui_status(),
     )
     notice_html = _render_portfolio_notice(notice)
     return f"""

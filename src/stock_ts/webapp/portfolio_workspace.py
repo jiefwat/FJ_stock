@@ -7,12 +7,17 @@ from stock_ts.research.portfolio_dossier_models import (
     PortfolioDossier,
     PortfolioQueueItem,
 )
+from stock_ts.webapp.research_console import (
+    ResearchContextOption,
+    render_iwencai_research_console,
+)
 
 
 def render_portfolio_workspace(
     dossier: PortfolioDossier,
     *,
     supporting_evidence_html: str = "",
+    iwencai_status: str = "missing",
 ) -> str:
     verdict = dossier.verdict
     metrics = "".join(
@@ -51,6 +56,14 @@ def render_portfolio_workspace(
           {supporting_evidence_html}
         </div>
       </details>"""
+    research_options = tuple(
+        ResearchContextOption(
+            code=item.code,
+            name=item.name,
+            label=f"{item.name} · {item.code}",
+        )
+        for item in dossier.queue
+    )
     return f"""
     <section class="portfolio-dossier" data-portfolio-state="{escape(verdict.state)}">
       <section class="portfolio-verdict-brief" data-primary-portfolio-verdict="true"
@@ -81,6 +94,11 @@ def render_portfolio_workspace(
           {exposures}
         </section>
       </div>
+      {render_iwencai_research_console(
+          module="portfolio",
+          status=iwencai_status,
+          context_options=research_options,
+      )}
       {evidence}
     </section>"""
 

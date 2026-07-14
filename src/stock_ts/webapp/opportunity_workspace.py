@@ -7,6 +7,10 @@ from stock_ts.research.opportunity_dossier_models import (
     CandidateDecision,
     OpportunityDossier,
 )
+from stock_ts.webapp.research_console import (
+    ResearchContextOption,
+    render_iwencai_research_console,
+)
 
 
 def render_opportunity_workspace(
@@ -15,6 +19,7 @@ def render_opportunity_workspace(
     provider_name: str,
     holdings_path: str,
     supporting_html: str = "",
+    iwencai_status: str = "missing",
 ) -> str:
     gate = dossier.gate
     scanned = str(gate.scanned_count) if gate.scanned_count is not None else "未知"
@@ -78,6 +83,7 @@ def render_opportunity_workspace(
           {supporting_html}
         </div>
       </details>"""
+    research_options = _research_context_options(dossier)
     return f"""
     <section class="opportunity-dossier"
       data-opportunity-state="{escape(gate.state)}">
@@ -103,6 +109,11 @@ def render_opportunity_workspace(
         <h3 id="opportunity-funnel-title">证据漏斗</h3>
         <div class="opportunity-funnel-rail essence-strip">{funnel}</div>
       </section>
+      {render_iwencai_research_console(
+          module="opportunity",
+          status=iwencai_status,
+          context_options=research_options,
+      )}
       <div class="opportunity-research-grid">
         <section aria-labelledby="opportunity-candidates-title">
           <h3 id="opportunity-candidates-title">研究候选</h3>
@@ -115,6 +126,26 @@ def render_opportunity_workspace(
       </div>
       {evidence}
     </section>"""
+
+
+def _research_context_options(
+    dossier: OpportunityDossier,
+) -> tuple[ResearchContextOption, ...]:
+    sectors = tuple(dict.fromkeys(item.sector for item in dossier.candidates if item.sector))
+    sector_options = tuple(
+        ResearchContextOption(sector=sector, label=f"{sector} · 板块")
+        for sector in sectors
+    )
+    candidate_options = tuple(
+        ResearchContextOption(
+            code=item.code,
+            name=item.name,
+            sector=item.sector,
+            label=f"{item.name} · {item.code}",
+        )
+        for item in dossier.candidates
+    )
+    return sector_options + candidate_options
 
 
 def _render_candidate(

@@ -4,6 +4,14 @@ from stock_ts.webapp.research_console import (
     ResearchContextOption,
     render_iwencai_research_console,
 )
+from stock_ts.providers.sample import SampleDataProvider
+from stock_ts.web import render_page
+
+
+def _workspace(html: str, key: str) -> str:
+    start = html.index(f'id="{key}"')
+    next_workspace = html.find('<section class="workspace-pane', start + 1)
+    return html[start:] if next_workspace == -1 else html[start:next_workspace]
 
 
 def test_shared_research_console_has_four_module_presets() -> None:
@@ -57,3 +65,45 @@ def test_research_console_escapes_context_and_disables_when_login_is_unavailable
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "需启用登录" in html
     assert html.count(" disabled") == 7
+
+
+def test_four_workspaces_each_render_one_research_console_in_decision_order() -> None:
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+    workspaces = {
+        key: _workspace(html, key)
+        for key in ("market", "portfolio", "stock", "opportunity")
+    }
+
+    assert all(section.count('data-iwencai-research="true"') == 1 for section in workspaces.values())
+    assert workspaces["market"].index("五步风险决策轨道") < workspaces["market"].index(
+        "问财外部核查"
+    ) < workspaces["market"].index("三情景推演")
+    assert workspaces["portfolio"].index("处置队列") < workspaces["portfolio"].index(
+        "问财外部核查"
+    ) < workspaces["portfolio"].index("持仓证据")
+    assert workspaces["stock"].index("关键证据") < workspaces["stock"].index(
+        "问财研究追问"
+    )
+    assert workspaces["opportunity"].index("证据漏斗") < workspaces["opportunity"].index(
+        "问财外部核查"
+    ) < workspaces["opportunity"].index("研究候选")
+
+
+def test_portfolio_and_opportunity_consoles_only_expose_minimum_context() -> None:
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+    for key in ("portfolio", "opportunity"):
+        workspace = _workspace(html, key)
+        console = workspace.split('data-iwencai-research="true"', 1)[1].split("</section>", 1)[0]
+        assert "data-code=" in console or "data-sector=" in console
+        for private_field in ("data-shares", "data-cost", "data-weight", "cost_price"):
+            assert private_field not in console

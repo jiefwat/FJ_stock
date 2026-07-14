@@ -3,6 +3,7 @@ from __future__ import annotations
 from html import escape
 
 from stock_ts.research.market_regime import MarketRegimeAssessment
+from stock_ts.webapp.research_console import render_iwencai_research_console
 
 
 def render_market_workspace(
@@ -15,6 +16,7 @@ def render_market_workspace(
     intraday_detail_html: str = "",
     close_html: str = "",
     supporting_html: str = "",
+    iwencai_status: str = "missing",
 ) -> str:
     rail_state, rail_items = _market_decision_steps(assessment)
     decision_rail = "".join(
@@ -104,6 +106,11 @@ def render_market_workspace(
           <h3 id="market-decision-rail-title">五步风险决策轨道</h3>
           <div class="market-decision-rail">{decision_rail}</div>
         </section>
+        {render_iwencai_research_console(
+            module="market",
+            status=iwencai_status,
+            local_as_of=assessment.trade_date,
+        )}
         <section aria-labelledby="market-scenarios-title">
           <h3 id="market-scenarios-title">三情景推演</h3>
           <div class="research-scenario-grid">{scenarios}</div>
