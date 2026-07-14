@@ -4,9 +4,9 @@
 
 | 验证 | 结果 | 覆盖 |
 |---|---|---|
-| `python3 -m pytest tests/test_iwencai.py tests/test_web_iwencai_research.py tests/test_web_stock_research_workspace.py tests/test_web_auth.py -q` | `68 passed` | 技能路由、双 endpoint、全路径脱敏、鉴权、限流、UI |
+| `python3 -m pytest tests/test_iwencai.py tests/test_web_iwencai_research.py tests/test_web_stock_research_workspace.py tests/test_web_auth.py -q` | `69 passed` | 技能路由、双 endpoint、浮点成功状态、全路径脱敏、鉴权、限流、UI |
 | `make lint` | 通过 | 全仓 Python 与测试静态检查 |
-| `make test` | `612 passed, 5 failed, 10 warnings` | 全仓；5 个失败均为既有日报流水线基线 |
+| `make test` | `613 passed, 5 failed, 10 warnings` | 全仓；5 个失败均为既有日报流水线基线 |
 | 1280px 浏览器 | 通过 | 调度台位于证据之后、风险之前；未配置状态与布局正确 |
 | 390px 浏览器 | 通过 | 宽度 340px、文档宽度 390px，无横向溢出；输入与按钮单列 |
 | 无 Key 交互 | 通过 | 显示服务器配置提示，同时明确本地分析仍可用 |

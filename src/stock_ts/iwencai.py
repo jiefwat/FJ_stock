@@ -165,7 +165,7 @@ class IwencaiSkillClient:
         if not isinstance(result, dict):
             raise IwencaiGatewayError("问财返回格式不符合预期。")
         business_status = result.get("status_code", result.get("code"))
-        if business_status is not None and str(business_status) not in {"0", "200"}:
+        if business_status is not None and not _is_success_business_status(business_status):
             detail = result.get("message", result.get("error", "网关业务错误"))
             safe_detail = _safe_error_detail(str(detail), secret=self.api_key)
             safe_status = _safe_error_detail(str(business_status), secret=self.api_key)
@@ -266,6 +266,13 @@ def _safe_int(value: Any, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _is_success_business_status(value: Any) -> bool:
+    try:
+        return float(str(value).strip()) in {0.0, 200.0}
+    except (TypeError, ValueError):
+        return False
 
 
 def _safe_error_detail(detail: str, *, secret: str = "") -> str:

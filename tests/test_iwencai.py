@@ -236,6 +236,24 @@ def test_client_rejects_http_200_gateway_business_error_without_leaking_key() ->
     assert "quota exceeded" in str(caught.value)
 
 
+def test_client_accepts_float_zero_gateway_success_status() -> None:
+    client = IwencaiSkillClient(
+        api_key="iwc-secret",
+        transport=lambda _request, timeout: FakeResponse(
+            {
+                "status_code": 0.0,
+                "status_msg": "ok",
+                "datas": [{"股票简称": "贵州茅台"}],
+            }
+        ),
+    )
+
+    result = client.query(route_stock_research_skill("净利润"), "贵州茅台 净利润")
+
+    assert result["status_code"] == 0.0
+    assert result["datas"][0]["股票简称"] == "贵州茅台"
+
+
 def test_business_status_field_cannot_echo_api_key() -> None:
     secret = "iwc-status-secret"
     client = IwencaiSkillClient(
