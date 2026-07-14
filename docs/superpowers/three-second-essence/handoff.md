@@ -5,7 +5,8 @@
 - 分支：`main`
 - 工作树：`/Users/fangjie/.config/superpowers/worktrees/StockTs/main-research-integration`
 - 原始脏工作树 `/Users/fangjie/Documents/StockTs` 未修改。
-- 四工作台实现、专项测试、全 Web 测试、全量 Ruff 和桌面/移动端验收已完成。
+- 四工作台实现、专项测试、全 Web 测试、全量 Ruff、桌面/移动端验收、公网部署和生产数据刷新均已完成。
+- 公网入口：`https://stock.jiewat-kaka-fj.com/`。
 
 ## 展示契约
 
@@ -21,3 +22,11 @@
 - 必须保留 `.env`、`.secrets`、`data`、`reports`、认证和持仓数据。
 - 只重启 `stock-ts.service`；部署后复核 StockTS、Signal Desk 和 Nginx。
 - 禁止在输出、日志或提交中回显 `IWENCAI_API_KEY`。
+
+## 部署记录
+
+- 运行代码提交：`1e40f2893fe44644de426eade1aa38cbf9a3c2b7`。
+- 回滚包：`/opt/stock-ts/.deploy_backups/three-second-essence-20260714-175255/source-before.tar.gz`。
+- StockTS、Signal Desk、Nginx、日报定时器和公网 `/healthz` 均正常。
+- 根路径保持登录保护；匿名问财返回 `401 login_required`。
+- 生产刷新状态为 `ok`，交易日 `2026-07-14`，数据链七个步骤全部为 `ok`。

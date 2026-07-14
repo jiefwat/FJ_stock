@@ -35,3 +35,36 @@ PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest -q
 - HTML、diff 与测试输出未出现问财 Key、密码、Token 或私钥。
 - 问财仍需登录后主动提交，不自动调用外部服务。
 - 用户持仓路径与隔离逻辑未修改。
+
+## 生产部署与刷新
+
+- 运行代码提交：`1e40f2893fe44644de426eade1aa38cbf9a3c2b7`。
+- 服务器：`admin@47.82.145.207:/opt/stock-ts`，分支 `main`，tracked 工作树干净。
+- 回滚包：`/opt/stock-ts/.deploy_backups/three-second-essence-20260714-175255/source-before.tar.gz`。
+- 传输：完整 Git bundle 校验 SHA-256 后，服务器使用 `git merge --ff-only` 快进。
+- `.env` 权限保持 `600`；`.env`、`.secrets`、`data`、`reports`、账号和持仓数据均保留。
+- 只重启 `stock-ts.service`；StockTS、Signal Desk、Nginx 和日报定时器均保持正常。
+
+生产刷新于 `2026-07-14T18:22:32` 完成：
+
+```text
+status=ok
+refresh=ok
+tdx_enrich=ok
+a_share_kline=ok
+external_enrich=ok
+announcements=ok
+report=ok
+data_chain=ok
+```
+
+- 全市场扫描：`5,533` 只；候选：`300` 只；TDX 深度补强：`23` 只。
+- A 股日线：请求 `311` 只，更新 `310` 只，失败 `0`，非 A 股跳过 `1`。
+- 外部补强：持仓优先和候选分批全部 `error_count=0`；市场新闻 `161` 条。
+- 最新日报：`trade_date=2026-07-14`，Markdown、决策 JSON 和 HTML 均已生成。
+
+公网验证：
+
+- `https://stock.jiewat-kaka-fj.com/healthz` 返回 `ok`。
+- 根路径返回 HTTP `303`，跳转 `/login?next=%2F`。
+- 匿名问财返回 HTTP `401`、`status=login_required`，未回显 Key。
