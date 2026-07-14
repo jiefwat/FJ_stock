@@ -335,11 +335,11 @@ def test_decision_rail_has_exactly_five_ordered_steps() -> None:
     dossier = _build(_raw_stock(financial=True, events=True))
 
     assert [item.label for item in dossier.decision_steps] == [
-        "当前状态",
-        "转强触发",
-        "加仓确认",
-        "降级触发",
-        "失效退出",
+        "当前判断",
+        "研究转强",
+        "价格确认",
+        "降级条件",
+        "论点失效",
     ]
 
 
@@ -456,3 +456,37 @@ def test_missing_fundamentals_stay_unknown_instead_of_becoming_technical_support
     assert earnings.direction == "未知"
     assert "补" in earnings.unknown
     assert "待验证" in dossier.thesis.headline
+
+
+def test_entry_requires_research_and_price_confirmation() -> None:
+    dossier = _build(_raw_stock(financial=True, events=True))
+
+    assert (
+        "经营" in dossier.position.entry_trigger
+        or "事件" in dossier.position.entry_trigger
+    )
+    assert "10.80" in dossier.position.entry_trigger
+    assert "9.40" in dossier.position.invalidation
+    assert any(
+        word in dossier.position.invalidation for word in ("盈利", "事件", "论点")
+    )
+
+
+def test_loss_and_high_event_risk_cannot_be_overridden_by_breakout() -> None:
+    dossier = _build(
+        _raw_stock(
+            fundamental_metrics={"net_profit": -10.0},
+            news_items=[
+                NewsItem(
+                    "2026-07-10",
+                    "fixture",
+                    "收到立案调查通知",
+                    "监管立案",
+                )
+            ],
+        )
+    )
+
+    assert dossier.position.position_cap == "0%"
+    assert "风险" in dossier.position.entry_trigger or "暂停" in dossier.position.entry_trigger
+    assert "站稳 10.80" not in dossier.position.entry_trigger.split("；")[0]

@@ -118,14 +118,6 @@ def build_professional_stock_dossier(
         if paused
         else "下一交易日收盘或重大公告后复核。",
     )
-    position = _position_guidance(
-        technical,
-        holding=holding,
-        paused=paused,
-        grade=grade,
-        stance=stance,
-        latest_close=latest.close if latest else 0.0,
-    )
     diagnostics = (
         financial,
         valuation,
@@ -154,6 +146,21 @@ def build_professional_stock_dossier(
         risks=risks,
         sector_context=sector_context,
     )
+    research_confirmation = _research_confirmation(
+        financial=financial,
+        risks=risks,
+    )
+    position = _position_guidance(
+        technical,
+        holding=holding,
+        paused=paused,
+        grade=grade,
+        stance=stance,
+        latest_close=latest.close if latest else 0.0,
+        thesis=thesis_framework,
+        research_confirmation=research_confirmation,
+        risks=risks,
+    )
     scenarios = _scenarios(
         raw,
         financial=financial,
@@ -174,7 +181,15 @@ def build_professional_stock_dossier(
         trade_date=latest.date if latest else "",
         latest_close=latest.close if latest else 0.0,
         verdict=verdict,
-        decision_steps=_decision_steps(technical, paused=paused),
+        decision_steps=_decision_steps(
+            technical,
+            paused=paused,
+            stance=stance,
+            action=action,
+            thesis=thesis_framework,
+            research_confirmation=research_confirmation,
+            risks=risks,
+        ),
         diagnostics=diagnostics,
         risks=risks,
         position=position,
@@ -254,7 +269,7 @@ def _thesis_framework(
         key_unknown = "一致预期变化与下一财报的盈利持续性"
     else:
         key_unknown = f"{risk_category}原文、影响范围与解除条件"
-    falsifier_parts = [f"收盘跌破 {invalid_line:.2f}"]
+    falsifier_parts = ["盈利或现金流方向性恶化", f"收盘跌破 {invalid_line:.2f}"]
     if loss_making:
         falsifier_parts.insert(0, "亏损继续扩大或现金流转弱")
     if risks:
@@ -451,6 +466,9 @@ def _position_guidance(
     grade: str,
     stance: str,
     latest_close: float,
+    thesis: ThesisFramework,
+    research_confirmation: str,
+    risks: tuple[RiskItem, ...],
 ) -> PositionGuidance:
     if paused:
         return PositionGuidance(
@@ -481,6 +499,22 @@ def _position_guidance(
         current = f"持仓 {holding.shares:g} 股，成本待补录；先按失效线管理"
     else:
         current = "未持仓，等待价格与证据双重触发"
+    if stance == "风险规避":
+        entry_trigger = f"风险未解除前暂停；先确认{research_confirmation}"
+        add_trigger = "暂停；研究反证未解除前不增加风险"
+    else:
+        entry_trigger = (
+            f"经营与事件确认：{research_confirmation}；"
+            f"价格站稳 {technical.resistance:.2f} 且量能确认"
+        )
+        add_trigger = (
+            "首次触发后回踩不破，且盈利、现金流与事件证据没有降级"
+        )
+    risk_reduce = (
+        f"{risks[0].category}升级"
+        if risks
+        else "盈利、现金流或事件证据转弱"
+    )
     return PositionGuidance(
         audience=audience,
         current_action=current,
@@ -490,10 +524,10 @@ def _position_guidance(
             if stance == "风险规避" or position_cap == "0%"
             else "单次账户风险不超过 0.5%"
         ),
-        entry_trigger=f"站稳 {technical.resistance:.2f} 且量能确认",
-        add_trigger="首次触发后回踩不破，再确认经营与事件风险",
-        reduce_trigger=f"跌破 {technical.support:.2f} 或事件风险升级",
-        invalidation=f"跌破 {technical.invalid_line:.2f}",
+        entry_trigger=entry_trigger,
+        add_trigger=add_trigger,
+        reduce_trigger=f"{risk_reduce}，或收盘跌破 {technical.support:.2f}",
+        invalidation=thesis.falsifier,
         prohibited_action="禁止追反弹、未修复失效前摊低成本、不能把低 PB 单独当买点",
     )
 
@@ -502,26 +536,53 @@ def _decision_steps(
     technical: TechnicalProfile,
     *,
     paused: bool,
+    stance: str,
+    action: str,
+    thesis: ThesisFramework,
+    research_confirmation: str,
+    risks: tuple[RiskItem, ...],
 ) -> tuple[DecisionStep, ...]:
     if paused:
         return (
-            DecisionStep("当前状态", "paused", "暂停执行", "行情时效未通过"),
-            DecisionStep("转强触发", "paused", "刷新行情后重算", "旧压力位不作为触发"),
-            DecisionStep("加仓确认", "paused", "暂停加仓", "不增加风险"),
-            DecisionStep("降级触发", "paused", "刷新行情后重算", "持仓转人工风控"),
-            DecisionStep("失效退出", "paused", "暂停使用旧价格", "刷新后重建失效线"),
+            DecisionStep("当前判断", "paused", "暂停执行", "行情时效未通过"),
+            DecisionStep("研究转强", "paused", "刷新行情后重算", "旧证据不升级结论"),
+            DecisionStep("价格确认", "paused", "暂停使用旧价格", "刷新后重建触发线"),
+            DecisionStep("降级条件", "paused", "行情仍过期，继续暂停", "持仓转人工风控"),
+            DecisionStep("论点失效", "paused", "刷新后证据方向变化", "重新建立研究假设"),
         )
-    return (
-        DecisionStep(
-            "当前状态", "current", technical.structure, "决定当前动作"
-        ),
-        DecisionStep("转强触发", "upgrade", f"站稳 {technical.resistance:.2f}", "允许重新评估"),
-        DecisionStep("加仓确认", "confirm", "回踩不破且事件风险未升级", "才允许增加风险"),
-        DecisionStep(
-            "降级触发", "downgrade", f"跌破 {technical.support:.2f}", "降低观察或持仓等级"
-        ),
-        DecisionStep("失效退出", "invalid", f"跌破 {technical.invalid_line:.2f}", "终止当前论点"),
+    downgrade = (
+        f"{risks[0].category}继续升级，或收盘跌破 {technical.support:.2f}"
+        if risks
+        else f"经营或事件证据转弱，或收盘跌破 {technical.support:.2f}"
     )
+    price_confirmation = (
+        "风险解除后才重启价格确认"
+        if stance == "风险规避"
+        else f"站稳 {technical.resistance:.2f} 且量能确认"
+    )
+    return (
+        DecisionStep("当前判断", "current", stance, action),
+        DecisionStep("研究转强", "upgrade", research_confirmation, "允许进入价格确认"),
+        DecisionStep("价格确认", "confirm", price_confirmation, "才允许增加风险"),
+        DecisionStep("降级条件", "downgrade", downgrade, "降低观察或持仓等级"),
+        DecisionStep("论点失效", "invalid", thesis.falsifier, "终止当前研究假设"),
+    )
+
+
+def _research_confirmation(
+    *,
+    financial: DiagnosticBlock,
+    risks: tuple[RiskItem, ...],
+) -> str:
+    if financial.status == "missing":
+        financial_condition = "补齐财务并确认盈利与现金流没有恶化"
+    elif any(marker in financial.risks for marker in ("盈利为负", "主营盈利承压")):
+        financial_condition = "亏损收窄或转盈，且经营现金流不恶化"
+    else:
+        financial_condition = "盈利与经营现金流质量延续"
+    if risks:
+        return f"{financial_condition}，并由公告原文确认{risks[0].category}解除"
+    return f"{financial_condition}，且事件风险不升级"
 
 
 def _is_loss_making(raw: StockRawData) -> bool:
