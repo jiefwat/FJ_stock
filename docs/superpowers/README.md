@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `three-second-essence/`：四大工作台首屏只保留结论、动作、最大风险和最多三项
 - `iwencai-four-workspaces/`：把问财外部核查扩展到每日大盘、我的持仓、个股分析和热点机会
 - `iwencai-skillhub-integration/`：接入问财官方数据技能，在个股页提供可审计、可降级的研究追问
 - `stock-method-ui-v2/`：把个股分析升级为研究假设、证据权重、预期差、情景与执行边界贯通的决策链
@@ -19,6 +20,8 @@
 
 ## 默认可读目录
 
+- `three-second-essence/README.md`
+- `three-second-essence/TODO.md`
 - `iwencai-four-workspaces/README.md`
 - `iwencai-four-workspaces/TODO.md`
 - `iwencai-four-workspaces/plan.md`
