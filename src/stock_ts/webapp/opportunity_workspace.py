@@ -131,7 +131,7 @@ def render_opportunity_workspace(
 def _research_context_options(
     dossier: OpportunityDossier,
 ) -> tuple[ResearchContextOption, ...]:
-    sectors = tuple(dict.fromkeys(item.sector for item in dossier.candidates if item.sector))
+    sectors = tuple(dict.fromkeys(item.sector for item in dossier.candidates if item.sector))[:5]
     sector_options = tuple(
         ResearchContextOption(sector=sector, label=f"{sector} · 板块")
         for sector in sectors
@@ -143,7 +143,7 @@ def _research_context_options(
             sector=item.sector,
             label=f"{item.name} · {item.code}",
         )
-        for item in dossier.candidates
+        for item in dossier.candidates[:8]
     )
     return sector_options + candidate_options
 

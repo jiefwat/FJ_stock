@@ -114,6 +114,19 @@ def test_portfolio_and_opportunity_consoles_only_expose_minimum_context() -> Non
             assert private_field not in console
 
 
+def test_opportunity_context_selector_caps_visible_choices() -> None:
+    html = render_page(
+        stock_code="600519",
+        provider_name="sample",
+        provider=SampleDataProvider(),
+        holdings_path="data/portfolio/holdings.csv",
+    )
+    workspace = _workspace(html, "opportunity")
+    console = workspace.split('data-iwencai-research="true"', 1)[1].split("</section>", 1)[0]
+
+    assert console.count("<option") <= 14
+
+
 def test_shared_script_posts_module_and_selected_allowlisted_context() -> None:
     script = app_script()
 
