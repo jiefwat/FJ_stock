@@ -9,6 +9,8 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 import stock_ts.web as web_module
+from stock_ts.research_engine import ResearchContext
+from stock_ts.research_snapshots import ResearchSnapshotStore
 from stock_ts.web import (
     Handler,
     ResearchRateLimiter,
@@ -160,6 +162,41 @@ def test_workspace_endpoint_returns_supplier_neutral_product_result(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path) -> None:
+    snapshot_dir = tmp_path / "research"
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    store = ResearchSnapshotStore(snapshot_dir)
+    store.save(
+        "market",
+        {
+            "ok": True,
+            "status": "complete",
+            "module": "market",
+            "generated_at": "2026-07-15T07:20:00+08:00",
+            "verdict": "快照判断",
+            "action": "保持观察",
+            "primary_risk": "成交缩量",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+            "module_items": [],
+        },
+    )
+
+    class ExplodingService:
+        def research(self, *_args, **_kwargs):
+            raise AssertionError("fresh snapshot must avoid live research")
+
+    monkeypatch.setattr(web_module, "RESEARCH_WORKSPACE_SERVICE", ExplodingService())
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": False}
+    )
+
+    assert response["verdict"] == "快照判断"
+    assert response["delivery"] == "snapshot"
 
 
 def test_workspace_endpoint_requires_login_when_auth_is_enabled(

@@ -82,12 +82,14 @@ from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
 from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
+from .research_delivery import deliver_research
 from .research_engine import (
     ResearchContext,
     ResearchTarget,
     ResearchWorkspaceService,
 )
 from .research_playbook import DecisionDashboard
+from .research_snapshots import ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
 from .trade_plan import TradePlan, build_trade_plan
@@ -13178,18 +13180,29 @@ def _ask_iwencai_stock_research(payload: dict[str, str]) -> dict[str, object]:
 
 
 def _research_workspace_response(payload: dict[str, object]) -> dict[str, object]:
-    if iwencai_config_summary()["status"] != "configured":
-        raise IwencaiConfigurationError("研究服务尚未配置。")
     module = str(payload["module"])
     context = payload["context"]
     if not isinstance(context, ResearchContext):
         raise ValueError("研究上下文无效。")
-    result = RESEARCH_WORKSPACE_SERVICE.research(
+    store = ResearchSnapshotStore(
+        os.getenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", "reports/research")
+    )
+    refresh = bool(payload["refresh"])
+    if iwencai_config_summary()["status"] != "configured":
+        snapshot = store.load(module) if module in {"market", "opportunity"} else None
+        if snapshot is not None and not refresh:
+            result = dict(snapshot.payload)
+            result["delivery"] = "snapshot"
+            result["stale"] = False
+            return result
+        raise IwencaiConfigurationError("研究服务尚未配置。")
+    return deliver_research(
+        RESEARCH_WORKSPACE_SERVICE,
+        store,
         module,
         context,
-        refresh=bool(payload["refresh"]),
+        refresh=refresh,
     )
-    return result.to_public_dict()
 
 
 class Handler(BaseHTTPRequestHandler):
