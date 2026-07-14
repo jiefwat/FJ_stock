@@ -51,6 +51,53 @@ def test_each_primary_workspace_has_one_judgment_band_and_three_finding_slots() 
         assert "open" not in details.attrs
 
 
+def test_each_workspace_exposes_three_result_shortcuts() -> None:
+    soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
+
+    for module in ("market", "portfolio", "stock", "opportunity"):
+        workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
+        assert workspace is not None
+        assert [node["data-engine-jump"] for node in workspace.select("[data-engine-jump]")] == [
+            "risk",
+            "findings",
+            "evidence",
+        ]
+        for target in ("risk", "findings", "evidence"):
+            assert workspace.select_one(f'[data-engine-target="{target}"]') is not None
+
+
+def test_native_page_has_four_item_mobile_research_dock() -> None:
+    soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
+
+    docks = soup.select("[data-engine-mobile-dock]")
+    assert len(docks) == 1
+    buttons = docks[0].select("[data-engine-mobile-nav][data-workspace]")
+    assert [button["data-workspace"] for button in buttons] == [
+        "market",
+        "portfolio",
+        "stock",
+        "opportunity",
+    ]
+    assert all(button["data-engine-nav-state"] == "idle" for button in buttons)
+
+
+def test_only_primary_desktop_navigation_exposes_research_state() -> None:
+    soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
+    stateful_items = soup.select(".sidebar .nav-item[data-engine-nav-state]")
+
+    assert [item["data-workspace"] for item in stateful_items] == [
+        "market",
+        "portfolio",
+        "stock",
+        "opportunity",
+    ]
+    assert all(item["data-engine-nav-state"] == "idle" for item in stateful_items)
+    assert not soup.select(
+        '.sidebar .nav-item[data-workspace="data-center"][data-engine-nav-state], '
+        '.sidebar .nav-item[data-workspace="account"][data-engine-nav-state]'
+    )
+
+
 def test_portfolio_page_context_only_contains_code_and_name(tmp_path) -> None:
     holdings = tmp_path / "holdings.csv"
     holdings.write_text(

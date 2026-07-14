@@ -10,6 +10,8 @@ MODULE_META = {
     "opportunity": ("热点机会", "机会扫描", "先找方向，再筛候选并排除风险"),
 }
 
+CORE_MODULES = ("market", "portfolio", "stock", "opportunity")
+
 
 def render_engine_workspace(
     module: str,
@@ -52,13 +54,19 @@ def render_engine_workspace(
             <span>现在怎么做</span>
             <strong data-engine-action>进入页面后生成本次判断。</strong>
           </article>
-          <article class="engine-risk">
+          <article class="engine-risk" data-engine-target="risk" tabindex="-1">
             <span>最大风险</span>
             <strong data-engine-risk>研究完成前，不沿用旧结论。</strong>
           </article>
         </div>
       </section>
-      <section class="engine-findings-block" aria-label="关键发现">
+      <nav class="engine-action-rail" aria-label="结果直达">
+        <button type="button" data-engine-jump="risk">先看风险</button>
+        <button type="button" data-engine-jump="findings">看三条发现</button>
+        <button type="button" data-engine-jump="evidence">展开完整依据</button>
+      </nav>
+      <section class="engine-findings-block" aria-label="关键发现"
+        data-engine-target="findings" tabindex="-1">
         <div class="engine-section-heading">
           <h3>关键发现</h3>
           <div class="engine-section-meta">
@@ -71,7 +79,8 @@ def render_engine_workspace(
         </div>
       </section>
       <div class="engine-actions">
-        <details class="engine-disclosure" data-engine-disclosure>
+        <details class="engine-disclosure" data-engine-disclosure
+          data-engine-target="evidence" tabindex="-1">
           <summary>查看完整依据</summary>
           <div class="engine-details" data-engine-details>
             <p>完整依据会按研究维度归档在这里。</p>
@@ -83,6 +92,25 @@ def render_engine_workspace(
       <p class="engine-live-state" data-engine-live-state aria-live="polite">
         {escape(status_label)}</p>
     </section>"""
+
+
+def render_engine_mobile_dock() -> str:
+    buttons = []
+    for index, module in enumerate(CORE_MODULES, start=1):
+        label = MODULE_META[module][0]
+        buttons.append(
+            f'''<button type="button" data-engine-mobile-nav data-workspace="{module}"
+              data-engine-nav-state="idle" aria-label="{label}，未分析">
+              <span class="engine-mobile-dock-index" aria-hidden="true">0{index}</span>
+              <strong>{label}</strong>
+              <i class="engine-nav-state-dot" aria-hidden="true"></i>
+              <span class="sr-only" data-engine-nav-status>未分析</span>
+            </button>'''
+        )
+    return f'''
+    <nav class="engine-mobile-dock" data-engine-mobile-dock aria-label="核心研究模块">
+      {"".join(buttons)}
+    </nav>'''
 
 
 def render_research_service_status(status: str) -> str:

@@ -98,6 +98,7 @@ from .webapp import (
     build_workspace_sections,
     engine_app_script,
     render_document,
+    render_engine_mobile_dock,
     render_engine_workspace,
     render_market_workspace,
     render_opportunity_workspace,
@@ -1057,6 +1058,7 @@ def _render_native_research_page(
       </header>
       {build_workspace_sections(section_map)}
     </main>
+    {render_engine_mobile_dock()}
   </div>
   {engine_app_script()}
 """

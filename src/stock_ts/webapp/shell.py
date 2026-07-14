@@ -23,10 +23,26 @@ def render_sidebar(
     current_role: str = "",
     auth_enabled: bool = False,
 ) -> str:
-    nav = "".join(
-        f'<a class="nav-item" href="#{meta.key}" data-workspace="{meta.key}">{meta.label}<span>{meta.badge}</span></a>'
-        for meta in WORKSPACES
-    )
+    core_workspaces = {"market", "portfolio", "stock", "opportunity"}
+    nav_items = []
+    for meta in WORKSPACES:
+        state = (
+            ' data-engine-nav-state="idle" aria-label="'
+            f'{escape(meta.label)}，未分析"'
+            if meta.key in core_workspaces
+            else ""
+        )
+        status = (
+            '<i class="engine-nav-state-dot" aria-hidden="true"></i>'
+            '<span class="sr-only" data-engine-nav-status>未分析</span>'
+            if meta.key in core_workspaces
+            else ""
+        )
+        nav_items.append(
+            f'<a class="nav-item" href="#{meta.key}" data-workspace="{meta.key}"{state}>'
+            f'{escape(meta.label)}<span>{escape(meta.badge)}</span>{status}</a>'
+        )
+    nav = "".join(nav_items)
     holdings_input = (
         f'<input type="hidden" name="holdings" value="{escape(holdings_path)}" />'
         if holdings_path
