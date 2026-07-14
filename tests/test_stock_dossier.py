@@ -385,3 +385,26 @@ def test_evidence_ledger_preserves_valuation_conflict() -> None:
     valuation = next(item for item in dossier.evidence if item.block == "估值")
     assert valuation.status == EvidenceStatus.DEGRADED
     assert "口径冲突" in valuation.detail
+
+
+def test_dossier_exposes_falsifiable_thesis_and_weighted_evidence() -> None:
+    dossier = _build(_raw_stock(financial=True, events=True))
+
+    assert dossier.thesis.headline
+    assert dossier.thesis.core_conflict
+    assert len(dossier.thesis.causal_chain) == 3
+    assert dossier.thesis.expectation_gap
+    assert dossier.thesis.valuation_fit
+    assert dossier.thesis.key_unknown
+    assert dossier.thesis.falsifier
+    assert [item.dimension for item in dossier.weighted_evidence] == [
+        "盈利质量",
+        "估值与预期差",
+        "事件与治理",
+        "行业位置",
+        "资金与价格",
+    ]
+    assert all(
+        item.direction in {"支持", "中性", "反证", "未知"}
+        for item in dossier.weighted_evidence
+    )

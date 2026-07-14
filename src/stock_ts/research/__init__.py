@@ -39,6 +39,8 @@ from .stock_dossier_models import (
     PositionGuidance,
     ProfessionalStockDossier,
     RiskItem,
+    ThesisFramework,
+    WeightedEvidence,
 )
 from .stock_memo import (
     ResearchScenario,
@@ -76,6 +78,8 @@ __all__ = [
     "PositionGuidance",
     "ProfessionalStockDossier",
     "RiskItem",
+    "ThesisFramework",
+    "WeightedEvidence",
     "StockResearchMemo",
     "assess_market_regime",
     "audit_status",

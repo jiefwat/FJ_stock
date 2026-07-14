@@ -69,6 +69,28 @@ class DossierScenario:
 
 
 @dataclass(frozen=True)
+class ThesisFramework:
+    headline: str
+    core_conflict: str
+    causal_chain: tuple[str, str, str]
+    expectation_gap: str
+    valuation_fit: str
+    catalyst_window: str
+    key_unknown: str
+    falsifier: str
+
+
+@dataclass(frozen=True)
+class WeightedEvidence:
+    dimension: str
+    importance: str
+    direction: str
+    fact: str
+    inference: str
+    unknown: str
+
+
+@dataclass(frozen=True)
 class ProfessionalStockDossier:
     code: str
     name: str
@@ -81,3 +103,5 @@ class ProfessionalStockDossier:
     position: PositionGuidance
     scenarios: tuple[DossierScenario, ...]
     evidence: tuple[EvidenceItem, ...]
+    thesis: ThesisFramework
+    weighted_evidence: tuple[WeightedEvidence, ...]

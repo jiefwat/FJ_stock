@@ -25,6 +25,8 @@ from .stock_dossier_models import (
     PositionGuidance,
     ProfessionalStockDossier,
     RiskItem,
+    ThesisFramework,
+    WeightedEvidence,
 )
 
 _FINANCIAL_SNAPSHOT_FIELDS = {
@@ -157,6 +159,33 @@ def build_professional_stock_dossier(
         position=position,
         scenarios=scenarios,
         evidence=evidence,
+        thesis=ThesisFramework(
+            headline="待建立研究假设",
+            core_conflict="待识别核心矛盾",
+            causal_chain=("经营事实待核对", "盈利影响待验证", "估值与价格待确认"),
+            expectation_gap="一致预期数据待补",
+            valuation_fit="估值与经营质量待匹配",
+            catalyst_window="下一份财报或重大公告",
+            key_unknown="关键经营证据待补",
+            falsifier="研究假设尚未建立",
+        ),
+        weighted_evidence=tuple(
+            WeightedEvidence(
+                dimension=dimension,
+                importance=importance,
+                direction="未知",
+                fact="证据待整理",
+                inference="暂不进入结论",
+                unknown="补齐对应证据",
+            )
+            for dimension, importance in (
+                ("盈利质量", "高"),
+                ("估值与预期差", "高"),
+                ("事件与治理", "高"),
+                ("行业位置", "中"),
+                ("资金与价格", "中"),
+            )
+        ),
     )
 
 
