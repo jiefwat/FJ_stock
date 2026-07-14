@@ -408,3 +408,51 @@ def test_dossier_exposes_falsifiable_thesis_and_weighted_evidence() -> None:
         item.direction in {"支持", "中性", "反证", "未知"}
         for item in dossier.weighted_evidence
     )
+
+
+def test_loss_making_stock_links_profit_repair_event_risk_and_price_confirmation() -> None:
+    dossier = _build(
+        _raw_stock(
+            pe_ttm=-79.96,
+            fundamental_metrics={
+                "net_profit": -24_557.6,
+                "operating_cash_flow": 29_811.0,
+            },
+            news_items=[
+                NewsItem(
+                    "2026-05-25",
+                    "fixture",
+                    "控股股东累计质押占其持股65.72%",
+                    "质押风险待复核",
+                )
+            ],
+        )
+    )
+
+    assert "盈利" in dossier.thesis.core_conflict
+    assert "质押" in " ".join(dossier.thesis.causal_chain)
+    assert "PE" in dossier.thesis.valuation_fit
+    assert "不可量化" in dossier.thesis.expectation_gap
+    assert (
+        next(
+            item for item in dossier.weighted_evidence if item.dimension == "盈利质量"
+        ).direction
+        == "反证"
+    )
+    assert (
+        next(
+            item for item in dossier.weighted_evidence if item.dimension == "事件与治理"
+        ).direction
+        == "反证"
+    )
+
+
+def test_missing_fundamentals_stay_unknown_instead_of_becoming_technical_support() -> None:
+    dossier = _build(_raw_stock(financial=False, events=False, fundamental_metrics={}))
+
+    earnings = next(
+        item for item in dossier.weighted_evidence if item.dimension == "盈利质量"
+    )
+    assert earnings.direction == "未知"
+    assert "补" in earnings.unknown
+    assert "待验证" in dossier.thesis.headline

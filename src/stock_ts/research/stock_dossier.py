@@ -133,6 +133,27 @@ def build_professional_stock_dossier(
         capital,
         event_block,
     )
+    thesis_framework = _thesis_framework(
+        raw,
+        financial=financial,
+        valuation=valuation,
+        technical=technical_block,
+        capital=capital,
+        risks=risks,
+        sector_context=sector_context,
+        paused=paused,
+        resistance=technical.resistance,
+        invalid_line=technical.invalid_line,
+    )
+    weighted_evidence = _weighted_evidence(
+        financial=financial,
+        valuation=valuation,
+        event=event_block,
+        capital=capital,
+        technical=technical_block,
+        risks=risks,
+        sector_context=sector_context,
+    )
     scenarios = _scenarios(
         raw,
         financial=financial,
@@ -159,32 +180,214 @@ def build_professional_stock_dossier(
         position=position,
         scenarios=scenarios,
         evidence=evidence,
-        thesis=ThesisFramework(
-            headline="待建立研究假设",
-            core_conflict="待识别核心矛盾",
-            causal_chain=("经营事实待核对", "盈利影响待验证", "估值与价格待确认"),
-            expectation_gap="一致预期数据待补",
-            valuation_fit="估值与经营质量待匹配",
-            catalyst_window="下一份财报或重大公告",
-            key_unknown="关键经营证据待补",
-            falsifier="研究假设尚未建立",
+        thesis=thesis_framework,
+        weighted_evidence=weighted_evidence,
+    )
+
+
+def _thesis_framework(
+    raw: StockRawData,
+    *,
+    financial: DiagnosticBlock,
+    valuation: DiagnosticBlock,
+    technical: DiagnosticBlock,
+    capital: DiagnosticBlock,
+    risks: tuple[RiskItem, ...],
+    sector_context: str,
+    paused: bool,
+    resistance: float,
+    invalid_line: float,
+) -> ThesisFramework:
+    del capital, sector_context
+    loss_making = _is_loss_making(raw)
+    top_risk = risks[0].evidence if risks else "未识别高等级事件反证"
+    risk_category = risks[0].category if risks else "事件风险"
+    if paused:
+        return ThesisFramework(
+            headline="数据未通过，研究假设暂停",
+            core_conflict="价格与研究证据不在同一有效时点。",
+            causal_chain=(
+                "保留已有经营与事件事实，仅用于审计",
+                "行情时效恢复前不推断风险收益变化",
+                "刷新后重算估值、触发线与失效线",
+            ),
+            expectation_gap="一致预期与当前价格时点不一致，预期差不可量化。",
+            valuation_fit="旧价格下的估值不参与当前判断。",
+            catalyst_window="最近交易日行情恢复后",
+            key_unknown="最近交易日价格、成交量与流水线状态",
+            falsifier="行情仍过期或刷新后证据方向发生变化。",
+        )
+    if financial.status == "missing":
+        headline = "经营证据待验证：价格信号不能替代公司质量"
+        core_conflict = "当前价格强度是否有真实经营事实支撑。"
+    elif loss_making and risks:
+        headline = f"投资假设尚未成立：盈利修复与{risk_category}解除必须同时发生"
+        core_conflict = f"盈利修复能否覆盖{risk_category}造成的风险折价。"
+    elif loss_making:
+        headline = "修复假设待验证：盈利转正后估值与价格才有解释力"
+        core_conflict = "盈利何时修复，以及修复后估值能否恢复可比性。"
+    elif risks:
+        headline = f"风险解除假设待验证：先核对{risk_category}，再谈价格机会"
+        core_conflict = f"经营证据能否抵消{risk_category}对风险预算的约束。"
+    elif valuation.status != "complete":
+        headline = "条件研究：经营证据需先证明当前估值合理"
+        core_conflict = "经营质量能否支撑当前估值，且估值口径能否被核对。"
+    else:
+        headline = "条件研究：经营延续后，估值与价格共振才形成机会"
+        core_conflict = "经营质量能否持续，并被当前估值与价格正确反映。"
+
+    if financial.status == "missing":
+        impact = "先补经营与现金流证据，暂不推断盈利变化"
+    elif loss_making:
+        impact = "只有亏损收窄或转盈，且关键事件风险解除，估值锚才可能恢复"
+    else:
+        impact = "盈利与现金流质量需要延续，才能支撑估值和风险预算"
+    price_validation = (
+        f"{valuation.conclusion} 价格需站稳 {resistance:.2f} 且量能确认；"
+        f"跌破 {invalid_line:.2f} 终止当前价格论点"
+    )
+    if financial.status == "missing":
+        key_unknown = "最近财报、盈利与经营现金流质量"
+    elif valuation.status != "complete":
+        key_unknown = "一致预期、历史估值分位与同行可比口径"
+    elif not risks:
+        key_unknown = "一致预期变化与下一财报的盈利持续性"
+    else:
+        key_unknown = f"{risk_category}原文、影响范围与解除条件"
+    falsifier_parts = [f"收盘跌破 {invalid_line:.2f}"]
+    if loss_making:
+        falsifier_parts.insert(0, "亏损继续扩大或现金流转弱")
+    if risks:
+        falsifier_parts.insert(0, f"{top_risk}未解除或继续升级")
+    return ThesisFramework(
+        headline=headline,
+        core_conflict=core_conflict,
+        causal_chain=(
+            f"事实：{financial.conclusion}；事件：{top_risk}",
+            f"推断：{impact}",
+            f"验证：{price_validation}",
         ),
-        weighted_evidence=tuple(
-            WeightedEvidence(
-                dimension=dimension,
-                importance=importance,
-                direction="未知",
-                fact="证据待整理",
-                inference="暂不进入结论",
-                unknown="补齐对应证据",
+        expectation_gap=(
+            "未接入盈利一致预期，预期差不可量化；"
+            "下一步核对业绩预告、机构预测变化与实际财报。"
+        ),
+        valuation_fit=(
+            f"{valuation.conclusion} "
+            + (
+                "亏损阶段 PE 失去解释力；盈利修复前不得据此判断低估。"
+                if loss_making
+                else "估值必须与盈利增长、现金流和行业位置一起验证。"
             )
-            for dimension, importance in (
-                ("盈利质量", "高"),
-                ("估值与预期差", "高"),
-                ("事件与治理", "高"),
-                ("行业位置", "中"),
-                ("资金与价格", "中"),
-            )
+        ),
+        catalyst_window="未来 5-20 个交易日，并在下一份财报或重大公告时重评。",
+        key_unknown=key_unknown,
+        falsifier="；".join(falsifier_parts) + "。",
+    )
+
+
+def _weighted_evidence(
+    *,
+    financial: DiagnosticBlock,
+    valuation: DiagnosticBlock,
+    event: DiagnosticBlock,
+    capital: DiagnosticBlock,
+    technical: DiagnosticBlock,
+    risks: tuple[RiskItem, ...],
+    sector_context: str,
+) -> tuple[WeightedEvidence, ...]:
+    if financial.status == "missing":
+        financial_direction = "未知"
+        financial_inference = "没有经营事实时，技术强度不能升级为投资逻辑。"
+    elif financial.risks:
+        financial_direction = "反证"
+        financial_inference = "盈利或现金流压力直接压低风险预算。"
+    elif financial.status == "complete":
+        financial_direction = "支持"
+        financial_inference = "多期经营证据可支持继续验证，但仍需估值匹配。"
+    else:
+        financial_direction = "中性"
+        financial_inference = "单期财务只能描述现状，不能证明趋势。"
+
+    if valuation.status == "missing" or "PE 失去解释力" in valuation.conclusion:
+        valuation_direction = "未知"
+        valuation_inference = "缺少有效估值锚，不能形成低估或高估判断。"
+    elif valuation.risks:
+        valuation_direction = "反证"
+        valuation_inference = "估值口径冲突会降低结论可信度。"
+    else:
+        valuation_direction = "中性"
+        valuation_inference = "相对估值只提供参照，仍需盈利质量支撑。"
+
+    if event.status == "missing":
+        event_direction = "未知"
+        event_inference = "没有事件数据不等于没有风险。"
+    elif risks:
+        event_direction = "反证"
+        event_inference = "高等级事件在原文证伪前优先约束新风险。"
+    else:
+        event_direction = "中性"
+        event_inference = "未见标题级风险只能通过初筛，不能当成催化。"
+
+    if technical.status == "missing" and capital.status == "missing":
+        market_direction = "未知"
+    elif any(
+        marker in technical.conclusion
+        for marker in ("破位风险", "趋势走弱", "反弹尝试")
+    ):
+        market_direction = "反证"
+    elif "趋势延续" in technical.conclusion:
+        market_direction = "支持"
+    else:
+        market_direction = "中性"
+
+    return (
+        WeightedEvidence(
+            dimension="盈利质量",
+            importance="高",
+            direction=financial_direction,
+            fact=financial.conclusion,
+            inference=financial_inference,
+            unknown=(
+                "补充至少一个财务截面与三个可比期间。"
+                if financial.status == "missing"
+                else financial.limitation
+            ),
+        ),
+        WeightedEvidence(
+            dimension="估值与预期差",
+            importance="高",
+            direction=valuation_direction,
+            fact=valuation.conclusion,
+            inference=valuation_inference,
+            unknown="补充一致预期、历史分位与同行可比口径。",
+        ),
+        WeightedEvidence(
+            dimension="事件与治理",
+            importance="高",
+            direction=event_direction,
+            fact=event.conclusion,
+            inference=event_inference,
+            unknown=event.limitation,
+        ),
+        WeightedEvidence(
+            dimension="行业位置",
+            importance="中",
+            direction="中性" if sector_context.strip() else "未知",
+            fact=sector_context.strip() or "缺少结构化行业强弱与公司相对排名。",
+            inference=(
+                "现有行业描述只用于比较，未形成结构化排名，不自动加分。"
+                if sector_context.strip()
+                else "没有行业位置时，无法判断公司变化是否优于同业。"
+            ),
+            unknown="补充行业景气、同业盈利和相对强弱排名。",
+        ),
+        WeightedEvidence(
+            dimension="资金与价格",
+            importance="中",
+            direction=market_direction,
+            fact=f"{technical.conclusion}；{capital.conclusion}",
+            inference="只确认执行时点、承接和失效，不证明公司质量。",
+            unknown=f"{technical.limitation} {capital.limitation}",
         ),
     )
 
