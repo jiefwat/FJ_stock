@@ -75,6 +75,81 @@ def test_parse_research_payload_rejects_invalid_or_oversized_questions() -> None
         )
 
 
+def test_parse_module_payloads_keep_only_allowlisted_context() -> None:
+    market = _parse_iwencai_research_payload(
+        json.dumps(
+            {
+                "module": "market",
+                "question": "三大指数结构",
+                "context": {"local_as_of": "2026-07-14", "code": "600519"},
+            },
+            ensure_ascii=False,
+        ).encode()
+    )
+    portfolio = _parse_iwencai_research_payload(
+        json.dumps(
+            {
+                "module": "portfolio",
+                "question": "公告风险",
+                "context": {
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "shares": "100",
+                    "cost_price": "1500",
+                    "weight": "20%",
+                },
+            },
+            ensure_ascii=False,
+        ).encode()
+    )
+
+    assert market == {
+        "module": "market",
+        "code": "",
+        "name": "",
+        "sector": "",
+        "question": "三大指数结构",
+        "local_as_of": "2026-07-14",
+    }
+    assert portfolio == {
+        "module": "portfolio",
+        "code": "600519",
+        "name": "贵州茅台",
+        "sector": "",
+        "question": "公告风险",
+        "local_as_of": "",
+    }
+    assert "shares" not in portfolio
+    assert "cost_price" not in portfolio
+    assert "weight" not in portfolio
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"module": "settings", "question": "配置"},
+        {"module": "portfolio", "question": "公告风险", "context": {}},
+        {"module": "opportunity", "question": "板块持续性", "context": {}},
+    ],
+)
+def test_parse_module_payload_rejects_invalid_context(payload: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        _parse_iwencai_research_payload(json.dumps(payload, ensure_ascii=False).encode())
+
+
+def test_parse_research_payload_keeps_legacy_stock_contract() -> None:
+    payload = _parse_iwencai_research_payload(
+        json.dumps(
+            {"code": "600519", "name": "贵州茅台", "question": "净利润"},
+            ensure_ascii=False,
+        ).encode()
+    )
+
+    assert payload["module"] == "stock"
+    assert payload["code"] == "600519"
+    assert payload["name"] == "贵州茅台"
+
+
 def test_build_stock_query_binds_question_to_current_stock_and_removes_controls() -> None:
     query = _build_iwencai_stock_query(
         code="600519\x00",
@@ -218,6 +293,50 @@ def test_research_endpoint_returns_structured_result_without_secret(monkeypatch,
         assert body["facts"][0]["净利润"] == "862.3亿"
         assert captured["question"] == "净利润质量怎么样"
         assert "iwc-endpoint-secret" not in json.dumps(body, ensure_ascii=False)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_market_endpoint_passes_only_normalized_module_payload(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("IWENCAI_API_KEY", "iwc-endpoint-secret")
+    captured: dict[str, object] = {}
+
+    def fake_ask(payload: dict[str, str]) -> dict[str, object]:
+        captured.update(payload)
+        return {
+            "ok": True,
+            "status": "complete",
+            "module": "market",
+            "summary": "返回市场事实",
+            "facts": [{"指数简称": "上证指数"}],
+        }
+
+    monkeypatch.setattr(web_module, "_ask_iwencai_stock_research", fake_ask)
+    server = _serve(monkeypatch, tmp_path)
+    try:
+        with _request(
+            server,
+            json.dumps(
+                {
+                    "module": "market",
+                    "question": "三大指数结构",
+                    "context": {
+                        "local_as_of": "2026-07-14",
+                        "shares": "100",
+                        "cost_price": "1500",
+                    },
+                },
+                ensure_ascii=False,
+            ).encode(),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert body["module"] == "market"
+        assert captured["module"] == "market"
+        assert "shares" not in captured
+        assert "cost_price" not in captured
     finally:
         server.shutdown()
         server.server_close()

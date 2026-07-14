@@ -37,9 +37,10 @@ from .iwencai import (
     IwencaiConfigurationError,
     IwencaiError,
     IwencaiSkillClient,
-    build_stock_research_response,
+    build_module_research_query,
+    build_module_research_response,
     iwencai_config_summary,
-    route_stock_research_skill,
+    route_module_research_skill,
 )
 from .models import (
     CandidatePoolReport,
@@ -12900,18 +12901,38 @@ def _parse_iwencai_research_payload(payload: bytes) -> dict[str, str]:
         raise ValueError("请求体必须是有效 JSON。") from exc
     if not isinstance(parsed, dict):
         raise ValueError("请求体必须是 JSON 对象。")
+    context = parsed.get("context", {})
+    if not isinstance(context, dict):
+        raise ValueError("研究上下文必须是 JSON 对象。")
+    module = _clean_iwencai_text(parsed.get("module"), 32).lower() or "stock"
+    if module not in {"market", "portfolio", "stock", "opportunity"}:
+        raise ValueError("不支持的研究模块。")
+
+    def context_value(key: str) -> object:
+        return context.get(key, parsed.get(key))
+
     result = {
-        "code": _clean_iwencai_text(parsed.get("code"), 32),
-        "name": _clean_iwencai_text(parsed.get("name"), 64),
+        "module": module,
+        "code": _clean_iwencai_text(context_value("code"), 32),
+        "name": _clean_iwencai_text(context_value("name"), 64),
+        "sector": _clean_iwencai_text(context_value("sector"), 64),
         "question": _clean_iwencai_text(parsed.get("question"), 500),
-        "local_as_of": _clean_iwencai_text(parsed.get("local_as_of"), 40),
+        "local_as_of": _clean_iwencai_text(context_value("local_as_of"), 40),
     }
+    if module == "market":
+        result.update({"code": "", "name": "", "sector": ""})
     if not result["question"]:
         raise ValueError("请输入研究问题。")
     if len(result["question"]) > 200:
         raise ValueError("研究问题不能超过 200 个字符。")
-    if not result["code"] and not result["name"]:
+    if module == "portfolio" and (not result["code"] or not result["name"]):
+        raise ValueError("请选择一只持仓后再核查。")
+    if module == "stock" and not result["code"] and not result["name"]:
         raise ValueError("缺少当前股票代码或名称。")
+    if module == "opportunity" and not any(
+        (result["code"], result["name"], result["sector"])
+    ):
+        raise ValueError("请选择板块或候选后再核查。")
     return result
 
 
@@ -12970,20 +12991,31 @@ def _iwencai_research_ui_status(config: AuthConfig | None = None) -> str:
 
 
 def _ask_iwencai_stock_research(payload: dict[str, str]) -> dict[str, object]:
+    module = payload.get("module", "stock")
     question = payload["question"]
-    skill = route_stock_research_skill(question)
-    query = _build_iwencai_stock_query(
+    skill = route_module_research_skill(module, question)
+    query = build_module_research_query(
+        module,
+        question,
         code=payload["code"],
         name=payload["name"],
-        question=question,
+        sector=payload.get("sector", ""),
     )
     raw = IwencaiSkillClient().query(skill, query)
     queried_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
-    return build_stock_research_response(
+    context_label = {
+        "market": "市场全局",
+        "portfolio": payload["name"] or payload["code"],
+        "stock": payload["name"] or payload["code"],
+        "opportunity": payload.get("sector") or payload["name"] or payload["code"],
+    }[module]
+    return build_module_research_response(
         raw,
+        module=module,
         skill=skill,
         question=question,
         query=query,
+        context_label=context_label,
         local_as_of=payload["local_as_of"],
         queried_at=queried_at,
     )
