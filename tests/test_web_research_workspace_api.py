@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+
+import pytest
+
+import stock_ts.web as web_module
+from stock_ts.web import (
+    Handler,
+    ResearchRateLimiter,
+    _parse_research_workspace_payload,
+)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _serve(monkeypatch, tmp_path, *, auth_enabled: bool = False) -> ThreadingHTTPServer:
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1" if auth_enabled else "0")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(tmp_path / "users.sqlite3"))
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    monkeypatch.setenv("STOCK_TS_PUBLIC_READONLY", "0")
+    monkeypatch.setenv("STOCK_TS_IWENCAI_ALLOW_ANONYMOUS", "1")
+    monkeypatch.setattr(
+        web_module,
+        "IWENCAI_RESEARCH_RATE_LIMITER",
+        ResearchRateLimiter(limit=20, window_seconds=60),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
+
+
+def _request(
+    server: ThreadingHTTPServer,
+    payload: bytes,
+    *,
+    content_type: str = "application/json",
+):
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/api/research/workspace",
+        data=payload,
+        method="POST",
+        headers={"Content-Type": content_type},
+    )
+    return urllib.request.build_opener(NoRedirect).open(request, timeout=5)
+
+
+def _error_json(exc: urllib.error.HTTPError) -> dict[str, object]:
+    return json.loads(exc.read().decode("utf-8"))
+
+
+def test_parse_workspace_payload_keeps_only_product_context() -> None:
+    parsed = _parse_research_workspace_payload(
+        json.dumps(
+            {
+                "module": "portfolio",
+                "skill": "arbitrary",
+                "provider": "arbitrary",
+                "refresh": True,
+                "context": {
+                    "holdings": [
+                        {
+                            "code": "600519",
+                            "name": "贵州茅台",
+                            "shares": 100,
+                            "cost_price": 1500,
+                            "weight": "30%",
+                        }
+                    ],
+                    "account": "private",
+                },
+            },
+            ensure_ascii=False,
+        ).encode()
+    )
+
+    assert set(parsed) == {"module", "context", "refresh"}
+    assert parsed["module"] == "portfolio"
+    assert parsed["refresh"] is True
+    context = parsed["context"]
+    assert context.holdings[0].code == "600519"
+    assert context.holdings[0].name == "贵州茅台"
+    assert not hasattr(context.holdings[0], "shares")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"not-json",
+        json.dumps({"module": "settings"}).encode(),
+        json.dumps({"module": "stock", "refresh": "yes"}).encode(),
+        json.dumps({"module": "stock", "context": []}).encode(),
+    ],
+)
+def test_parse_workspace_payload_rejects_invalid_contract(payload: bytes) -> None:
+    with pytest.raises(ValueError):
+        _parse_research_workspace_payload(payload)
+
+
+def test_workspace_endpoint_returns_supplier_neutral_product_result(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_response(payload: dict[str, object]) -> dict[str, object]:
+        captured.update(payload)
+        return {
+            "ok": True,
+            "status": "complete",
+            "module": "stock",
+            "generated_at": "2026-07-14T16:00:00+08:00",
+            "verdict": "公司核心证据已更新。",
+            "action": "先核对关键变化。",
+            "primary_risk": "单一变化不能构成买卖依据。",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+        }
+
+    monkeypatch.setattr(web_module, "_research_workspace_response", fake_response)
+    server = _serve(monkeypatch, tmp_path)
+    try:
+        with _request(
+            server,
+            json.dumps(
+                {
+                    "module": "stock",
+                    "context": {"code": "600519", "name": "贵州茅台"},
+                    "refresh": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        assert captured["module"] == "stock"
+        serialized = json.dumps(body, ensure_ascii=False)
+        for forbidden in (
+            "问财",
+            "iWencai",
+            "同花顺",
+            "skill_id",
+            "trace_id",
+            "openapi",
+        ):
+            assert forbidden not in serialized
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_workspace_endpoint_requires_login_when_auth_is_enabled(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _request(
+                server,
+                json.dumps({"module": "market", "context": {}}).encode(),
+            )
+
+        assert caught.value.code == 401
+        assert _error_json(caught.value)["status"] == "login_required"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_workspace_endpoint_rejects_wrong_content_type_and_large_body(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = _serve(monkeypatch, tmp_path)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as wrong_type:
+            _request(server, b"module=market", content_type="application/x-www-form-urlencoded")
+        assert wrong_type.value.code == 415
+
+        with pytest.raises(urllib.error.HTTPError) as too_large:
+            _request(server, b"{" + b"x" * (16 * 1024) + b"}")
+        assert too_large.value.code == 413
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -82,6 +82,11 @@ from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
 from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
+from .research_engine import (
+    ResearchContext,
+    ResearchTarget,
+    ResearchWorkspaceService,
+)
 from .research_playbook import DecisionDashboard
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
@@ -91,10 +96,13 @@ from .webapp import (
 )
 from .webapp import (
     build_workspace_sections,
+    engine_app_script,
     render_document,
+    render_engine_workspace,
     render_market_workspace,
     render_opportunity_workspace,
     render_portfolio_workspace,
+    render_research_service_status,
     render_stock_workspace,
     workspace_action,
 )
@@ -137,6 +145,7 @@ class ResearchRateLimiter:
 
 
 IWENCAI_RESEARCH_RATE_LIMITER = ResearchRateLimiter()
+RESEARCH_WORKSPACE_SERVICE = ResearchWorkspaceService()
 
 
 CSS = """
@@ -990,6 +999,99 @@ AnnouncementFetcher = Callable[..., AnnouncementReport]
 StockNewsFetcher = Callable[[str, int], list[NewsItem]]
 
 
+def _render_native_research_page(
+    *,
+    stock_code: str,
+    holdings_path: str,
+    current_user: AuthUser | None,
+    portfolio_notice: PortfolioNotice | None,
+    settings_notice: SettingsNotice | None,
+) -> str:
+    selected_stock = _default_stock_query(stock_code, holdings_path)
+    try:
+        resolved = resolve_stock_query(selected_stock)
+        stock_context = {"code": resolved.code, "name": resolved.name}
+        sidebar_query = resolved.query
+    except Exception:
+        stock_context = {"code": selected_stock, "name": ""}
+        sidebar_query = selected_stock
+    holdings_context = _privacy_safe_holdings_context(holdings_path)
+    service_status = _iwencai_research_ui_status()
+    portfolio_workspace = render_engine_workspace(
+        "portfolio",
+        status=service_status,
+        context={"holdings": holdings_context},
+    )
+    if portfolio_notice is not None:
+        portfolio_workspace = _render_portfolio_notice(portfolio_notice) + portfolio_workspace
+    section_map = {
+        "market": render_engine_workspace("market", status=service_status),
+        "portfolio": portfolio_workspace,
+        "stock": render_engine_workspace(
+            "stock",
+            status=service_status,
+            context=stock_context,
+        ),
+        "opportunity": render_engine_workspace("opportunity", status=service_status),
+        "data-center": render_research_service_status(service_status),
+        "account": _render_native_account_module(
+            holdings_path=holdings_path,
+            notice=settings_notice,
+            current_user=current_user,
+        ),
+    }
+    auth_config = AuthConfig.from_env()
+    shell = f"""
+  <div class="app-shell engine-app-shell">
+    {render_shell_sidebar(
+        sidebar_query,
+        holdings_path,
+        current_username=current_user.username if current_user is not None else "",
+        current_role=current_user.role if current_user is not None else "",
+        auth_enabled=is_auth_enabled(auth_config),
+    )}
+    <main class="workspace engine-workspace-root">
+      <header class="engine-page-intro">
+        <div><span>STOCKTS / RESEARCH DESK</span><strong>只看判断、动作与风险</strong></div>
+        <p>四个工作台按需生成，单个模块失败不影响其他页面。</p>
+      </header>
+      {build_workspace_sections(section_map)}
+    </main>
+  </div>
+  {engine_app_script()}
+"""
+    return render_document(shell)
+
+
+def _privacy_safe_holdings_context(holdings_path: str) -> list[dict[str, str]]:
+    try:
+        holdings = load_holdings_csv(holdings_path, allow_empty=True)
+    except Exception:
+        return []
+    return [
+        {"code": item.code, "name": item.name}
+        for item in holdings[:3]
+        if item.code or item.name
+    ]
+
+
+def _render_native_account_module(
+    *,
+    holdings_path: str,
+    notice: SettingsNotice | None,
+    current_user: AuthUser | None,
+) -> str:
+    return f"""
+    <section class="module" id="module-account">
+      <header class="engine-header">
+        <div><span>账户</span><h2>账户管理</h2></div>
+        <strong class="engine-service-state state-ready">个人数据隔离</strong>
+      </header>
+      {_render_settings_notice(notice)}
+      {_render_auth_settings_panel(current_user=current_user, holdings_path=holdings_path)}
+    </section>"""
+
+
 def render_page(
     stock_code: str = "",
     holdings_path: str = "data/portfolio/holdings.csv",
@@ -1009,6 +1111,15 @@ def render_page(
     refresh: bool = False,
     stock_news_fetcher: StockNewsFetcher | None = None,
 ) -> str:
+    if os.getenv("STOCK_TS_WEB_VERSION", "native").strip().lower() != "legacy":
+        return _render_native_research_page(
+            stock_code=stock_code,
+            holdings_path=holdings_path,
+            current_user=current_user,
+            portfolio_notice=portfolio_notice,
+            settings_notice=settings_notice,
+        )
+
     try:
         provider_injected = provider is not None
         active_provider = provider or create_provider(provider_name)
@@ -12939,6 +13050,46 @@ def _parse_iwencai_research_payload(payload: bytes) -> dict[str, str]:
     return result
 
 
+def _parse_research_workspace_payload(payload: bytes) -> dict[str, object]:
+    try:
+        parsed = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("请求体必须是有效 JSON。") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("请求体必须是 JSON 对象。")
+    module = _clean_iwencai_text(parsed.get("module"), 32).lower()
+    if module not in {"market", "portfolio", "stock", "opportunity"}:
+        raise ValueError("不支持的研究模块。")
+    refresh = parsed.get("refresh", False)
+    if not isinstance(refresh, bool):
+        raise ValueError("refresh 必须是布尔值。")
+    raw_context = parsed.get("context", {})
+    if not isinstance(raw_context, dict):
+        raise ValueError("研究上下文必须是 JSON 对象。")
+
+    holdings: list[ResearchTarget] = []
+    raw_holdings = raw_context.get("holdings", [])
+    if raw_holdings is not None and not isinstance(raw_holdings, list):
+        raise ValueError("持仓上下文必须是数组。")
+    for item in (raw_holdings or [])[:3]:
+        if not isinstance(item, dict):
+            continue
+        code = _clean_iwencai_text(item.get("code"), 32)
+        name = _clean_iwencai_text(item.get("name"), 64)
+        if code or name:
+            holdings.append(ResearchTarget(code=code, name=name))
+
+    context = ResearchContext(
+        code=_clean_iwencai_text(raw_context.get("code"), 32),
+        name=_clean_iwencai_text(raw_context.get("name"), 64),
+        sector=_clean_iwencai_text(raw_context.get("sector"), 64),
+        holdings=tuple(holdings),
+    )
+    if module == "market":
+        context = ResearchContext()
+    return {"module": module, "context": context, "refresh": refresh}
+
+
 def _clean_iwencai_text(value: object, limit: int) -> str:
     if not isinstance(value, str):
         return ""
@@ -13022,6 +13173,21 @@ def _ask_iwencai_stock_research(payload: dict[str, str]) -> dict[str, object]:
         local_as_of=payload["local_as_of"],
         queried_at=queried_at,
     )
+
+
+def _research_workspace_response(payload: dict[str, object]) -> dict[str, object]:
+    if iwencai_config_summary()["status"] != "configured":
+        raise IwencaiConfigurationError("研究服务尚未配置。")
+    module = str(payload["module"])
+    context = payload["context"]
+    if not isinstance(context, ResearchContext):
+        raise ValueError("研究上下文无效。")
+    result = RESEARCH_WORKSPACE_SERVICE.research(
+        module,
+        context,
+        refresh=bool(payload["refresh"]),
+    )
+    return result.to_public_dict()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -13134,6 +13300,31 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         config = AuthConfig.from_env()
+        if parsed.path == "/api/research/workspace":
+            if not is_auth_enabled(config) and (
+                _is_public_readonly() or not _allow_anonymous_iwencai()
+            ):
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "公网研究服务必须登录后使用。",
+                    },
+                )
+                return
+            if should_require_login(self.path, headers=self.headers, config=config):
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "请先登录后生成研究判断。",
+                    },
+                )
+                return
+            self._handle_research_workspace_post()
+            return
         if parsed.path == "/api/iwencai/research":
             if not is_auth_enabled(config) and (
                 _is_public_readonly() or not _allow_anonymous_iwencai()
@@ -13214,6 +13405,88 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_dispatch_daily_post(form)
             return
         self._handle_holdings_post(form)
+
+    def _handle_research_workspace_post(self) -> None:
+        config = AuthConfig.from_env()
+        user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+        client_key = (
+            f"user:{user.id}"
+            if user is not None
+            else _research_client_key(self.headers, self.client_address)
+        )
+        if not IWENCAI_RESEARCH_RATE_LIMITER.allow(client_key):
+            self._send_json(
+                429,
+                {
+                    "ok": False,
+                    "status": "rate_limited",
+                    "message": "请求过于频繁，请稍后再试。",
+                },
+            )
+            return
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json(
+                415,
+                {"ok": False, "status": "invalid_request", "message": "仅接受 JSON 请求。"},
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": "请求长度无效。"},
+            )
+            return
+        if length > MAX_IWENCAI_REQUEST_BYTES:
+            self._send_json(
+                413,
+                {"ok": False, "status": "too_large", "message": "研究请求超过 16 KiB。"},
+            )
+            return
+        try:
+            payload = _parse_research_workspace_payload(self.rfile.read(length))
+            result = _research_workspace_response(payload)
+        except ValueError as exc:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": str(exc)},
+            )
+            return
+        except IwencaiConfigurationError:
+            self._send_json(
+                503,
+                {
+                    "ok": False,
+                    "status": "missing_config",
+                    "message": "研究服务尚未配置。",
+                },
+            )
+            return
+        except IwencaiError:
+            self._send_json(
+                502,
+                {
+                    "ok": False,
+                    "status": "unavailable",
+                    "message": "研究服务暂时不可用，请稍后重试。",
+                },
+            )
+            return
+        except Exception:
+            self._send_json(
+                502,
+                {
+                    "ok": False,
+                    "status": "unavailable",
+                    "message": "研究服务暂时不可用，请稍后重试。",
+                },
+            )
+            return
+        self._send_json(200, result)
 
     def _handle_iwencai_research_post(self) -> None:
         config = AuthConfig.from_env()

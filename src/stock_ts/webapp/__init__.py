@@ -4,6 +4,11 @@ from .composition import (
     group_sections_by_workspace,
     module_to_workspace,
 )
+from .engine_workspace import (
+    engine_app_script,
+    render_engine_workspace,
+    render_research_service_status,
+)
 from .forms import workspace_action
 from .market_workspace import render_market_workspace
 from .opportunity_workspace import render_opportunity_workspace
@@ -25,13 +30,16 @@ __all__ = [
     "WORKSPACES",
     "app_script",
     "build_workspace_sections",
+    "engine_app_script",
     "group_sections_by_workspace",
     "module_to_workspace",
     "render_app_toolbar",
     "render_document",
+    "render_engine_workspace",
     "render_market_workspace",
     "render_opportunity_workspace",
     "render_portfolio_workspace",
+    "render_research_service_status",
     "render_iwencai_research_console",
     "render_stock_workspace",
     "render_sidebar",

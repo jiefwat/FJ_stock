@@ -20,7 +20,7 @@ CLI / Dashboard
 
 - `src/stock_ts/workflows.py`：CLI/Web 共用服务编排层，统一 provider、analysis、report 流程。
 - `src/stock_ts/cli.py`：命令行参数解析、报告输出路径处理，不承载复杂业务规则。
-- `src/stock_ts/web.py`：轻量本地 Web 投研工作台，无需额外依赖；使用任务式左侧导航、侧边栏快速个股搜索、全局数据状态条、今日行动台、证据链抽屉、模块卡片、表格、评分条和风险标签，不直接堆叠 Markdown。
+- `src/stock_ts/web.py`：默认渲染按需生成的四大原生研究工作台，首屏不运行旧大盘、持仓、个股和机会规则链；保留登录、账户、限流和产品 JSON endpoint。`STOCK_TS_WEB_VERSION=legacy` 仅用于回归旧页面，不是默认运行路径。
 - `src/stock_ts/dashboard.py`：可选 Streamlit 入口，默认不启用。
 - `src/stock_ts/portfolio.py`：读取本地持仓 CSV，或从交易流水 CSV 按移动加权成本生成当前持仓模型。
 - `src/stock_ts/portfolio_advice.py`：组合建议层，基于组合分析、大盘状态、集中度、行业暴露和持仓盈亏输出总体动作、目标现金仓位、每只持仓的目标仓位、调整金额、止损、止盈观察和持仓添加说明。
@@ -52,7 +52,9 @@ CLI / Dashboard
 - Web 个股页必须以 6 维判断组织精华信息：技术面、基本面、资金面、消息/公告、概念板块、成本位置；成本位置必须结合当前账号持仓成本，未持仓时明确标注。
 - Web 个股页和 Markdown 个股报告必须展示 `TradingAgents 决策链`：先展示 daily_stock_analysis 风格的信号归因与数据包，再展示技术、基本面、新闻/情绪、资金/成交四类分析师证据，最后输出多空观点、交易员触发/失效、组合经理最终意见；若数据缺失，结论必须降级并写明缺口。
 - `src/stock_ts/llm.py`：可选大模型增强层，使用 OpenAI-compatible chat completions 接口；无 Key 时输出降级说明，有 Key 时在结构化分析基础上生成 AI 研报。
-- `src/stock_ts/iwencai.py`：问财 SkillHub 官方数据技能适配层，统一技能路由、OpenAPI 请求头、动态响应压缩和安全配置摘要；财务/机构/行业等数据技能走 `/v1/query2data`，公告/研报/新闻走 `/v1/comprehensive/search`。个股页只把结果作为外部证据，不改写本地研究结论、stale 闸门或仓位边界。
+- `src/stock_ts/iwencai.py`：服务端官方数据能力适配层，统一 allowlist、OpenAPI 请求头、动态响应限制和凭证脱敏；供应商字段只存在于适配层，不进入产品页面协议。
+- `src/stock_ts/research_engine.py`：四大原生研究工作台编排层。固定组合市场、持仓、公司和机会能力，并行调用后归一化为 `verdict / action / primary_risk / findings / details / missing_sections`；默认缓存 5 分钟，部分失败可降级，全部失败时暂停判断，不回退旧本地结论。
+- `src/stock_ts/webapp/engine_workspace.py`：供应商中性的四页 HTML 和按需交互层，只消费产品结果协议；持仓上下文最多携带 3 个代码和名称，不携带股数、成本、权重、备注或账号。
 - `src/stock_ts/watchlist.py`：自选股研究工作台，读取轻量 YAML-like 清单，沉淀研究假设、标签、价格/评分提醒，并复用深度分析生成观察排序。
 - `src/stock_ts/backtest.py`：轻量策略验证层，当前支持本地日线 CSV 的 MA 均线回测，输出收益、买入持有对照、最大回撤、胜率、交易明细和限制说明。
 - `src/stock_ts/indicators.py`：均线、涨跌幅、波动率等可测试指标函数。
