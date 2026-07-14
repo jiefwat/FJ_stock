@@ -100,6 +100,7 @@ def render_engine_mobile_dock() -> str:
         label = MODULE_META[module][0]
         buttons.append(
             f'''<button type="button" data-engine-mobile-nav data-workspace="{module}"
+              data-engine-nav-label="{label}"
               data-engine-nav-state="idle" aria-label="{label}，未分析">
               <span class="engine-mobile-dock-index" aria-hidden="true">0{index}</span>
               <strong>{label}</strong>
@@ -134,6 +135,33 @@ def engine_app_script() -> str:
     return r"""
   <script>
     const engineCache = new Map();
+    const engineKeyboardModules = ['market', 'portfolio', 'stock', 'opportunity'];
+    const engineStateLabels = {
+      idle: '未分析',
+      loading: '分析中',
+      complete: '已完成',
+      partial: '待补证据',
+      unavailable: '暂不可用'
+    };
+
+    function normalizeEngineNavigationState(status) {
+      if (status === 'complete') return 'complete';
+      if (status === 'partial' || status === 'empty') return 'partial';
+      if (status === 'unavailable') return 'unavailable';
+      return 'partial';
+    }
+
+    function setEngineNavigationState(module, state) {
+      const label = engineStateLabels[state] || engineStateLabels.idle;
+      document.querySelectorAll(
+        `[data-workspace="${module}"][data-engine-nav-state]`
+      ).forEach((item) => {
+        item.dataset.engineNavState = state;
+        const status = item.querySelector('[data-engine-nav-status]');
+        if (status) status.textContent = label;
+        item.setAttribute('aria-label', `${item.dataset.engineNavLabel || module}，${label}`);
+      });
+    }
 
     function engineNode(tag, className, value) {
       const node = document.createElement(tag);
@@ -163,7 +191,12 @@ def engine_app_script() -> str:
         button.textContent = loading ? '分析中' : '重新分析';
       }
       if (judgment) judgment.classList.toggle('is-loading', loading);
-      if (live && loading) live.textContent = '正在生成判断…';
+      if (live && loading) {
+        live.textContent = workspace.dataset.engineWorkspace === 'portfolio'
+          ? '正在逐只核对，可能需要几秒'
+          : '正在生成判断…';
+      }
+      if (loading) setEngineNavigationState(workspace.dataset.engineWorkspace, 'loading');
     }
 
     function renderEngineFinding(item, index = 0) {
@@ -232,6 +265,9 @@ def engine_app_script() -> str:
     }
 
     function renderEngineResult(workspace, payload) {
+      const navigationState = normalizeEngineNavigationState(payload.status);
+      workspace.dataset.engineResultStatus = navigationState;
+      setEngineNavigationState(workspace.dataset.engineWorkspace, navigationState);
       const judgment = workspace.querySelector('[data-engine-judgment]');
       if (judgment) {
         judgment.className = `engine-judgment state-${payload.status || 'partial'}`;
@@ -269,14 +305,20 @@ def engine_app_script() -> str:
       }
       renderEngineDetails(workspace, payload);
       if (live) {
-        live.textContent = payload.status === 'complete'
+        live.textContent = navigationState === 'complete'
           ? '判断已更新'
-          : '判断已降级，请查看缺口';
+          : navigationState === 'unavailable'
+            ? '研究暂不可用'
+            : '判断已降级，请查看缺口';
       }
     }
 
     async function runEngineWorkspace(workspace, refresh = false) {
-      if (!workspace || workspace.dataset.engineAvailable !== 'true') return;
+      if (!workspace) return;
+      if (workspace.dataset.engineAvailable !== 'true') {
+        setEngineNavigationState(workspace.dataset.engineWorkspace, 'unavailable');
+        return;
+      }
       const key = engineKey(workspace);
       if (!refresh && engineCache.has(key)) {
         renderEngineResult(workspace, engineCache.get(key));
@@ -313,6 +355,30 @@ def engine_app_script() -> str:
       }
     }
 
+    function engineJumpTo(workspace, targetName) {
+      if (!workspace) return;
+      const target = workspace.querySelector(`[data-engine-target="${targetName}"]`);
+      if (!target) return;
+      let focusTarget = target;
+      if (targetName === 'evidence' && target.tagName === 'DETAILS') {
+        target.open = true;
+        focusTarget = target.querySelector('summary') || target;
+      }
+      focusTarget.scrollIntoView({behavior: 'smooth', block: 'start'});
+      focusTarget.focus({preventScroll: true});
+    }
+
+    function closeActiveEngineDisclosure() {
+      const disclosure = document.querySelector(
+        '.workspace-pane.active details[data-engine-disclosure][open]'
+      );
+      if (!disclosure) return false;
+      disclosure.open = false;
+      const summary = disclosure.querySelector('summary');
+      if (summary) summary.focus({preventScroll: true});
+      return true;
+    }
+
     function activateEngineWorkspace(key, updateHash = true) {
       const requestedPane = document.querySelector(
         `.workspace-pane[data-workspace="${key}"]`
@@ -321,8 +387,13 @@ def engine_app_script() -> str:
       document.querySelectorAll('.workspace-pane').forEach((pane) => {
         pane.classList.toggle('active', pane.dataset.workspace === normalized);
       });
-      document.querySelectorAll('.nav-item[data-workspace]').forEach((item) => {
-        item.classList.toggle('active', item.dataset.workspace === normalized);
+      document.querySelectorAll(
+        '.nav-item[data-workspace], [data-engine-mobile-nav][data-workspace]'
+      ).forEach((item) => {
+        const active = item.dataset.workspace === normalized;
+        item.classList.toggle('active', active);
+        if (active) item.setAttribute('aria-current', 'page');
+        else item.removeAttribute('aria-current');
       });
       if (updateHash) history.replaceState(null, '', `#${normalized}`);
       const workspace = document.querySelector(
@@ -336,7 +407,9 @@ def engine_app_script() -> str:
     }
 
     function bootstrapEngineWorkspaces() {
-      document.querySelectorAll('.nav-item[data-workspace]').forEach((item) => {
+      document.querySelectorAll(
+        '.nav-item[data-workspace], [data-engine-mobile-nav][data-workspace]'
+      ).forEach((item) => {
         item.addEventListener('click', (event) => {
           event.preventDefault();
           activateEngineWorkspace(item.dataset.workspace || 'market');
@@ -347,6 +420,38 @@ def engine_app_script() -> str:
           const workspace = button.closest('[data-engine-workspace]');
           runEngineWorkspace(workspace, true);
         });
+      });
+      document.querySelectorAll('[data-engine-jump]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const workspace = button.closest('[data-engine-workspace]');
+          engineJumpTo(workspace, button.dataset.engineJump || 'risk');
+        });
+      });
+      document.addEventListener('keydown', (event) => {
+        const target = event.target;
+        if (target && (
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
+        )) return;
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === 'Escape') {
+          if (closeActiveEngineDisclosure()) event.preventDefault();
+          return;
+        }
+        const numericIndex = Number(event.key) - 1;
+        if (Number.isInteger(numericIndex) && engineKeyboardModules[numericIndex]) {
+          event.preventDefault();
+          activateEngineWorkspace(engineKeyboardModules[numericIndex]);
+          return;
+        }
+        if (event.key.toLowerCase() === 'r') {
+          const active = document.querySelector(
+            '.workspace-pane.active [data-engine-workspace]'
+          );
+          if (active && engineKeyboardModules.includes(active.dataset.engineWorkspace)) {
+            event.preventDefault();
+            runEngineWorkspace(active, true);
+          }
+        }
       });
       window.addEventListener('hashchange', () => {
         activateEngineWorkspace((window.location.hash || '#market').replace(/^#/, ''), false);

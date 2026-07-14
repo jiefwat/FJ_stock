@@ -132,6 +132,24 @@ def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
         assert forbidden not in script
 
 
+def test_engine_script_coordinates_navigation_and_shortcuts() -> None:
+    script = engine_app_script()
+
+    for fragment in (
+        "setEngineNavigationState",
+        "data-engine-nav-state",
+        "aria-current",
+        "isContentEditable",
+        "event.key.toLowerCase() === 'r'",
+        "engineKeyboardModules",
+        "data-engine-jump",
+        "scrollIntoView",
+        "event.key === 'Escape'",
+        "正在逐只核对，可能需要几秒",
+    ):
+        assert fragment in script
+
+
 def test_engine_workspace_uses_full_parent_width_on_mobile() -> None:
     engine_css = CSS.split(".engine-module,", 1)[1].split("}", 1)[0]
 

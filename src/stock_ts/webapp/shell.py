@@ -27,6 +27,7 @@ def render_sidebar(
     nav_items = []
     for meta in WORKSPACES:
         state = (
+            f' data-engine-nav-label="{escape(meta.label)}"'
             ' data-engine-nav-state="idle" aria-label="'
             f'{escape(meta.label)}，未分析"'
             if meta.key in core_workspaces
