@@ -95,6 +95,19 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 - 13:00：午间后复核，更新上午盘面后的候选和异动。
 
 模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。公网开放账号注册时，把 `deploy/systemd/stock-ts-auth-open.conf` 放到 `/etc/systemd/system/stock-ts.service.d/auth.conf`，真实管理员密码和 session secret 仍只放服务器环境或 `.env`。
+
+### 每日研究快照
+
+大盘趋势和每日机会使用独立轻量任务，不依赖旧全量行情流水线：
+
+```bash
+PYTHONPATH=src python scripts/run_daily_research.py --output-dir reports/research --refresh
+```
+
+任务写入 `reports/research/market/`、`reports/research/opportunity/` 和
+`reports/research/daily.status.json`。systemd 模板为
+`deploy/systemd/stock-ts-daily-research.service` 与
+`deploy/systemd/stock-ts-daily-research.timer`，每天 07:20、12:10、18:30 运行。
 注意：`--python` 指项目运行环境；TDX 桥接会自动选择能 `import eltdx` 的 Python（优先项目环境，再尝试 `python3.11` / `python3.12` / `python3`），必要时可用 `--tdx-bridge-python` 显式指定。
 ## 早间邮件
 

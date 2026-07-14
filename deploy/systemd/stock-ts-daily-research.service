@@ -1,0 +1,13 @@
+[Unit]
+Description=StockTS daily market and opportunity research
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/opt/stock-ts
+Environment=PYTHONPATH=/opt/stock-ts/src
+EnvironmentFile=/opt/stock-ts/.env
+TimeoutStartSec=300
+ExecStart=/opt/stock-ts/.venv/bin/python scripts/run_daily_research.py --output-dir reports/research --refresh
