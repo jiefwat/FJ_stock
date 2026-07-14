@@ -21,6 +21,7 @@
 - `stock-method-ui-v2/TODO.md`
 - `stock-method-ui-v2/plan.md`
 - `stock-method-ui-v2/test.md`
+- `stock-method-ui-v2/review.md`
 - `stock-method-ui-v2/handoff.md`
 - `essence-workspaces/README.md`
 - `essence-workspaces/TODO.md`
