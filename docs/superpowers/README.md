@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `usable-research-decisions/`：把已连通的动态能力结果升级为有语义门禁、专业结论和简洁证据层级的可用研究系统
 - `iwencai-native-workspaces/`：四大模块完全改由服务端研究能力生成，页面保持供应商中性
 - `three-second-essence/`：四大工作台首屏只保留结论、动作、最大风险和最多三项
 - `iwencai-four-workspaces/`：把问财外部核查扩展到每日大盘、我的持仓、个股分析和热点机会
@@ -21,6 +22,9 @@
 
 ## 默认可读目录
 
+- `usable-research-decisions/README.md`
+- `usable-research-decisions/TODO.md`
+- `usable-research-decisions/test.md`
 - `iwencai-native-workspaces/README.md`
 - `iwencai-native-workspaces/TODO.md`
 - `three-second-essence/README.md`
