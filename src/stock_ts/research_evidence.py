@@ -124,6 +124,15 @@ CAPABILITY_SCHEMAS = {
         ),
         context_groups=(("股票代码", "证券代码"), ("股票简称", "证券简称", "股票名称")),
     ),
+    "industry": CapabilitySchema(
+        (
+            ("行业排名", "排名"),
+            ("市盈率", "市净率", "估值"),
+            ("同行", "竞争"),
+            ("市场地位", "市占率"),
+        ),
+        context_groups=(("行业名称", "所属行业"), ("股票代码", "证券代码")),
+    ),
     "announcement": CapabilitySchema(
         (
             ("标题", "公告名称", "title"),
@@ -141,6 +150,20 @@ CAPABILITY_SCHEMAS = {
             ("标题", "title"),
             ("摘要", "内容", "summary", "content"),
             ("类型", "category"),
+        ),
+        support_groups=(
+            ("publish_date", "发布日期", "日期"),
+            ("publish_time", "时间"),
+            ("url", "链接"),
+        ),
+    ),
+    "report": CapabilitySchema(
+        (
+            ("标题", "title"),
+            ("摘要", "内容", "summary"),
+            ("评级",),
+            ("目标价",),
+            ("预测",),
         ),
         support_groups=(
             ("publish_date", "发布日期", "日期"),

@@ -1072,7 +1072,7 @@ def _privacy_safe_holdings_context(holdings_path: str) -> list[dict[str, str]]:
         return []
     return [
         {"code": item.code, "name": item.name}
-        for item in holdings[:3]
+        for item in holdings[:20]
         if item.code or item.name
     ]
 
@@ -13073,7 +13073,7 @@ def _parse_research_workspace_payload(payload: bytes) -> dict[str, object]:
     raw_holdings = raw_context.get("holdings", [])
     if raw_holdings is not None and not isinstance(raw_holdings, list):
         raise ValueError("持仓上下文必须是数组。")
-    for item in (raw_holdings or [])[:3]:
+    for item in (raw_holdings or [])[:20]:
         if not isinstance(item, dict):
             continue
         code = _clean_iwencai_text(item.get("code"), 32)

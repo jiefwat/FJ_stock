@@ -202,6 +202,39 @@ def test_english_announcement_fields_count_as_evidence() -> None:
     assert [fact.label for fact in rows[0]][:2] == ["标题", "摘要"]
 
 
+def test_industry_and_report_rows_require_professional_evidence() -> None:
+    industry = normalize_capability_rows(
+        "industry",
+        {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "行业名称": "金属制品",
+                    "行业排名": 8,
+                    "行业市盈率": 24.6,
+                    "同行公司": "兴达国际",
+                }
+            ]
+        },
+    )
+    report = normalize_capability_rows(
+        "report",
+        {
+            "data": [
+                {
+                    "title": "盈利修复仍需观察",
+                    "summary": "关注原材料成本和海外需求",
+                    "publish_date": "20260715",
+                    "评级": "中性",
+                }
+            ]
+        },
+    )
+
+    assert any(fact.label == "行业排名" for fact in industry[0])
+    assert any(fact.label == "标题" for fact in report[0])
+
+
 def test_growth_rate_formats_as_percent_before_profit_amount() -> None:
     rows = normalize_capability_rows(
         "event",

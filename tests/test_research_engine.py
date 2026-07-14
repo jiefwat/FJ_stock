@@ -83,6 +83,12 @@ def default_capability_result(capability: str) -> dict[str, object]:
             "股票简称": "大业股份",
             "净利润同比增长率": "18.6%",
         },
+        "industry": {"行业名称": "金属制品", "行业排名": 8, "行业市盈率": 24.6},
+        "report": {
+            "title": "盈利修复仍需观察",
+            "summary": "关注成本和海外需求",
+            "publish_date": "20260715",
+        },
     }
     return {"datas": [rows[capability]]}
 
@@ -148,7 +154,6 @@ def test_each_workspace_has_a_fixed_capability_bundle() -> None:
     )
     assert workspace_capabilities("portfolio") == (
         "event",
-        "announcement",
         "consensus",
         "market",
     )
@@ -157,6 +162,10 @@ def test_each_workspace_has_a_fixed_capability_bundle() -> None:
         "business",
         "consensus",
         "event",
+        "market",
+        "industry",
+        "announcement",
+        "report",
     )
     assert workspace_capabilities("opportunity") == (
         "sector_selector",
@@ -185,7 +194,7 @@ def test_portfolio_queries_only_include_target_identity() -> None:
 
     requests = build_workspace_queries("portfolio", context)
 
-    assert len(requests) == 8
+    assert len(requests) == 6
     query_text = " ".join(item.query for item in requests)
     assert "贵州茅台" in query_text
     assert "600519" in query_text
@@ -193,7 +202,7 @@ def test_portfolio_queries_only_include_target_identity() -> None:
         assert private_term not in query_text
 
 
-def test_portfolio_research_is_capped_to_three_holdings() -> None:
+def test_portfolio_research_covers_holdings_within_twenty_limit() -> None:
     context = ResearchContext(
         holdings=tuple(
             ResearchTarget(code=f"60000{index}", name=f"股票{index}")
@@ -203,8 +212,66 @@ def test_portfolio_research_is_capped_to_three_holdings() -> None:
 
     requests = build_workspace_queries("portfolio", context)
 
-    assert len(requests) == 12
-    assert "股票3" not in " ".join(item.query for item in requests)
+    assert len(requests) == 15
+    assert "股票4" in " ".join(item.query for item in requests)
+
+
+def test_portfolio_builds_three_capabilities_for_all_twenty_holdings() -> None:
+    holdings = tuple(
+        ResearchTarget(code=f"600{index:03d}", name=f"持仓{index}")
+        for index in range(25)
+    )
+
+    requests = build_workspace_queries("portfolio", ResearchContext(holdings=holdings))
+
+    assert len(requests) == 20 * 3
+    assert {request.capability for request in requests} == {
+        "event",
+        "consensus",
+        "market",
+    }
+    assert "持仓19" in " ".join(item.query for item in requests)
+    assert "持仓20" not in " ".join(item.query for item in requests)
+
+
+def test_stock_research_uses_eight_dimensions() -> None:
+    requests = build_workspace_queries(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    assert [request.capability for request in requests] == [
+        "finance",
+        "business",
+        "consensus",
+        "event",
+        "market",
+        "industry",
+        "announcement",
+        "report",
+    ]
+
+
+def test_opportunity_keeps_ten_candidate_module_items() -> None:
+    rows = [
+        {
+            "股票代码": f"60{index:04d}",
+            "股票简称": f"候选{index}",
+            "净利润同比增长率": f"{index + 10}%",
+            "成交额": 1_000_000_000 + index,
+        }
+        for index in range(10)
+    ]
+    client = FakeClient(results={"astock_selector": {"datas": rows}})
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "opportunity", ResearchContext(), refresh=True
+    )
+
+    candidates = [item for item in result.module_items if item.kind == "candidate"]
+    assert len(candidates) == 10
+    assert candidates[0].code == "600000"
+    assert candidates[0].name == "候选0"
+    assert candidates[0].risk
 
 
 def test_stock_queries_require_a_stock_identity() -> None:
@@ -249,7 +316,7 @@ def test_opportunity_selector_query_contains_parseable_conditions() -> None:
     assert "排除融资融券" in default_sector
 
 
-def test_service_returns_supplier_neutral_partial_result() -> None:
+def test_stock_service_is_complete_with_seven_of_eight_dimensions() -> None:
     client = FakeClient(
         results={"finance": {"datas": [{"收入": "同比增长", "现金流": "改善"}]}},
         failures={"event"},
@@ -263,7 +330,7 @@ def test_service_returns_supplier_neutral_partial_result() -> None:
     payload = result.to_public_dict()
 
     assert payload["ok"] is True
-    assert payload["status"] == "partial"
+    assert payload["status"] == "complete"
     assert payload["findings"]
     serialized = json.dumps(payload, ensure_ascii=False)
     for forbidden in ("event", "skill", "问财", "iWencai", "同花顺", "trace_id"):

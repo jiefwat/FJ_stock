@@ -14,8 +14,17 @@ from .research_evidence import normalize_capability_rows, raw_rows
 
 WORKSPACE_CAPABILITIES = {
     "market": ("index", "macro", "sector_selector", "news"),
-    "portfolio": ("event", "announcement", "consensus", "market"),
-    "stock": ("finance", "business", "consensus", "event"),
+    "portfolio": ("event", "consensus", "market"),
+    "stock": (
+        "finance",
+        "business",
+        "consensus",
+        "event",
+        "market",
+        "industry",
+        "announcement",
+        "report",
+    ),
     "opportunity": ("sector_selector", "astock_selector", "event", "news"),
 }
 
@@ -31,6 +40,8 @@ CAPABILITY_LABELS = {
     "finance": "财务质量",
     "business": "经营结构",
     "astock_selector": "候选筛选",
+    "industry": "行业位置",
+    "report": "研报观点",
 }
 
 FINDING_TITLES = {
@@ -45,6 +56,8 @@ FINDING_TITLES = {
     "finance": "财务方向",
     "business": "经营与竞争",
     "astock_selector": "候选线索",
+    "industry": "行业位置",
+    "report": "研报观点",
 }
 
 FRONT_PRIORITY = {
@@ -292,7 +305,7 @@ class ResearchWorkspaceService:
         if not requests:
             return ()
         outcomes_by_index: dict[int, _CapabilityOutcome] = {}
-        with ThreadPoolExecutor(max_workers=min(4, len(requests))) as executor:
+        with ThreadPoolExecutor(max_workers=min(8, len(requests))) as executor:
             futures = {
                 executor.submit(_execute_capability, client, request): index
                 for index, request in enumerate(requests)
@@ -329,7 +342,7 @@ def build_workspace_queries(
                 query=_target_query(target, _prompt_for(module, capability)),
                 target=target,
             )
-            for target in context.holdings[:3]
+            for target in context.holdings[:20]
             for capability in capabilities
         )
     if module == "stock":
@@ -375,7 +388,10 @@ def _target_query(target: ResearchTarget, prompt: str) -> str:
 
 def _prompt_for(module: str, capability: str) -> str:
     prompts = {
-        ("market", "index"): "上证指数、深证成指、创业板指 最新点位 涨跌幅 成交额",
+        ("market", "index"): (
+            "上证指数、深证成指、创业板指 最新点位 涨跌幅 成交额 "
+            "近5日涨跌幅 近20日涨跌幅 5日均线 20日均线"
+        ),
         ("market", "macro"): "近期影响A股风险偏好的宏观指标与政策变化",
         ("market", "sector_selector"): (
             "行业板块 排除融资融券 按成交额和热度排序 前5"
@@ -389,6 +405,10 @@ def _prompt_for(module: str, capability: str) -> str:
         ("stock", "business"): "主营结构、竞争位置、客户供应链与经营变化",
         ("stock", "consensus"): "未来两年盈利预期、评级和预期变化",
         ("stock", "event"): "近期业绩、解禁、质押、监管和事件风险",
+        ("stock", "market"): "近期价格、成交量、成交额、换手率和资金变化",
+        ("stock", "industry"): "行业位置、行业排名、同行估值和竞争参照",
+        ("stock", "announcement"): "近期公告中需要重点核查的事项",
+        ("stock", "report"): "近期研报观点、盈利预测、评级和主要分歧",
         ("opportunity", "sector_selector"): "筛选强度、成交和持续性靠前的行业方向",
         ("opportunity", "astock_selector"): "筛选盈利改善、成交活跃且风险可核查的股票",
         ("opportunity", "event"): "近期可核查的业绩、公告和事件催化",
@@ -428,7 +448,18 @@ def _clean_text(value: str, limit: int) -> str:
 
 def _execute_capability(client: Any, request: CapabilityRequest) -> _CapabilityOutcome:
     raw = client.query(SKILLS[request.capability], request.query)
-    evidence_rows = normalize_capability_rows(request.capability, raw)
+    row_limits = {
+        "astock_selector": 10,
+        "sector_selector": 5,
+        "news": 5,
+        "announcement": 5,
+        "report": 5,
+    }
+    evidence_rows = normalize_capability_rows(
+        request.capability,
+        raw,
+        max_rows=row_limits.get(request.capability, 3),
+    )
     rows = tuple(
         tuple(ResearchFact(label=fact.label, value=fact.value) for fact in row)
         for row in evidence_rows
@@ -454,7 +485,10 @@ def _build_workspace_result(
     successful = [outcome for outcome in outcomes if outcome.rows]
     failed = [outcome for outcome in outcomes if outcome.failed or not outcome.rows]
     if successful:
-        status = "complete" if not failed else "partial"
+        if module == "stock":
+            status = "complete" if len(successful) >= 6 else "partial"
+        else:
+            status = "complete" if not failed else "partial"
     else:
         status = "unavailable" if any(item.failed for item in outcomes) else "empty"
     details = tuple(_outcome_detail(outcome) for outcome in outcomes)
@@ -473,6 +507,8 @@ def _build_workspace_result(
         _detail_label(outcome.request)
         for outcome in failed
     )
+    module_items = _build_module_items(module, outcomes)
+    subject_count = _subject_count(module, outcomes, module_items)
     return ResearchWorkspaceResult(
         ok=bool(successful),
         status=status,
@@ -484,7 +520,140 @@ def _build_workspace_result(
         findings=findings,
         details=details,
         missing_sections=missing_sections,
+        subject_count=subject_count,
+        coverage_ready=len(successful),
+        coverage_total=len(outcomes),
+        as_of=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+        module_items=module_items,
     )
+
+
+def _build_module_items(
+    module: str,
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[ResearchModuleItem, ...]:
+    if module == "market":
+        index = next((item for item in outcomes if item.request.capability == "index"), None)
+        return tuple(_market_module_item(row) for row in (index.rows if index else ())[:3])
+    if module == "portfolio":
+        return _portfolio_module_items(outcomes)
+    if module == "stock":
+        return tuple(_stock_module_item(outcome) for outcome in outcomes)
+    candidates = next(
+        (item for item in outcomes if item.request.capability == "astock_selector"),
+        None,
+    )
+    return tuple(
+        item
+        for row in (candidates.rows if candidates else ())[:10]
+        if (item := _candidate_module_item(row)) is not None
+    )
+
+
+def _market_module_item(row: tuple[ResearchFact, ...]) -> ResearchModuleItem:
+    return ResearchModuleItem(
+        kind="index",
+        code=_row_value(row, ("指数代码",)),
+        name=_row_value(row, ("指数简称", "指数名称")),
+        label="短中期趋势",
+        summary=_index_summary(row),
+        risk="5日与20日趋势转弱时降低风险暴露",
+        facts=_display_facts("index", row),
+    )
+
+
+def _portfolio_module_items(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[ResearchModuleItem, ...]:
+    grouped: dict[tuple[str, str], list[_CapabilityOutcome]] = {}
+    for outcome in outcomes:
+        target = outcome.request.target
+        grouped.setdefault((target.code, target.name), []).append(outcome)
+    items: list[ResearchModuleItem] = []
+    priority = {"event": 0, "consensus": 1, "market": 2}
+    for (code, name), target_outcomes in grouped.items():
+        ready = [outcome for outcome in target_outcomes if outcome.rows]
+        ready.sort(key=lambda outcome: priority.get(outcome.request.capability, 99))
+        chosen = ready[0] if ready else None
+        finding = _outcome_findings(chosen)[0] if chosen else None
+        label = (
+            FINDING_TITLES.get(chosen.request.capability, "证据不足")
+            if chosen
+            else "证据不足"
+        )
+        risk = (
+            finding.summary
+            if finding and _finding_has_negative_signal(finding)
+            else "未发现高优先风险，仍需结合成本与仓位复核"
+        )
+        items.append(
+            ResearchModuleItem(
+                kind="holding",
+                code=code,
+                name=name,
+                label=label,
+                summary=finding.summary if finding else "本次未返回可用研究证据",
+                risk=risk,
+                status="ready" if chosen else "missing",
+                facts=finding.facts if finding else (),
+            )
+        )
+    return tuple(items)
+
+
+def _stock_module_item(outcome: _CapabilityOutcome) -> ResearchModuleItem:
+    findings = _outcome_findings(outcome)
+    status = "ready" if outcome.rows else "failed" if outcome.failed else "missing"
+    return ResearchModuleItem(
+        kind="dimension",
+        code=outcome.request.target.code,
+        name=outcome.request.target.name,
+        label=CAPABILITY_LABELS[outcome.request.capability],
+        summary=findings[0].summary if findings else "本维度证据待补",
+        risk="证据不足时不提高结论置信度" if not findings else "关键事实变化时重新评估",
+        status=status,
+        facts=findings[0].facts if findings else (),
+    )
+
+
+def _candidate_module_item(
+    row: tuple[ResearchFact, ...],
+) -> ResearchModuleItem | None:
+    code = _row_value(row, ("股票代码", "证券代码"))
+    name = _row_value(row, ("股票简称", "证券简称", "股票名称"))
+    if not code or not name:
+        return None
+    return ResearchModuleItem(
+        kind="candidate",
+        code=code,
+        name=name,
+        label="今日候选",
+        summary=_candidate_summary(row),
+        risk="板块退潮、成交萎缩或业绩证据转弱时移出清单",
+        facts=_display_facts("astock_selector", row),
+    )
+
+
+def _row_value(row: tuple[ResearchFact, ...], terms: tuple[str, ...]) -> str:
+    fact = _fact_matching(row, terms)
+    return fact.value if fact else ""
+
+
+def _finding_has_negative_signal(finding: ResearchFinding) -> bool:
+    text = " ".join([finding.summary, *(fact.value for fact in finding.facts)])
+    return any(term in text for term in ("预亏", "下降", "承压", "监管", "质押", "解禁", "负"))
+
+
+def _subject_count(
+    module: str,
+    outcomes: tuple[_CapabilityOutcome, ...],
+    module_items: tuple[ResearchModuleItem, ...],
+) -> int:
+    if module == "stock":
+        return 1
+    if module == "portfolio":
+        return len({(item.request.target.code, item.request.target.name) for item in outcomes})
+    return len(module_items)
 
 
 def _front_findings(
@@ -570,6 +739,10 @@ def _finding_summary(
         return _document_summary(row)
     if capability == "market":
         return _market_summary(row)
+    if capability == "industry":
+        return _industry_summary(row)
+    if capability == "report":
+        return _document_summary(row)
     return "；".join(f"{fact.label}：{fact.value}" for fact in row[:2])
 
 
@@ -729,6 +902,14 @@ def _market_summary(row: tuple[ResearchFact, ...]) -> str:
             f"{_short_metric(volume.label)} {volume.value}"
         )
     return _compact_facts(row)
+
+
+def _industry_summary(row: tuple[ResearchFact, ...]) -> str:
+    industry = _fact_matching(row, ("行业名称", "所属行业"))
+    ranking = _fact_matching(row, ("行业排名", "排名"))
+    valuation = _fact_matching(row, ("市盈率", "估值"))
+    parts = [fact.value for fact in (industry, ranking, valuation) if fact]
+    return "，".join(parts) if parts else _compact_facts(row)
 
 
 def _display_facts(

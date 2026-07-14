@@ -120,6 +120,33 @@ def test_portfolio_page_context_only_contains_code_and_name(tmp_path) -> None:
         assert forbidden not in serialized
 
 
+def test_portfolio_page_context_keeps_twenty_names_and_codes_only(tmp_path) -> None:
+    holdings = tmp_path / "holdings.csv"
+    rows = [
+        f"60{index:04d},持仓{index},100,10,行业,备注{index}"
+        for index in range(21)
+    ]
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
+    soup = BeautifulSoup(
+        render_page(stock_code="603278", holdings_path=str(holdings)),
+        "html.parser",
+    )
+    workspace = soup.select_one('[data-engine-workspace="portfolio"]')
+    assert workspace is not None
+
+    context = json.loads(workspace["data-engine-context"])
+
+    assert len(context["holdings"]) == 20
+    assert set(context["holdings"][0]) == {"code", "name"}
+    serialized = json.dumps(context, ensure_ascii=False)
+    assert "shares" not in serialized
+    assert "cost_price" not in serialized
+    assert "备注" not in serialized
+
+
 def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
     script = engine_app_script()
 
