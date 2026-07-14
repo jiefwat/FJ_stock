@@ -161,6 +161,30 @@ class ResearchDetail:
 
 
 @dataclass(frozen=True)
+class ResearchModuleItem:
+    kind: str
+    code: str = ""
+    name: str = ""
+    label: str = ""
+    summary: str = ""
+    risk: str = ""
+    status: str = "ready"
+    facts: tuple[ResearchFact, ...] = ()
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "code": self.code,
+            "name": self.name,
+            "label": self.label,
+            "summary": self.summary,
+            "risk": self.risk,
+            "status": self.status,
+            "facts": [fact.to_public_dict() for fact in self.facts],
+        }
+
+
+@dataclass(frozen=True)
 class ResearchWorkspaceResult:
     ok: bool
     status: str
@@ -172,6 +196,12 @@ class ResearchWorkspaceResult:
     findings: tuple[ResearchFinding, ...] = ()
     details: tuple[ResearchDetail, ...] = ()
     missing_sections: tuple[str, ...] = ()
+    subject_count: int = 0
+    coverage_ready: int = 0
+    coverage_total: int = 0
+    delivery: str = "live"
+    as_of: str = ""
+    module_items: tuple[ResearchModuleItem, ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -185,6 +215,14 @@ class ResearchWorkspaceResult:
             "findings": [item.to_public_dict() for item in self.findings],
             "details": [item.to_public_dict() for item in self.details],
             "missing_sections": list(self.missing_sections),
+            "subject_count": self.subject_count,
+            "coverage": {
+                "ready": self.coverage_ready,
+                "total": self.coverage_total,
+            },
+            "delivery": self.delivery,
+            "as_of": self.as_of or self.generated_at,
+            "module_items": [item.to_public_dict() for item in self.module_items],
         }
 
 

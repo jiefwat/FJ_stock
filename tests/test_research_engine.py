@@ -5,11 +5,46 @@ import json
 from stock_ts.iwencai import SKILLS
 from stock_ts.research_engine import (
     ResearchContext,
+    ResearchModuleItem,
     ResearchTarget,
+    ResearchWorkspaceResult,
     ResearchWorkspaceService,
     build_workspace_queries,
     workspace_capabilities,
 )
+
+
+def test_workspace_result_exposes_complete_product_contract() -> None:
+    result = ResearchWorkspaceResult(
+        ok=True,
+        status="complete",
+        module="market",
+        generated_at="2026-07-15T07:20:00+08:00",
+        verdict="趋势偏强",
+        action="保持风险预算",
+        primary_risk="成交缩量",
+        subject_count=3,
+        coverage_ready=3,
+        coverage_total=4,
+        module_items=(
+            ResearchModuleItem(
+                kind="index",
+                code="000001.SH",
+                name="上证指数",
+                label="短中期趋势",
+                summary="5日上行，20日待确认",
+                risk="跌破20日趋势则失效",
+            ),
+        ),
+    )
+
+    payload = result.to_public_dict()
+
+    assert payload["subject_count"] == 3
+    assert payload["coverage"] == {"ready": 3, "total": 4}
+    assert payload["delivery"] == "live"
+    assert payload["as_of"] == "2026-07-15T07:20:00+08:00"
+    assert payload["module_items"][0]["kind"] == "index"
 
 
 class FakeClient:
