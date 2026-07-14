@@ -41,5 +41,16 @@
 - `1280x900`：页面 `scrollWidth=1280`；桌面四个核心导航均可见，移动行动坞为 `display:none`，三项结果直达等宽展示。
 - `390x844`：页面 `scrollWidth=390`；底部行动坞四个按钮高度均为 `44px`，主内容底部留白为 `94px`；顶部隐藏四个重复核心入口，只保留数据中台和账户管理。
 - 交互验证：风险直达后焦点位于风险卡；完整依据会展开并聚焦摘要；`Escape` 关闭依据并保留摘要焦点；数字键 `3` 切换到个股页并同步桌面/移动 `aria-current`；搜索输入框获得焦点时数字键不会切换模块。
-- 本机匿名验证实例捕获到 `分析中 -> 暂不可用` 状态迁移；上游当前不可用时页面明确暂停判断，不沿用旧结论。正式 `8765` 实例仍保持登录后调用的安全配置。
+- 本机匿名验证最初捕获到 `分析中 -> 暂不可用`，进一步定位为 Framework Python 3.12 缺少系统 CA，并非官方接口无数据；接入 `certifi` 后同一运行时恢复真实结果。
 - 浏览器控制台无 warning/error；页面未出现供应商品牌、能力 id、trace、API key 或网关字段。
+
+## 证书修复与公网部署
+
+- 证书链 TDD：默认客户端加载可信 CA 和传入 HTTPS context 的两项测试先因缺少 `certifi` / `_trusted_ssl_context` 失败，修复后通过。
+- 最终专项研究/API/UI/安全回归：`111 passed in 1.83s`；`make lint`、`git diff --check` 和凭证特征扫描通过。
+- 本机 Python 3.12 真实调用：指数返回 3 行；大盘 `partial 3/4`、持仓 `partial 9/12`、个股 `complete 4/4`、机会 `complete 4/4`，四页均展示三条发现。
+- 公网服务器登录态 API：大盘、持仓、个股、机会均为 HTTP 200 且 `ok=true`；每个模块都有 findings 和 details。
+- 公网登录态 HTML：四个 `data-engine-workspace`、移动行动坞和 `/api/research/workspace` 均存在，产品可见 HTML 保持供应商中性。
+- GitHub `main`、本地 `main` 和服务器 `/opt/stock-ts/main` 首次部署均为 `19ad5bf67f8a839e700442310611487663fdb04c`。
+- 首次部署前备份：`/opt/stock-ts/.deploy_backups/iwencai-native-20260714-235652/source-before.tar`。
+- 服务：`stock-ts.service=active`；公网 `/healthz=200`，根路径按预期 303 到登录页，登录页与注册入口均为 200/可用。
