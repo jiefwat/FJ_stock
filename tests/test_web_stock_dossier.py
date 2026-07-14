@@ -210,6 +210,17 @@ def test_dossier_styles_define_desktop_mobile_and_reduced_motion() -> None:
     assert ".stock-identity-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }" in mobile_css
 
 
+def test_v2_styles_define_thesis_spine_evidence_directions_and_mobile_stack() -> None:
+    assert ".thesis-spine" in CSS
+    assert ".weighted-evidence-row" in CSS
+    assert '[data-direction="反证"]' in CSS
+    assert '[data-direction="未知"]' in CSS
+    mobile = CSS.split("@media (max-width: 760px)", 1)[1]
+    assert ".thesis-spine" in mobile
+    assert "grid-template-columns:1fr" in mobile
+    assert "prefers-reduced-motion" in CSS
+
+
 def test_mobile_data_quality_summary_uses_readable_grid() -> None:
     mobile_css = CSS.split("@media (max-width: 680px)", 1)[1]
 
