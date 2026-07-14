@@ -69,8 +69,9 @@ def test_portfolio_workspace_leads_with_one_committee_verdict() -> None:
     html = render_portfolio_workspace(_dossier(), supporting_evidence_html="<p>持仓证据</p>")
 
     assert html.count('data-primary-portfolio-verdict="true"') == 1
-    assert html.index("组合风控结论") < html.index("处置队列")
-    assert html.index("处置队列") < html.index("持仓证据")
+    assert html.index("组合风控结论") < html.index("优先处理")
+    assert html.index("优先处理") < html.index("展开持仓依据")
+    assert html.index("展开持仓依据") < html.index("持仓证据")
     assert "风险暴露登记表" in html
     assert "禁止动作" in html
     assert html.count('class="portfolio-evidence essence-evidence"') == 1
@@ -110,7 +111,7 @@ def test_stale_web_portfolio_page_pauses_price_actions() -> None:
 
     assert "数据暂停" in portfolio_html
     assert "价格动作待刷新" in portfolio_html
-    assert "持仓证据" in portfolio_html
+    assert "展开持仓依据" in portfolio_html
     assert "买入触发" not in portfolio_html
 
 
@@ -130,7 +131,8 @@ def test_portfolio_workspace_limits_front_row_to_three_without_losing_audit_reco
         replace(dossier, queue=queue, boundaries=boundaries)
     )
 
-    assert html.count('class="portfolio-queue-item') == 7
+    assert html.count('class="portfolio-queue-item') == 3
+    assert html.count('class="portfolio-queue-audit-item') == 7
     front_queue = html.split('class="portfolio-evidence', 1)[0]
     assert front_queue.count('class="portfolio-queue-item') == 3
     assert "其余 4 项处置" in html

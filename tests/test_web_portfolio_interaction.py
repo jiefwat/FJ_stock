@@ -87,7 +87,7 @@ def test_web_renders_portfolio_interaction_controls(tmp_path: Path) -> None:
     )
 
     assert "组合风控结论" in html
-    assert "持仓证据" in html
+    assert "展开持仓依据" in html
     assert "持仓账本审计" in html
     assert "对应板块分析" not in html
     assert "仓位/成本分析" not in html

@@ -81,7 +81,7 @@ def test_context_modules_disable_queries_when_no_target_exists() -> None:
     assert opportunity.count(" disabled") == 6
 
 
-def test_four_workspaces_each_render_one_research_console_in_decision_order() -> None:
+def test_four_workspaces_each_render_one_research_console_after_essence() -> None:
     html = render_page(
         stock_code="600519",
         provider_name="sample",
@@ -97,18 +97,20 @@ def test_four_workspaces_each_render_one_research_console_in_decision_order() ->
         section.count('data-iwencai-research="true"') == 1
         for section in workspaces.values()
     )
-    assert workspaces["market"].index("五步风险决策轨道") < workspaces["market"].index(
-        "问财外部核查"
-    ) < workspaces["market"].index("三情景推演")
-    assert workspaces["portfolio"].index("处置队列") < workspaces["portfolio"].index(
-        "问财外部核查"
-    ) < workspaces["portfolio"].index("持仓证据")
-    assert workspaces["stock"].index("关键证据") < workspaces["stock"].index(
-        "问财研究追问"
+    assert workspaces["market"].index("今天怎么做") < workspaces["market"].index(
+        "问财核查 · 按需展开"
+    ) < workspaces["market"].index("展开市场依据")
+    assert workspaces["portfolio"].index("优先处理") < workspaces["portfolio"].index(
+        "问财核查 · 按需展开"
+    ) < workspaces["portfolio"].index("展开持仓依据")
+    assert workspaces["stock"].index("三条依据") < workspaces["stock"].index(
+        "问财核查 · 按需展开"
+    ) < workspaces["stock"].index("展开完整档案")
+    assert workspaces["opportunity"].index("研究候选") < workspaces[
+        "opportunity"
+    ].index("问财核查 · 按需展开") < workspaces["opportunity"].index(
+        "展开筛选依据"
     )
-    assert workspaces["opportunity"].index("证据漏斗") < workspaces["opportunity"].index(
-        "问财外部核查"
-    ) < workspaces["opportunity"].index("研究候选")
 
 
 def test_portfolio_and_opportunity_consoles_only_expose_minimum_context() -> None:

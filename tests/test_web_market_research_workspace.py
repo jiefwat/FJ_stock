@@ -66,6 +66,13 @@ def test_market_workspace_has_one_ordered_five_step_decision_rail() -> None:
     assert html.index("五步风险决策轨道") < html.index("趋势与宽度")
 
 
+def test_market_essence_action_reuses_existing_risk_budget_consequence() -> None:
+    html = render_market_workspace(_assessment())
+    visible = html.split('<details class="market-evidence', 1)[0]
+
+    assert "该预算是组合总风险上限，下游模块只能收紧，不能放松。" in visible
+
+
 def test_market_workspace_uses_three_session_playbook_and_preserves_details() -> None:
     html = render_market_workspace(
         _assessment(),
@@ -86,7 +93,7 @@ def test_market_workspace_uses_three_session_playbook_and_preserves_details() ->
     assert "DISTRIBUTION-EVIDENCE" in html
     assert "MAINLINE-EVIDENCE" in html
     assert '<details class="market-evidence essence-evidence">' in html
-    assert "大盘证据" in html
+    assert "展开市场依据" in html
     assert html.index("INTRADAY-DETAIL-EVIDENCE") < html.index(
         "CLOSE-REVIEW-EVIDENCE"
     )

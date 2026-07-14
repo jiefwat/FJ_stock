@@ -1564,10 +1564,10 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
     for text in [
         "我的持仓",
         "组合风控结论",
-        "处置队列",
+        "优先处理",
         "风险暴露登记表",
         "持仓边界",
-        "持仓证据",
+        "展开持仓依据",
         "新增持仓",
         "编辑",
         "删除",
@@ -1593,14 +1593,14 @@ def test_portfolio_module_uses_single_editable_multidimensional_list() -> None:
     ]:
         assert old_section not in portfolio_html
 
-    assert portfolio_html.index("组合风控结论") < portfolio_html.index("处置队列")
-    assert portfolio_html.index("处置队列") < portfolio_html.index("持仓证据")
+    assert portfolio_html.index("组合风控结论") < portfolio_html.index("优先处理")
+    assert portfolio_html.index("优先处理") < portfolio_html.index("展开持仓依据")
 
 
 def test_portfolio_analysis_explains_causes_not_only_statuses() -> None:
     portfolio_html = _workspace(_sample_html(), "portfolio")
 
-    for text in ["处置依据", "复核触发", "失效条件", "首要风险", "历史暴露"]:
+    for text in ["处置依据", "复核触发", "失效条件", "最大风险", "历史暴露"]:
         assert text in portfolio_html
 
     for shallow_text in [
@@ -2280,13 +2280,13 @@ def test_daily_market_moves_dense_evidence_into_session_specific_surfaces() -> N
     close_start = market_html.index('class="market-session-phase phase-close"')
     evidence_start = market_html.index('<details class="market-evidence essence-evidence">')
 
-    assert close_start < evidence_start
-    assert evidence_start < market_html.index("板块热力图")
-    assert evidence_start < market_html.index("大涨大跌分析")
-    assert evidence_start < market_html.index("强势板块Top5")
-    assert evidence_start < market_html.index("异动事件")
-    assert evidence_start < market_html.index("专业大盘研判")
-    assert evidence_start < market_html.index("买卖指导")
+    assert evidence_start < close_start
+    assert close_start < market_html.index("板块热力图")
+    assert close_start < market_html.index("大涨大跌分析")
+    assert close_start < market_html.index("强势板块Top5")
+    assert close_start < market_html.index("异动事件")
+    assert close_start < market_html.index("专业大盘研判")
+    assert close_start < market_html.index("买卖指导")
 
 
 def test_market_mainline_summary_does_not_restate_price_results_as_reason() -> None:

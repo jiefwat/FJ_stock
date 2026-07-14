@@ -36,15 +36,7 @@ def render_opportunity_workspace(
         f"<strong>{escape(item.category)}</strong></div>"
         f"<p>{escape(item.evidence)}</p>"
         f"<small>{escape(item.consequence)}</small></article>"
-        for item in dossier.risks[:3]
-    )
-    risk_rest = "".join(
-        "<article class=\"opportunity-risk-item "
-        f"severity-{escape(item.severity)}\">"
-        f"<div><strong>{escape(item.category)}</strong></div>"
-        f"<p>{escape(item.evidence)}</p>"
-        f"<small>{escape(item.consequence)}</small></article>"
-        for item in dossier.risks[3:]
+        for item in dossier.risks
     )
     front_candidates = dossier.candidates[:3]
     overflow_candidates = dossier.candidates[3:]
@@ -74,16 +66,37 @@ def render_opportunity_workspace(
     )
     evidence = f"""
       <details class="opportunity-evidence essence-evidence">
-        <summary>筛选与来源账本</summary>
+        <summary>展开筛选依据</summary>
         <div class="essence-evidence-body">
+          <section aria-labelledby="opportunity-funnel-title">
+            <h3 id="opportunity-funnel-title">证据漏斗</h3>
+            <div class="opportunity-funnel-rail essence-strip">{funnel}</div>
+          </section>
+          <div class="opportunity-gate-metrics">
+            <div><span>数据状态</span><strong>{escape(gate.data_status)}</strong></div>
+            <div><span>市场风险预算</span><strong>{escape(gate.risk_budget)}</strong></div>
+            <div><span>扫描范围</span><strong>{escape(scanned)}</strong></div>
+            <div><span>证据就绪</span><strong>{gate.evidence_ready_count}</strong></div>
+            <div><span>可验证</span><strong>{gate.eligible_count}</strong></div>
+          </div>
+          <p class="essence-detail-meta">数据状态：{escape(gate.data_status)}</p>
+          <section class="opportunity-risk-register" aria-labelledby="opportunity-risks-title">
+            <h3 id="opportunity-risks-title">风险排除</h3>
+            {risks}
+          </section>
           {overflow_section}
           <div class="candidate-audit-grid">{candidate_audit}</div>
-          {risk_rest}
+          <h3>筛选与来源账本</h3>
           <ul>{source_notes}</ul>
           {supporting_html}
         </div>
       </details>"""
     research_options = _research_context_options(dossier)
+    primary_risk = (
+        dossier.risks[0].evidence
+        if dossier.risks
+        else f"数据状态为 {gate.data_status}，候选必须逐只复核。"
+    )
     return f"""
     <section class="opportunity-dossier"
       data-opportunity-state="{escape(gate.state)}">
@@ -92,38 +105,29 @@ def render_opportunity_workspace(
         <div class="opportunity-gate-state">
           <span>机会总闸门</span>
           <h3 id="opportunity-gate-title">{escape(gate.state)}</h3>
-          <strong>{escape(gate.action)}</strong>
         </div>
         <div class="opportunity-gate-thesis">
           <p>{escape(gate.thesis)}</p>
-          <div class="opportunity-gate-metrics">
-            <div><span>市场风险预算</span><strong>{escape(gate.risk_budget)}</strong></div>
-            <div><span>扫描范围</span><strong>{escape(scanned)}</strong></div>
-            <div><span>证据就绪</span><strong>{gate.evidence_ready_count}</strong></div>
-            <div><span>可验证</span><strong>{gate.eligible_count}</strong></div>
+          <div class="essence-action-risk">
+            <div class="essence-action" data-essence-action>
+              <span>今天怎么做</span><strong>{escape(gate.action)}</strong>
+            </div>
+            <div class="essence-risk" data-essence-risk>
+              <span>最大风险</span><strong>{escape(primary_risk)}</strong>
+            </div>
           </div>
-          <small>数据状态：{escape(gate.data_status)} · 下一步：{escape(gate.next_step)}</small>
+          <small>下一步：{escape(gate.next_step)}</small>
         </div>
       </section>
-      <section aria-labelledby="opportunity-funnel-title">
-        <h3 id="opportunity-funnel-title">证据漏斗</h3>
-        <div class="opportunity-funnel-rail essence-strip">{funnel}</div>
+      <section class="essence-focus-list" aria-labelledby="opportunity-candidates-title">
+        <h3 id="opportunity-candidates-title">研究候选</h3>
+        <div class="candidate-decision-grid">{candidates}</div>
       </section>
       {render_iwencai_research_console(
           module="opportunity",
           status=iwencai_status,
           context_options=research_options,
       )}
-      <div class="opportunity-research-grid">
-        <section aria-labelledby="opportunity-candidates-title">
-          <h3 id="opportunity-candidates-title">研究候选</h3>
-          <div class="candidate-decision-grid">{candidates}</div>
-        </section>
-        <section class="opportunity-risk-register" aria-labelledby="opportunity-risks-title">
-          <h3 id="opportunity-risks-title">风险排除</h3>
-          {risks}
-        </section>
-      </div>
       {evidence}
     </section>"""
 

@@ -5506,4 +5506,216 @@ body {
   .iwencai-research-result { animation:none; }
 }
 
+/* Three-second decision note: one verdict, one action, one risk, then audit depth. */
+.essence-verdict,
+.portfolio-verdict-brief,
+.dossier-decision-brief,
+.stock-thesis-board,
+.opportunity-gate-brief {
+  position:relative;
+  overflow:hidden;
+  border:1px solid #b8c8d4;
+  border-left:5px solid var(--brand);
+  border-radius:16px;
+  background:linear-gradient(112deg,#fff 0%,#f4f8fa 72%,#eef4f7 100%);
+  box-shadow:0 16px 38px rgba(19,39,58,.07);
+  color:var(--ink);
+}
+.essence-verdict::after,
+.portfolio-verdict-brief::after,
+.dossier-decision-brief::after,
+.stock-thesis-board::after,
+.opportunity-gate-brief::after {
+  content:"";
+  position:absolute;
+  inset:0 0 auto;
+  height:1px;
+  background:linear-gradient(90deg,var(--accent),transparent 52%);
+}
+.dossier-decision-brief .dossier-stance h3,
+.portfolio-verdict-brief .portfolio-verdict-state h3,
+.opportunity-gate-brief .opportunity-gate-state h3 { color:var(--ink); }
+.dossier-decision-brief .dossier-stance,
+.dossier-decision-brief .dossier-thesis,
+.portfolio-verdict-brief .portfolio-verdict-state,
+.portfolio-verdict-brief .portfolio-verdict-thesis,
+.opportunity-gate-brief .opportunity-gate-state,
+.opportunity-gate-brief .opportunity-gate-thesis { color:var(--ink); }
+.dossier-decision-brief .dossier-stance span,
+.dossier-decision-brief .dossier-core-conflict span,
+.portfolio-verdict-brief .portfolio-verdict-state span,
+.opportunity-gate-brief .opportunity-gate-state span { color:var(--brand); }
+.dossier-decision-brief .dossier-core-conflict {
+  border-color:var(--line);
+}
+.dossier-decision-brief .dossier-core-conflict strong,
+.dossier-decision-brief .dossier-thesis > p,
+.portfolio-verdict-brief .portfolio-verdict-thesis > p,
+.opportunity-gate-brief .opportunity-gate-thesis > p { color:var(--ink); }
+.portfolio-verdict-brief .portfolio-verdict-thesis > small,
+.opportunity-gate-brief .opportunity-gate-thesis > small { color:var(--muted); }
+.dossier-decision-brief .dossier-stance h3,
+.portfolio-verdict-brief .portfolio-verdict-state h3,
+.opportunity-gate-brief .opportunity-gate-state h3 {
+  font-size:clamp(27px,3vw,38px);
+}
+.portfolio-queue-item header { grid-template-columns:minmax(0,1fr) auto; }
+.essence-action-risk {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin-top:12px;
+}
+.essence-action,
+.essence-risk {
+  display:grid;
+  min-width:0;
+  gap:5px;
+  padding:11px 12px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:rgba(255,255,255,.88);
+}
+.essence-action { border-left:3px solid #2f7864; }
+.essence-risk { border-left:3px solid var(--red); }
+.essence-action > span,
+.essence-risk > span {
+  color:var(--muted);
+  font-size:10px;
+  font-weight:850;
+  letter-spacing:.06em;
+}
+.essence-action > strong,
+.essence-risk > strong {
+  color:var(--ink);
+  font-size:13px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.essence-focus-list {
+  display:grid;
+  gap:9px;
+  min-width:0;
+}
+.essence-focus-list > h3 {
+  margin:0;
+  color:var(--ink);
+  font-size:14px;
+  letter-spacing:-.01em;
+}
+.stock-core-facts {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+.stock-core-fact {
+  display:grid;
+  min-width:0;
+  gap:6px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-top:3px solid #7191a9;
+  border-radius:11px;
+  background:#fff;
+}
+.stock-core-fact.is-counter { border-top-color:var(--red); background:#fffafa; }
+.stock-core-fact > span { color:var(--muted); font-size:10px; font-weight:850; }
+.stock-core-fact > strong { color:var(--ink); font-size:13px; line-height:1.45; }
+.stock-core-fact > small { color:var(--muted); font-size:10px; line-height:1.45; }
+.essence-detail-meta { margin:0; color:var(--muted); font-size:11px; }
+.portfolio-queue-audit { display:grid; gap:8px; }
+.portfolio-queue-audit-item {
+  display:grid;
+  gap:7px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:#fff;
+}
+.portfolio-queue-audit-item header { display:flex; justify-content:space-between; gap:10px; }
+.portfolio-queue-audit-item p { margin:0; color:var(--muted); font-size:11px; }
+.portfolio-queue-audit-item dl { display:grid; gap:6px; margin:0; }
+.portfolio-queue-audit-item dl > div { display:grid; grid-template-columns:88px 1fr; gap:8px; }
+.portfolio-queue-audit-item dt { color:var(--muted); font-size:10px; }
+.portfolio-queue-audit-item dd { margin:0; color:var(--ink-soft); font-size:11px; }
+.portfolio-invalidation { display:grid; gap:4px; }
+.portfolio-invalidation span { color:var(--muted); font-size:10px; }
+.portfolio-invalidation strong { color:var(--ink); font-size:12px; }
+.iwencai-research-disclosure {
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(248,251,253,.82);
+}
+.iwencai-research-disclosure > summary,
+.essence-evidence > summary {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  min-height:46px;
+  gap:10px;
+  padding:11px 14px;
+  cursor:pointer;
+  list-style:none;
+  color:var(--ink-soft);
+  font-size:12px;
+  font-weight:850;
+}
+.iwencai-research-disclosure > summary::-webkit-details-marker,
+.essence-evidence > summary::-webkit-details-marker { display:none; }
+.iwencai-research-disclosure > summary::after,
+.essence-evidence > summary::after {
+  content:"+";
+  display:grid;
+  width:22px;
+  height:22px;
+  place-items:center;
+  border:1px solid var(--line);
+  border-radius:50%;
+  color:var(--muted);
+  background:#fff;
+  font-family:var(--mono);
+}
+.iwencai-research-disclosure[open] > summary::after,
+.essence-evidence[open] > summary::after { content:"-"; }
+.iwencai-research-disclosure[open] > summary,
+.essence-evidence[open] > summary { border-bottom:1px solid var(--line); }
+.iwencai-research-disclosure > summary:focus-visible,
+.essence-evidence > summary:focus-visible {
+  outline:3px solid rgba(25,83,141,.22);
+  outline-offset:-3px;
+}
+.iwencai-research-disclosure .iwencai-research-console {
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+}
+.iwencai-research-disclosure .iwencai-research-console::before { display:none; }
+.essence-evidence-body > section { min-width:0; }
+
+@media (max-width: 760px) {
+  .essence-verdict,
+  .portfolio-verdict-brief,
+  .dossier-decision-brief,
+  .stock-thesis-board,
+  .opportunity-gate-brief,
+  .essence-action-risk,
+  .stock-core-facts { grid-template-columns:1fr; }
+  .essence-action-risk { gap:7px; margin-top:9px; }
+  .essence-action,
+  .essence-risk,
+  .stock-core-fact { padding:10px; }
+  .iwencai-research-disclosure > summary,
+  .essence-evidence > summary { min-height:44px; padding:9px 11px; }
+  .portfolio-queue-audit-item dl > div { grid-template-columns:1fr; gap:2px; }
+  .market-state-strip,
+  .stock-identity-strip { min-width:0; }
+  .market-state-strip > div,
+  .stock-identity-strip > div { min-width:0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iwencai-research-disclosure > summary,
+  .essence-evidence > summary { scroll-behavior:auto; }
+}
+
 """

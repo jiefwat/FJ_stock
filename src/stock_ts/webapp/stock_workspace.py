@@ -103,6 +103,26 @@ def _render_dossier_workspace(
         "</div></article>"
         for item in dossier.weighted_evidence
     )
+    core_facts = "".join(
+        "<article class=\"stock-core-fact\" data-core-stock-fact>"
+        f"<span>{escape(item.dimension)} · {escape(item.direction)}</span>"
+        f"<strong>{escape(item.fact)}</strong>"
+        f"<small>{escape(item.inference)}</small>"
+        "</article>"
+        for item in dossier.weighted_evidence[:2]
+    )
+    primary_counter = (
+        dossier.risks[0].evidence
+        if dossier.risks
+        else verdict.strongest_counter_evidence
+    )
+    counter_label = dossier.risks[0].category if dossier.risks else "最强反证"
+    core_facts += (
+        '<article class="stock-core-fact is-counter" data-core-stock-fact '
+        'data-core-stock-counter="true">'
+        f"<span>{escape(counter_label)}</span><strong>{escape(primary_counter)}</strong>"
+        f"<small>结论失效 · {escape(dossier.position.invalidation)}</small></article>"
+    )
     evidence_rows = "".join(
         "<tr>"
         f"<td>{escape(item.block)}</td>"
@@ -115,17 +135,6 @@ def _render_dossier_workspace(
         for item in dossier.evidence
     )
     position = dossier.position
-    evidence = f"""
-      <details class="stock-evidence essence-evidence">
-        <summary>证据账本</summary>
-        <div class="essence-evidence-body">
-          <div class="dossier-diagnostic-grid">{diagnostic_cards}</div>
-          <table class="data-table"><thead><tr>
-            <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>结论与限制</th>
-          </tr></thead><tbody>{evidence_rows}</tbody></table>
-          {supporting_evidence_html}
-        </div>
-      </details>"""
     return f"""
     <section class="stock-research-workspace stock-dossier"
       data-research-status="{escape(verdict.stance)}"
@@ -143,54 +152,25 @@ def _render_dossier_workspace(
         <div class="dossier-stance">
           <span>投资判断</span>
           <h3 id="dossier-verdict-title">{escape(verdict.stance)}</h3>
-          <strong>{escape(verdict.action)}</strong>
         </div>
         <div class="dossier-thesis">
-          <div class="dossier-grade"><span>研究假设</span>
-            <strong>{escape(verdict.evidence_grade)} ·
-              完整度 {verdict.confidence}/100</strong></div>
           <p>{escape(dossier.thesis.headline)}</p>
           <div class="dossier-core-conflict">
             <span>核心矛盾</span><strong>{escape(dossier.thesis.core_conflict)}</strong>
           </div>
-          <div class="dossier-research-meta">
-            <div><span>预期差</span><strong>{escape(dossier.thesis.expectation_gap)}</strong></div>
-            <div><span>估值匹配</span><strong>{escape(dossier.thesis.valuation_fit)}</strong></div>
-            <div><span>关键未知</span><strong>{escape(dossier.thesis.key_unknown)}</strong></div>
+          <div class="essence-action-risk">
+            <div class="essence-action" data-essence-action>
+              <span>当前动作</span><strong>{escape(verdict.action)}</strong>
+            </div>
+            <div class="essence-risk" data-essence-risk>
+              <span>结论失效</span><strong>{escape(position.invalidation)}</strong>
+            </div>
           </div>
-          <small>适用周期：{escape(verdict.horizon)} ·
-            下次复核：{escape(verdict.next_review)}</small>
         </div>
       </section>
-      {identity_html}
-      <div class="dossier-action-grid">
-        <section class="dossier-panel" aria-labelledby="decision-rail-title">
-          <h3 id="decision-rail-title">决策条件</h3>
-          <div class="decision-rail">{decision_conditions}</div>
-        </section>
-        <section class="dossier-position-panel" aria-labelledby="position-guidance-title">
-          <h3 id="position-guidance-title">执行边界</h3>
-          <div class="dossier-position-grid">
-            <div><span>当前动作</span><strong>{escape(position.current_action)}</strong></div>
-            <div><span>仓位 / 风险预算</span>
-              <strong>{escape(position.position_cap)} ·
-                {escape(position.risk_budget)}</strong></div>
-            <div><span>入场 / 加仓</span>
-              <strong>{escape(position.entry_trigger)}；{escape(position.add_trigger)}</strong></div>
-            <div><span>减仓 / 退出</span>
-              <strong>{escape(position.reduce_trigger)}；{escape(position.invalidation)}</strong></div>
-            <div class="prohibited"><span>禁止动作</span>
-              <strong>{escape(position.prohibited_action)}</strong></div>
-          </div>
-        </section>
-      </div>
-      <section class="dossier-thesis-spine" aria-labelledby="thesis-spine-title">
-        <h3 id="thesis-spine-title">论点链</h3>
-        <div class="thesis-spine">{thesis_chain}</div>
-      </section>
-      <section class="weighted-evidence" aria-labelledby="weighted-evidence-title">
-        <h3 id="weighted-evidence-title">关键证据</h3>
-        <div class="weighted-evidence-list">{weighted_evidence}</div>
+      <section class="essence-focus-list" aria-labelledby="stock-core-facts-title">
+        <h3 id="stock-core-facts-title">三条依据</h3>
+        <div class="stock-core-facts">{core_facts}</div>
       </section>
       {render_iwencai_research_console(
           module="stock",
@@ -199,15 +179,66 @@ def _render_dossier_workspace(
           name=dossier.name,
           local_as_of=dossier.trade_date,
       )}
-      <section class="dossier-panel risk-register" aria-labelledby="risk-register-title">
-        <h3 id="risk-register-title">风险反证</h3>
-        {risk_rows}
-      </section>
-      <section aria-labelledby="dossier-scenarios-title">
-        <h3 id="dossier-scenarios-title">三情景</h3>
-        <div class="dossier-scenario-grid">{scenario_cards}</div>
-      </section>
-      {evidence}
+      <details class="stock-evidence essence-evidence">
+        <summary>展开完整档案</summary>
+        <div class="essence-evidence-body">
+          {identity_html}
+          <div class="dossier-research-meta">
+            <div><span>研究等级</span><strong>{escape(verdict.evidence_grade)} ·
+              完整度 {verdict.confidence}/100</strong></div>
+            <div><span>预期差</span><strong>{escape(dossier.thesis.expectation_gap)}</strong></div>
+            <div><span>估值匹配</span><strong>{escape(dossier.thesis.valuation_fit)}</strong></div>
+            <div><span>关键未知</span><strong>{escape(dossier.thesis.key_unknown)}</strong></div>
+          </div>
+          <p class="essence-detail-meta">适用周期：{escape(verdict.horizon)} ·
+            下次复核：{escape(verdict.next_review)}</p>
+          <div class="dossier-action-grid">
+            <section class="dossier-panel" aria-labelledby="decision-rail-title">
+              <h3 id="decision-rail-title">决策条件</h3>
+              <div class="decision-rail">{decision_conditions}</div>
+            </section>
+            <section class="dossier-position-panel" aria-labelledby="position-guidance-title">
+              <h3 id="position-guidance-title">执行边界</h3>
+              <div class="dossier-position-grid">
+                <div><span>当前动作</span><strong>{escape(position.current_action)}</strong></div>
+                <div><span>仓位 / 风险预算</span>
+                  <strong>{escape(position.position_cap)} ·
+                    {escape(position.risk_budget)}</strong></div>
+                <div><span>入场 / 加仓</span>
+                  <strong>{escape(position.entry_trigger)}；{escape(position.add_trigger)}</strong></div>
+                <div><span>减仓 / 退出</span>
+                  <strong>{escape(position.reduce_trigger)}；{escape(position.invalidation)}</strong></div>
+                <div class="prohibited"><span>禁止动作</span>
+                  <strong>{escape(position.prohibited_action)}</strong></div>
+              </div>
+            </section>
+          </div>
+          <section class="dossier-thesis-spine" aria-labelledby="thesis-spine-title">
+            <h3 id="thesis-spine-title">论点链</h3>
+            <div class="thesis-spine">{thesis_chain}</div>
+          </section>
+          <section class="weighted-evidence" aria-labelledby="weighted-evidence-title">
+            <h3 id="weighted-evidence-title">关键证据</h3>
+            <div class="weighted-evidence-list">{weighted_evidence}</div>
+          </section>
+          <section class="dossier-panel risk-register" aria-labelledby="risk-register-title">
+            <h3 id="risk-register-title">风险反证</h3>
+            {risk_rows}
+          </section>
+          <section aria-labelledby="dossier-scenarios-title">
+            <h3 id="dossier-scenarios-title">三情景</h3>
+            <div class="dossier-scenario-grid">{scenario_cards}</div>
+          </section>
+          <section aria-labelledby="stock-ledger-title">
+            <h3 id="stock-ledger-title">证据账本</h3>
+            <div class="dossier-diagnostic-grid">{diagnostic_cards}</div>
+            <table class="data-table"><thead><tr>
+              <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>结论与限制</th>
+            </tr></thead><tbody>{evidence_rows}</tbody></table>
+            {supporting_evidence_html}
+          </section>
+        </div>
+      </details>
     </section>"""
 
 
@@ -271,6 +302,20 @@ def _render_memo_workspace(
         _render_section(section)
         for section in (memo.technical, memo.capital, memo.events, memo.portfolio)
     )
+    primary_invalidation = (
+        memo.scenarios[0].invalidation
+        if memo.scenarios
+        else memo.verdict.strongest_counter_evidence
+    )
+    core_facts = (
+        '<article class="stock-core-fact" data-core-stock-fact>'
+        f"<span>最强证据</span><strong>{escape(memo.verdict.strongest_evidence)}</strong>"
+        "</article>"
+        '<article class="stock-core-fact is-counter" data-core-stock-fact '
+        'data-core-stock-counter="true">'
+        f"<span>最强反证</span><strong>{escape(memo.verdict.strongest_counter_evidence)}</strong>"
+        f"<small>结论失效 · {escape(primary_invalidation)}</small></article>"
+    )
     return f"""
     <section class="stock-research-workspace"
       data-research-status="{escape(memo.verdict.status)}">
@@ -280,32 +325,27 @@ def _render_memo_workspace(
         <div><span>数据日期</span><strong>{escape(memo.trade_date)}</strong></div>
         {refresh_html}
       </header>
-      {identity_html}
-      <section class="stock-thesis-board" aria-labelledby="stock-thesis-title">
+      <section class="stock-thesis-board" data-primary-stock-verdict="true"
+        aria-labelledby="stock-thesis-title">
         <div class="stock-thesis-status">
           <span>研究结论</span>
           <h3 id="stock-thesis-title">{escape(memo.verdict.status)}</h3>
-          <strong>置信度 {memo.verdict.confidence}/100</strong>
         </div>
         <div class="thesis-conflict">
           <span>核心矛盾</span><strong>{escape(memo.verdict.core_conflict)}</strong>
-          <div class="thesis-evidence-pair">
-            <p><b>最强证据</b>{escape(memo.verdict.strongest_evidence)}</p>
-            <p><b>最强反证</b>{escape(memo.verdict.strongest_counter_evidence)}</p>
+          <div class="essence-action-risk">
+            <div class="essence-action" data-essence-action>
+              <span>下一步研究动作</span><strong>{escape(memo.verdict.next_review)}</strong>
+            </div>
+            <div class="essence-risk" data-essence-risk>
+              <span>结论失效</span><strong>{escape(primary_invalidation)}</strong>
+            </div>
           </div>
         </div>
       </section>
-      <section aria-labelledby="investment-memo-title">
-        <h3 id="investment-memo-title">投资备忘录</h3>
-        <div class="investment-memo-grid">{memo_sections}</div>
-      </section>
-      <section aria-labelledby="stock-scenarios-title">
-        <h3 id="stock-scenarios-title">三情景推演</h3>
-        <div class="research-scenario-grid">{scenario_html}</div>
-      </section>
-      <section aria-labelledby="stock-evidence-title">
-        <h3 id="stock-evidence-title">六类证据</h3>
-        <div class="stock-evidence-grid">{evidence_html}</div>
+      <section class="essence-focus-list" aria-labelledby="stock-memo-facts-title">
+        <h3 id="stock-memo-facts-title">两条依据</h3>
+        <div class="stock-core-facts">{core_facts}</div>
       </section>
       {render_iwencai_research_console(
           module="stock",
@@ -314,19 +354,30 @@ def _render_memo_workspace(
           name=memo.name,
           local_as_of=memo.trade_date,
       )}
-      <section class="research-actions" aria-labelledby="research-actions-title">
-        <span>下一步研究动作</span>
-        <h3 id="research-actions-title">{escape(memo.verdict.next_review)}</h3>
-      </section>
-      <section class="trade-plan-section" aria-labelledby="trade-plan-title">
-        <h3 id="trade-plan-title">交易计划</h3>
-        {trade_plan_html}
-      </section>
       <details class="stock-evidence essence-evidence">
-        <summary>证据账本</summary>
+        <summary>展开完整档案</summary>
         <div class="essence-evidence-body">
+          {identity_html}
+          <p class="essence-detail-meta">置信度 {memo.verdict.confidence}/100</p>
+          <section aria-labelledby="investment-memo-title">
+            <h3 id="investment-memo-title">投资备忘录</h3>
+            <div class="investment-memo-grid">{memo_sections}</div>
+          </section>
+          <section aria-labelledby="stock-scenarios-title">
+            <h3 id="stock-scenarios-title">三情景推演</h3>
+            <div class="research-scenario-grid">{scenario_html}</div>
+          </section>
+          <section aria-labelledby="stock-evidence-title">
+            <h3 id="stock-evidence-title">六类证据</h3>
+            <div class="stock-evidence-grid">{evidence_html}</div>
+          </section>
+          <section class="trade-plan-section" aria-labelledby="trade-plan-title">
+            <h3 id="trade-plan-title">交易计划</h3>
+            {trade_plan_html}
+          </section>
           <div class="investment-memo-grid">{secondary_sections}</div>
           {technical_html}
+          <h3>证据账本</h3>
           <table class="data-table"><thead><tr>
             <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>限制</th>
           </tr></thead><tbody>{audit_rows}</tbody></table>

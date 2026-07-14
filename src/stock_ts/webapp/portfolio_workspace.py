@@ -26,31 +26,41 @@ def render_portfolio_workspace(
         for item in dossier.metrics
     )
     queue = "".join(_render_queue_item(item) for item in dossier.queue[:3])
-    queue_rest = "".join(_render_queue_item(item) for item in dossier.queue[3:])
+    queue_audit = "".join(_render_queue_audit_item(item) for item in dossier.queue)
     if not queue:
         queue = '<div class="dossier-empty-state">暂无持仓；录入真实持仓后生成处置队列。</div>'
     exposures = "".join(
         f'<article class="portfolio-exposure severity-{escape(item.severity)}">'
         f"<div><strong>{escape(item.name)}</strong><span>{item.weight:.1%}</span></div>"
         f"<p>{escape(item.consequence)}</p></article>"
-        for item in dossier.exposures[:1]
+        for item in dossier.exposures
     )
     if not exposures:
         exposures = '<div class="dossier-empty-state">暂无需要登记的集中度暴露。</div>'
     boundaries = "".join(_render_boundary(item) for item in dossier.boundaries)
     if not boundaries:
         boundaries = '<div class="dossier-empty-state">暂无持仓边界。</div>'
-    queue_rest_section = (
-        f"<h4>其余 {len(dossier.queue[3:])} 项处置</h4>"
-        f'<div class="portfolio-treatment-queue">{queue_rest}</div>'
-        if queue_rest
-        else ""
+    queue_rest_label = (
+        f"<h4>其余 {len(dossier.queue[3:])} 项处置</h4>" if len(dossier.queue) > 3 else ""
     )
     evidence = f"""
       <details class="portfolio-evidence essence-evidence">
-        <summary>持仓证据</summary>
+        <summary>展开持仓依据</summary>
         <div class="essence-evidence-body">
-          {queue_rest_section}
+          <div class="portfolio-verdict-metrics">
+            <div><span>市场风险预算</span><strong>{escape(verdict.risk_budget)}</strong></div>
+            <div><span>证据完整度</span><strong>{verdict.confidence}/100</strong></div>
+          </div>
+          <h4>组合指标</h4>
+          <div class="portfolio-metric-strip">{metrics}</div>
+          <section class="portfolio-exposure-register"
+            aria-labelledby="portfolio-exposure-title">
+            <h3 id="portfolio-exposure-title">风险暴露登记表</h3>
+            {exposures}
+          </section>
+          {queue_rest_label}
+          <h4>完整处置队列</h4>
+          <div class="portfolio-queue-audit">{queue_audit}</div>
           <h4>持仓边界</h4>
           <div class="portfolio-boundary-grid">{boundaries}</div>
           {supporting_evidence_html}
@@ -71,29 +81,24 @@ def render_portfolio_workspace(
         <div class="portfolio-verdict-state">
           <span>组合风控结论</span>
           <h3 id="portfolio-verdict-title">{escape(verdict.state)}</h3>
-          <strong>{escape(verdict.action)}</strong>
         </div>
         <div class="portfolio-verdict-thesis">
           <p>{escape(verdict.thesis)}</p>
-          <div class="portfolio-verdict-metrics">
-            <div><span>市场风险预算</span><strong>{escape(verdict.risk_budget)}</strong></div>
-            <div><span>证据完整度</span><strong>{verdict.confidence}/100</strong></div>
-            <div><span>首要风险</span><strong>{escape(verdict.primary_risk)}</strong></div>
+          <div class="essence-action-risk">
+            <div class="essence-action" data-essence-action>
+              <span>今天怎么做</span><strong>{escape(verdict.action)}</strong>
+            </div>
+            <div class="essence-risk" data-essence-risk>
+              <span>最大风险</span><strong>{escape(verdict.primary_risk)}</strong>
+            </div>
           </div>
-          <small>下一次复核：{escape(verdict.next_review)}</small>
+          <small>{escape(verdict.risk_budget)} · 下次复核：{escape(verdict.next_review)}</small>
         </div>
       </section>
-      <div class="portfolio-metric-strip">{metrics}</div>
-      <div class="portfolio-dossier-grid">
-        <section aria-labelledby="portfolio-queue-title">
-          <h3 id="portfolio-queue-title">处置队列</h3>
-          <div class="portfolio-treatment-queue">{queue}</div>
-        </section>
-        <section class="portfolio-exposure-register" aria-labelledby="portfolio-exposure-title">
-          <h3 id="portfolio-exposure-title">风险暴露登记表</h3>
-          {exposures}
-        </section>
-      </div>
+      <section class="essence-focus-list" aria-labelledby="portfolio-queue-title">
+        <h3 id="portfolio-queue-title">优先处理</h3>
+        <div class="portfolio-treatment-queue">{queue}</div>
+      </section>
       {render_iwencai_research_console(
           module="portfolio",
           status=iwencai_status,
@@ -106,15 +111,26 @@ def render_portfolio_workspace(
 def _render_queue_item(item: PortfolioQueueItem) -> str:
     return (
         f'<article class="portfolio-queue-item state-{_state_class(item.state)}">'
-        f'<header><span>#{item.priority:02d}</span><div><strong>{escape(item.name)}</strong>'
+        f'<header><div><strong>{escape(item.name)}</strong>'
         f"<small>{escape(item.code)} · 当前权重 {item.current_weight:.1%}</small></div>"
         f"<em>{escape(item.state)}</em></header>"
-        f'<p class="portfolio-cost-context">{escape(item.cost_context)}</p>'
         '<div class="portfolio-queue-reason"><span>处置依据</span>'
         f"<p>{escape(item.reason)}</p></div>"
-        '<div class="portfolio-trigger-pair"><div><span>复核触发</span>'
-        f"<strong>{escape(item.trigger)}</strong></div><div><span>失效条件</span>"
-        f"<strong>{escape(item.invalidation)}</strong></div></div></article>"
+        '<div class="portfolio-invalidation"><span>失效条件</span>'
+        f"<strong>{escape(item.invalidation)}</strong></div></article>"
+    )
+
+
+def _render_queue_audit_item(item: PortfolioQueueItem) -> str:
+    return (
+        '<article class="portfolio-queue-audit-item">'
+        f"<header><strong>{escape(item.name)} · {escape(item.code)}</strong>"
+        f"<em>{escape(item.state)}</em></header>"
+        f"<p>{escape(item.cost_context)}</p>"
+        f"<dl><div><dt>处置依据</dt><dd>{escape(item.reason)}</dd></div>"
+        f"<div><dt>复核触发</dt><dd>{escape(item.trigger)}</dd></div>"
+        f"<div><dt>失效条件</dt><dd>{escape(item.invalidation)}</dd></div></dl>"
+        "</article>"
     )
 
 

@@ -4,7 +4,7 @@
 
 **Goal:** Make the market, portfolio, stock, and opportunity workspaces understandable in three seconds by showing only one verdict, one action, one primary risk, and no more than three focus items before a single closed evidence drawer.
 
-**Architecture:** Keep all research models, rankings, stale-data gates, authentication, and iWencai routing unchanged. Restructure only the five HTML renderers and add a small shared CSS layer so each workspace has a decision-first surface and one audit drawer containing the current professional detail.
+**Architecture:** Keep all research models, rankings, stale-data gates, authentication, and iWencai routing unchanged. Restructure only the five HTML renderers and add a small shared CSS layer so each workspace has a decision-first surface, one audit drawer, and one sibling iWencai drawer; the drawers never nest, so either action remains one click away.
 
 **Tech Stack:** Python 3.11, stdlib HTML rendering, pytest, BeautifulSoup, existing CSS string renderer, local HTTP and responsive browser verification.
 
@@ -72,7 +72,7 @@ def test_iwencai_console_is_closed_until_requested() -> None:
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest \
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest \
   tests/test_web_three_second_essence.py \
   tests/test_web_iwencai_four_workspaces.py -q
 ```
@@ -124,9 +124,9 @@ Keep `data-iwencai-research`, `data-iwencai-module`, `data-iwencai-form`, `data-
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest \
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest \
   tests/test_web_iwencai_four_workspaces.py \
-  tests/test_iwencai.py tests/test_web_iwencai_api.py -q
+  tests/test_iwencai.py tests/test_web_iwencai_research.py -q
 ```
 
 Expected: all selected tests pass with the controls still present inside a default-closed disclosure.
@@ -152,18 +152,18 @@ market_action = (
 )
 ```
 
-Move the decision rail, scenarios, dimensions, distribution, sectors, events, intraday/close panels, full evidence table, supporting HTML, and iWencai disclosure inside the single `details.market-evidence` block.
+Move the decision rail, scenarios, dimensions, distribution, sectors, events, intraday/close panels, full evidence table, and supporting HTML inside the single `details.market-evidence` block. Render the closed iWencai disclosure as its sibling, never as a nested drawer.
 
 - [ ] **Step 2: Keep only the top three portfolio decisions visible**
 
-Render `dossier.queue[:3]` as the visible queue. Each card keeps name, action/state, reason, and invalidation; remove visible priority numbers and cost-context narration. Move metrics, exposures, remaining queue items, boundaries, supporting evidence, and iWencai into `details.portfolio-evidence`.
+Render `dossier.queue[:3]` as the visible queue. Each card keeps name, action/state, reason, and invalidation; remove visible priority numbers and cost-context narration. Move metrics, exposures, remaining queue items, boundaries, and supporting evidence into `details.portfolio-evidence`; keep the closed iWencai disclosure as a sibling.
 
 - [ ] **Step 3: Run market and portfolio tests and verify GREEN**
 
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest \
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest \
   tests/test_web_three_second_essence.py \
   tests/test_web_market_research_workspace.py \
   tests/test_web_portfolio_dossier.py \
@@ -183,22 +183,22 @@ Expected: the visible surface is capped while all professional content remains q
 
 - [ ] **Step 1: Build the professional dossier's three visible facts**
 
-Render at most two highest-weight `dossier.weighted_evidence` facts plus one counter-evidence/risk item, each marked with `data-core-stock-fact`. Keep the verdict stance/action and `position.invalidation` visible. Move identity detail, decision rail, position matrix, thesis spine, remaining weighted evidence, all diagnostics, full risks, scenarios, tables, supporting HTML, and iWencai into one `details.stock-evidence`.
+Render at most two highest-weight `dossier.weighted_evidence` facts plus one counter-evidence/risk item, each marked with `data-core-stock-fact`. Keep the verdict stance/action and `position.invalidation` visible. Move identity detail, decision rail, position matrix, thesis spine, remaining weighted evidence, all diagnostics, full risks, scenarios, tables, and supporting HTML into one `details.stock-evidence`; keep the closed iWencai disclosure as a sibling.
 
 - [ ] **Step 2: Give the memo fallback the same visible contract**
 
-Keep status, next review/action, strongest evidence, strongest counter-evidence, and the primary invalidation from the first scenario. Move memo sections, scenarios, full evidence, trade plan, technical detail, debate, and iWencai into the same closed stock drawer.
+Keep status, next review/action, strongest evidence, strongest counter-evidence, and the primary invalidation from the first scenario. Move memo sections, scenarios, full evidence, trade plan, technical detail, and debate into the same closed stock drawer; keep the closed iWencai disclosure as a sibling.
 
 - [ ] **Step 3: Keep only three opportunity candidate cards visible**
 
-Keep `dossier.candidates[:3]`. Each visible card keeps one support fact, one counter fact, and `next_verification`. Move the funnel, gate metrics, risk register, remaining candidates, source/audit ledger, supporting HTML, and iWencai into `details.opportunity-evidence`.
+Keep `dossier.candidates[:3]`. Each visible card keeps one support fact, one counter fact, and `next_verification`. Move the funnel, gate metrics, risk register, remaining candidates, source/audit ledger, and supporting HTML into `details.opportunity-evidence`; keep the closed iWencai disclosure as a sibling.
 
 - [ ] **Step 4: Run stock and opportunity tests and verify GREEN**
 
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest \
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest \
   tests/test_web_three_second_essence.py \
   tests/test_web_stock_dossier.py \
   tests/test_web_stock_research_workspace.py \
@@ -226,7 +226,7 @@ At `max-width: 760px`, stack action and risk, remove multi-column minimum widths
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest tests/test_web_*.py -q
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest tests/test_web_*.py -q
 make lint
 git diff --check
 ```
@@ -246,7 +246,7 @@ Expected: no new web or lint failures.
 Run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m pytest \
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest \
   tests/test_web_three_second_essence.py \
   tests/test_web_essence_mode.py \
   tests/test_web_compact_mode.py \
@@ -255,7 +255,7 @@ PYTHONPATH=src .venv/bin/python -m pytest \
   tests/test_web_stock_dossier.py \
   tests/test_web_opportunity_dossier.py \
   tests/test_web_iwencai_four_workspaces.py -q
-PYTHONPATH=src .venv/bin/python -m pytest -q
+PYTHONPATH=src /Users/fangjie/Documents/StockTs/.venv/bin/python -m pytest -q
 ```
 
 Expected: focused suite passes. Record any unchanged full-suite baseline failures separately; do not claim a clean full suite unless it exits zero.

@@ -128,14 +128,16 @@ def test_stock_workspace_renders_cross_period_financial_and_valuation_evidence()
     assert "连续改善" in html
 
 
-def test_stock_workspace_adds_compact_iwencai_research_console_after_evidence() -> None:
+def test_stock_workspace_adds_iwencai_after_core_facts_before_full_archive() -> None:
     html = render_stock_workspace(
         build_stock_research_memo(_raw(complete=True)),
         iwencai_status="configured",
     )
 
-    assert html.index("六类证据") < html.index("问财研究追问")
-    assert html.index("问财研究追问") < html.index("下一步研究动作")
+    assert html.index("两条依据") < html.index("问财核查 · 按需展开")
+    assert html.index("问财核查 · 按需展开") < html.index("展开完整档案")
+    assert "六类证据" in html
+    assert "下一步研究动作" in html
     assert 'data-iwencai-research="true"' in html
     assert 'data-stock-code="600000"' in html
     assert 'data-stock-name="示例银行"' in html

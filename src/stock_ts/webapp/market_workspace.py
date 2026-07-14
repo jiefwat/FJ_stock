@@ -59,16 +59,46 @@ def render_market_workspace(
         "</tr>"
         for item in assessment.dimensions
     )
+    market_action = rail_items[2][2]
     evidence = f"""
       <details class="market-evidence essence-evidence">
-        <summary>大盘证据</summary>
+        <summary>展开市场依据</summary>
         <div class="essence-evidence-body">
-          {distribution_html}
-          {sectors_html}
-          {intraday_detail_html}
-          {events_html}
-          {close_html}
-          {supporting_html}
+          <div class="market-session-ruler essence-strip" aria-label="市场研究时序">
+            <div><span>01</span><strong id="market-phase-pre">盘前框架</strong></div>
+            <div><span>02</span><strong id="market-phase-live">盘中验证</strong></div>
+            <div><span>03</span><strong id="market-phase-close">收盘复核</strong></div>
+          </div>
+          <section class="market-session-phase phase-pre" aria-labelledby="market-phase-pre">
+            <section class="market-decision-panel" data-market-rail-state="{rail_state}"
+              aria-labelledby="market-decision-rail-title">
+              <h3 id="market-decision-rail-title">五步风险决策轨道</h3>
+              <div class="market-decision-rail">{decision_rail}</div>
+            </section>
+            <section aria-labelledby="market-scenarios-title">
+              <h3 id="market-scenarios-title">三情景推演</h3>
+              <div class="research-scenario-grid">{scenarios}</div>
+            </section>
+          </section>
+          <section class="market-session-phase phase-live" aria-labelledby="market-phase-live">
+            <section aria-labelledby="market-structure-title">
+              <h3 id="market-structure-title">趋势与宽度</h3>
+              <div class="market-dimension-grid">{dimensions}</div>
+            </section>
+          </section>
+          <section class="market-session-phase phase-close" aria-labelledby="market-phase-close">
+            <div class="market-evidence-pair">
+              <div><h4>支持证据</h4><ul>{support}</ul></div>
+              <div><h4>反向证据</h4><ul>{counters}</ul></div>
+            </div>
+            {distribution_html}
+            {sectors_html}
+            {intraday_detail_html}
+            {events_html}
+            {close_html}
+            {supporting_html}
+          </section>
+          <p class="essence-detail-meta">研究置信度 {assessment.confidence}/100</p>
           <table class="data-table"><thead><tr>
             <th>维度</th><th>状态</th><th>依据</th><th>缺口</th>
           </tr></thead><tbody>{audit_rows}</tbody></table>
@@ -79,52 +109,30 @@ def render_market_workspace(
       <header class="market-state-strip">
         <div><span>市场状态</span><strong>{escape(assessment.stage)}</strong></div>
         <div><span>市场风险预算</span><strong>{escape(assessment.risk_budget)}</strong></div>
-        <div><span>研究置信度</span><strong>{assessment.confidence}/100</strong></div>
         <div><span>数据日期</span><strong>{escape(assessment.trade_date)}</strong></div>
         {refresh_html}
       </header>
-      <div class="market-session-ruler essence-strip" aria-label="市场研究时序">
-        <div><span>01</span><strong id="market-phase-pre">盘前框架</strong></div>
-        <div><span>02</span><strong id="market-phase-live">盘中验证</strong></div>
-        <div><span>03</span><strong id="market-phase-close">收盘复核</strong></div>
-      </div>
-      <section class="market-session-phase phase-pre" aria-labelledby="market-phase-pre">
-        <section class="market-thesis-board" data-primary-market-verdict="true"
-          aria-labelledby="market-thesis-title">
-          <div class="market-thesis-main">
-            <span>核心判断</span><h3 id="market-thesis-title">{escape(assessment.thesis)}</h3>
-            <ul>{support}</ul>
+      <section class="market-thesis-board essence-verdict"
+        data-primary-market-verdict="true" aria-labelledby="market-thesis-title">
+        <div class="market-thesis-main">
+          <span>核心判断</span><h3 id="market-thesis-title">{escape(assessment.thesis)}</h3>
+        </div>
+        <div class="essence-action-risk">
+          <div class="essence-action" data-essence-action>
+            <span>今天怎么做</span><strong>{escape(market_action)}</strong>
           </div>
-          <div class="market-risk-card">
+          <div class="market-risk-card essence-risk" data-essence-risk>
             <span>最大风险</span><strong>{escape(assessment.primary_risk)}</strong>
-            <ul>{counters}</ul>
             <small>判断失效：{escape(assessment.invalidate_condition)}</small>
           </div>
-        </section>
-        <section class="market-decision-panel" data-market-rail-state="{rail_state}"
-          aria-labelledby="market-decision-rail-title">
-          <h3 id="market-decision-rail-title">五步风险决策轨道</h3>
-          <div class="market-decision-rail">{decision_rail}</div>
-        </section>
-        {render_iwencai_research_console(
-            module="market",
-            status=iwencai_status,
-            local_as_of=assessment.trade_date,
-        )}
-        <section aria-labelledby="market-scenarios-title">
-          <h3 id="market-scenarios-title">三情景推演</h3>
-          <div class="research-scenario-grid">{scenarios}</div>
-        </section>
+        </div>
       </section>
-      <section class="market-session-phase phase-live" aria-labelledby="market-phase-live">
-        <section aria-labelledby="market-structure-title">
-          <h3 id="market-structure-title">趋势与宽度</h3>
-          <div class="market-dimension-grid">{dimensions}</div>
-        </section>
-      </section>
-      <section class="market-session-phase phase-close" aria-labelledby="market-phase-close">
-        {evidence}
-      </section>
+      {render_iwencai_research_console(
+          module="market",
+          status=iwencai_status,
+          local_as_of=assessment.trade_date,
+      )}
+      {evidence}
     </section>"""
 
 

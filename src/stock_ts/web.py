@@ -4686,14 +4686,14 @@ def _render_opportunity_sector_context(
     if not rows:
         rows = "<tr><td colspan='5'>板块证据缺失；候选不得使用虚构主题补位。</td></tr>"
     return f"""
-      <details class="opportunity-source-ledger opportunity-sector-context">
-        <summary>板块与市场支持证据</summary>
+      <section class="opportunity-source-ledger opportunity-sector-context">
+        <h4>板块与市场支持证据</h4>
         <div class="opportunity-table-scroll">
           <table class="data-table"><thead><tr>
             <th>方向</th><th>热度与状态</th><th>扩散</th><th>代表股</th><th>风险复核</th>
           </tr></thead><tbody>{rows}</tbody></table>
         </div>
-      </details>"""
+      </section>"""
 
 
 def _render_opportunity_buy_sell_guidance(

@@ -93,31 +93,37 @@ def render_iwencai_research_console(
     else:
         state_message = "问财结果只作证据补充，不改写本地结论。"
     return f"""
-      <section class="iwencai-research-console" data-iwencai-research="true"
-        data-iwencai-module="{escape(module)}"
-        data-stock-code="{escape(code, quote=True)}" data-stock-name="{escape(name, quote=True)}"
-        data-sector="{escape(sector, quote=True)}"
-        data-local-as-of="{escape(local_as_of, quote=True)}"
-        data-config-status="{escape(status, quote=True)}"
-        aria-labelledby="iwencai-research-title-{escape(module)}">
-        <header class="iwencai-research-header">
-          <div><span>{escape(kicker)}</span>
-            <h3 id="iwencai-research-title-{escape(module)}">{escape(title)}</h3></div>
-          <strong class="iwencai-connection {status_class}">{status_label}</strong>
-        </header>
-        <div class="iwencai-question-rail">{suggestions}</div>
-        <form class="{form_class}" data-iwencai-form>
-          {context_select}
-          <label class="sr-only" for="{question_id}">研究问题</label>
-          <textarea id="{question_id}" name="question" maxlength="200"
-            rows="2" required data-iwencai-input{disabled}
-            placeholder="输入一个需要外部数据核查的问题"></textarea>
-          <button type="submit" data-iwencai-submit{disabled}>核查问财</button>
-        </form>
-        <p class="iwencai-console-state" data-iwencai-state>
-          {state_message}</p>
-        <div class="iwencai-research-result" data-iwencai-result hidden aria-live="polite"></div>
-      </section>"""
+      <details class="iwencai-research-disclosure" data-iwencai-disclosure>
+        <summary><span>问财核查 · 按需展开</span>
+          <strong class="iwencai-connection {status_class}">{status_label}</strong></summary>
+        <section class="iwencai-research-console" data-iwencai-research="true"
+          data-iwencai-module="{escape(module)}"
+          data-stock-code="{escape(code, quote=True)}"
+          data-stock-name="{escape(name, quote=True)}"
+          data-sector="{escape(sector, quote=True)}"
+          data-local-as-of="{escape(local_as_of, quote=True)}"
+          data-config-status="{escape(status, quote=True)}"
+          aria-labelledby="iwencai-research-title-{escape(module)}">
+          <header class="iwencai-research-header">
+            <div><span>{escape(kicker)}</span>
+              <h3 id="iwencai-research-title-{escape(module)}">{escape(title)}</h3></div>
+            <strong class="iwencai-connection {status_class}">{status_label}</strong>
+          </header>
+          <div class="iwencai-question-rail">{suggestions}</div>
+          <form class="{form_class}" data-iwencai-form>
+            {context_select}
+            <label class="sr-only" for="{question_id}">研究问题</label>
+            <textarea id="{question_id}" name="question" maxlength="200"
+              rows="2" required data-iwencai-input{disabled}
+              placeholder="输入一个需要外部数据核查的问题"></textarea>
+            <button type="submit" data-iwencai-submit{disabled}>核查问财</button>
+          </form>
+          <p class="iwencai-console-state" data-iwencai-state>
+            {state_message}</p>
+          <div class="iwencai-research-result" data-iwencai-result hidden
+            aria-live="polite"></div>
+        </section>
+      </details>"""
 
 
 def _render_context_select(
