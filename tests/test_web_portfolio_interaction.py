@@ -124,10 +124,9 @@ def test_web_renders_daily_and_total_pnl_with_holding_stock_view(tmp_path: Path)
 
     assert "持仓/成本" in html
     assert "成本" in html
-    assert "持仓管理" in html
-    assert "仓位与执行边界" in html
-    assert "减仓触发" in html
-    assert "失效条件" in html
+    assert "执行边界" in html
+    assert "减仓 / 退出" in html
+    assert "论点失效" in html
 
 
 def test_web_forms_keep_user_in_target_modules(tmp_path: Path) -> None:

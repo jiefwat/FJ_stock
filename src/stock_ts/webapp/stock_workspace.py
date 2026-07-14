@@ -142,7 +142,8 @@ def _render_dossier_workspace(
         </div>
         <div class="dossier-thesis">
           <div class="dossier-grade"><span>研究假设</span>
-            <strong>{escape(verdict.evidence_grade)} · 完整度 {verdict.confidence}/100</strong></div>
+            <strong>{escape(verdict.evidence_grade)} ·
+              完整度 {verdict.confidence}/100</strong></div>
           <p>{escape(dossier.thesis.headline)}</p>
           <div class="dossier-core-conflict">
             <span>核心矛盾</span><strong>{escape(dossier.thesis.core_conflict)}</strong>
@@ -167,7 +168,8 @@ def _render_dossier_workspace(
           <div class="dossier-position-grid">
             <div><span>当前动作</span><strong>{escape(position.current_action)}</strong></div>
             <div><span>仓位 / 风险预算</span>
-              <strong>{escape(position.position_cap)} · {escape(position.risk_budget)}</strong></div>
+              <strong>{escape(position.position_cap)} ·
+                {escape(position.risk_budget)}</strong></div>
             <div><span>入场 / 加仓</span>
               <strong>{escape(position.entry_trigger)}；{escape(position.add_trigger)}</strong></div>
             <div><span>减仓 / 退出</span>

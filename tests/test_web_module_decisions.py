@@ -1295,7 +1295,14 @@ def test_stock_analysis_replaces_method_narration_with_weighted_evidence() -> No
     for text in ["关键证据", "盈利质量", "估值与预期差", "事件与治理", "行业位置", "资金与价格"]:
         assert text in stock_html
 
-    for narration in ["多角色分析方法", "技术分析师", "多空辩论", "交易员", "风控经理", "完整方法链"]:
+    for narration in [
+        "多角色分析方法",
+        "技术分析师",
+        "多空辩论",
+        "交易员",
+        "风控经理",
+        "完整方法链",
+    ]:
         assert narration not in stock_html
 
 

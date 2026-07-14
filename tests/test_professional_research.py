@@ -108,6 +108,6 @@ def test_web_renders_professional_technical_and_announcement_sections():
     assert "分析内容" in html
     assert "消息/公告" in html
     assert "减持股份结果公告" in html
-    assert "风险登记表" in html
-    assert "仓位与执行边界" in html
+    assert "风险反证" in html
+    assert "执行边界" in html
     assert "禁止动作" in html

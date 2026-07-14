@@ -12,10 +12,10 @@ def test_web_resolves_chinese_name_and_renders_professional_deep_sections() -> N
     assert "603278" in html
     assert "示例股票（大业股份）" not in html
     assert "个股分析" in html
-    assert "投委会结论" in html
-    assert "证据完整度" in html
-    assert "最大反证" in html
-    assert "失效退出" in html
+    assert "投资判断" in html
+    assert "完整度" in html
+    assert "风险反证" in html
+    assert "论点失效" in html
     assert "多轮对抗" not in html
     assert "失效" in html
     assert "数据可信度" in html

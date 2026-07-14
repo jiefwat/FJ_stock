@@ -9919,80 +9919,6 @@ def _stock_simple_quality_warning(quality: DataQualityView) -> str:
     )
 
 
-def _render_stock_method_chain(
-    *,
-    stock: DeepStockReport,
-    stock_raw: StockRawData,
-    sectors: SectorAnalysisReport,
-    technical: TechnicalProfile,
-    event_radar: EventRadar,
-    announcement_report: AnnouncementReport | None,
-    quality: DataQualityView,
-    trade_plan: TradePlan,
-    invalid: str,
-) -> str:
-    announcement_count = len(announcement_report.items) if announcement_report else 0
-    rows = [
-        (
-            "技术分析师",
-            "最近5/10日K线、均线、支撑压力、量能",
-            _stock_trend_cause(stock, stock_raw, technical),
-        ),
-        (
-            "基本面分析师",
-            "估值、财务指标、盈利质量",
-            _stock_fundamental_cause(stock_raw),
-        ),
-        (
-            "新闻事件分析师",
-            "新闻、公告、监管与财报事件",
-            _stock_event_cause(stock_raw, event_radar, announcement_count),
-        ),
-        (
-            "情绪/资金分析师",
-            "资金流、成交额、换手与市场关注度",
-            _stock_fund_cause(stock_raw),
-        ),
-        (
-            "多空辩论",
-            "核心驱动与最大反证同时检查",
-            _stock_bull_bear_debate_text(stock, event_radar, invalid),
-        ),
-        (
-            "交易员",
-            "入场、加仓、止损、止盈触发",
-            _stock_trader_decision_text(trade_plan),
-        ),
-        (
-            "风控经理",
-            "数据可信度、事件闸门、失效条件",
-            _stock_risk_manager_text(quality, event_radar, invalid),
-        ),
-        (
-            "组合经理",
-            "主题强弱、相对排名、仓位约束",
-            _stock_portfolio_manager_text(stock, sectors, trade_plan),
-        ),
-    ]
-    body = "".join(
-        "<tr>"
-        f"<td>{escape(role)}</td>"
-        f"<td>{escape(source)}</td>"
-        f"<td>{escape(_short_condition(f'{role}判断：{judgement}', 110))}</td>"
-        "</tr>"
-        for role, source, judgement in rows
-    )
-    return f"""
-        <div class="stock-method-chain">
-          <h4>多角色分析方法</h4>
-          <p class="section-subtitle">参考多分析师协作思路：先分工取证，再做多空交叉验证，最后落到交易和风控条件。</p>
-          <table class="data-table">
-            <thead><tr><th>角色</th><th>输入</th><th>判断</th></tr></thead>
-            <tbody>{body}</tbody>
-          </table>
-        </div>"""
-
-
 def _stock_simple_analysis_rows(
     *,
     stock: DeepStockReport,
@@ -10240,49 +10166,6 @@ def _stock_holding_cost_validation(
     invalid: str,
 ) -> str:
     return f"影响/验证：{_stock_cost_position_note(position, trade_plan, invalid)}"
-
-
-def _stock_bull_bear_debate_text(
-    stock: DeepStockReport,
-    event_radar: EventRadar,
-    invalid: str,
-) -> str:
-    bull = stock.upside.drivers[0] if stock.upside.drivers else stock.final_conclusion
-    bear = stock.risks[0] if stock.risks else invalid
-    return (
-        f"看多依据：{bull}；看空反证：{bear}；"
-        f"若事件闸门为{event_radar.gate}且价格跌破失效条件，则看空权重优先"
-    )
-
-
-def _stock_trader_decision_text(trade_plan: TradePlan) -> str:
-    return (
-        f"当前动作：{trade_plan.verdict}；入场看{trade_plan.entry_trigger}；"
-        f"加仓看{trade_plan.add_trigger}；退出看{trade_plan.stop_loss}"
-    )
-
-
-def _stock_risk_manager_text(
-    quality: DataQualityView,
-    event_radar: EventRadar,
-    invalid: str,
-) -> str:
-    if quality.warnings:
-        data_gate = "；".join(quality.warnings[:2])
-    else:
-        data_gate = "关键数据未触发硬缺口"
-    return f"数据：{quality.status}；事件：{event_radar.gate}；失效：{invalid}；{data_gate}"
-
-
-def _stock_portfolio_manager_text(
-    stock: DeepStockReport,
-    sectors: SectorAnalysisReport,
-    trade_plan: TradePlan,
-) -> str:
-    return (
-        f"{_stock_sector_comparison_text(stock, sectors)}；"
-        f"组合动作按{trade_plan.target_position}约束，不把单一维度结论直接当买点"
-    )
 
 
 def _stock_simple_news_evidence(

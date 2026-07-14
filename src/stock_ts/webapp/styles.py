@@ -55,6 +55,7 @@ textarea:focus-visible,
 .mini-button:focus-visible,
 .research-tape-data-link:focus-visible,
 .research-overflow summary:focus-visible,
+.stock-evidence summary:focus-visible,
 .data-source-ledger summary:focus-visible,
 .market-intraday-ledger summary:focus-visible {
   outline: 3px solid rgba(180, 133, 58, .28);
@@ -5147,13 +5148,22 @@ body {
   .research-tape-item.secondary { display:none; }
 }
 @media (max-width:680px) {
+  .workspace-pane[data-workspace="stock"] .module-header { display:none; }
   .stock-data-block-grid,
   .stock-pro-grid,
   .stock-diagnosis-grid { grid-template-columns:1fr; }
-  .market-state-strip,
-  .stock-identity-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .market-state-strip .module-refresh-tools,
-  .stock-identity-strip .module-refresh-tools { grid-column:1 / -1; padding:9px 12px; }
+  .market-state-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .stock-identity-strip {
+    grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,1fr) auto;
+    border-radius:16px;
+  }
+  .market-state-strip .module-refresh-tools { grid-column:1 / -1; padding:9px 12px; }
+  .stock-identity-strip .module-refresh-tools { grid-column:auto; padding:7px; }
+  .stock-identity-strip .module-refresh-tools > span { display:none; }
+  .stock-identity-strip .module-refresh-button { padding:8px 9px; font-size:0; }
+  .stock-identity-strip .module-refresh-button::after { content:"刷新"; font-size:11px; }
+  .stock-identity-strip strong { margin-top:5px; font-size:13px; }
+  .stock-identity-strip span { font-size:9px; letter-spacing:.06em; }
   .market-dimension-grid,
   .research-scenario-grid,
   .investment-memo-grid,
@@ -5249,8 +5259,8 @@ body {
   .market-decision-rail-step { min-height:0; border-right:0; }
   .market-decision-rail-step:not(:last-child)::after { display:none; }
   .market-risk-card { order:-1; }
-  .market-state-strip > div,
-  .stock-identity-strip > div { padding:13px 15px; }
+  .market-state-strip > div { padding:13px 15px; }
+  .stock-identity-strip > div { padding:10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .market-decision-rail-step { animation:none; }
