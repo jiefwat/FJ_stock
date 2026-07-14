@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from stock_ts.providers.sample import SampleDataProvider
+from stock_ts.web import render_page
 from stock_ts.webapp.research_console import (
     ResearchContextOption,
     render_iwencai_research_console,
 )
-from stock_ts.providers.sample import SampleDataProvider
-from stock_ts.web import render_page
+from stock_ts.webapp.shell import app_script
+from stock_ts.webapp.styles import CSS
 
 
 def _workspace(html: str, key: str) -> str:
@@ -79,7 +81,10 @@ def test_four_workspaces_each_render_one_research_console_in_decision_order() ->
         for key in ("market", "portfolio", "stock", "opportunity")
     }
 
-    assert all(section.count('data-iwencai-research="true"') == 1 for section in workspaces.values())
+    assert all(
+        section.count('data-iwencai-research="true"') == 1
+        for section in workspaces.values()
+    )
     assert workspaces["market"].index("五步风险决策轨道") < workspaces["market"].index(
         "问财外部核查"
     ) < workspaces["market"].index("三情景推演")
@@ -107,3 +112,27 @@ def test_portfolio_and_opportunity_consoles_only_expose_minimum_context() -> Non
         assert "data-code=" in console or "data-sector=" in console
         for private_field in ("data-shares", "data-cost", "data-weight", "cost_price"):
             assert private_field not in console
+
+
+def test_shared_script_posts_module_and_selected_allowlisted_context() -> None:
+    script = app_script()
+
+    for fragment in (
+        "consoleElement.dataset.iwencaiModule",
+        "querySelector('[data-iwencai-context]')",
+        "selectedOption.dataset.code",
+        "selectedOption.dataset.name",
+        "selectedOption.dataset.sector",
+        "context:",
+    ):
+        assert fragment in script
+    assert "researchResult.replaceChildren" in script
+    assert ".textContent =" in script
+    assert "researchResult.innerHTML" not in script
+
+
+def test_context_selector_is_compact_and_stacks_on_mobile() -> None:
+    assert ".iwencai-context-select" in CSS
+    mobile = CSS.split("@media (max-width: 760px)", 1)[1]
+    assert ".iwencai-context-select" in mobile
+    assert "grid-template-columns: 1fr" in mobile

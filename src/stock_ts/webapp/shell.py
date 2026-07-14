@@ -307,8 +307,10 @@ def app_script() -> str:
 
       const heading = iwencaiNode('div', 'iwencai-result-heading');
       const skill = payload.skill || {{}};
+      const skillContext = [skill.label || '问财研究', payload.context_label || '']
+        .filter(Boolean).join(' · ');
       heading.append(
-        iwencaiNode('span', '', skill.label || '问财研究'),
+        iwencaiNode('span', '', skillContext),
         iwencaiNode('strong', '', payload.summary || '查询完成')
       );
       researchResult.append(heading);
@@ -355,6 +357,7 @@ def app_script() -> str:
         const input = consoleElement.querySelector('[data-iwencai-input]');
         const submit = consoleElement.querySelector('[data-iwencai-submit]');
         const state = consoleElement.querySelector('[data-iwencai-state]');
+        const contextSelect = consoleElement.querySelector('[data-iwencai-context]');
         consoleElement.querySelectorAll('[data-iwencai-question]').forEach((chip) => {{
           chip.addEventListener('click', () => {{
             input.value = chip.dataset.iwencaiQuestion || '';
@@ -374,14 +377,20 @@ def app_script() -> str:
           submit.textContent = '查询中';
           state.textContent = '正在调用问财官方数据技能…';
           try {{
+            const selectedOption = contextSelect ? contextSelect.selectedOptions[0] : null;
+            const context = {{
+              code: selectedOption ? selectedOption.dataset.code || '' : consoleElement.dataset.stockCode || '',
+              name: selectedOption ? selectedOption.dataset.name || '' : consoleElement.dataset.stockName || '',
+              sector: selectedOption ? selectedOption.dataset.sector || '' : consoleElement.dataset.sector || '',
+              local_as_of: consoleElement.dataset.localAsOf || ''
+            }};
             const response = await fetch('/api/iwencai/research', {{
               method: 'POST',
               headers: {{'Content-Type': 'application/json'}},
               credentials: 'same-origin',
               body: JSON.stringify({{
-                code: consoleElement.dataset.stockCode || '',
-                name: consoleElement.dataset.stockName || '',
-                local_as_of: consoleElement.dataset.localAsOf || '',
+                module: consoleElement.dataset.iwencaiModule || 'stock',
+                context: context,
                 question: question
               }})
             }});
@@ -398,7 +407,7 @@ def app_script() -> str:
             state.textContent = 'StockTs 本地分析仍可正常使用。';
           }} finally {{
             submit.disabled = false;
-            submit.textContent = '查询问财';
+            submit.textContent = '核查问财';
           }}
         }});
       }});

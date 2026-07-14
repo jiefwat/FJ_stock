@@ -72,6 +72,7 @@ def render_iwencai_research_console(
         for label, question in MODULE_PRESETS[module]
     )
     context_select = _render_context_select(module, context_options, disabled)
+    form_class = "iwencai-research-form has-context" if context_options else "iwencai-research-form"
     question_id = f"iwencai-question-{module}"
     return f"""
       <section class="iwencai-research-console" data-iwencai-research="true"
@@ -87,7 +88,7 @@ def render_iwencai_research_console(
           <strong class="iwencai-connection {status_class}">{status_label}</strong>
         </header>
         <div class="iwencai-question-rail">{suggestions}</div>
-        <form class="iwencai-research-form" data-iwencai-form>
+        <form class="{form_class}" data-iwencai-form>
           {context_select}
           <label class="sr-only" for="{question_id}">研究问题</label>
           <textarea id="{question_id}" name="question" maxlength="200"
