@@ -208,6 +208,29 @@ def test_engine_workspace_exposes_evidence_completeness() -> None:
     assert "已确认维度" in html
 
 
+def test_workspace_exposes_module_specific_list_and_delivery_state() -> None:
+    html = render_engine_workspace("market", status="configured")
+
+    assert "data-engine-module-items" in html
+    assert "data-engine-module-items-title" in html
+    assert "data-engine-delivery" in html
+
+
+def test_engine_script_renders_module_items_without_inner_html() -> None:
+    script = engine_app_script()
+
+    assert "renderEngineModuleItems" in script
+    assert "payload.module_items" in script
+    assert "encodeURIComponent" in script
+    assert ".innerHTML" not in script
+
+
+def test_module_item_grid_is_responsive_and_marks_stale_delivery() -> None:
+    assert ".engine-module-item-grid" in CSS
+    assert ".engine-delivery.is-stale" in CSS
+    assert "grid-template-columns:minmax(0,1fr)" in CSS.replace(" ", "")
+
+
 def test_finding_cards_have_rank_and_evidence_role() -> None:
     script = engine_app_script()
 

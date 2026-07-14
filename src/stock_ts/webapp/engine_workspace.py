@@ -39,6 +39,7 @@ def render_engine_workspace(
         <div class="engine-meta">
           <strong class="engine-service-state state-{status_class}" data-engine-service-state>
             {escape(status_label)}</strong>
+          <span class="engine-delivery" data-engine-delivery>等待数据</span>
           <time data-engine-generated>尚未生成</time>
         </div>
       </header>
@@ -77,6 +78,13 @@ def render_engine_workspace(
         <div class="engine-findings" data-engine-findings>
           <div class="engine-empty">生成后显示最重要的三条事实。</div>
         </div>
+      </section>
+      <section class="engine-module-items" data-engine-module-items hidden>
+        <div class="engine-section-heading">
+          <h3 data-engine-module-items-title>完整清单</h3>
+          <span class="engine-module-items-count" data-engine-module-items-count>0 项</span>
+        </div>
+        <div class="engine-module-item-grid" data-engine-module-item-grid></div>
       </section>
       <div class="engine-actions">
         <details class="engine-disclosure" data-engine-disclosure
@@ -264,6 +272,44 @@ def engine_app_script() -> str:
       }
     }
 
+    function renderEngineModuleItems(workspace, payload) {
+      const section = workspace.querySelector('[data-engine-module-items]');
+      const root = workspace.querySelector('[data-engine-module-item-grid]');
+      const heading = workspace.querySelector('[data-engine-module-items-title]');
+      const count = workspace.querySelector('[data-engine-module-items-count]');
+      if (!section || !root || !heading || !count) return;
+      const items = Array.isArray(payload.module_items) ? payload.module_items : [];
+      const titles = {
+        market: '指数趋势',
+        portfolio: '全部持仓',
+        stock: '八维覆盖',
+        opportunity: '今日机会'
+      };
+      heading.textContent = titles[payload.module] || '完整清单';
+      count.textContent = payload.module === 'portfolio' && payload.subject_count
+        ? `已分析 ${items.length}/${payload.subject_count}`
+        : `${items.length} 项`;
+      root.replaceChildren();
+      items.forEach((item) => {
+        const card = engineNode('article', `engine-module-item state-${item.status || 'ready'}`);
+        const meta = engineNode('div', 'engine-module-item-meta');
+        meta.append(
+          engineNode('span', '', item.code || item.label || '研究项'),
+          engineNode('i', '', item.status === 'ready' ? '已确认' : '待补')
+        );
+        const title = engineNode('strong', '', item.name || item.label || '研究项');
+        card.append(meta, title, engineNode('p', '', item.summary || '证据待补。'));
+        if (item.risk) card.append(engineNode('small', '', item.risk));
+        if (payload.module === 'opportunity' && item.code) {
+          const link = engineNode('a', 'engine-module-item-link', '进入个股分析');
+          link.href = `/?code=${encodeURIComponent(item.code)}#stock`;
+          card.append(link);
+        }
+        root.append(card);
+      });
+      section.hidden = items.length === 0;
+    }
+
     function renderEngineResult(workspace, payload) {
       const navigationState = normalizeEngineNavigationState(payload.status);
       workspace.dataset.engineResultStatus = navigationState;
@@ -279,6 +325,7 @@ def engine_app_script() -> str:
       const live = workspace.querySelector('[data-engine-live-state]');
       const details = Array.isArray(payload.details) ? payload.details : [];
       const coverage = workspace.querySelector('[data-engine-coverage]');
+      const delivery = workspace.querySelector('[data-engine-delivery]');
       if (verdict) verdict.textContent = payload.verdict || '本次证据不足，判断暂停。';
       if (action) action.textContent = payload.action || '稍后重新分析。';
       if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
@@ -289,9 +336,20 @@ def engine_app_script() -> str:
           : '刚刚生成';
       }
       if (coverage) {
-        const ready = details.filter((detail) => detail.status === 'ready').length;
-        coverage.textContent = `已确认维度 ${ready}/${details.length || 4}`;
-        coverage.classList.toggle('is-complete', ready > 0 && ready === details.length);
+        const readyDetails = details.filter((detail) => detail.status === 'ready').length;
+        const ready = payload.coverage?.ready ?? readyDetails;
+        const total = payload.coverage?.total ?? (details.length || 4);
+        coverage.textContent = `已确认维度 ${ready}/${total}`;
+        coverage.classList.toggle('is-complete', ready > 0 && ready === total);
+      }
+      if (delivery) {
+        const deliveryLabels = {
+          live: '实时结果',
+          snapshot: '今日快照',
+          stale_snapshot: '历史快照'
+        };
+        delivery.textContent = deliveryLabels[payload.delivery] || '实时结果';
+        delivery.classList.toggle('is-stale', Boolean(payload.stale));
       }
       const findingsRoot = workspace.querySelector('[data-engine-findings]');
       if (findingsRoot) {
@@ -304,6 +362,7 @@ def engine_app_script() -> str:
         }
       }
       renderEngineDetails(workspace, payload);
+      renderEngineModuleItems(workspace, payload);
       if (live) {
         live.textContent = navigationState === 'complete'
           ? '判断已更新'
