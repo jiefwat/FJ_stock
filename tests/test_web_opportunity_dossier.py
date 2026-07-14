@@ -117,7 +117,7 @@ def test_stale_web_page_has_no_recommendation_surface() -> None:
     assert "推荐股票" not in opportunity_html
 
 
-def test_opportunity_workspace_keeps_six_front_candidates_and_all_records() -> None:
+def test_opportunity_workspace_keeps_three_front_candidates_and_all_records() -> None:
     dossier = _dossier()
     seed = dossier.candidates[0]
     candidates = tuple(
@@ -131,7 +131,8 @@ def test_opportunity_workspace_keeps_six_front_candidates_and_all_records() -> N
     )
 
     assert html.count("data-opportunity-stock-row") == 8
-    front = html.split('class="candidate-overflow', 1)[0]
-    assert front.count("data-opportunity-stock-row") == 6
-    assert "查看其余 2 只候选" in html
+    front = html.split('class="opportunity-evidence', 1)[0]
+    assert front.count("data-opportunity-stock-row") == 3
+    assert "其余 5 只候选" in html
     assert html.count("进入个股分析") == 8
+    assert html.count('class="opportunity-evidence essence-evidence"') == 1

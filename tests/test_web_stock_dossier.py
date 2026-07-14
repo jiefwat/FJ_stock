@@ -124,6 +124,9 @@ def test_workspace_places_risk_before_scenarios_and_labels_confidence() -> None:
     assert "上涨概率" not in html
     assert "仓位上限" in html
     assert "禁止动作" in html
+    assert html.count('class="stock-evidence essence-evidence"') == 1
+    assert "RISK FIRST" not in html
+    assert "RESEARCH FILE" not in html
 
 
 def test_real_stock_orchestration_builds_one_dossier() -> None:

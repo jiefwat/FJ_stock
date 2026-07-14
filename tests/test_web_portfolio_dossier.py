@@ -73,6 +73,7 @@ def test_portfolio_workspace_leads_with_one_committee_verdict() -> None:
     assert html.index("处置队列") < html.index("持仓证据")
     assert "风险暴露登记表" in html
     assert "禁止动作" in html
+    assert html.count('class="portfolio-evidence essence-evidence"') == 1
 
 
 def test_stale_portfolio_workspace_hides_numeric_price_actions() -> None:
@@ -112,7 +113,7 @@ def test_stale_web_portfolio_page_pauses_price_actions() -> None:
     assert "买入触发" not in portfolio_html
 
 
-def test_portfolio_workspace_limits_front_row_without_losing_audit_records() -> None:
+def test_portfolio_workspace_limits_front_row_to_three_without_losing_audit_records() -> None:
     dossier = _dossier()
     queue_seed = dossier.queue[0]
     boundary_seed = dossier.boundaries[0]
@@ -129,8 +130,8 @@ def test_portfolio_workspace_limits_front_row_without_losing_audit_records() -> 
     )
 
     assert html.count('class="portfolio-queue-item') == 7
-    front_queue = html.split('class="portfolio-queue-overflow', 1)[0]
-    assert front_queue.count('class="portfolio-queue-item') == 5
-    assert "查看其余 2 项处置" in html
+    front_queue = html.split('class="portfolio-evidence', 1)[0]
+    assert front_queue.count('class="portfolio-queue-item') == 3
+    assert "其余 4 项处置" in html
     assert html.count('class="portfolio-boundary-card') == 6
-    assert "查看其余 2 项边界" in html
+    assert html.count('class="portfolio-evidence essence-evidence"') == 1

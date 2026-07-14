@@ -70,6 +70,9 @@ def test_data_center_workspace_is_gate_first_and_recovery_ordered() -> None:
     assert '<details class="data-source-ledger">' in html
     assert "查看 3 个数据域的完整来源账本" in html
     assert "<form>refresh</form>" in html
+    assert "RESTORE ORDER" not in html
+    assert "DOWNSTREAM IMPACT" not in html
+    assert "先恢复可信数据，再恢复研究结论。" not in html
 
 
 def test_data_center_workspace_preserves_complete_ledger_default_closed() -> None:

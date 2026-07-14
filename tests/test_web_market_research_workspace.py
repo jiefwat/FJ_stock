@@ -85,12 +85,12 @@ def test_market_workspace_uses_three_session_playbook_and_preserves_details() ->
     assert html.index("三情景推演") < live_phase_start
     assert "DISTRIBUTION-EVIDENCE" in html
     assert "MAINLINE-EVIDENCE" in html
-    assert '<details class="market-intraday-ledger">' in html
-    assert "展开盘中异动、强弱板块与事件底稿" in html
+    assert '<details class="market-evidence essence-evidence">' in html
+    assert "大盘证据" in html
     assert html.index("INTRADAY-DETAIL-EVIDENCE") < html.index(
         "CLOSE-REVIEW-EVIDENCE"
     )
-    details_start = html.index('<details class="market-intraday-ledger">')
+    details_start = html.index('<details class="market-evidence essence-evidence">')
     details_tag_end = html.index(">", details_start)
     assert " open" not in html[details_start:details_tag_end]
 
