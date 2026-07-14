@@ -6,4 +6,4 @@
 - [x] Simplify shell and five core workspace renderers.
 - [x] Verify desktop and mobile pages in a real browser.
 - [x] Run regression tests and review the final diff.
-- [ ] Merge, push, deploy, refresh data, and verify server parity.
+- [x] Merge, push, deploy, refresh data, and verify server parity.
