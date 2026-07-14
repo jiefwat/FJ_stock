@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `stock-method-ui-v2/`：把个股分析升级为研究假设、证据权重、预期差、情景与执行边界贯通的决策链
 - `essence-workspaces/`：删除五个核心页面的背景话术、方法旁白与重复解释，只保留结论、动作、风险和证据入口
 - `commuter-morning-brief-v2/`：把每日晨报压缩为适合地铁单手阅读的 30 秒行动简报
 - `market-session-playbook/`：把每日大盘收敛为盘前、盘中、收盘三段式市场剧本
@@ -16,6 +17,11 @@
 
 ## 默认可读目录
 
+- `stock-method-ui-v2/README.md`
+- `stock-method-ui-v2/TODO.md`
+- `stock-method-ui-v2/plan.md`
+- `stock-method-ui-v2/test.md`
+- `stock-method-ui-v2/handoff.md`
 - `essence-workspaces/README.md`
 - `essence-workspaces/TODO.md`
 - `commuter-morning-brief-v2/README.md`
