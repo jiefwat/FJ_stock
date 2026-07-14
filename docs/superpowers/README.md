@@ -21,6 +21,7 @@
 
 - `iwencai-four-workspaces/README.md`
 - `iwencai-four-workspaces/TODO.md`
+- `iwencai-four-workspaces/plan.md`
 - `iwencai-skillhub-integration/README.md`
 - `iwencai-skillhub-integration/TODO.md`
 - `iwencai-skillhub-integration/plan.md`
