@@ -28,10 +28,77 @@ class FakeClient:
         self.calls.append((capability, query))
         if capability in self.failures:
             raise RuntimeError("upstream failed")
-        return self.results.get(
-            capability,
-            {"datas": [{"结论": f"{capability}数据可用", "状态": "已更新"}]},
-        )
+        return self.results.get(capability, default_capability_result(capability))
+
+
+def default_capability_result(capability: str) -> dict[str, object]:
+    rows = {
+        "index": {"指数简称": "上证指数", "最新点位": 3520.1, "涨跌幅": "0.6%"},
+        "macro": {"指标名称": "制造业PMI", "最新值": 50.4, "公布日期": "20260701"},
+        "sector_selector": {"板块名称": "机器人概念", "热度排名": 2, "成交额": 98_600_000_000},
+        "news": {"标题": "市场风险偏好改善", "发布日期": "20260714"},
+        "event": {"业绩预告类型": "预增", "公告日期": "20260714"},
+        "announcement": {"公告标题": "季度经营数据公告", "公告日期": "20260714"},
+        "consensus": {"预测净利润[2027]": 320_000_000, "机构评级": "增持"},
+        "market": {"收盘价": 18.6, "成交量": 86_000_000, "交易日期": "20260714"},
+        "finance": {"营业收入[2025]": 5_100_000_000, "归母净利润[2025]": 162_000_000},
+        "business": {"主营产品": "核心产品", "竞争对手": "主要同行"},
+        "astock_selector": {
+            "股票代码": "603278",
+            "股票简称": "大业股份",
+            "净利润同比增长率": "18.6%",
+        },
+    }
+    return {"datas": [rows[capability]]}
+
+
+def stock_research_fixture() -> dict[str, dict[str, object]]:
+    return {
+        "finance": {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "股票简称": "大业股份",
+                    "最新价": 8.61,
+                    "涨跌幅": "1.06%",
+                    "营业收入[2025]": 5_100_000_000,
+                    "营业收入[2024]": 4_700_000_000,
+                    "归母净利润[2025]": 162_000_000,
+                    "经营现金流[2025]": 91_000_000,
+                    "净资产收益率ROE[2025]": "7.8%",
+                }
+            ]
+        },
+        "business": {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "主营产品": "胎圈钢丝、钢帘线",
+                    "业务范围": "橡胶骨架材料研发与制造",
+                    "竞争对手": "江苏兴达、贝卡尔特",
+                }
+            ]
+        },
+        "consensus": {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "预测净利润中值[2026]": 265_000_000,
+                    "预测净利润中值[2027]": 338_000_000,
+                }
+            ]
+        },
+        "event": {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "营业收入同比增长率[2026一季]": "12.4%",
+                    "归母净利润同比增长率[2026一季]": "-8.7%",
+                    "公告日期": "20260428",
+                }
+            ]
+        },
+    }
 
 
 def test_each_workspace_has_a_fixed_capability_bundle() -> None:
@@ -170,18 +237,10 @@ def test_refresh_bypasses_workspace_cache() -> None:
 
 
 def test_public_result_caps_findings_and_fact_fields() -> None:
-    rows = [
-        {f"字段{column}": f"第{row}行" for column in range(8)}
-        for row in range(8)
-    ]
+    fixture = stock_research_fixture()
     service = ResearchWorkspaceService(
         client_factory=lambda: FakeClient(
-            results={
-                "finance": {"datas": rows},
-                "business": {"datas": rows},
-                "consensus": {"datas": rows},
-                "event": {"datas": rows},
-            }
+            results=fixture
         )
     )
 
@@ -248,3 +307,94 @@ def test_portfolio_front_page_represents_each_capped_holding() -> None:
         "平安银行",
         "宁德时代",
     ]
+
+
+def test_identity_only_capability_is_reported_insufficient() -> None:
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "consensus": {
+                    "datas": [
+                        {
+                            "股票代码": "603278",
+                            "股票简称": "大业股份",
+                            "最新价": 8.61,
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    consensus = next(item for item in result.details if item.section == "机构预期")
+    assert consensus.status == "insufficient"
+    assert "大业股份 · 机构预期" in result.missing_sections
+
+
+def test_stock_findings_use_distinct_research_evidence() -> None:
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(results=stock_research_fixture())
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    payload = result.to_public_dict()
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert "营业收入" in serialized
+    assert "主营产品" in serialized
+    assert "2027" in serialized
+    assert len({item.summary for item in result.findings}) == len(result.findings)
+    for finding in result.findings:
+        assert not finding.summary.startswith("股票代码")
+
+
+def test_stock_front_page_prioritizes_risk_and_uses_decision_titles() -> None:
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(results=stock_research_fixture())
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    assert [item.title for item in result.findings] == [
+        "最新事件",
+        "财务方向",
+        "机构预期",
+    ]
+    assert "净利润同比" in result.findings[0].summary
+    assert "-8.7%" in result.findings[0].summary
+    assert "收入" in result.findings[1].summary
+    assert "增长轨道" in result.findings[2].summary
+    assert result.verdict.startswith("大业股份：")
+    assert "-8.7%" in result.primary_risk
+
+
+def test_front_page_deduplicates_identical_fact_fingerprints() -> None:
+    duplicate = {"datas": [{"公告日期": "20260428"}]}
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "sector_selector": {
+                    "datas": [{"板块名称": "机器人概念", "热度排名": 1}]
+                },
+                "astock_selector": {"datas": []},
+                "event": duplicate,
+                "news": duplicate,
+            }
+        )
+    )
+
+    result = service.research("opportunity", ResearchContext(sector="机器人"))
+
+    fingerprints = [
+        tuple((fact.label, fact.value) for fact in item.facts)
+        for item in result.findings
+    ]
+    assert len(fingerprints) == len(set(fingerprints))
