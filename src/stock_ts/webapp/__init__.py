@@ -8,6 +8,7 @@ from .forms import workspace_action
 from .market_workspace import render_market_workspace
 from .opportunity_workspace import render_opportunity_workspace
 from .portfolio_workspace import render_portfolio_workspace
+from .research_console import ResearchContextOption, render_iwencai_research_console
 from .shell import (
     app_script,
     render_app_toolbar,
@@ -20,6 +21,7 @@ from .workspaces import build_workspace_sections
 
 __all__ = [
     "MODULE_TO_WORKSPACE",
+    "ResearchContextOption",
     "WORKSPACES",
     "app_script",
     "build_workspace_sections",
@@ -30,6 +32,7 @@ __all__ = [
     "render_market_workspace",
     "render_opportunity_workspace",
     "render_portfolio_workspace",
+    "render_iwencai_research_console",
     "render_stock_workspace",
     "render_sidebar",
     "render_topbar",
