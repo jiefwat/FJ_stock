@@ -98,26 +98,6 @@ def build_professional_stock_dossier(
         weak_technical=weak_technical,
     )
     action = _action(stance)
-    counter = risks[0].evidence if risks else event_radar.gate
-    thesis = _thesis(
-        stance,
-        financial=financial,
-        technical=technical_block,
-        counter=counter,
-    )
-    verdict = DossierVerdict(
-        stance=stance,
-        action=action,
-        evidence_grade=grade,
-        confidence=0 if paused else confidence,
-        horizon="5-20 个交易日，并在下一份财报或重大公告后重评",
-        thesis=thesis,
-        strongest_evidence=technical_block.conclusion,
-        strongest_counter_evidence=blocker if paused else counter,
-        next_review="刷新最近交易日行情后重新评估。"
-        if paused
-        else "下一交易日收盘或重大公告后复核。",
-    )
     diagnostics = (
         financial,
         valuation,
@@ -138,6 +118,7 @@ def build_professional_stock_dossier(
         invalid_line=technical.invalid_line,
     )
     weighted_evidence = _weighted_evidence(
+        raw=raw,
         financial=financial,
         valuation=valuation,
         event=event_block,
@@ -145,10 +126,45 @@ def build_professional_stock_dossier(
         technical=technical_block,
         risks=risks,
         sector_context=sector_context,
+        paused=paused,
+    )
+    supporting_evidence = next(
+        (item.fact for item in weighted_evidence if item.direction == "支持"),
+        "尚无足以支撑提高风险预算的证据。",
+    )
+    counter_evidence = (
+        blocker
+        if paused
+        else (
+            risks[0].evidence
+            if risks
+            else next(
+                (item.fact for item in weighted_evidence if item.direction == "反证"),
+                "未识别高权重反证，但未知项仍需补齐。",
+            )
+        )
+    )
+    verdict = DossierVerdict(
+        stance=stance,
+        action=action,
+        evidence_grade=grade,
+        confidence=0 if paused else confidence,
+        horizon=thesis_framework.catalyst_window,
+        thesis=thesis_framework.headline,
+        strongest_evidence=(
+            "保留已有事实用于审计，不形成当前交易判断。"
+            if paused
+            else supporting_evidence
+        ),
+        strongest_counter_evidence=counter_evidence,
+        next_review="刷新最近交易日行情后重新评估。"
+        if paused
+        else "下一交易日收盘或重大公告后复核。",
     )
     research_confirmation = _research_confirmation(
         financial=financial,
         risks=risks,
+        financial_direction=weighted_evidence[0].direction,
     )
     position = _position_guidance(
         technical,
@@ -302,6 +318,7 @@ def _thesis_framework(
 
 def _weighted_evidence(
     *,
+    raw: StockRawData,
     financial: DiagnosticBlock,
     valuation: DiagnosticBlock,
     event: DiagnosticBlock,
@@ -309,16 +326,21 @@ def _weighted_evidence(
     technical: DiagnosticBlock,
     risks: tuple[RiskItem, ...],
     sector_context: str,
+    paused: bool,
 ) -> tuple[WeightedEvidence, ...]:
+    history_direction, history_fact = _fundamental_history_signal(raw)
     if financial.status == "missing":
         financial_direction = "未知"
         financial_inference = "没有经营事实时，技术强度不能升级为投资逻辑。"
     elif financial.risks:
         financial_direction = "反证"
         financial_inference = "盈利或现金流压力直接压低风险预算。"
-    elif financial.status == "complete":
+    elif history_direction == "improving":
         financial_direction = "支持"
-        financial_inference = "多期经营证据可支持继续验证，但仍需估值匹配。"
+        financial_inference = "多期收入与利润增速改善可支持继续验证，但仍需现金流和估值匹配。"
+    elif history_direction == "weakening":
+        financial_direction = "反证"
+        financial_inference = "多期收入与利润增速走弱，经营趋势压低风险预算。"
     else:
         financial_direction = "中性"
         financial_inference = "单期财务只能描述现状，不能证明趋势。"
@@ -343,7 +365,9 @@ def _weighted_evidence(
         event_direction = "中性"
         event_inference = "未见标题级风险只能通过初筛，不能当成催化。"
 
-    if technical.status == "missing" and capital.status == "missing":
+    if paused:
+        market_direction = "未知"
+    elif technical.status == "missing" and capital.status == "missing":
         market_direction = "未知"
     elif any(
         marker in technical.conclusion
@@ -360,7 +384,7 @@ def _weighted_evidence(
             dimension="盈利质量",
             importance="高",
             direction=financial_direction,
-            fact=financial.conclusion,
+            fact=f"{financial.conclusion} {history_fact}".strip(),
             inference=financial_inference,
             unknown=(
                 "补充至少一个财务截面与三个可比期间。"
@@ -396,15 +420,62 @@ def _weighted_evidence(
             ),
             unknown="补充行业景气、同业盈利和相对强弱排名。",
         ),
-        WeightedEvidence(
-            dimension="资金与价格",
-            importance="中",
-            direction=market_direction,
-            fact=f"{technical.conclusion}；{capital.conclusion}",
-            inference="只确认执行时点、承接和失效，不证明公司质量。",
-            unknown=f"{technical.limitation} {capital.limitation}",
+        (
+            WeightedEvidence(
+                dimension="资金与价格",
+                importance="中",
+                direction="未知",
+                fact="行情时效未通过；旧价格与资金事实仅供审计。",
+                inference="刷新前不确认执行时点、承接或失效线。",
+                unknown="补齐最近交易日价格、成交量与资金证据。",
+            )
+            if paused
+            else WeightedEvidence(
+                dimension="资金与价格",
+                importance="中",
+                direction=market_direction,
+                fact=f"{technical.conclusion}；{capital.conclusion}",
+                inference="只确认执行时点、承接和失效，不证明公司质量。",
+                unknown=f"{technical.limitation} {capital.limitation}",
+            )
         ),
     )
+
+
+def _fundamental_history_signal(raw: StockRawData) -> tuple[str, str]:
+    recent = sorted(raw.fundamental_history, key=lambda item: item.date)[-3:]
+    if len(recent) < 3:
+        return "insufficient", "财务历史不足三期，不能确认趋势。"
+    revenues = [item.revenue_yoy for item in recent]
+    profits = [item.net_profit_yoy for item in recent]
+    if any(value is None for value in (*revenues, *profits)):
+        return "incomplete", "最近三期收入或利润增速字段不完整。"
+    revenue_values = [float(value) for value in revenues if value is not None]
+    profit_values = [float(value) for value in profits if value is not None]
+    fact = (
+        "最近三期营收同比 "
+        + " -> ".join(f"{value:.1f}%" for value in revenue_values)
+        + "；净利润同比 "
+        + " -> ".join(f"{value:.1f}%" for value in profit_values)
+        + "。"
+    )
+    revenue_improving = all(
+        current > previous for previous, current in zip(revenue_values, revenue_values[1:])
+    )
+    profit_improving = all(
+        current > previous for previous, current in zip(profit_values, profit_values[1:])
+    )
+    revenue_weakening = all(
+        current < previous for previous, current in zip(revenue_values, revenue_values[1:])
+    )
+    profit_weakening = all(
+        current < previous for previous, current in zip(profit_values, profit_values[1:])
+    )
+    if revenue_improving and profit_improving:
+        return "improving", f"{fact} 收入与利润增速连续改善。"
+    if revenue_weakening and profit_weakening:
+        return "weakening", f"{fact} 收入与利润增速连续走弱。"
+    return "mixed", f"{fact} 收入与利润方向分化或波动。"
 
 
 def _has_financial_snapshot(raw: StockRawData) -> bool:
@@ -573,13 +644,18 @@ def _research_confirmation(
     *,
     financial: DiagnosticBlock,
     risks: tuple[RiskItem, ...],
+    financial_direction: str,
 ) -> str:
     if financial.status == "missing":
         financial_condition = "补齐财务并确认盈利与现金流没有恶化"
     elif any(marker in financial.risks for marker in ("盈利为负", "主营盈利承压")):
         financial_condition = "亏损收窄或转盈，且经营现金流不恶化"
+    elif financial_direction == "支持":
+        financial_condition = "多期收入与利润改善延续，且现金流质量不恶化"
+    elif financial_direction == "反证":
+        financial_condition = "收入与利润增速停止走弱，并由下一期财报确认"
     else:
-        financial_condition = "盈利与经营现金流质量延续"
+        financial_condition = "下一期财报确认盈利与经营现金流没有恶化"
     if risks:
         return f"{financial_condition}，并由公告原文确认{risks[0].category}解除"
     return f"{financial_condition}，且事件风险不升级"
@@ -625,20 +701,6 @@ def _action(stance: str) -> str:
     }[stance]
 
 
-def _thesis(
-    stance: str,
-    *,
-    financial,
-    technical,
-    counter: str,
-) -> str:
-    if stance == "数据暂停":
-        return "行情时效未通过，当前证据只用于审计。"
-    if stance == "风险规避":
-        return f"{financial.conclusion}；{technical.conclusion}；{counter}，当前风险收益不匹配。"
-    return f"{financial.conclusion}；{technical.conclusion}；最大反证为 {counter}。"
-
-
 def _scenarios(
     raw: StockRawData,
     *,
@@ -649,6 +711,8 @@ def _scenarios(
     resistance: float,
     invalid_line: float,
 ) -> tuple[DossierScenario, ...]:
+    if paused:
+        return _paused_dossier_scenarios()
     risk_text = risks[0].evidence if risks else "当前未识别高等级标题风险"
     risk_repair = (
         f"{risks[0].category}得到原文证伪或风险解除"
@@ -659,10 +723,7 @@ def _scenarios(
         (fact for fact in technical.facts if fact.startswith("20日 ")),
         technical.conclusion,
     )
-    if paused:
-        action = "暂停执行，刷新行情后重新生成情景"
-    else:
-        action = "仅在经营、事件和价格同时确认后小仓验证"
+    action = "仅在经营、事件和价格同时确认后小仓验证"
     return (
         DossierScenario(
             name="改善",
@@ -690,6 +751,35 @@ def _scenarios(
             action="未持仓继续规避；已持仓优先降低风险，不用补仓摊低成本。",
             invalidation="风险事件证伪、盈利修复且价格重新站稳压力位。",
             evidence_source="财务风险、事件原文与失效价格",
+        ),
+    )
+
+
+def _paused_dossier_scenarios() -> tuple[DossierScenario, ...]:
+    return (
+        DossierScenario(
+            name="改善",
+            premise="最近交易日行情、成交量与流水线状态恢复有效。",
+            confirmation="刷新后经营、事件与价格证据仍支持原研究方向。",
+            action="暂停执行；数据恢复后重新生成改善情景。",
+            invalidation="行情继续过期或刷新后证据方向变化。",
+            evidence_source="数据时效闸门",
+        ),
+        DossierScenario(
+            name="基准",
+            premise="已有事实保留，但当前价格证据仍不可执行。",
+            confirmation="等待最近交易日数据与研究证据重新对齐。",
+            action="暂停执行；只保留事实核对。",
+            invalidation="任何旧价格触发线均不再有效。",
+            evidence_source="数据时效闸门",
+        ),
+        DossierScenario(
+            name="恶化",
+            premise="行情继续过期，或刷新后经营与事件证据进一步转弱。",
+            confirmation="数据质量告警持续，不能确认当前风险边界。",
+            action="暂停执行；持仓回到人工风控。",
+            invalidation="数据恢复并完成全量重评。",
+            evidence_source="数据时效闸门",
         ),
     )
 

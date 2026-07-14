@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stock_ts.models import DailyBar, Holding, NewsItem, StockRawData
+from stock_ts.models import DailyBar, FundamentalPeriod, Holding, NewsItem, StockRawData
 from stock_ts.professional_research import EventRadar, TechnicalProfile
 from stock_ts.research.evidence import EvidenceStatus, ResearchInputQuality
 
@@ -31,6 +31,7 @@ def _raw_stock(
     fund_flow: float | None = None,
     fund_flow_detail: dict[str, float | str | None] | None = None,
     news_items: list[NewsItem] | None = None,
+    fundamental_history: list[FundamentalPeriod] | None = None,
 ) -> StockRawData:
     default_metrics: dict[str, float | str | None] = (
         {
@@ -72,6 +73,7 @@ def _raw_stock(
                 else []
             )
         ),
+        fundamental_history=fundamental_history or [],
         data_sources=["tdx", "fixture"],
     )
 
@@ -490,3 +492,70 @@ def test_loss_and_high_event_risk_cannot_be_overridden_by_breakout() -> None:
     assert dossier.position.position_cap == "0%"
     assert "风险" in dossier.position.entry_trigger or "暂停" in dossier.position.entry_trigger
     assert "站稳 10.80" not in dossier.position.entry_trigger.split("；")[0]
+
+
+def test_stale_scenarios_do_not_reuse_old_price_levels() -> None:
+    dossier = _build(
+        _raw_stock(financial=True, events=True),
+        quality=ResearchInputQuality(
+            quote_status=EvidenceStatus.STALE,
+            blockers=("行情日期落后",),
+        ),
+    )
+    scenario_text = " ".join(
+        f"{item.premise} {item.confirmation} {item.action} {item.invalidation}"
+        for item in dossier.scenarios
+    )
+
+    assert "10.80" not in scenario_text
+    assert "9.40" not in scenario_text
+    assert all("暂停" in item.action for item in dossier.scenarios)
+    price_evidence = next(
+        item for item in dossier.weighted_evidence if item.dimension == "资金与价格"
+    )
+    assert price_evidence.direction == "未知"
+    assert "10.80" not in price_evidence.fact
+    assert "仅供审计" in price_evidence.fact
+
+
+def test_single_financial_snapshot_does_not_claim_quality_continuation() -> None:
+    dossier = _build(_raw_stock(financial=True, events=True))
+
+    assert "下一期财报" in dossier.position.entry_trigger
+    assert "质量延续" not in dossier.position.entry_trigger
+
+
+def test_weakening_multi_period_fundamentals_are_counter_evidence() -> None:
+    history = [
+        FundamentalPeriod("2026-03-31", "fixture", 3.0, 2.0),
+        FundamentalPeriod("2025-12-31", "fixture", 8.0, 9.0),
+        FundamentalPeriod("2025-09-30", "fixture", 15.0, 18.0),
+    ]
+    dossier = _build(
+        _raw_stock(financial=True, events=True, fundamental_history=history)
+    )
+    earnings = next(
+        item for item in dossier.weighted_evidence if item.dimension == "盈利质量"
+    )
+
+    assert earnings.direction == "反证"
+    assert "连续走弱" in earnings.fact
+
+
+def test_legacy_verdict_uses_the_same_weighted_research_chain() -> None:
+    history = [
+        FundamentalPeriod("2026-03-31", "fixture", 15.0, 18.0),
+        FundamentalPeriod("2025-12-31", "fixture", 8.0, 9.0),
+        FundamentalPeriod("2025-09-30", "fixture", 3.0, 2.0),
+    ]
+    dossier = _build(
+        _raw_stock(financial=True, events=True, fundamental_history=history)
+    )
+    earnings = next(
+        item for item in dossier.weighted_evidence if item.dimension == "盈利质量"
+    )
+
+    assert earnings.direction == "支持"
+    assert dossier.verdict.thesis == dossier.thesis.headline
+    assert dossier.verdict.strongest_evidence == earnings.fact
+    assert dossier.verdict.horizon == dossier.thesis.catalyst_window
