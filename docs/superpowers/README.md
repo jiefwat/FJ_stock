@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `iwencai-native-workspaces/`：四大模块完全改由服务端研究能力生成，页面保持供应商中性
 - `three-second-essence/`：四大工作台首屏只保留结论、动作、最大风险和最多三项
 - `iwencai-four-workspaces/`：把问财外部核查扩展到每日大盘、我的持仓、个股分析和热点机会
 - `iwencai-skillhub-integration/`：接入问财官方数据技能，在个股页提供可审计、可降级的研究追问
@@ -20,6 +21,8 @@
 
 ## 默认可读目录
 
+- `iwencai-native-workspaces/README.md`
+- `iwencai-native-workspaces/TODO.md`
 - `three-second-essence/README.md`
 - `three-second-essence/TODO.md`
 - `iwencai-four-workspaces/README.md`
