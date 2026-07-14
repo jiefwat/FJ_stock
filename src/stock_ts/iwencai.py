@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import ssl
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -10,9 +11,23 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
+import certifi
+
 IWENCAI_BASE_URL = "https://openapi.iwencai.com"
 IWENCAI_SOURCE_URL = "https://www.iwencai.com/unifiedwap/chat"
 MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+def _trusted_ssl_context() -> ssl.SSLContext:
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+def _default_transport(request: object, timeout: float) -> object:
+    return urllib.request.urlopen(
+        request,
+        timeout=timeout,
+        context=_trusted_ssl_context(),
+    )
 
 
 class IwencaiError(RuntimeError):
@@ -195,7 +210,7 @@ class IwencaiSkillClient:
         ).strip()
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.transport = transport or urllib.request.urlopen
+        self.transport = transport or _default_transport
         self.trace_id_factory = trace_id_factory or (lambda: secrets.token_hex(32))
 
     def query(self, skill: IwencaiSkill, query: str) -> dict[str, Any]:

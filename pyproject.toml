@@ -3,7 +3,7 @@ name = "stock-ts"
 version = "0.1.0"
 description = "A-share market and stock analysis toolkit"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["certifi>=2024.8.30"]
 
 [project.scripts]
 stock-ts = "stock_ts.cli:main"

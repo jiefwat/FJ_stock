@@ -6,6 +6,7 @@ import urllib.error
 
 import pytest
 
+from stock_ts import iwencai
 from stock_ts.iwencai import (
     IwencaiConfigurationError,
     IwencaiGatewayError,
@@ -42,6 +43,48 @@ class RawResponse:
 
     def read(self, _limit: int = -1) -> bytes:
         return self.body
+
+
+def test_trusted_ssl_context_uses_certifi_ca_bundle(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    expected_context = object()
+
+    monkeypatch.setattr(iwencai.certifi, "where", lambda: "/trusted/cacert.pem")
+
+    def create_default_context(*, cafile: str) -> object:
+        captured["cafile"] = cafile
+        return expected_context
+
+    monkeypatch.setattr(iwencai.ssl, "create_default_context", create_default_context)
+
+    context = iwencai._trusted_ssl_context()
+
+    assert context is expected_context
+    assert captured["cafile"] == "/trusted/cacert.pem"
+
+
+def test_default_transport_passes_trusted_ssl_context(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    expected_context = object()
+
+    monkeypatch.setattr(iwencai, "_trusted_ssl_context", lambda: expected_context)
+
+    def urlopen(request: object, *, timeout: float, context: object) -> FakeResponse:
+        captured.update(request=request, timeout=timeout, context=context)
+        return FakeResponse({"datas": [{"股票简称": "贵州茅台"}], "code_count": 1})
+
+    monkeypatch.setattr(iwencai.urllib.request, "urlopen", urlopen)
+    client = IwencaiSkillClient(
+        api_key="iwc-secret-value",
+        timeout=9,
+        trace_id_factory=lambda: "a" * 64,
+    )
+
+    result = client.query(route_stock_research_skill("净利润"), "贵州茅台 净利润")
+
+    assert captured["timeout"] == 9
+    assert captured["context"] is expected_context
+    assert result["datas"][0]["股票简称"] == "贵州茅台"
 
 
 @pytest.mark.parametrize(
