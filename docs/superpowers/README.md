@@ -4,6 +4,7 @@
 
 ## 活跃需求
 
+- `complete-research-system/`：补齐大盘趋势、全量持仓、八维个股研究和每日机会快照，形成可自动运行与公网交付的完整系统
 - `usable-research-decisions/`：把已连通的动态能力结果升级为有语义门禁、专业结论和简洁证据层级的可用研究系统
 - `iwencai-native-workspaces/`：四大模块完全改由服务端研究能力生成，页面保持供应商中性
 - `three-second-essence/`：四大工作台首屏只保留结论、动作、最大风险和最多三项
@@ -22,6 +23,8 @@
 
 ## 默认可读目录
 
+- `complete-research-system/README.md`
+- `complete-research-system/TODO.md`
 - `usable-research-decisions/README.md`
 - `usable-research-decisions/TODO.md`
 - `usable-research-decisions/test.md`
