@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,18 +16,22 @@ class EvidenceFact:
 class CapabilitySchema:
     include_groups: tuple[tuple[str, ...], ...]
     context_groups: tuple[tuple[str, ...], ...] = ()
+    support_groups: tuple[tuple[str, ...], ...] = ()
     minimum_facts: int = 1
+    allow_quote_fields: bool = False
 
 
 CAPABILITY_SCHEMAS = {
     "finance": CapabilitySchema(
         (
-            ("营业收入", "营收", "收入"),
-            ("归母净利润", "净利润"),
+            ("营业收入[", "营收["),
+            ("归母净利润[", "净利润["),
             ("经营现金流", "经营活动产生的现金流", "现金流"),
             ("roe", "净资产收益率"),
             ("毛利率",),
             ("负债",),
+            ("营业收入同比", "营收同比"),
+            ("归母净利润同比", "净利润同比"),
         )
     ),
     "consensus": CapabilitySchema(
@@ -49,17 +54,21 @@ CAPABILITY_SCHEMAS = {
     ),
     "event": CapabilitySchema(
         (
+            ("标题", "事件名称"),
             ("业绩预告", "业绩快报"),
-            ("营业收入", "营收"),
-            ("归母净利润", "净利润"),
+            ("营业收入[", "营收["),
+            ("归母净利润[", "净利润["),
+            ("营业收入同比", "营收同比"),
+            ("归母净利润同比", "净利润同比"),
+            ("净利润增长率", "变动类型", "变动原因", "摘要"),
             ("同比", "环比"),
-            ("公告日期", "发生日期", "报告期"),
             ("解禁",),
             ("质押",),
             ("监管",),
             ("诉讼",),
             ("增持", "减持"),
-        )
+        ),
+        support_groups=(("公告日期", "发生日期", "报告期"),),
     ),
     "index": CapabilitySchema(
         (
@@ -69,6 +78,7 @@ CAPABILITY_SCHEMAS = {
             ("日期", "时间"),
         ),
         context_groups=(("指数名称", "指数简称", "指数代码"),),
+        allow_quote_fields=True,
     ),
     "macro": CapabilitySchema(
         (
@@ -88,7 +98,11 @@ CAPABILITY_SCHEMAS = {
             ("持续", "入选理由", "筛选理由"),
             ("板块类型", "领域"),
         ),
-        context_groups=(("板块名称", "行业名称", "概念名称"),),
+        context_groups=(
+            ("板块名称", "行业名称", "概念名称", "指数简称"),
+            ("指数代码",),
+        ),
+        allow_quote_fields=True,
     ),
     "astock_selector": CapabilitySchema(
         (
@@ -98,6 +112,7 @@ CAPABILITY_SCHEMAS = {
             ("入选理由", "筛选理由"),
         ),
         context_groups=(("股票代码", "证券代码"), ("股票简称", "证券简称", "股票名称")),
+        allow_quote_fields=True,
     ),
     "market": CapabilitySchema(
         (
@@ -111,21 +126,27 @@ CAPABILITY_SCHEMAS = {
     ),
     "announcement": CapabilitySchema(
         (
-            ("标题", "公告名称"),
-            ("摘要", "内容"),
-            ("日期", "时间"),
+            ("标题", "公告名称", "title"),
+            ("摘要", "内容", "summary"),
             ("类型",),
+        ),
+        support_groups=(
+            ("publish_date", "发布日期", "公告日期", "日期"),
+            ("publish_time", "时间"),
             ("url", "链接"),
-        )
+        ),
     ),
     "news": CapabilitySchema(
         (
             ("标题", "title"),
             ("摘要", "内容", "summary", "content"),
-            ("日期", "时间", "publish"),
             ("类型", "category"),
+        ),
+        support_groups=(
+            ("publish_date", "发布日期", "日期"),
+            ("publish_time", "时间"),
             ("url", "链接"),
-        )
+        ),
     ),
 }
 
@@ -183,13 +204,13 @@ def normalize_capability_rows(
     raw: Mapping[str, object],
     *,
     max_rows: int = 3,
-    max_facts: int = 6,
+    max_facts: int = 8,
 ) -> tuple[tuple[EvidenceFact, ...], ...]:
     schema = CAPABILITY_SCHEMAS[capability]
     normalized: list[tuple[EvidenceFact, ...]] = []
     seen: set[tuple[tuple[str, str], ...]] = set()
     for row in _raw_rows(raw):
-        facts, evidence_count = _extract_ranked_facts(schema, row)
+        facts, evidence_count = _extract_ranked_facts(capability, schema, row)
         facts = facts[:max_facts]
         fingerprint = tuple((fact.label, fact.value) for fact in facts)
         if evidence_count < schema.minimum_facts or fingerprint in seen:
@@ -198,7 +219,17 @@ def normalize_capability_rows(
         seen.add(fingerprint)
         if len(normalized) == max_rows:
             break
+    if capability == "index":
+        normalized.sort(key=_index_row_priority)
     return tuple(normalized)
+
+
+def _index_row_priority(row: tuple[EvidenceFact, ...]) -> int:
+    text = " ".join(fact.value for fact in row)
+    for priority, name in enumerate(("上证指数", "深证成指", "创业板指")):
+        if name in text:
+            return priority
+    return 99
 
 
 def raw_rows(raw: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
@@ -215,10 +246,13 @@ def _raw_rows(raw: Mapping[str, object]) -> list[Mapping[str, object]]:
 
 
 def _extract_ranked_facts(
+    capability: str,
     schema: CapabilitySchema,
     row: Mapping[str, object],
 ) -> tuple[list[EvidenceFact], int]:
-    ranked: list[tuple[int, int, EvidenceFact]] = []
+    context_by_group: dict[int, list[tuple[int, EvidenceFact]]] = {}
+    support_by_group: dict[int, list[tuple[int, EvidenceFact]]] = {}
+    evidence_by_group: dict[int, list[tuple[int, EvidenceFact]]] = {}
     evidence_count = 0
     for source_index, (key, value) in enumerate(row.items()):
         label = _clean_text(str(key), 64)
@@ -226,23 +260,87 @@ def _extract_ranked_facts(
         if not label:
             continue
         context_index = _matching_groups(schema.context_groups, normalized_label)
+        support_index = _matching_groups(schema.support_groups, normalized_label)
         evidence_index = _matching_groups(schema.include_groups, normalized_label)
-        if context_index is None and (
-            evidence_index is None or _is_excluded_field(normalized_label)
+        excluded = _is_excluded_field(normalized_label)
+        if context_index is None and support_index is None and (
+            evidence_index is None or (excluded and not schema.allow_quote_fields)
         ):
             continue
         rendered = _render_value(label, value)
         if rendered:
             if context_index is not None:
-                rank = context_index
-            else:
-                rank = len(schema.context_groups) + int(evidence_index)
+                context_by_group.setdefault(context_index, []).append(
+                    (source_index, EvidenceFact(label=label, value=rendered))
+                )
+            elif evidence_index is not None:
                 evidence_count += 1
-            ranked.append(
-                (rank, source_index, EvidenceFact(label=label, value=rendered))
+                evidence_by_group.setdefault(int(evidence_index), []).append(
+                    (source_index, EvidenceFact(label=label, value=rendered))
+                )
+            else:
+                support_by_group.setdefault(int(support_index), []).append(
+                    (source_index, EvidenceFact(label=label, value=rendered))
+                )
+
+    facts: list[EvidenceFact] = []
+    for group_index in range(len(schema.context_groups)):
+        facts.extend(
+            fact
+            for _source_index, fact in sorted(
+                context_by_group.get(group_index, []), key=lambda item: item[0]
             )
-    ranked.sort(key=lambda item: (item[0], item[1]))
-    return [item[2] for item in ranked], evidence_count
+        )
+
+    ordered_groups = [
+        _order_group(capability, evidence_by_group.get(group_index, []))
+        for group_index in range(len(schema.include_groups))
+    ]
+    if capability == "consensus":
+        facts.extend(fact for group in ordered_groups for _source_index, fact in group)
+        facts.extend(_support_facts(schema, support_by_group))
+        return facts, evidence_count
+    for item_index in range(max((len(group) for group in ordered_groups), default=0)):
+        for group in ordered_groups:
+            if item_index < len(group):
+                facts.append(group[item_index][1])
+    facts.extend(_support_facts(schema, support_by_group))
+    return facts, evidence_count
+
+
+def _support_facts(
+    schema: CapabilitySchema,
+    support_by_group: dict[int, list[tuple[int, EvidenceFact]]],
+) -> list[EvidenceFact]:
+    return [
+        fact
+        for group_index in range(len(schema.support_groups))
+        for _source_index, fact in sorted(
+            support_by_group.get(group_index, []), key=lambda item: item[0]
+        )
+    ]
+
+
+def _order_group(
+    capability: str,
+    group: list[tuple[int, EvidenceFact]],
+) -> list[tuple[int, EvidenceFact]]:
+    if capability in {"finance", "event", "market"}:
+        return sorted(
+            group,
+            key=lambda item: (-_period_number(item[1].label), item[0]),
+        )
+    if capability == "consensus":
+        return sorted(
+            group,
+            key=lambda item: (_period_number(item[1].label) or 99999999, item[0]),
+        )
+    return sorted(group, key=lambda item: item[0])
+
+
+def _period_number(label: str) -> int:
+    match = re.search(r"20\d{2}(?:\d{4})?", label)
+    return int(match.group()) if match else 0
 
 
 def _matching_groups(groups: tuple[tuple[str, ...], ...], label: str) -> int | None:
@@ -262,11 +360,10 @@ def _render_value(label: str, value: object) -> str:
     if isinstance(value, bool):
         return "是" if value else "否"
     if isinstance(value, (int, float)):
+        if any(token in label.lower() for token in PERCENT_FIELD_TOKENS):
+            return f"{float(value):.2f}%"
         if any(token in label.lower() for token in MONEY_FIELD_TOKENS):
             return _format_amount(float(value))
-        if any(token in label.lower() for token in PERCENT_FIELD_TOKENS):
-            percentage = float(value) * 100 if abs(float(value)) <= 1 else float(value)
-            return f"{percentage:.2f}%"
         return f"{value:g}"
     if isinstance(value, str):
         stripped = value.strip()

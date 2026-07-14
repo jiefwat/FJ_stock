@@ -63,9 +63,12 @@ def stock_research_fixture() -> dict[str, dict[str, object]]:
                     "涨跌幅": "1.06%",
                     "营业收入[2025]": 5_100_000_000,
                     "营业收入[2024]": 4_700_000_000,
+                    "营业收入同比增长率[2025]": "8.5%",
                     "归母净利润[2025]": 162_000_000,
+                    "归母净利润同比增长率[2025]": "18.6%",
                     "经营现金流[2025]": 91_000_000,
                     "净资产收益率ROE[2025]": "7.8%",
+                    "资产负债率[2025]": "58.2%",
                 }
             ]
         },
@@ -176,6 +179,39 @@ def test_stock_queries_require_a_stock_identity() -> None:
         assert str(exc) == "请输入股票代码或名称。"
     else:
         raise AssertionError("stock workspace should require an identity")
+
+
+def test_market_queries_use_explicit_index_and_sector_shapes() -> None:
+    requests = build_workspace_queries("market", ResearchContext())
+    query_by_capability = {item.capability: item.query for item in requests}
+
+    assert "上证指数" in query_by_capability["index"]
+    assert "创业板指" in query_by_capability["index"]
+    assert "前5" in query_by_capability["sector_selector"]
+    assert "排序" in query_by_capability["sector_selector"]
+    assert "排除融资融券" in query_by_capability["sector_selector"]
+
+
+def test_opportunity_selector_query_contains_parseable_conditions() -> None:
+    requests = build_workspace_queries(
+        "opportunity", ResearchContext(sector="机器人")
+    )
+    query_by_capability = {item.capability: item.query for item in requests}
+
+    assert "机器人概念" in query_by_capability["sector_selector"]
+    assert "净利润同比增长" in query_by_capability["astock_selector"]
+    assert "成交额" in query_by_capability["astock_selector"]
+    assert "前10" in query_by_capability["astock_selector"]
+    default_requests = build_workspace_queries("opportunity", ResearchContext())
+    default_astock = next(
+        item.query for item in default_requests if item.capability == "astock_selector"
+    )
+    default_sector = next(
+        item.query for item in default_requests if item.capability == "sector_selector"
+    )
+    assert "A股 A股" not in default_astock
+    assert "概念板块" in default_sector
+    assert "排除融资融券" in default_sector
 
 
 def test_service_returns_supplier_neutral_partial_result() -> None:
@@ -371,13 +407,17 @@ def test_stock_front_page_prioritizes_risk_and_uses_decision_titles() -> None:
     assert "净利润同比" in result.findings[0].summary
     assert "-8.7%" in result.findings[0].summary
     assert "收入" in result.findings[1].summary
+    assert "47.00 亿" in result.findings[1].summary
+    assert "元" not in result.findings[1].summary
     assert "增长轨道" in result.findings[2].summary
     assert result.verdict.startswith("大业股份：")
     assert "-8.7%" in result.primary_risk
 
 
 def test_front_page_deduplicates_identical_fact_fingerprints() -> None:
-    duplicate = {"datas": [{"公告日期": "20260428"}]}
+    duplicate = {
+        "datas": [{"标题": "同一风险事件", "公告日期": "20260428"}]
+    }
     service = ResearchWorkspaceService(
         client_factory=lambda: FakeClient(
             results={
@@ -398,3 +438,157 @@ def test_front_page_deduplicates_identical_fact_fingerprints() -> None:
         for item in result.findings
     ]
     assert len(fingerprints) == len(set(fingerprints))
+
+
+def test_market_and_opportunity_summaries_lead_with_decision_evidence() -> None:
+    service = ResearchWorkspaceService(client_factory=lambda: FakeClient())
+
+    market = service.research("market", ResearchContext())
+    opportunity = service.research("opportunity", ResearchContext())
+
+    assert market.findings[0].summary.startswith("上证指数")
+    assert "最新点位" in market.findings[0].summary
+    assert market.findings[1].summary.startswith("机器人概念")
+    assert "热度排名" in market.findings[1].summary
+    assert market.findings[2].summary.startswith("市场风险偏好改善")
+    candidate = next(
+        item for item in opportunity.findings if item.title == "候选线索"
+    )
+    assert candidate.summary.startswith("大业股份")
+    assert "净利润同比" in candidate.summary
+    assert not candidate.summary.startswith("股票代码")
+
+
+def test_stock_primary_risk_prefers_latest_event_over_old_finance_period() -> None:
+    fixture = stock_research_fixture()
+    fixture["finance"] = {
+        "datas": [
+            {
+                "归母净利润[20251231]": -134_712_000,
+                "营业收入[20251231]": 5_026_000_000,
+            }
+        ]
+    }
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(results=fixture)
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    assert "2026一季" in result.primary_risk
+    assert "-8.7%" in result.primary_risk
+
+
+def test_positive_risk_preference_news_does_not_become_primary_risk() -> None:
+    client = FakeClient(
+        results={
+            "news": {
+                "datas": [
+                    {
+                        "title": "政策预期改善市场风险偏好",
+                        "summary": "成交仍需继续确认。",
+                    }
+                ]
+            }
+        }
+    )
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "market", ResearchContext()
+    )
+
+    assert result.primary_risk == "市场证据可能不同步，避免只按单一热点行动。"
+
+
+def test_index_risk_names_the_affected_index() -> None:
+    client = FakeClient(
+        results={
+            "index": {
+                "datas": [
+                    {
+                        "指数简称": "深证成指",
+                        "最新价": 12_860.1,
+                        "最新涨跌幅:前复权": -0.3301,
+                    }
+                ]
+            }
+        }
+    )
+
+    result = ResearchWorkspaceService(client_factory=lambda: client).research(
+        "market", ResearchContext()
+    )
+
+    assert result.primary_risk == "深证成指 · 涨跌幅：-0.33%"
+
+
+def test_document_summary_is_capped_and_does_not_repeat_title() -> None:
+    title = "重要政策推动风险偏好改善"
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(
+            results={
+                "news": {
+                    "datas": [
+                        {
+                            "title": title,
+                            "summary": f"{title}{'成交确认仍需观察。' * 40}",
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    result = service.research("market", ResearchContext())
+    news = next(item for item in result.findings if item.title == "市场事件")
+
+    assert len(news.summary) <= 180
+    assert news.summary.count(title) == 1
+
+
+def test_finance_summary_handles_negative_profit_and_cash_flow() -> None:
+    fixture = stock_research_fixture()
+    fixture["finance"] = {
+        "datas": [
+            {
+                "营业收入[20251231]": 5_026_000_000,
+                "营业收入[20241231]": 5_097_000_000,
+                "归母净利润[20251231]": -13_471_200,
+                "经营活动产生的现金流量净额[20251231]": -184_000_000,
+            }
+        ]
+    }
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(results=fixture)
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+    finance = next(item for item in result.findings if item.title == "财务方向")
+
+    assert "利润与经营现金流均为负" in finance.summary
+
+
+def test_positive_event_growth_is_summarized_as_improvement() -> None:
+    fixture = stock_research_fixture()
+    fixture["event"] = {
+        "datas": [
+            {
+                "净利润增长率上限[20260630]": 800,
+                "净利润增长率下限[20260630]": 700,
+                "变动类型[20260630]": "预增",
+            }
+        ]
+    }
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(results=fixture)
+    )
+
+    result = service.research(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+
+    assert result.findings[0].summary == "净利润上限为800.00%，最新变化改善"

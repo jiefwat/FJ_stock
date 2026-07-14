@@ -48,7 +48,7 @@ FINDING_TITLES = {
 }
 
 FRONT_PRIORITY = {
-    "market": {"index": 0, "sector_selector": 1, "macro": 2, "news": 3},
+    "market": {"index": 0, "sector_selector": 1, "news": 2, "macro": 3},
     "stock": {"event": 0, "finance": 1, "consensus": 2, "business": 3},
     "opportunity": {
         "sector_selector": 0,
@@ -306,11 +306,10 @@ def build_workspace_queries(
             for capability in capabilities
         )
     if module == "opportunity":
-        prefix = _clean_text(context.sector, 64) or "A股"
         return tuple(
             CapabilityRequest(
                 capability=capability,
-                query=f"{prefix} {_prompt_for(module, capability)}",
+                query=_opportunity_query(capability, context.sector),
             )
             for capability in capabilities
         )
@@ -337,9 +336,11 @@ def _target_query(target: ResearchTarget, prompt: str) -> str:
 
 def _prompt_for(module: str, capability: str) -> str:
     prompts = {
-        ("market", "index"): "主要指数最新趋势、强弱、成交和关键位置",
+        ("market", "index"): "上证指数、深证成指、创业板指 最新点位 涨跌幅 成交额",
         ("market", "macro"): "近期影响A股风险偏好的宏观指标与政策变化",
-        ("market", "sector_selector"): "当前强度、成交额和持续性靠前的行业板块",
+        ("market", "sector_selector"): (
+            "行业板块 排除融资融券 按成交额和热度排序 前5"
+        ),
         ("market", "news"): "近期影响A股风险偏好的重要新闻与风险事件",
         ("portfolio", "event"): "近期业绩预告、解禁、质押、监管和经营风险",
         ("portfolio", "announcement"): "近期公告中需要持有人重点复核的事项",
@@ -355,6 +356,30 @@ def _prompt_for(module: str, capability: str) -> str:
         ("opportunity", "news"): "近期市场主线新闻及需要排除的风险",
     }
     return prompts[(module, capability)]
+
+
+def _opportunity_query(capability: str, sector: str) -> str:
+    cleaned_sector = _clean_text(sector, 64)
+    if cleaned_sector and not cleaned_sector.endswith(("概念", "行业", "板块")):
+        theme = f"{cleaned_sector}概念"
+    else:
+        theme = cleaned_sector
+    scope = theme or "A股"
+    stock_scope = f"{theme} " if theme else ""
+    sector_query = (
+        f"{theme}板块 按成交额和热度排序 前5"
+        if theme
+        else "概念板块 排除融资融券 按板块热度排序 前5"
+    )
+    prompts = {
+        "sector_selector": sector_query,
+        "astock_selector": (
+            f"{stock_scope}A股 净利润同比增长 成交额大于5亿 按成交额排序 前10"
+        ),
+        "event": f"{scope} 近期业绩预告、公告和事件催化",
+        "news": f"{scope} 近期市场主线新闻及需要排除的风险",
+    }
+    return prompts[capability]
 
 
 def _clean_text(value: str, limit: int) -> str:
@@ -416,7 +441,7 @@ def _build_workspace_result(
         generated_at=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
         verdict=verdict,
         action=action,
-        primary_risk=_primary_risk(successful, copy["risk"]),
+        primary_risk=_primary_risk(module, successful, copy["risk"]),
         findings=findings,
         details=details,
         missing_sections=missing_sections,
@@ -495,11 +520,26 @@ def _finding_summary(
         return _consensus_summary(row)
     if capability == "event":
         return _event_summary(row)
+    if capability == "index":
+        return _index_summary(row)
+    if capability == "sector_selector":
+        return _sector_summary(row)
+    if capability == "astock_selector":
+        return _candidate_summary(row)
+    if capability in {"news", "announcement"}:
+        return _document_summary(row)
+    if capability == "market":
+        return _market_summary(row)
     return "；".join(f"{fact.label}：{fact.value}" for fact in row[:2])
 
 
 def _finance_summary(row: tuple[ResearchFact, ...]) -> str:
-    revenues = [fact for fact in row if any(key in fact.label for key in ("营业收入", "营收"))]
+    revenues = [
+        fact
+        for fact in row
+        if any(key in fact.label for key in ("营业收入", "营收"))
+        and not any(change in fact.label for change in ("同比", "环比"))
+    ]
     parts: list[str] = []
     if len(revenues) >= 2:
         latest = _numeric_value(revenues[0].value)
@@ -513,16 +553,28 @@ def _finance_summary(row: tuple[ResearchFact, ...]) -> str:
         parts.append(f"收入为{revenues[0].value}，仅单期数据，趋势待确认")
 
     profit = next((fact for fact in row if "净利润" in fact.label), None)
-    cash_flow = next((fact for fact in row if "经营现金流" in fact.label), None)
+    cash_flow = next(
+        (
+            fact
+            for fact in row
+            if "经营现金流" in fact.label or "经营活动产生的现金流" in fact.label
+        ),
+        None,
+    )
     if profit and cash_flow:
         profit_value = _numeric_value(profit.value)
         cash_value = _numeric_value(cash_flow.value)
         if profit_value is not None and cash_value is not None:
-            quality = (
-                "现金流覆盖利润"
-                if cash_value >= profit_value
-                else "现金流低于利润，含金量需复核"
-            )
+            if profit_value <= 0 and cash_value < 0:
+                quality = "利润与经营现金流均为负，增长质量承压"
+            elif profit_value <= 0 <= cash_value:
+                quality = "利润为负但经营现金流为正，需区分非现金损益"
+            elif profit_value > 0 > cash_value:
+                quality = "利润为正但经营现金流为负，含金量偏弱"
+            elif cash_value >= profit_value:
+                quality = "现金流覆盖利润"
+            else:
+                quality = "现金流低于利润，含金量需复核"
             parts.append(quality)
     return "；".join(parts) or _compact_facts(row)
 
@@ -563,13 +615,79 @@ def _event_summary(row: tuple[ResearchFact, ...]) -> str:
         (
             fact
             for fact in row
-            if any(term in fact.label for term in ("同比", "环比"))
+            if any(term in fact.label for term in ("同比", "环比", "增长率"))
             and _numeric_value(fact.value) is not None
         ),
         None,
     )
     if positive:
         return f"{_short_metric(positive.label)}为{positive.value}，最新变化改善"
+    return _compact_facts(row)
+
+
+def _index_summary(row: tuple[ResearchFact, ...]) -> str:
+    name = _fact_matching(row, ("指数简称", "指数名称"))
+    price = _fact_matching(row, ("最新点位", "收盘价", "最新价"))
+    change = _fact_matching(row, ("涨跌幅", "涨跌"))
+    metrics = [
+        f"{_short_metric(fact.label)} {fact.value}"
+        for fact in (price, change)
+        if fact is not None
+    ]
+    if name and metrics:
+        return f"{name.value} {'，'.join(metrics)}"
+    return _compact_facts(row)
+
+
+def _sector_summary(row: tuple[ResearchFact, ...]) -> str:
+    name = _fact_matching(row, ("板块名称", "行业名称", "概念名称", "指数简称"))
+    heat = _fact_matching(row, ("热度", "排名", "强度"))
+    amount = _fact_matching(row, ("成交额", "成交量"))
+    metrics = [
+        f"{_short_metric(fact.label)} {fact.value}"
+        for fact in (heat, amount)
+        if fact is not None
+    ]
+    if name and metrics:
+        return f"{name.value} {'，'.join(metrics)}"
+    return _compact_facts(row)
+
+
+def _candidate_summary(row: tuple[ResearchFact, ...]) -> str:
+    name = _fact_matching(row, ("股票简称", "证券简称", "股票名称"))
+    growth = _fact_matching(row, ("净利润同比", "营业收入同比", "营收同比"))
+    amount = _fact_matching(row, ("成交额", "成交量", "换手率"))
+    metrics = [
+        f"{_short_metric(fact.label)} {fact.value}"
+        for fact in (growth, amount)
+        if fact is not None
+    ]
+    if name and metrics:
+        return f"{name.value}：{'，'.join(metrics)}"
+    return _compact_facts(row)
+
+
+def _document_summary(row: tuple[ResearchFact, ...]) -> str:
+    title = _fact_matching(row, ("标题", "title", "公告名称"))
+    summary = _fact_matching(row, ("摘要", "summary", "内容"))
+    if title and summary:
+        summary_text = summary.value
+        if summary_text.startswith(title.value):
+            summary_text = summary_text[len(title.value) :].lstrip(" ：:，,。")
+        return _public_text(f"{title.value}：{summary_text}", 180)
+    if title:
+        return _public_text(title.value, 180)
+    return _compact_facts(row)
+
+
+def _market_summary(row: tuple[ResearchFact, ...]) -> str:
+    price = _fact_matching(row, ("收盘价", "最新价"))
+    volume = _fact_matching(row, ("成交量", "成交额", "换手率"))
+    if price and volume:
+        return (
+            f"{_short_metric(price.label)} {price.value}，"
+            f"{_short_metric(volume.label)} {volume.value}"
+        )
     return _compact_facts(row)
 
 
@@ -631,7 +749,24 @@ def _label_year(label: str) -> str:
 
 
 def _short_metric(label: str) -> str:
-    return re.sub(r"\[[^]]+]", "", label).replace("增长率", "")
+    cleaned = re.sub(r"\[[^]]+]", "", label)
+    cleaned = cleaned.replace(":前复权", "").replace("_前复权", "")
+    cleaned = cleaned.replace("增长率", "")
+    if cleaned == "最新涨跌幅":
+        return "涨跌幅"
+    if cleaned == "最新价":
+        return "点位"
+    return cleaned
+
+
+def _fact_matching(
+    row: tuple[ResearchFact, ...],
+    terms: tuple[str, ...],
+) -> ResearchFact | None:
+    return next(
+        (fact for fact in row if any(term.lower() in fact.label.lower() for term in terms)),
+        None,
+    )
 
 
 def _fact_is_negative(fact: ResearchFact) -> bool:
@@ -642,18 +777,45 @@ def _fact_is_negative(fact: ResearchFact) -> bool:
 
 
 def _primary_risk(
+    module: str,
     successful: list[_CapabilityOutcome],
     fallback: str,
 ) -> str:
-    risk_terms = ("风险", "下修", "减持", "监管", "亏损", "解禁", "质押", "下降", "恶化")
-    for outcome in successful:
+    risk_terms = (
+        "风险事件",
+        "下修",
+        "减持",
+        "监管",
+        "亏损",
+        "解禁",
+        "质押",
+        "下降",
+        "恶化",
+        "诉讼",
+        "预减",
+    )
+    priority = FRONT_PRIORITY.get(module, {})
+    ordered = sorted(
+        successful,
+        key=lambda outcome: priority.get(outcome.request.capability, 99),
+    )
+    for outcome in ordered:
         for row in outcome.rows:
             text = "；".join(f"{fact.label}：{fact.value}" for fact in row)
             negative = next((fact for fact in row if _fact_is_negative(fact)), None)
             if negative:
+                if outcome.request.capability == "index":
+                    name = _fact_matching(row, ("指数简称", "指数名称"))
+                    if name:
+                        return _public_text(
+                            f"{name.value} · {_short_metric(negative.label)}：{negative.value}",
+                            180,
+                        )
                 return _public_text(f"{negative.label}：{negative.value}", 180)
             if any(term in text for term in risk_terms):
-                return _public_text(text, 180)
+                return _public_text(
+                    _finding_summary(outcome.request.capability, row), 180
+                )
     return fallback
 
 
