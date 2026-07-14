@@ -6053,6 +6053,7 @@ body {
 @media (max-width: 760px) {
   .essence-action-risk,
   .stock-core-facts { grid-template-columns:1fr; }
+  .engine-app-shell .sidebar .nav-item[data-engine-nav-state] { display:none; }
   .engine-page-intro { align-items:flex-start; padding-top:4px; }
   .engine-page-intro > div { display:grid; gap:5px; }
   .engine-page-intro p { display:none; }

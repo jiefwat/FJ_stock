@@ -159,11 +159,17 @@ def test_engine_workspace_uses_full_parent_width_on_mobile() -> None:
 
 def test_mobile_research_dock_is_fixed_safe_and_touchable() -> None:
     compact_css = CSS.replace(" ", "")
+    mobile_sidebar_selector = ".engine-app-shell .sidebar .nav-item[data-engine-nav-state]"
+    assert mobile_sidebar_selector in CSS
+    mobile_sidebar_rule = CSS.split(
+        mobile_sidebar_selector, 1
+    )[1].split("}", 1)[0]
 
     assert ".engine-mobile-dock" in CSS
     assert "env(safe-area-inset-bottom)" in CSS
     assert "position:fixed" in compact_css
     assert "min-height:44px" in compact_css
+    assert "display:none" in mobile_sidebar_rule.replace(" ", "")
     for state in ("idle", "loading", "complete", "partial", "unavailable"):
         assert f'[data-engine-nav-state="{state}"]' in CSS
 
