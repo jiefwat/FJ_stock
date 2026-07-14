@@ -49,6 +49,24 @@
 - `test_daily_pipeline_enriches_holdings_with_news_before_broad_candidate_chunks`
 - `test_daily_pipeline_writes_data_chain_artifact_and_degrades_on_skipped_steps`
 
-## 待完成
+## 生产部署验证
 
-- 公网部署后，用生产登录态分别调用 market、portfolio、stock、opportunity，并记录 HTTP 状态、技能 ID、事实数和脱敏结果。
+- 运行代码提交：`ca286f55ef3772a58b7a045d8203f22c9165c910`。
+- 回滚包：`/opt/stock-ts/.deploy_backups/iwencai-four-workspaces-20260714-164557/source-before.tar.gz`。
+- 服务器编译检查通过，`stock-ts.service` 重启后为 `active`，本机 `/healthz` 返回 `ok`。
+
+生产登录态四模块调用：
+
+| 模块 | HTTP | 状态 | 技能 | 事实数 | Key 回显 |
+|---|---:|---|---|---:|---|
+| market | 200 | complete | `hithink-zhishu-query` | 3 | false |
+| portfolio | 200 | complete | `announcement-search` | 5 | false |
+| stock | 200 | complete | `hithink-finance-query` | 1 | false |
+| opportunity | 200 | complete | `hithink-astock-selector` | 5 | false |
+
+公网验证：
+
+- `https://stock.jiewat-kaka-fj.com/healthz` 返回 HTTP 200 和 `ok`。
+- 根路径返回 HTTP 303，并跳转 `/login?next=%2F`。
+- 匿名研究请求返回 HTTP 401、`login_required`。
+- 公网登录态 market 请求返回 HTTP 200、`complete`、3 条事实，技能为 `hithink-zhishu-query`，Key 回显为 false。

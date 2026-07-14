@@ -2,7 +2,9 @@
 
 ## 当前状态
 
-四模块技能路由、通用 endpoint、共享研究坞、四页接入、响应式布局、代码审查和本地验证已完成，等待推送和公网部署。
+四模块技能路由、通用 endpoint、共享研究坞、四页接入、响应式布局、代码审查、本地验证和公网部署均已完成。
+
+公网入口：`https://stock.jiewat-kaka-fj.com/`
 
 ## 工作分支
 
@@ -14,6 +16,14 @@
 - 我的持仓：业绩风险、公告核查、机构下修、资金异动；只发送单只股票代码和名称。
 - 个股分析：保留财务、机构、事件、行业等现有深度追问。
 - 热点机会：板块持续性、A 股筛选、事件催化、风险排除。
+
+## 部署记录
+
+- 运行代码提交：`ca286f55ef3772a58b7a045d8203f22c9165c910`。
+- 服务器目录：`/opt/stock-ts`，分支 `main`，tracked worktree 干净。
+- 回滚包：`/opt/stock-ts/.deploy_backups/iwencai-four-workspaces-20260714-164557/source-before.tar.gz`。
+- `stock-ts.service`、`stock-ts-signal-desk.service` 和 Nginx 保持 `active`。
+- 四模块真实调用和公网登录态调用均通过，响应无 Key 回显。
 
 ## 必须保留
 
