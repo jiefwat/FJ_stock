@@ -17,48 +17,40 @@ def render_portfolio_workspace(
     verdict = dossier.verdict
     metrics = "".join(
         f'<article class="portfolio-metric status-{escape(item.status)}">'
-        f"<span>{escape(item.label)}</span><strong>{escape(item.value)}</strong>"
-        f"<small>{escape(item.note)}</small></article>"
+        f"<span>{escape(item.label)}</span><strong>{escape(item.value)}</strong></article>"
         for item in dossier.metrics
     )
-    queue = "".join(_render_queue_item(item) for item in dossier.queue[:5])
-    queue_rest = "".join(_render_queue_item(item) for item in dossier.queue[5:])
-    queue_overflow = _render_overflow(
-        "portfolio-queue-overflow",
-        f"查看其余 {max(0, len(dossier.queue) - 5)} 项处置",
-        "portfolio-treatment-queue",
-        queue_rest,
-    )
+    queue = "".join(_render_queue_item(item) for item in dossier.queue[:3])
+    queue_rest = "".join(_render_queue_item(item) for item in dossier.queue[3:])
     if not queue:
         queue = '<div class="dossier-empty-state">暂无持仓；录入真实持仓后生成处置队列。</div>'
     exposures = "".join(
         f'<article class="portfolio-exposure severity-{escape(item.severity)}">'
         f"<div><strong>{escape(item.name)}</strong><span>{item.weight:.1%}</span></div>"
         f"<p>{escape(item.consequence)}</p></article>"
-        for item in dossier.exposures
+        for item in dossier.exposures[:1]
     )
     if not exposures:
         exposures = '<div class="dossier-empty-state">暂无需要登记的集中度暴露。</div>'
-    boundaries = "".join(_render_boundary(item) for item in dossier.boundaries[:4])
-    boundary_rest = "".join(
-        _render_boundary(item) for item in dossier.boundaries[4:]
-    )
-    boundary_overflow = _render_overflow(
-        "portfolio-boundary-overflow",
-        f"查看其余 {max(0, len(dossier.boundaries) - 4)} 项边界",
-        "portfolio-boundary-grid",
-        boundary_rest,
-    )
+    boundaries = "".join(_render_boundary(item) for item in dossier.boundaries)
     if not boundaries:
         boundaries = '<div class="dossier-empty-state">暂无持仓边界。</div>'
-    supporting = (
-        '<details class="portfolio-supporting-evidence">'
-        "<summary>持仓证据</summary>"
-        f'<div class="portfolio-supporting-body">{supporting_evidence_html}</div>'
-        "</details>"
-        if supporting_evidence_html
+    queue_rest_section = (
+        f"<h4>其余 {len(dossier.queue[3:])} 项处置</h4>"
+        f'<div class="portfolio-treatment-queue">{queue_rest}</div>'
+        if queue_rest
         else ""
     )
+    evidence = f"""
+      <details class="portfolio-evidence essence-evidence">
+        <summary>持仓证据</summary>
+        <div class="essence-evidence-body">
+          {queue_rest_section}
+          <h4>持仓边界</h4>
+          <div class="portfolio-boundary-grid">{boundaries}</div>
+          {supporting_evidence_html}
+        </div>
+      </details>"""
     return f"""
     <section class="portfolio-dossier" data-portfolio-state="{escape(verdict.state)}">
       <section class="portfolio-verdict-brief" data-primary-portfolio-verdict="true"
@@ -81,25 +73,15 @@ def render_portfolio_workspace(
       <div class="portfolio-metric-strip">{metrics}</div>
       <div class="portfolio-dossier-grid">
         <section aria-labelledby="portfolio-queue-title">
-          <div class="dossier-heading"><span>ACTION QUEUE</span>
-            <h3 id="portfolio-queue-title">处置队列</h3></div>
+          <h3 id="portfolio-queue-title">处置队列</h3>
           <div class="portfolio-treatment-queue">{queue}</div>
-          {queue_overflow}
         </section>
         <section class="portfolio-exposure-register" aria-labelledby="portfolio-exposure-title">
-          <div class="dossier-heading"><span>EXPOSURE LEDGER</span>
-            <h3 id="portfolio-exposure-title">风险暴露登记表</h3></div>
+          <h3 id="portfolio-exposure-title">风险暴露登记表</h3>
           {exposures}
         </section>
       </div>
-      <section aria-labelledby="portfolio-boundary-title">
-        <div class="dossier-section-title"><span>POSITION BOUNDARIES</span>
-          <h3 id="portfolio-boundary-title">持仓边界</h3>
-          <p>将每只持仓的允许动作、触发条件与禁止动作写入同一审计面。</p></div>
-        <div class="portfolio-boundary-grid">{boundaries}</div>
-        {boundary_overflow}
-      </section>
-      {supporting}
+      {evidence}
     </section>"""
 
 
@@ -128,21 +110,6 @@ def _render_boundary(item: PortfolioBoundary) -> str:
         f"<div><dt>失效条件</dt><dd>{escape(item.invalidation)}</dd></div></dl>"
         '<p class="portfolio-prohibited"><span>禁止动作</span>'
         f"{escape(item.prohibited_action)}</p></article>"
-    )
-
-
-def _render_overflow(
-    css_class: str,
-    summary: str,
-    grid_class: str,
-    content: str,
-) -> str:
-    if not content:
-        return ""
-    return (
-        f'<details class="{escape(css_class)} research-overflow">'
-        f"<summary>{escape(summary)}</summary>"
-        f'<div class="{escape(grid_class)}">{content}</div></details>'
     )
 
 

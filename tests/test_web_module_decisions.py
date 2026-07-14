@@ -1256,7 +1256,7 @@ def test_stock_module_leads_from_entry_to_research_memo_and_execution() -> None:
     ]:
         assert text in stock_html
 
-    assert stock_html.index("分析入口") < stock_html.index("投委会结论")
+    assert stock_html.index("投委会结论") < stock_html.index("分析入口")
     assert stock_html.index("投委会结论") < stock_html.index("五步决策轨道")
     assert stock_html.index("五步决策轨道") < stock_html.index("风险登记表")
     assert stock_html.index("风险登记表") < stock_html.index("仓位与执行边界")
@@ -1305,7 +1305,7 @@ def test_stock_analysis_keeps_multi_role_method_in_supporting_evidence() -> None
 
     assert stock_html.index("投委会结论") < stock_html.index("诊断底稿")
     assert stock_html.index("诊断底稿") < stock_html.index("多角色分析方法")
-    assert stock_html.index("展开原始诊断与支持证据") < stock_html.index("多角色分析方法")
+    assert stock_html.index("证据账本") < stock_html.index("多角色分析方法")
     assert "完整方法链" not in stock_html
 
 
@@ -2051,7 +2051,7 @@ def test_global_freshness_bar_stays_ok_when_only_optional_stock_context_is_missi
         stock_code="600519",
     )
     freshness_start = html.index('aria-label="全局研究状态"')
-    freshness_end = html.index('aria-label="数据中台摘要"')
+    freshness_end = html.index("</section>", freshness_start)
     freshness_html = html[freshness_start:freshness_end]
     data_center_html = _workspace(html, "data-center")
 
@@ -2096,15 +2096,15 @@ def test_data_center_keeps_snapshot_coverage_inside_source_ledger() -> None:
         assert detail in data_center_html
 
 
-def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_line_summary() -> None:
+def test_data_center_moves_to_bottom_workspace_and_top_keeps_one_link() -> None:
     html = _sample_html()
     workspace_start = html.index('<section class="workspace-pane')
-    summary_start = html.index('aria-label="数据中台摘要"')
+    tape_start = html.index('aria-label="全局研究状态"')
     full_panel_start = html.index('aria-label="数据中台"')
 
     assert html.count('aria-label="数据中台"') == 1
-    assert html.count('aria-label="数据中台摘要"') == 1
-    assert summary_start < workspace_start
+    assert 'aria-label="数据中台摘要"' not in html
+    assert tape_start < workspace_start
     assert full_panel_start > html.index('data-workspace="opportunity"')
     assert 'data-workspace="data-center"' in html
     assert 'href="#data-center"' in html
@@ -2281,15 +2281,16 @@ def test_professional_market_diagnosis_uses_reason_chain_not_metric_snapshot() -
 
 def test_daily_market_moves_dense_evidence_into_session_specific_surfaces() -> None:
     market_html = _workspace(_sample_html(), "market")
-    intraday_start = market_html.index('<details class="market-intraday-ledger">')
     close_start = market_html.index('class="market-session-phase phase-close"')
+    evidence_start = market_html.index('<details class="market-evidence essence-evidence">')
 
-    assert market_html.index("板块热力图") < intraday_start
-    assert intraday_start < market_html.index("大涨大跌分析") < close_start
-    assert intraday_start < market_html.index("强势板块Top5") < close_start
-    assert intraday_start < market_html.index("异动事件") < close_start
-    assert close_start < market_html.index("专业大盘研判")
-    assert close_start < market_html.index("买卖指导")
+    assert close_start < evidence_start
+    assert evidence_start < market_html.index("板块热力图")
+    assert evidence_start < market_html.index("大涨大跌分析")
+    assert evidence_start < market_html.index("强势板块Top5")
+    assert evidence_start < market_html.index("异动事件")
+    assert evidence_start < market_html.index("专业大盘研判")
+    assert evidence_start < market_html.index("买卖指导")
 
 
 def test_market_mainline_summary_does_not_restate_price_results_as_reason() -> None:

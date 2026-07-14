@@ -74,6 +74,7 @@ def test_portfolio_workspace_leads_with_one_committee_verdict() -> None:
     assert "风险暴露登记表" in html
     assert "禁止动作" in html
     assert html.count('class="portfolio-evidence essence-evidence"') == 1
+    assert "其余 0 项处置" not in html
 
 
 def test_stale_portfolio_workspace_hides_numeric_price_actions() -> None:

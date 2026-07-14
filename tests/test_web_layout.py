@@ -102,5 +102,6 @@ def test_global_freshness_surface_is_action_first_research_tape() -> None:
     assert tape.index("数据状态") < tape.index("交易日")
     assert 'class="research-tape-primary"' in tape
     assert tape.count('class="research-tape-item core"') == 2
-    assert tape.count('class="research-tape-item secondary"') == 3
+    assert 'class="research-tape-item secondary"' not in tape
     assert 'class="research-tape-data-link" href="#data-center"' in tape
+    assert 'class="data-center-summary' not in html

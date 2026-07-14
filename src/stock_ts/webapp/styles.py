@@ -1043,7 +1043,7 @@ h1 {
   top: 10px;
   z-index: 20;
   display:grid;
-  grid-template-columns:minmax(190px,1.35fr) repeat(5,minmax(110px,1fr)) auto;
+  grid-template-columns:minmax(190px,1.35fr) repeat(2,minmax(110px,1fr)) auto;
   gap:0;
   margin: 0 0 14px;
   padding:0;
@@ -5009,7 +5009,9 @@ body {
   .stock-pro-grid,
   .stock-diagnosis-grid { grid-template-columns:1fr; }
   .market-state-strip,
-  .stock-identity-strip,
+  .stock-identity-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .market-state-strip .module-refresh-tools,
+  .stock-identity-strip .module-refresh-tools { grid-column:1 / -1; padding:9px 12px; }
   .market-dimension-grid,
   .research-scenario-grid,
   .investment-memo-grid,
@@ -5026,16 +5028,16 @@ body {
   .research-tape {
     position:relative;
     top:auto;
-    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-columns:repeat(3,minmax(0,1fr));
     margin-bottom:9px;
   }
-  .research-tape-primary,
-  .research-tape-data-link { grid-column:1 / -1; }
+  .research-tape-primary { grid-column:1 / -1; }
   .research-tape-item.secondary { display:none; }
   .research-tape-data-link {
     grid-template-columns:auto auto;
-    justify-content:space-between;
-    place-items:center stretch;
+    justify-content:center;
+    place-items:center;
+    padding:9px 6px;
   }
   .data-readiness-brief,
   .data-operations-grid { grid-template-columns:1fr; }
@@ -5110,6 +5112,66 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .market-decision-rail-step { animation:none; }
+}
+
+/* Essence mode keeps decisions visible and moves audit depth behind one quiet ledger. */
+.essence-strip {
+  display:grid;
+  gap:0;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(255,255,255,.72);
+}
+.essence-evidence {
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:15px;
+  background:#fff;
+}
+.essence-evidence > summary {
+  cursor:pointer;
+  padding:14px 16px;
+  color:var(--ink);
+  font-weight:850;
+  list-style-position:inside;
+}
+.essence-evidence[open] > summary { border-bottom:1px solid var(--line); }
+.essence-evidence-body { display:grid; gap:14px; padding:14px; }
+.essence-evidence-body > h4 { margin:0; color:var(--ink); font-size:13px; }
+.market-research-workspace,
+.portfolio-dossier,
+.stock-research-workspace,
+.opportunity-dossier,
+.data-command-center { gap:14px; }
+.market-session-phase { gap:14px; }
+.market-session-phase > section > h3,
+.portfolio-dossier-grid h3,
+.stock-dossier-grid h3,
+.dossier-position-panel > h3,
+.stock-dossier > section > h3,
+.opportunity-dossier section > h3,
+.data-operations-grid section > h3 { margin:0 0 10px; font-size:15px; }
+.dossier-diagnostic-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.dossier-diagnostic-summary {
+  display:grid;
+  gap:6px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-left:3px solid var(--line-strong);
+  border-radius:11px;
+  background:#fff;
+}
+.dossier-diagnostic-summary > span { color:var(--muted); font-size:10px; font-weight:850; }
+.dossier-diagnostic-summary > strong { color:var(--ink); font-size:12px; line-height:1.45; }
+.portfolio-evidence .portfolio-treatment-queue:empty,
+.opportunity-evidence .candidate-decision-grid:empty { display:none; }
+@media (max-width: 760px) {
+  .dossier-diagnostic-summary-grid { grid-template-columns:1fr; }
+  .essence-evidence-body { padding:10px; }
+  .market-session-ruler.essence-strip { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .market-session-ruler.essence-strip > div { min-width:0; padding:9px; }
+  .market-session-ruler.essence-strip > div::after { display:none; }
 }
 
 """

@@ -16,7 +16,7 @@ def render_data_center_workspace(
     refresh_html: str,
 ) -> str:
     gate = dossier.gate
-    recovery = "".join(_render_recovery_step(item) for item in dossier.recovery_steps)
+    recovery = "".join(_render_recovery_step(item) for item in dossier.recovery_steps[:3])
     if not recovery:
         recovery = (
             '<div class="data-recovery-empty"><strong>暂无数据域需要恢复</strong>'
@@ -38,8 +38,7 @@ def render_data_center_workspace(
       <section class="module panel data-command-center" id="module-data-center"
         aria-label="数据中台">
         <div class="editor-toolbar data-command-toolbar">
-          <div><h3>数据中台</h3>
-            <p class="section-subtitle">先恢复可信数据，再恢复研究结论。</p></div>
+          <h3>数据中台</h3>
           <div class="module-header-meta">
             <span class="portfolio-chip">{escape(gate.state)} · {escape(dossier.updated_at)}</span>
             {refresh_html}
@@ -65,16 +64,12 @@ def render_data_center_workspace(
         </section>
         <div class="data-operations-grid">
           <section class="data-recovery-section" aria-labelledby="data-recovery-title">
-            <div class="dossier-heading"><span>RESTORE ORDER</span>
-              <h3 id="data-recovery-title">恢复运行轨道</h3>
-              <p>按依赖顺序处理；每一步都要用更新时间或覆盖结果复核。</p></div>
+            <h3 id="data-recovery-title">恢复运行轨道</h3>
             <div class="data-recovery-rail">{recovery}</div>
           </section>
           <section class="data-impact-section" aria-labelledby="data-impact-title">
-            <div class="dossier-heading"><span>DOWNSTREAM IMPACT</span>
-              <h3 id="data-impact-title">模块影响面</h3>
-              <p>同一数据缺口会同时降低多个研究模块的结论强度。</p></div>
-            <div class="data-impact-grid">{impacts}</div>
+            <h3 id="data-impact-title">模块影响面</h3>
+            <div class="data-impact-grid essence-strip">{impacts}</div>
           </section>
         </div>
         <details class="data-source-ledger">
@@ -96,9 +91,8 @@ def _render_recovery_step(item: DataRecoveryStep) -> str:
         <span class="data-recovery-number">{item.priority:02d}</span>
         <div class="data-recovery-copy">
           <header><strong>{escape(item.category)}</strong><em>{escape(item.status)}</em></header>
-          <p><span>当前缺口</span>{escape(item.issue)}</p>
-          <p><span>业务后果</span>{escape(item.consequence)}</p>
-          <small><span>复核证据</span>{escape(item.verification)}</small>
+          <p><span>缺口</span>{escape(item.issue)}</p>
+          <small><span>复核</span>{escape(item.verification)}</small>
         </div>
       </article>"""
 

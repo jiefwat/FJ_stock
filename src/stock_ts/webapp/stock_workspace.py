@@ -59,13 +59,18 @@ def _render_dossier_workspace(
         f"<p>{escape(item.evidence)}</p>"
         f"<small>影响：{escape(item.consequence)} · 复核：{escape(item.monitor)}</small>"
         "</article>"
-        for item in dossier.risks
+        for item in dossier.risks[:3]
     )
     if not risk_rows:
         risk_rows = (
             '<div class="dossier-empty-state">未识别高等级标题风险；仍需持续复核公告原文。</div>'
         )
     diagnostic_cards = "".join(_render_diagnostic(item) for item in dossier.diagnostics)
+    diagnostic_summaries = "".join(
+        f'<article class="dossier-diagnostic-summary status-{escape(item.status)}">'
+        f"<span>{escape(item.name)}</span><strong>{escape(item.conclusion)}</strong></article>"
+        for item in dossier.diagnostics
+    )
     scenario_cards = "".join(
         "<article class=\"dossier-scenario-card\">"
         f"<span>{escape(item.name)}</span>"
@@ -89,13 +94,17 @@ def _render_dossier_workspace(
         for item in dossier.evidence
     )
     position = dossier.position
-    supporting = (
-        "<details class=\"dossier-supporting-evidence\">"
-        "<summary>展开原始诊断与支持证据</summary>"
-        f"{supporting_evidence_html}</details>"
-        if supporting_evidence_html
-        else ""
-    )
+    evidence = f"""
+      <details class="stock-evidence essence-evidence">
+        <summary>证据账本</summary>
+        <div class="essence-evidence-body">
+          <div class="dossier-diagnostic-grid">{diagnostic_cards}</div>
+          <table class="data-table"><thead><tr>
+            <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>结论与限制</th>
+          </tr></thead><tbody>{evidence_rows}</tbody></table>
+          {supporting_evidence_html}
+        </div>
+      </details>"""
     return f"""
     <section class="stock-research-workspace stock-dossier"
       data-research-status="{escape(verdict.stance)}"
@@ -108,7 +117,6 @@ def _render_dossier_workspace(
         <div><span>数据日期</span><strong>{escape(dossier.trade_date or '日期缺失')}</strong></div>
         {refresh_html}
       </header>
-      {identity_html}
       <section class="dossier-decision-brief" data-primary-stock-verdict="true"
         aria-labelledby="dossier-verdict-title">
         <div class="dossier-stance">
@@ -128,21 +136,19 @@ def _render_dossier_workspace(
             下次复核：{escape(verdict.next_review)}</small>
         </div>
       </section>
+      {identity_html}
       <div class="stock-dossier-grid">
         <section class="dossier-panel" aria-labelledby="decision-rail-title">
-          <div class="dossier-heading"><span>DECISION</span>
-            <h3 id="decision-rail-title">五步决策轨道</h3></div>
+          <h3 id="decision-rail-title">五步决策轨道</h3>
           <div class="decision-rail">{decision_steps}</div>
         </section>
         <section class="dossier-panel risk-register" aria-labelledby="risk-register-title">
-          <div class="dossier-heading"><span>RISK FIRST</span>
-            <h3 id="risk-register-title">风险登记表</h3></div>
+          <h3 id="risk-register-title">风险登记表</h3>
           {risk_rows}
         </section>
       </div>
       <section class="dossier-position-panel" aria-labelledby="position-guidance-title">
-        <div class="dossier-heading"><span>{escape(position.audience)}</span>
-          <h3 id="position-guidance-title">仓位与执行边界</h3></div>
+        <h3 id="position-guidance-title">仓位与执行边界</h3>
         <div class="dossier-position-grid">
           <div><span>当前动作</span><strong>{escape(position.current_action)}</strong></div>
           <div><span>仓位上限</span><strong>{escape(position.position_cap)}</strong></div>
@@ -156,24 +162,14 @@ def _render_dossier_workspace(
         </div>
       </section>
       <section aria-labelledby="diagnostic-title">
-        <div class="dossier-section-title"><span>RESEARCH FILE</span>
-          <h3 id="diagnostic-title">诊断底稿</h3>
-          <p>每项结论同时展示事实、风险与口径限制。</p></div>
-        <div class="dossier-diagnostic-grid">{diagnostic_cards}</div>
+        <h3 id="diagnostic-title">诊断底稿</h3>
+        <div class="dossier-diagnostic-summary-grid">{diagnostic_summaries}</div>
       </section>
       <section aria-labelledby="dossier-scenarios-title">
-        <div class="dossier-section-title"><span>SCENARIOS</span>
-          <h3 id="dossier-scenarios-title">三种情景</h3>
-          <p>不填虚假概率，只定义确认、动作和失效。</p></div>
+        <h3 id="dossier-scenarios-title">三种情景</h3>
         <div class="dossier-scenario-grid">{scenario_cards}</div>
       </section>
-      <details class="evidence-audit dossier-evidence-ledger">
-        <summary>证据账本 · 来源、日期、状态与限制</summary>
-        <table class="data-table"><thead><tr>
-          <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>结论与限制</th>
-        </tr></thead><tbody>{evidence_rows}</tbody></table>
-      </details>
-      {supporting}
+      {evidence}
     </section>"""
 
 
@@ -261,48 +257,35 @@ def _render_memo_workspace(
         </div>
       </section>
       <section aria-labelledby="investment-memo-title">
-        <div class="research-section-heading">
-          <span>01</span><div><h3 id="investment-memo-title">投资备忘录</h3>
-          <p>把公司质量、市场预期和估值约束放在价格信号之前。</p></div>
-        </div>
+        <h3 id="investment-memo-title">投资备忘录</h3>
         <div class="investment-memo-grid">{memo_sections}</div>
       </section>
       <section aria-labelledby="stock-scenarios-title">
-        <div class="research-section-heading">
-          <span>02</span><div><h3 id="stock-scenarios-title">三情景推演</h3>
-          <p>不预测确定收益，只定义前提、信号、动作和证伪。</p></div>
-        </div>
+        <h3 id="stock-scenarios-title">三情景推演</h3>
         <div class="research-scenario-grid">{scenario_html}</div>
       </section>
       <section aria-labelledby="stock-evidence-title">
-        <div class="research-section-heading">
-          <span>03</span><div><h3 id="stock-evidence-title">六类证据</h3>
-          <p>经营、估值、技术、资金、事件和组合上下文分别审计。</p></div>
-        </div>
+        <h3 id="stock-evidence-title">六类证据</h3>
         <div class="stock-evidence-grid">{evidence_html}</div>
-        <div class="investment-memo-grid">{secondary_sections}</div>
-        {technical_html}
       </section>
       <section class="research-actions" aria-labelledby="research-actions-title">
         <span>下一步研究动作</span>
         <h3 id="research-actions-title">{escape(memo.verdict.next_review)}</h3>
       </section>
       <section class="trade-plan-section" aria-labelledby="trade-plan-title">
-        <div class="research-section-heading">
-          <span>04</span><div><h3 id="trade-plan-title">交易计划</h3>
-          <p>交易触发不能反向证明投资逻辑。</p></div>
-        </div>
+        <h3 id="trade-plan-title">交易计划</h3>
         {trade_plan_html}
       </section>
-      <details class="evidence-audit">
-        <summary>证据审计 · 来源、日期与研究限制</summary>
-        <table class="data-table"><thead><tr>
-          <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>限制</th>
-        </tr></thead><tbody>{audit_rows}</tbody></table>
-      </details>
-      <details class="agent-debate">
-        <summary>完整角色审议 · 多空、交易员与风险经理</summary>
-        {agent_debate_html}
+      <details class="stock-evidence essence-evidence">
+        <summary>证据账本</summary>
+        <div class="essence-evidence-body">
+          <div class="investment-memo-grid">{secondary_sections}</div>
+          {technical_html}
+          <table class="data-table"><thead><tr>
+            <th>证据块</th><th>状态</th><th>来源</th><th>日期</th><th>限制</th>
+          </tr></thead><tbody>{audit_rows}</tbody></table>
+          {agent_debate_html}
+        </div>
       </details>
     </section>"""
 

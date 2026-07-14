@@ -1169,8 +1169,7 @@ def render_page(
         auth_enabled=is_auth_enabled(auth_config),
       )}
     <main class="workspace">
-      {_render_global_freshness_bar(quality, market, provider_class, risk_gate)}
-      {_render_data_center_summary(quality.data_center)}
+      {_render_global_freshness_bar(quality, market, risk_gate)}
       {build_workspace_sections(section_map)}
     </main>
   </div>
@@ -3750,13 +3749,8 @@ def _retitle_module(html: str, *, old_id: str, new_id: str) -> str:
 def _render_global_freshness_bar(
     quality: DataQualityView,
     market: MarketSnapshot,
-    provider_class: str,
     risk_gate: RiskGateView,
 ) -> str:
-    data_detail = _freshness_detail(quality)
-    provider_label = (
-        "TDX MCP" if quality.requested_provider == WEB_DATA_PROVIDER else provider_class
-    )
     trade_date = market.trade_date or quality.market_date or "待确认"
     return f"""
       <section class="freshness-bar research-tape"
@@ -3769,12 +3763,6 @@ def _render_global_freshness_bar(
           <strong>{escape(quality.signal)}</strong></div>
         <div class="research-tape-item core"><span>交易日</span>
           <strong>{escape(trade_date)}</strong></div>
-        <div class="research-tape-item secondary"><span>行情日期</span>
-          <strong>{escape(quality.latest_date or '待确认')}</strong></div>
-        <div class="research-tape-item secondary"><span>证据覆盖</span>
-          <strong>{escape(data_detail)}</strong></div>
-        <div class="research-tape-item secondary"><span>来源</span>
-          <strong>{escape(provider_label)}</strong></div>
         <a class="research-tape-data-link" href="#data-center">数据详情 <span>→</span></a>
       </section>"""
 
@@ -4018,52 +4006,6 @@ def _render_data_center_panel(
             workspace="data-center",
         ),
     )
-
-
-def _render_data_center_summary(data_center: DataCenterView) -> str:
-    blocked_count = sum(1 for row in data_center.rows if row.level == "blocked")
-    warn_count = sum(1 for row in data_center.rows if row.level == "warn")
-    if blocked_count:
-        message = f"{blocked_count} 个数据域影响分析，先核对数据中台"
-        level = "blocked"
-    elif warn_count:
-        message = f"{warn_count} 个数据域需复核"
-        level = "warn"
-    else:
-        message = "数据可用"
-        level = "ok"
-    return f"""
-      <div class="data-center-summary {escape(level)}" aria-label="数据中台摘要">
-        <span>数据中台：{escape(data_center.status)}</span>
-        <strong>{escape(message)}</strong>
-        <span>更新 {escape(data_center.updated_at)}</span>
-        <a href="#data-center">查看完整状态</a>
-      </div>"""
-
-
-def _freshness_detail(quality: DataQualityView) -> str:
-    kline_warning = next(
-        (warning for warning in quality.warnings if warning.startswith("K线已滞后")),
-        "",
-    )
-    if kline_warning:
-        return kline_warning
-    if any("自动更新已滞后" in warning for warning in quality.warnings):
-        return "自动更新已滞后，先刷新数据流水线"
-    if any("数据已滞后" in warning for warning in quality.warnings):
-        return "已滞后，不能按今天盘面执行"
-    context_warnings = [
-        warning
-        for warning in quality.warnings
-        if warning.startswith("市场新闻")
-    ]
-    if context_warnings:
-        return "；".join(context_warnings[:2])
-    if quality.gate_level == "blocked":
-        return "有缺口"
-    if quality.gate_level == "warn":
-        return "需复核"
-    return "可用"
 
 
 def _read_latest_daily_decisions() -> dict[str, object]:
@@ -4692,7 +4634,7 @@ def _render_hot_opportunity_module(
     sector_risk = _render_opportunity_sector_risk_chip(sectors)
     return f"""
     <section class="module" id="module-opportunity">
-      <div class="module-header"><div><h2 class="module-title">热点机会</h2><p class="module-desc">先过市场与数据闸门，再把候选送入个股档案验证；这里不形成买卖结论。</p></div><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(dossier.gate.state)}</span>{sector_risk}{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
+      <div class="module-header"><h2 class="module-title">热点机会</h2><div class="module-header-meta"><span class="risk-pill mid">{escape(mainline)}</span><span class="status-pill">{escape(dossier.gate.state)}</span>{sector_risk}{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="opportunity")}</div></div>
       {workspace}
     </section>"""
 
@@ -6527,10 +6469,7 @@ def _render_compact_market_module(
     return f"""
     <section class="module market-console" id="module-market">
       <div class="module-header market-header">
-        <div>
-          <h2 class="module-title">每日大盘</h2>
-          <p class="module-desc">当前时刻股票涨跌统计、强弱板块与分析。</p>
-        </div>
+        <h2 class="module-title">每日大盘</h2>
         <div class="module-header-meta">
           <span class="market-state-pill {_market_risk_tone(market)}">{escape(market.trade_date)}</span>
         </div>
@@ -8581,7 +8520,7 @@ def _render_compact_portfolio_module(
     notice_html = _render_portfolio_notice(notice)
     return f"""
     <section class="module" id="module-portfolio">
-      <div class="module-header"><div><h2 class="module-title">我的持仓</h2><p class="module-desc">只维护和分析真实持仓；新增、删除、成本价和股数修改后自动刷新分析。</p></div><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="portfolio")}</div></div>
+      <div class="module-header"><h2 class="module-title">我的持仓</h2><div class="module-header-meta"><span class="risk-pill mid">健康度 {portfolio.health_score}/100</span><span class="status-pill">持仓 {len(portfolio.positions)} 只</span>{_render_module_refresh_tools(refresh_time=refresh_time, stock_code=stock_code, provider_name=provider_name, holdings_path=holdings_path, workspace="portfolio")}</div></div>
       {notice_html}
       {workspace}
       {editor}
@@ -9772,7 +9711,7 @@ def _render_compact_stock_module(
     )
     return f"""
     <section class="module" id="module-stock">
-      <div class="module-header"><div><h2 class="module-title">个股分析</h2><p class="module-desc">用一份投委会档案统一研究立场、风险、触发与失效边界。</p></div><div class="module-header-meta"><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
+      <div class="module-header"><h2 class="module-title">个股分析</h2><div class="module-header-meta"><span class="status-pill">{escape(stock.name)} · {escape(stock.code)}</span></div></div>
       {research_workspace}
     </section>"""
 
@@ -9784,9 +9723,7 @@ def _render_stock_simple_entry(
 ) -> str:
     return f"""
       <div class="panel stock-switch-panel">
-        <div class="editor-toolbar">
-          <div><h3>分析入口</h3><p class="section-subtitle">输入股票代码或名称后，页面只展示本次分析结果。</p></div>
-        </div>
+        <h3>分析入口</h3>
         <form class="stock-form" method="get" action="{workspace_action("module-stock")}">
           <input type="hidden" name="provider" value="{escape(provider_name)}" />
           <input type="hidden" name="holdings" value="{escape(holdings_path)}" />

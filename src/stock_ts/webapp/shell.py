@@ -48,7 +48,6 @@ def render_sidebar(
         <button type="submit">分析个股</button>
       </form>
       <nav class="nav-group">{nav}</nav>
-      <div class="sidebar-note">研究、观察、条件、风险；不做收益承诺。</div>
     </aside>"""
 
 

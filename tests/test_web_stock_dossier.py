@@ -157,6 +157,8 @@ def test_dossier_styles_define_desktop_mobile_and_reduced_motion() -> None:
     assert "font-variant-numeric: tabular-nums" in CSS
     assert "@media (max-width: 760px)" in CSS
     assert "prefers-reduced-motion" in CSS
+    mobile_css = CSS.split("@media (max-width:680px)", 1)[1]
+    assert ".stock-identity-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }" in mobile_css
 
 
 def test_mobile_data_quality_summary_uses_readable_grid() -> None:

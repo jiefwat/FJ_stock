@@ -77,6 +77,7 @@ def test_opportunity_workspace_is_gate_first_and_not_buy_first() -> None:
     assert "推荐买入" not in html
     assert "推荐股票" not in html
     assert "买入建议" not in html
+    assert "其余 0 只候选" not in html
 
 
 def test_stale_workspace_exposes_zero_eligible_candidates() -> None:

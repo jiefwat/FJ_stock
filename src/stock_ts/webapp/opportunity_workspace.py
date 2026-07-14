@@ -21,8 +21,7 @@ def render_opportunity_workspace(
     funnel = "".join(
         "<article class=\"opportunity-funnel-step "
         f"stage-{escape(item.status)}\">"
-        f"<span>{escape(item.name)}</span><strong>{item.count}</strong>"
-        f"<p>{escape(item.note)}</p></article>"
+        f"<span>{escape(item.name)}</span><strong>{item.count}</strong></article>"
         for item in dossier.funnel
     )
     risks = "".join(
@@ -32,34 +31,53 @@ def render_opportunity_workspace(
         f"<strong>{escape(item.category)}</strong></div>"
         f"<p>{escape(item.evidence)}</p>"
         f"<small>{escape(item.consequence)}</small></article>"
-        for item in dossier.risks
+        for item in dossier.risks[:3]
     )
-    front_candidates = dossier.candidates[:6]
-    overflow_candidates = dossier.candidates[6:]
+    risk_rest = "".join(
+        "<article class=\"opportunity-risk-item "
+        f"severity-{escape(item.severity)}\">"
+        f"<div><strong>{escape(item.category)}</strong></div>"
+        f"<p>{escape(item.evidence)}</p>"
+        f"<small>{escape(item.consequence)}</small></article>"
+        for item in dossier.risks[3:]
+    )
+    front_candidates = dossier.candidates[:3]
+    overflow_candidates = dossier.candidates[3:]
     candidates = "".join(
         _render_candidate(item, provider_name=provider_name, holdings_path=holdings_path)
         for item in front_candidates
     )
-    overflow = ""
-    if overflow_candidates:
-        overflow_cards = "".join(
-            _render_candidate(
-                item,
-                provider_name=provider_name,
-                holdings_path=holdings_path,
-            )
-            for item in overflow_candidates
+    overflow_cards = "".join(
+        _render_candidate(
+            item,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
         )
-        overflow = (
-            '<details class="candidate-overflow research-overflow">'
-            f"<summary>查看其余 {len(overflow_candidates)} 只候选</summary>"
-            f'<div class="candidate-decision-grid">{overflow_cards}</div></details>'
-        )
+        for item in overflow_candidates
+    )
     if not candidates:
         candidates = (
             '<div class="dossier-empty-state">候选池为空；刷新候选源后重新生成研究漏斗。</div>'
-        )
+    )
     source_notes = "".join(f"<li>{escape(item)}</li>" for item in dossier.source_notes)
+    candidate_audit = "".join(_render_candidate_audit(item) for item in dossier.candidates)
+    overflow_section = (
+        f"<h4>其余 {len(overflow_candidates)} 只候选</h4>"
+        f'<div class="candidate-decision-grid">{overflow_cards}</div>'
+        if overflow_cards
+        else ""
+    )
+    evidence = f"""
+      <details class="opportunity-evidence essence-evidence">
+        <summary>筛选与来源账本</summary>
+        <div class="essence-evidence-body">
+          {overflow_section}
+          <div class="candidate-audit-grid">{candidate_audit}</div>
+          {risk_rest}
+          <ul>{source_notes}</ul>
+          {supporting_html}
+        </div>
+      </details>"""
     return f"""
     <section class="opportunity-dossier"
       data-opportunity-state="{escape(gate.state)}">
@@ -82,29 +100,20 @@ def render_opportunity_workspace(
         </div>
       </section>
       <section aria-labelledby="opportunity-funnel-title">
-        <div class="dossier-section-title"><span>RESEARCH FUNNEL</span>
-          <h3 id="opportunity-funnel-title">证据漏斗</h3>
-          <p>先校验数据，再排除风险，最后才开放个股验证。</p></div>
-        <div class="opportunity-funnel-rail">{funnel}</div>
+        <h3 id="opportunity-funnel-title">证据漏斗</h3>
+        <div class="opportunity-funnel-rail essence-strip">{funnel}</div>
       </section>
       <div class="opportunity-research-grid">
         <section aria-labelledby="opportunity-candidates-title">
-          <div class="dossier-heading"><span>CANDIDATES</span>
-            <h3 id="opportunity-candidates-title">研究候选</h3></div>
+          <h3 id="opportunity-candidates-title">研究候选</h3>
           <div class="candidate-decision-grid">{candidates}</div>
-          {overflow}
         </section>
         <section class="opportunity-risk-register" aria-labelledby="opportunity-risks-title">
-          <div class="dossier-heading"><span>RISK FIRST</span>
-            <h3 id="opportunity-risks-title">风险排除</h3></div>
+          <h3 id="opportunity-risks-title">风险排除</h3>
           {risks}
         </section>
       </div>
-      <details class="opportunity-source-ledger">
-        <summary>筛选与来源账本</summary>
-        <ul>{source_notes}</ul>
-      </details>
-      {supporting_html}
+      {evidence}
     </section>"""
 
 
@@ -114,8 +123,8 @@ def _render_candidate(
     provider_name: str,
     holdings_path: str,
 ) -> str:
-    evidence = "".join(f"<li>{escape(value)}</li>" for value in item.evidence)
-    counter = "".join(f"<li>{escape(value)}</li>" for value in item.counter_evidence)
+    evidence = "".join(f"<li>{escape(value)}</li>" for value in item.evidence[:1])
+    counter = "".join(f"<li>{escape(value)}</li>" for value in item.counter_evidence[:1])
     query = urlencode(
         {
             "code": item.code,
@@ -156,3 +165,15 @@ def _state_class(state: str) -> str:
         "风险排除": "excluded",
         "待补数据": "blocked",
     }.get(state, "watch")
+
+
+def _render_candidate_audit(item: CandidateDecision) -> str:
+    evidence = "".join(f"<li>{escape(value)}</li>" for value in item.evidence)
+    counter = "".join(f"<li>{escape(value)}</li>" for value in item.counter_evidence)
+    return (
+        '<article class="candidate-audit-card">'
+        f"<strong>{escape(item.name)} · {escape(item.code)}</strong>"
+        f"<div><span>支持证据</span><ul>{evidence}</ul></div>"
+        f"<div><span>最大反证</span><ul>{counter}</ul></div>"
+        "</article>"
+    )
