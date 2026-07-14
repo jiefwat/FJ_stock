@@ -62,6 +62,10 @@ SKILLS = {
         endpoint="/v1/comprehensive/search",
         channel="news",
     ),
+    "index": IwencaiSkill("hithink-zhishu-query", "指数结构"),
+    "macro": IwencaiSkill("hithink-macro-query", "宏观变量"),
+    "sector_selector": IwencaiSkill("hithink-sector-selector", "板块筛选"),
+    "astock_selector": IwencaiSkill("hithink-astock-selector", "A股筛选"),
 }
 
 ROUTING_RULES = (
@@ -80,6 +84,38 @@ ROUTING_RULES = (
     ),
 )
 
+MODULE_ROUTING_RULES = {
+    "market": (
+        (
+            ("news", ("新闻", "风险", "舆情", "消息")),
+            ("macro", ("宏观", "政策", "利率", "通胀", "汇率", "经济")),
+            ("sector_selector", ("板块", "行业", "主线", "方向", "筛选")),
+            ("index", ("指数", "上证", "沪深", "创业板", "科创")),
+        ),
+        "index",
+    ),
+    "portfolio": (
+        (
+            ("announcement", ("公告", "年报", "季报")),
+            ("report", ("研报", "目标价", "研究报告")),
+            ("event", ("业绩风险", "事件", "解禁", "质押", "监管", "预告")),
+            ("consensus", ("机构", "预期", "评级", "预测", "下修")),
+            ("market", ("资金", "行情", "技术", "成交", "异动")),
+            ("finance", ("财务", "利润", "营收", "现金流", "roe", "负债")),
+        ),
+        "event",
+    ),
+    "opportunity": (
+        (
+            ("astock_selector", ("a股", "选股", "股票筛选", "筛选股票")),
+            ("sector_selector", ("板块", "行业", "主线", "持续性", "方向")),
+            ("event", ("事件", "催化", "预告", "解禁", "质押", "监管")),
+            ("news", ("新闻", "消息", "舆情", "风险排除")),
+        ),
+        "sector_selector",
+    ),
+}
+
 
 def route_stock_research_skill(question: str) -> IwencaiSkill:
     normalized = question.strip().lower()
@@ -87,6 +123,50 @@ def route_stock_research_skill(question: str) -> IwencaiSkill:
         if any(keyword in normalized for keyword in keywords):
             return SKILLS[skill_key]
     return SKILLS["finance"]
+
+
+def route_module_research_skill(module: str, question: str) -> IwencaiSkill:
+    normalized_module = module.strip().lower()
+    if normalized_module == "stock":
+        return route_stock_research_skill(question)
+    if normalized_module not in MODULE_ROUTING_RULES:
+        raise ValueError("不支持的研究模块。")
+    rules, fallback = MODULE_ROUTING_RULES[normalized_module]
+    normalized_question = question.strip().lower()
+    for skill_key, keywords in rules:
+        if any(keyword in normalized_question for keyword in keywords):
+            return SKILLS[skill_key]
+    return SKILLS[fallback]
+
+
+def build_module_research_query(
+    module: str,
+    question: str,
+    *,
+    code: str = "",
+    name: str = "",
+    sector: str = "",
+) -> str:
+    normalized_module = module.strip().lower()
+    if normalized_module not in {"market", "portfolio", "stock", "opportunity"}:
+        raise ValueError("不支持的研究模块。")
+    cleaned_question = _clean_query_part(question, 200)
+    if normalized_module == "market":
+        values = (cleaned_question,)
+    elif normalized_module == "opportunity":
+        values = (
+            _clean_query_part(sector, 64),
+            _clean_query_part(name, 64),
+            _clean_query_part(code, 32),
+            cleaned_question,
+        )
+    else:
+        values = (
+            _clean_query_part(name, 64),
+            _clean_query_part(code, 32),
+            cleaned_question,
+        )
+    return " ".join(value for value in values if value)
 
 
 def iwencai_config_summary(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -238,6 +318,39 @@ def build_stock_research_response(
     }
 
 
+def build_module_research_response(
+    raw: Mapping[str, Any],
+    *,
+    module: str,
+    skill: IwencaiSkill,
+    question: str,
+    query: str,
+    context_label: str,
+    local_as_of: str,
+    queried_at: str,
+) -> dict[str, Any]:
+    result = build_stock_research_response(
+        raw,
+        skill=skill,
+        question=question,
+        query=query,
+        local_as_of=local_as_of,
+        queried_at=queried_at,
+    )
+    result.update(
+        {
+            "module": module,
+            "context_label": context_label,
+            "relationship": (
+                "外部事实仅用于交叉验证，不自动改写 StockTs 本地结论、风险闸门、"
+                "持仓动作或候选排序。"
+            ),
+            "local_context": f"StockTs 本地数据日期 {local_as_of or '缺失'}",
+        }
+    )
+    return result
+
+
 def _compact_row(row: Mapping[str, Any]) -> dict[str, str]:
     preferred = ("股票简称", "股票代码", "证券简称", "证券代码", "名称", "代码")
     keys = [key for key in preferred if key in row]
@@ -251,6 +364,11 @@ def _compact_row(row: Mapping[str, Any]) -> dict[str, str]:
             continue
         result[key[:40]] = _display_value(value)
     return result
+
+
+def _clean_query_part(value: str, limit: int) -> str:
+    cleaned = "".join(character if character.isprintable() else " " for character in value)
+    return " ".join(cleaned.split())[:limit]
 
 
 def _display_value(value: Any) -> str:
