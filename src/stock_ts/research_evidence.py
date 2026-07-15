@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,8 @@ CAPABILITY_SCHEMAS = {
             ("成交额", "成交量", "换手率"),
             ("排名", "评分"),
             ("入选理由", "筛选理由"),
+            ("所属概念", "概念"),
+            ("所属行业", "行业"),
         ),
         context_groups=(("股票代码", "证券代码"), ("股票简称", "证券简称", "股票名称")),
         allow_quote_fields=True,
@@ -148,15 +151,17 @@ CAPABILITY_SCHEMAS = {
             ("日期", "时间"),
         ),
         context_groups=(("股票代码", "证券代码"), ("股票简称", "证券简称", "股票名称")),
+        allow_quote_fields=True,
     ),
     "industry": CapabilitySchema(
         (
+            ("行业名称", "所属行业", "所属概念", "概念名称"),
             ("行业排名", "排名"),
             ("市盈率", "市净率", "估值"),
             ("同行", "竞争"),
             ("市场地位", "市占率"),
         ),
-        context_groups=(("行业名称", "所属行业"), ("股票代码", "证券代码")),
+        context_groups=(("股票代码", "证券代码"),),
     ),
     "announcement": CapabilitySchema(
         (
@@ -244,6 +249,28 @@ PERCENT_FIELD_TOKENS = (
     "涨幅",
     "跌幅",
     "换手",
+)
+
+COMPACT_NUMBER_FIELD_TOKENS = ("热度", "强度")
+
+PRICE_FIELD_TOKENS = (
+    "最新价",
+    "收盘价",
+    "开盘价",
+    "最高价",
+    "最低价",
+    "点位",
+    "价格",
+)
+
+DATE_FIELD_TOKENS = (
+    "日期",
+    "时间",
+    "报告期",
+    "发布日期",
+    "公告日",
+    "publish_date",
+    "publish_time",
 )
 
 
@@ -424,12 +451,30 @@ def _render_value(label: str, value: object) -> str:
             return f"{float(value):.2f}%"
         if any(token in label.lower() for token in MONEY_FIELD_TOKENS):
             return _format_amount(float(value))
+        if any(token in label.lower() for token in COMPACT_NUMBER_FIELD_TOKENS):
+            return _format_compact_number(float(value))
+        if any(token in label.lower() for token in PRICE_FIELD_TOKENS):
+            return _format_plain_number(float(value))
         return f"{value:g}"
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
             return ""
-        if _looks_like_date(stripped):
+        if _is_code_identity_label(label):
+            return _clean_text(stripped, 180)
+        numeric = _numeric_string(stripped)
+        if numeric is not None:
+            if any(token in label.lower() for token in PERCENT_FIELD_TOKENS):
+                return f"{numeric:.2f}%"
+            if any(token in label.lower() for token in MONEY_FIELD_TOKENS):
+                return _format_amount(numeric)
+            if any(
+                token in label.lower() for token in COMPACT_NUMBER_FIELD_TOKENS
+            ):
+                return _format_compact_number(numeric)
+            if any(token in label.lower() for token in PRICE_FIELD_TOKENS):
+                return _format_plain_number(numeric)
+        if _is_date_label(label) and _looks_like_date(stripped):
             return _format_date(stripped)
         return _clean_text(stripped, 180)
     if isinstance(value, list):
@@ -443,10 +488,52 @@ def _render_value(label: str, value: object) -> str:
 def _format_amount(value: float) -> str:
     absolute = abs(value)
     if absolute >= 100_000_000:
-        return f"{value / 100_000_000:.2f} 亿"
+        return _format_scaled_number(value, 100_000_000, "亿")
     if absolute >= 10_000:
-        return f"{value / 10_000:.2f} 万"
+        return _format_scaled_number(value, 10_000, "万")
     return f"{value:g} 元"
+
+
+def _format_compact_number(value: float) -> str:
+    absolute = abs(value)
+    if absolute >= 100_000_000:
+        return _format_scaled_number(value, 100_000_000, "亿")
+    if absolute >= 10_000:
+        return _format_scaled_number(value, 10_000, "万")
+    return f"{value:g}"
+
+
+def _format_scaled_number(value: float, divisor: int, suffix: str) -> str:
+    scaled = Decimal(str(value)) / Decimal(divisor)
+    rounded = scaled.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return f"{rounded:.2f} {suffix}"
+
+
+def _format_plain_number(value: float) -> str:
+    rendered = format(Decimal(str(value)), "f")
+    return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
+
+
+def _numeric_string(value: str) -> float | None:
+    if not re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _is_code_identity_label(label: str) -> bool:
+    normalized = label.lower()
+    return any(
+        term in normalized
+        for term in ("股票代码", "证券代码", "指数代码", "交易所代码")
+    )
+
+
+def _is_date_label(label: str) -> bool:
+    normalized = label.lower()
+    return any(term in normalized for term in DATE_FIELD_TOKENS)
 
 
 def _looks_like_date(value: str) -> bool:

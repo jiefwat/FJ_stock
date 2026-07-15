@@ -235,6 +235,20 @@ def test_industry_and_report_rows_require_professional_evidence() -> None:
     assert any(fact.label == "标题" for fact in report[0])
 
 
+def test_industry_classification_alone_counts_as_evidence() -> None:
+    industry = normalize_capability_rows(
+        "industry",
+        {"datas": [{"股票代码": "603278", "所属行业": "金属制品"}]},
+    )
+    concept = normalize_capability_rows(
+        "industry",
+        {"datas": [{"股票代码": "600001", "所属概念": "创新药"}]},
+    )
+
+    assert any(fact.label == "所属行业" for fact in industry[0])
+    assert any(fact.label == "所属概念" for fact in concept[0])
+
+
 def test_breadth_and_hot_stock_rows_keep_required_fields() -> None:
     breadth = normalize_capability_rows(
         "breadth",
@@ -305,6 +319,60 @@ def test_numeric_change_rate_keeps_upstream_percent_unit() -> None:
 
     change = next(fact for fact in rows[0] if "涨跌幅" in fact.label)
     assert change.value == "-0.33%"
+
+
+def test_scientific_numeric_strings_use_human_units() -> None:
+    rows = normalize_capability_rows(
+        "sector_selector",
+        {
+            "datas": [
+                {
+                    "板块名称": "CPO",
+                    "成交额": "3.018592716424E10",
+                    "板块热度": "2.42355e6",
+                }
+            ]
+        },
+    )
+
+    facts = {fact.label: fact.value for fact in rows[0]}
+    assert facts["成交额"] == "301.86 亿"
+    assert facts["板块热度"] == "242.36 万"
+    assert all("e" not in value.lower() for value in facts.values())
+
+
+def test_eight_digit_numeric_strings_follow_field_semantics() -> None:
+    sector = normalize_capability_rows(
+        "sector_selector",
+        {
+            "datas": [
+                {
+                    "指数代码": "20260715",
+                    "板块名称": "CPO",
+                    "成交额": "20260715",
+                }
+            ]
+        },
+    )
+    index = normalize_capability_rows(
+        "index",
+        {
+            "datas": [
+                {
+                    "指数简称": "测试指数",
+                    "最新价": "20260715",
+                    "发布日期": "20260715",
+                }
+            ]
+        },
+    )
+
+    sector_facts = {fact.label: fact.value for fact in sector[0]}
+    index_facts = {fact.label: fact.value for fact in index[0]}
+    assert sector_facts["成交额"] == "2026.07 万"
+    assert sector_facts["指数代码"] == "20260715"
+    assert index_facts["最新价"] == "20260715"
+    assert index_facts["发布日期"] == "2026-07-15"
 
 
 def test_finance_keeps_previous_revenue_after_balancing_core_metrics() -> None:

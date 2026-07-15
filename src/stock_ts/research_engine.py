@@ -13,8 +13,15 @@ from .iwencai import SKILLS, IwencaiSkillClient
 from .research_evidence import normalize_capability_rows, raw_rows
 
 WORKSPACE_CAPABILITIES = {
-    "market": ("index", "macro", "sector_selector", "news"),
-    "portfolio": ("event", "consensus", "market"),
+    "market": (
+        "index",
+        "breadth",
+        "sector_selector",
+        "hot_stock",
+        "macro",
+        "news",
+    ),
+    "portfolio": ("event", "consensus", "market", "industry"),
     "stock": (
         "finance",
         "business",
@@ -65,7 +72,14 @@ FINDING_TITLES = {
 }
 
 FRONT_PRIORITY = {
-    "market": {"index": 0, "sector_selector": 1, "news": 2, "macro": 3},
+    "market": {
+        "index": 0,
+        "sector_selector": 1,
+        "news": 2,
+        "breadth": 3,
+        "hot_stock": 4,
+        "macro": 5,
+    },
     "stock": {"event": 0, "finance": 1, "consensus": 2, "business": 3},
     "opportunity": {
         "sector_selector": 0,
@@ -86,7 +100,7 @@ MODULE_COPY = {
         "complete": "重点持仓风险证据已更新，进入逐只复核。",
         "partial": "部分持仓证据缺失，当前只处理已确认的风险。",
         "action": "先处理事件与预期恶化的持仓，再检查价格和资金确认。",
-        "risk": "持仓数量、成本和权重未参与研究，仓位动作需由账户侧另行约束。",
+        "risk": "当前只分析研究证据，资金暴露需由账户侧另行约束。",
     },
     "stock": {
         "complete": "公司经营、财务、预期与事件证据已更新。",
@@ -103,15 +117,11 @@ MODULE_COPY = {
 }
 
 PUBLIC_REPLACEMENTS = {
-    "问财": "研究服务",
-    "iWencai": "研究服务",
-    "IWENCAI": "研究服务",
-    "iwencai": "研究服务",
-    "同花顺": "数据服务",
     "Skill": "能力",
     "SKILL": "能力",
     "skill": "能力",
 }
+PUBLIC_BRAND_TERMS = ("问财", "iwencai", "同花顺")
 
 @dataclass(frozen=True)
 class ResearchTarget:
@@ -141,7 +151,20 @@ class ResearchFact:
     value: str
 
     def to_public_dict(self) -> dict[str, str]:
-        return {"label": self.label, "value": self.value}
+        if _is_identity_fact_label(self.label):
+            public_value = _public_identity_text(self.value, 500)
+        elif _is_classification_label(self.label):
+            public_value = _public_classification_value(self.value, 500)
+        else:
+            public_value = _public_free_text(self.value, 500)
+        return {
+            "label": (
+                _public_classification_label(self.label, 64)
+                if _is_classification_label(self.label)
+                else _public_free_text(self.label, 64)
+            ),
+            "value": public_value,
+        }
 
 
 @dataclass(frozen=True)
@@ -154,10 +177,10 @@ class ResearchFinding:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
-            "title": self.title,
-            "summary": self.summary,
-            "target": self.target,
-            "facts": [item.to_public_dict() for item in self.facts],
+            "title": _public_free_text(self.title, 120),
+            "summary": _public_free_text(self.summary, 500, (self.target,)),
+            "target": _public_identity_text(self.target, 120),
+            "facts": _public_fact_dicts(self.facts),
         }
 
 
@@ -170,8 +193,8 @@ class ResearchDetail:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
-            "section": self.section,
-            "target": self.target,
+            "section": _public_free_text(self.section, 120),
+            "target": _public_identity_text(self.target, 120),
             "status": self.status,
             "findings": [item.to_public_dict() for item in self.findings],
         }
@@ -189,15 +212,36 @@ class ResearchModuleItem:
     facts: tuple[ResearchFact, ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
+        classification_kinds = {
+            "candidate",
+            "hot_stock",
+            "portfolio_theme",
+            "theme",
+            "theme_divergence",
+        }
+        public_label = _public_classification_value(self.label, 120)
+        if self.kind not in classification_kinds:
+            public_label = _public_free_text(self.label, 120)
+        elif not public_label:
+            public_label = "主题待确认"
+        classification_name_kinds = {"portfolio_theme", "theme", "theme_divergence"}
+        public_name = (
+            _public_classification_value(self.name, 120)
+            if self.kind in classification_name_kinds
+            else _public_identity_text(self.name, 120)
+        )
+        if self.kind in classification_name_kinds and not public_name:
+            public_name = "主题待确认"
+        identities = (self.name,) if self.kind not in classification_name_kinds else ()
         return {
             "kind": self.kind,
-            "code": self.code,
-            "name": self.name,
-            "label": self.label,
-            "summary": self.summary,
-            "risk": self.risk,
+            "code": _public_identity_text(self.code, 64),
+            "name": public_name,
+            "label": public_label,
+            "summary": _public_free_text(self.summary, 500, identities),
+            "risk": _public_free_text(self.risk, 500),
             "status": self.status,
-            "facts": [fact.to_public_dict() for fact in self.facts],
+            "facts": _public_fact_dicts(self.facts),
         }
 
 
@@ -212,8 +256,8 @@ class ResearchModuleSection:
     def to_public_dict(self) -> dict[str, object]:
         return {
             "key": self.key,
-            "title": self.title,
-            "conclusion": self.conclusion,
+            "title": _public_free_text(self.title, 120),
+            "conclusion": _public_free_text(self.conclusion, 500),
             "tone": self.tone,
             "items": [item.to_public_dict() for item in self.items],
         }
@@ -241,17 +285,26 @@ class ResearchWorkspaceResult:
     module_sections: tuple[ResearchModuleSection, ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
+        identities = tuple(
+            item.name
+            for item in self.module_items
+            if item.kind not in {"portfolio_theme", "theme", "theme_divergence"}
+        )
         return {
             "ok": self.ok,
             "status": self.status,
             "module": self.module,
             "generated_at": self.generated_at,
-            "verdict": self.verdict,
-            "action": self.action,
-            "primary_risk": self.primary_risk,
+            "verdict": _public_free_text(self.verdict, 500, identities),
+            "action": _public_free_text(self.action, 500),
+            "primary_risk": _public_free_text(self.primary_risk, 500, identities),
             "findings": [item.to_public_dict() for item in self.findings],
             "details": [item.to_public_dict() for item in self.details],
-            "missing_sections": list(self.missing_sections),
+            "missing_sections": [
+                text
+                for item in self.missing_sections
+                if (text := _public_free_text(item, 200, identities))
+            ],
             "subject_count": self.subject_count,
             "coverage": {
                 "ready": self.coverage_ready,
@@ -260,7 +313,7 @@ class ResearchWorkspaceResult:
             "delivery": self.delivery,
             "as_of": self.as_of or self.generated_at,
             "module_items": [item.to_public_dict() for item in self.module_items],
-            "decision_label": self.decision_label,
+            "decision_label": _public_free_text(self.decision_label, 120),
             "module_sections": [item.to_public_dict() for item in self.module_sections],
         }
 
@@ -418,15 +471,21 @@ def _prompt_for(module: str, capability: str) -> str:
             "上证指数、深证成指、创业板指 最新点位 涨跌幅 成交额 "
             "近5日涨跌幅 近20日涨跌幅 5日均线 20日均线"
         ),
+        ("market", "breadth"): "A股 今日上涨家数 下跌家数 平盘家数 涨停家数 跌停家数",
         ("market", "macro"): "近期影响A股风险偏好的宏观指标与政策变化",
         ("market", "sector_selector"): (
             "行业板块 排除融资融券 按成交额和热度排序 前5"
+        ),
+        ("market", "hot_stock"): (
+            "A股 按成交额从高到低排序 前10 股票代码 股票简称 涨跌幅 "
+            "成交额 所属概念板块 所属行业"
         ),
         ("market", "news"): "近期影响A股风险偏好的重要新闻与风险事件",
         ("portfolio", "event"): "近期业绩预告、解禁、质押、监管和经营风险",
         ("portfolio", "announcement"): "近期公告中需要持有人重点复核的事项",
         ("portfolio", "consensus"): "机构盈利预期、评级及其上调或下修变化",
         ("portfolio", "market"): "近期价格、成交量和资金异动",
+        ("portfolio", "industry"): "所属行业、概念主题、行业排名和同行公司",
         ("stock", "finance"): "收入、利润、现金流、ROE和负债质量变化",
         ("stock", "business"): "主营结构、竞争位置、客户供应链与经营变化",
         ("stock", "consensus"): "未来两年盈利预期、评级和预期变化",
@@ -459,7 +518,8 @@ def _opportunity_query(capability: str, sector: str) -> str:
     prompts = {
         "sector_selector": sector_query,
         "astock_selector": (
-            f"{stock_scope}A股 净利润同比增长 成交额大于5亿 按成交额排序 前10"
+            f"{stock_scope}A股 净利润同比增长 成交额大于5亿 按成交额排序 "
+            "前10 股票代码 股票简称 所属概念 所属行业"
         ),
         "event": f"{scope} 近期业绩预告、公告和事件催化",
         "news": f"{scope} 近期市场主线新闻及需要排除的风险",
@@ -475,6 +535,8 @@ def _clean_text(value: str, limit: int) -> str:
 def _execute_capability(client: Any, request: CapabilityRequest) -> _CapabilityOutcome:
     raw = client.query(SKILLS[request.capability], request.query)
     row_limits = {
+        "breadth": 1,
+        "hot_stock": 10,
         "astock_selector": 10,
         "sector_selector": 5,
         "news": 5,
@@ -497,11 +559,81 @@ def _execute_capability(client: Any, request: CapabilityRequest) -> _CapabilityO
     )
 
 
-def _public_text(value: str, limit: int) -> str:
+def _base_public_text(value: str, limit: int) -> str:
     cleaned = _clean_text(value, limit)
     for source, replacement in PUBLIC_REPLACEMENTS.items():
         cleaned = cleaned.replace(source, replacement)
     return cleaned
+
+
+def _public_identity_text(value: str, limit: int) -> str:
+    return _clean_text(value, limit)
+
+
+def _public_free_text(
+    value: str,
+    limit: int,
+    identities: tuple[str, ...] = (),
+) -> str:
+    cleaned = _base_public_text(value, limit)
+    placeholders: dict[str, str] = {}
+    for index, identity in enumerate(sorted(set(identities), key=len, reverse=True)):
+        identity = _clean_text(identity, limit)
+        if not identity:
+            continue
+        placeholder = f"__identity_{index}__"
+        pattern = re.compile(re.escape(identity) + r"(?=[:：·])")
+        if pattern.search(cleaned):
+            cleaned = pattern.sub(placeholder, cleaned)
+            placeholders[placeholder] = identity
+    for term in PUBLIC_BRAND_TERMS:
+        cleaned = re.sub(re.escape(term), "", cleaned, flags=re.IGNORECASE)
+    for placeholder, identity in placeholders.items():
+        cleaned = cleaned.replace(placeholder, identity)
+    return _clean_text(cleaned, limit)
+
+
+def _is_identity_fact_label(label: str) -> bool:
+    return any(
+        term in label
+        for term in ("股票简称", "证券简称", "股票名称", "证券名称", "公司名称")
+    )
+
+
+def _is_classification_label(label: str) -> bool:
+    return label in {"概念", "行业", "分类"} or any(
+        term in label
+        for term in ("所属概念", "概念名称", "所属行业", "行业名称", "分类")
+    )
+
+
+def _public_classification_label(value: str, limit: int) -> str:
+    cleaned = _base_public_text(value, limit)
+    for term in PUBLIC_BRAND_TERMS:
+        cleaned = re.sub(re.escape(term), "", cleaned, flags=re.IGNORECASE)
+    return _clean_text(cleaned, limit)
+
+
+def _public_classification_value(value: str, limit: int) -> str:
+    tokens = []
+    for raw_token in re.split(r"[、,，/；;]", _base_public_text(value, limit)):
+        token = raw_token.strip()
+        if not token or _contains_public_brand(token):
+            continue
+        tokens.append(token)
+    return "、".join(tokens)[:limit]
+
+
+def _contains_public_brand(value: str) -> bool:
+    normalized = str(value or "").casefold()
+    return any(term.casefold() in normalized for term in PUBLIC_BRAND_TERMS)
+
+
+def _public_fact_dicts(
+    facts: tuple[ResearchFact, ...],
+) -> list[dict[str, str]]:
+    public_facts = [fact.to_public_dict() for fact in facts]
+    return [fact for fact in public_facts if fact["label"] and fact["value"]]
 
 
 def _build_workspace_result(
@@ -538,6 +670,17 @@ def _build_workspace_result(
         for outcome in failed
     )
     module_items = _build_module_items(module, outcomes)
+    module_sections = _build_module_sections(module, outcomes, module_items)
+    decision_label, decision_verdict = _module_decision(
+        module,
+        outcomes,
+        module_items,
+        verdict,
+    )
+    if status not in {"unavailable", "empty"}:
+        verdict = decision_verdict
+    else:
+        decision_label = "待确认"
     subject_count = _subject_count(module, outcomes, module_items)
     return ResearchWorkspaceResult(
         ok=bool(successful),
@@ -555,6 +698,8 @@ def _build_workspace_result(
         coverage_total=len(outcomes),
         as_of=now.isoformat(timespec="seconds"),
         module_items=module_items,
+        decision_label=decision_label,
+        module_sections=module_sections,
     )
 
 
@@ -619,6 +764,852 @@ def _build_module_items(
     )
 
 
+def _build_module_sections(
+    module: str,
+    outcomes: tuple[_CapabilityOutcome, ...],
+    module_items: tuple[ResearchModuleItem, ...],
+) -> tuple[ResearchModuleSection, ...]:
+    if module == "market":
+        return _market_sections(outcomes)
+    if module == "portfolio":
+        return _portfolio_sections(outcomes)
+    if module == "opportunity":
+        return _opportunity_sections(outcomes, module_items)
+    return ()
+
+
+def _module_decision(
+    module: str,
+    outcomes: tuple[_CapabilityOutcome, ...],
+    module_items: tuple[ResearchModuleItem, ...],
+    fallback: str,
+) -> tuple[str, str]:
+    if module == "market":
+        return _market_decision(outcomes)
+    if module == "portfolio":
+        return _portfolio_decision(outcomes, fallback)
+    if module == "stock":
+        return _stock_decision(outcomes, fallback)
+    return _opportunity_decision(outcomes, module_items, fallback)
+
+
+def _market_sections(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[ResearchModuleSection, ...]:
+    themes = _outcome_for(outcomes, "sector_selector")
+    theme_items: list[ResearchModuleItem] = []
+    for row in (themes.rows if themes else ())[:5]:
+        name = _theme_name(row)
+        if not name:
+            continue
+        strong = _sector_row_has_strength(row)
+        theme_items.append(
+            ResearchModuleItem(
+                kind="theme",
+                name=name,
+                label="当前强势主题" if strong else "高关注待确认",
+                summary=_sector_summary(row),
+                risk="热度回落且涨跌幅转负时降级观察",
+                status="ready" if strong else "partial",
+                facts=_display_facts("sector_selector", row),
+            )
+        )
+    theme_items_tuple = tuple(theme_items)
+    breadth = _outcome_for(outcomes, "breadth")
+    breadth_row = breadth.rows[0] if breadth and breadth.rows else ()
+    breadth_items = tuple(
+        ResearchModuleItem(
+            kind="breadth",
+            name=_short_metric(fact.label),
+            label="市场分布",
+            summary=fact.value,
+            status="ready",
+            facts=(fact,),
+        )
+        for fact in breadth_row
+        if any(
+            term in fact.label
+            for term in ("上涨家数", "下跌家数", "平盘家数", "涨停家数", "跌停家数")
+        )
+    )
+    hot = _outcome_for(outcomes, "hot_stock")
+    hot_items = tuple(
+        item
+        for row in (hot.rows if hot else ())[:10]
+        if (item := _hot_stock_item(row)) is not None
+    )
+    strong_theme_names = [
+        name
+        for item in theme_items_tuple
+        if item.status == "ready"
+        if (name := _public_classification_value(item.name, 120))
+    ]
+    theme_names = "、".join(strong_theme_names[:3])
+    has_public_theme_name = any(
+        _public_classification_value(item.name, 120) for item in theme_items_tuple
+    )
+    hot_names = "、".join(item.name for item in hot_items[:3])
+    return (
+        ResearchModuleSection(
+            key="market-themes",
+            title="当前主题",
+            conclusion=(
+                f"{theme_names}靠前，先看持续性与扩散。"
+                if theme_names
+                else "强势主题待确认。"
+                if has_public_theme_name
+                else "主题分类待确认，强度数据已返回。"
+                if theme_items_tuple
+                else "主题证据待补。"
+            ),
+            tone="positive" if theme_names else "neutral",
+            items=theme_items_tuple,
+        ),
+        ResearchModuleSection(
+            key="market-breadth",
+            title="涨跌分布",
+            conclusion=_breadth_summary(breadth_row) if breadth_row else "涨跌分布待补。",
+            tone=_breadth_tone(breadth_row),
+            items=breadth_items,
+        ),
+        ResearchModuleSection(
+            key="market-hot",
+            title="热门股票",
+            conclusion=(
+                f"成交活跃股集中在{hot_names}等标的，需结合所属主题判断。"
+                if hot_names
+                else "热门股票证据待补。"
+            ),
+            items=hot_items,
+        ),
+    )
+
+
+def _portfolio_sections(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[ResearchModuleSection, ...]:
+    groups = _portfolio_theme_groups(outcomes)
+    ordered_groups = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+
+    def theme_item(
+        theme: str,
+        members: list[tuple[ResearchTarget, float | None]],
+    ) -> ResearchModuleItem:
+        return ResearchModuleItem(
+            kind="portfolio_theme",
+            name=theme,
+            label=f"{len(members)}只持仓",
+            summary=(
+                f"{len(members)}只持仓缺少主题证据，已计入待补。"
+                if theme == "主题待补"
+                else f"{theme}覆盖{len(members)}只持仓。"
+            ),
+            risk="仅按持仓数量统计，不代表资金暴露。",
+            status="missing" if theme == "主题待补" else "ready",
+            facts=(ResearchFact(label="持仓数量", value=str(len(members))),),
+        )
+    valid_groups = [(theme, members) for theme, members in ordered_groups if theme != "主题待补"]
+    selected_groups = valid_groups[:8]
+    pending_members = groups.get("主题待补", [])
+    if pending_members:
+        selected_groups = selected_groups[:7]
+    theme_items = tuple(theme_item(theme, members) for theme, members in selected_groups)
+    if pending_members:
+        theme_items += (theme_item("主题待补", pending_members),)
+
+    divergence_items = tuple(
+        ResearchModuleItem(
+            kind="theme_divergence",
+            name=theme,
+            label="主题内分化",
+            summary=_theme_divergence_summary(members),
+            risk="强弱切换或同步转弱时重新评估主题暴露。",
+            status="ready",
+        )
+        for theme, members in valid_groups
+        if len(members) >= 2
+    )
+    pending_count = len(pending_members)
+    primary_names = "、".join(theme for theme, _members in selected_groups[:3])
+    if primary_names:
+        theme_conclusion = f"主要主题：{primary_names}。"
+        if pending_count:
+            theme_conclusion += f"{pending_count}只持仓主题待补。"
+    elif pending_count:
+        theme_conclusion = f"{pending_count}只持仓主题待补。"
+    else:
+        theme_conclusion = "持仓主题证据待补。"
+    return (
+        ResearchModuleSection(
+            key="portfolio-themes",
+            title="持仓主题",
+            conclusion=theme_conclusion,
+            items=theme_items,
+        ),
+        ResearchModuleSection(
+            key="portfolio-divergence",
+            title="主题内分化",
+            conclusion=(
+                "同一主题内强弱并存，优先处理相对弱势标的。"
+                if any(
+                    "相对强" in item.summary and "相对弱" in item.summary
+                    for item in divergence_items
+                )
+                else "重叠主题行情待确认。"
+                if divergence_items
+                else "暂无可比重叠主题。"
+            ),
+            items=divergence_items,
+        ),
+    )
+
+
+def _opportunity_sections(
+    outcomes: tuple[_CapabilityOutcome, ...],
+    module_items: tuple[ResearchModuleItem, ...],
+) -> tuple[ResearchModuleSection, ...]:
+    themes = _outcome_for(outcomes, "sector_selector")
+    ordered_strong_themes = _ordered_strong_opportunity_themes(outcomes)
+    strong_theme_names = {normalized for _name, normalized in ordered_strong_themes}
+    negative_reason = _opportunity_negative_reason(outcomes)
+    theme_items = tuple(
+        ResearchModuleItem(
+            kind="theme",
+            name=_theme_name(row),
+            label="机会主题",
+            summary=_sector_summary(row),
+            risk="主题热度回落且成交收缩时停止扩展候选。",
+            status="ready" if _sector_row_has_strength(row) else "partial",
+            facts=_display_facts("sector_selector", row),
+        )
+        for row in (themes.rows if themes else ())[:5]
+        if _theme_name(row)
+    )
+    candidate_items: list[ResearchModuleItem] = []
+    for item in module_items:
+        if item.kind != "candidate":
+            continue
+        candidate_theme = _candidate_theme(item.facts)
+        primary_theme = _candidate_primary_theme(item, ordered_strong_themes)
+        matched = bool(primary_theme)
+        if not candidate_theme:
+            candidate_status = "missing"
+        elif negative_reason or not matched:
+            candidate_status = "partial"
+        else:
+            candidate_status = item.status
+        candidate_risk = "失效条件：主题退潮、成交萎缩或基本证据转弱。"
+        if negative_reason:
+            candidate_risk = (
+                f"模块级风险：{negative_reason}；未映射到单只候选，统一降级复核。"
+            )
+        candidate_items.append(
+            ResearchModuleItem(
+                kind=item.kind,
+                code=item.code,
+                name=item.name,
+                label=primary_theme or _candidate_industry(item.facts) or "主题待确认",
+                summary=f"入选依据：{item.summary}；确认条件：主题延续且成交保持活跃。",
+                risk=candidate_risk,
+                status=candidate_status,
+                facts=item.facts,
+            )
+        )
+    candidate_items_tuple = tuple(candidate_items)
+    theme_names = "、".join(
+        name
+        for item in theme_items[:3]
+        if _normalized_theme_name(item.name) in strong_theme_names
+        if (name := _public_classification_value(item.name, 120))
+    )
+    all_theme_rows_strong = bool(theme_items) and all(
+        _sector_row_has_strength(row) for row in (themes.rows if themes else ())
+    )
+    return (
+        ResearchModuleSection(
+            key="opportunity-themes",
+            title="机会主题",
+            conclusion=(
+                f"{theme_names}具备强度证据，进入持续性确认。"
+                if theme_names
+                else "主题分类待确认，强度数据已返回。"
+                if all_theme_rows_strong
+                else "主题名称已返回，但强度证据不足。"
+            ),
+            tone="negative" if negative_reason else "positive" if theme_names else "neutral",
+            items=theme_items,
+        ),
+        ResearchModuleSection(
+            key="opportunity-candidates",
+            title="主题候选",
+            conclusion=(
+                f"存在模块级不利证据：{negative_reason}，候选统一降级待确认。"
+                if negative_reason
+                else f"筛出{len(candidate_items_tuple)}只候选，均需满足确认条件。"
+                if candidate_items_tuple
+                else "暂无满足证据门槛的候选。"
+            ),
+            items=candidate_items_tuple,
+        ),
+    )
+
+
+def _market_decision(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[str, str]:
+    index = _outcome_for(outcomes, "index")
+    evaluated_indexes = 0
+    repairing_indexes = 0
+    daily_evaluated = 0
+    daily_down = 0
+    for row in index.rows if index else ():
+        daily_changes: list[float] = []
+        period_changes: list[float] = []
+        for fact in row:
+            if "涨跌幅" not in fact.label:
+                continue
+            value = _numeric_value(fact.value)
+            if value is None:
+                continue
+            if "[" in fact.label and "-" in fact.label:
+                period_changes.append(value)
+            else:
+                daily_changes.append(value)
+        if daily_changes:
+            daily_evaluated += 1
+            daily_value = sum(daily_changes) / len(daily_changes)
+            if daily_value < 0:
+                daily_down += 1
+        if daily_changes and period_changes:
+            evaluated_indexes += 1
+            if any(value > 0 for value in daily_changes) and any(
+                value < 0 for value in period_changes
+            ):
+                repairing_indexes += 1
+    breadth = _outcome_for(outcomes, "breadth")
+    row = breadth.rows[0] if breadth and breadth.rows else ()
+    tone = _breadth_tone(row)
+    if tone == "negative":
+        return "偏弱", "下跌家数占优，市场表现偏弱；先控制风险并等待扩散修复。"
+    repair_majority = (
+        evaluated_indexes > 0 and repairing_indexes >= evaluated_indexes // 2 + 1
+    )
+    if repair_majority:
+        return (
+            "修复中",
+            "指数当日回升，但区间趋势仍弱；先看强势主题能否带动上涨家数持续扩散。",
+        )
+    if tone == "positive":
+        if daily_evaluated and daily_down >= daily_evaluated // 2 + 1:
+            return (
+                "结构分化",
+                "上涨家数占优，但核心指数回落居多；市场结构分化，先确认上涨能否向权重扩散。",
+            )
+        return "偏强", "上涨家数占优，市场表现偏强；继续确认主题持续性。"
+    if row:
+        return "分化中", "涨跌分布接近，市场仍在分化；只跟踪证据最完整的主题。"
+    return "分布待补", "指数已有更新，但涨跌分布不足，暂不提高判断强度。"
+
+
+def _portfolio_decision(
+    outcomes: tuple[_CapabilityOutcome, ...],
+    fallback: str,
+) -> tuple[str, str]:
+    priority_risk = _portfolio_priority_risk(outcomes)
+    if priority_risk:
+        return "先处理风险", f"{priority_risk}；先处理已确认风险，再看主题集中与分化。"
+    groups = _portfolio_theme_groups(outcomes)
+    if not groups:
+        return "主题待补", fallback
+    pending_count = len(groups.get("主题待补", ()))
+    if pending_count:
+        return (
+            "主题待补",
+            f"{pending_count}只持仓缺少主题证据；先补齐归属，再判断主题集中与分化。",
+        )
+    if any(
+        "相对强" in _theme_divergence_summary(members)
+        and "相对弱" in _theme_divergence_summary(members)
+        for members in groups.values()
+    ):
+        return "分化明显", "同一主题内强弱分化明显，先复核相对弱势持仓及其基本证据。"
+    if any(len(members) > 1 for members in groups.values()):
+        return "主题集中", "持仓在少数主题内集中，先检查主题持续性和个股同步性。"
+    return "主题分散", "持仓主题较分散，逐只按事件、预期和价格证据复核。"
+
+
+def _stock_decision(
+    outcomes: tuple[_CapabilityOutcome, ...],
+    fallback: str,
+) -> tuple[str, str]:
+    target = next(
+        (
+            _target_label(outcome.request.target)
+            for outcome in outcomes
+            if _target_label(outcome.request.target)
+        ),
+        "",
+    )
+    prefix = f"{target}：" if target else ""
+    finance = _outcome_for(outcomes, "finance")
+    event = _outcome_for(outcomes, "event")
+    finance_stressed = any(
+        _finance_row_stressed(row) for row in (finance.rows if finance else ())
+    )
+    event_stressed = any(
+        _event_row_negative(row)
+        for row in (event.rows if event else ())
+    )
+    if finance_stressed:
+        return (
+            "基本面承压",
+            f"{prefix}基本面承压，利润和经营现金流仍弱；先等业绩转正与价格确认。",
+        )
+    if event_stressed:
+        return (
+            "基本面承压",
+            f"{prefix}基本面承压，已出现明确不利事件；先核查影响范围与解除条件。",
+        )
+    ready_capabilities = {
+        outcome.request.capability for outcome in outcomes if outcome.rows
+    }
+    core_capabilities = {"finance", "business", "consensus", "event"}
+    confirmation_capabilities = {"market", "report"}
+    core_complete = core_capabilities <= ready_capabilities
+    confirmation_complete = confirmation_capabilities <= ready_capabilities
+    if (
+        core_complete
+        and confirmation_complete
+        and len(ready_capabilities) >= 6
+    ):
+        return "可继续跟踪", fallback
+    if len(ready_capabilities) >= 4:
+        missing_confirmations: list[str] = []
+        if "market" not in ready_capabilities:
+            missing_confirmations.append("价格")
+        if "report" not in ready_capabilities:
+            missing_confirmations.append("研报")
+        missing_core = core_capabilities - ready_capabilities
+        if missing_core:
+            missing_confirmations.append("核心研究")
+        missing_text = "、".join(missing_confirmations) or "关键证据"
+        return (
+            "等待确认",
+            f"{prefix}当前未见明确负面，但确认链不完整；先等{missing_text}等缺失确认。",
+        )
+    return "证据不足", fallback
+
+
+def _opportunity_decision(
+    outcomes: tuple[_CapabilityOutcome, ...],
+    module_items: tuple[ResearchModuleItem, ...],
+    fallback: str,
+) -> tuple[str, str]:
+    theme_names = _strong_opportunity_themes(outcomes)
+    negative_reason = _opportunity_negative_reason(outcomes)
+    has_candidate = any(item.kind == "candidate" for item in module_items)
+    has_matched_candidate = any(
+        _candidate_matches_themes(item, theme_names)
+        for item in module_items
+        if item.kind == "candidate"
+    )
+    if negative_reason:
+        return "主线待确认", f"出现模块级不利证据：{negative_reason}；候选统一降级待确认。"
+    if theme_names and has_matched_candidate:
+        return "有主线", "主题与候选同时出现；先等持续性和成交确认，再保留通过失效检查的标的。"
+    if theme_names and not has_candidate:
+        return "有主题无候选", "主题方向已出现，但候选证据不足，暂不扩展清单。"
+    if theme_names and has_candidate:
+        return "主线待确认", "候选与当前主题尚未形成可核查关联，暂不判定主线。"
+    return "主线待确认", fallback
+
+
+def _outcome_for(
+    outcomes: tuple[_CapabilityOutcome, ...], capability: str
+) -> _CapabilityOutcome | None:
+    return next(
+        (outcome for outcome in outcomes if outcome.request.capability == capability),
+        None,
+    )
+
+
+def _theme_name(row: tuple[ResearchFact, ...]) -> str:
+    return _row_value(
+        row,
+        ("板块名称", "行业名称", "概念名称", "指数简称", "所属行业", "所属概念"),
+    )
+
+
+def _portfolio_theme_groups(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> dict[str, list[tuple[ResearchTarget, float | None]]]:
+    by_target: dict[tuple[str, str], list[_CapabilityOutcome]] = {}
+    for outcome in outcomes:
+        target = outcome.request.target
+        by_target.setdefault((target.code, target.name), []).append(outcome)
+    groups: dict[str, list[tuple[ResearchTarget, float | None]]] = {}
+    for (code, name), target_outcomes in by_target.items():
+        industry = next(
+            (
+                outcome
+                for outcome in target_outcomes
+                if outcome.request.capability == "industry" and outcome.rows
+            ),
+            None,
+        )
+        themes = _portfolio_theme_tokens(industry.rows if industry else ())
+        if not themes:
+            themes = ("主题待补",)
+        market = next(
+            (
+                outcome
+                for outcome in target_outcomes
+                if outcome.request.capability == "market" and outcome.rows
+            ),
+            None,
+        )
+        change = _row_change(market.rows[0]) if market else None
+        member = (ResearchTarget(code=code, name=name), change)
+        for theme in themes:
+            groups.setdefault(theme, []).append(member)
+    return groups
+
+
+def _portfolio_theme_tokens(
+    rows: tuple[tuple[ResearchFact, ...], ...],
+) -> tuple[str, ...]:
+    themes: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for fact in row:
+            label = fact.label
+            is_classification = label in {"概念", "行业"} or any(
+                term in label
+                for term in ("所属概念", "概念名称", "所属行业", "行业名称")
+            )
+            if not is_classification:
+                continue
+            for value in re.split(r"[、,，/；;]", fact.value):
+                theme = value.strip()
+                fingerprint = _normalized_theme_name(theme).casefold()
+                if not theme or not fingerprint or fingerprint in seen:
+                    continue
+                if _contains_public_brand(theme):
+                    continue
+                themes.append(theme)
+                seen.add(fingerprint)
+    return tuple(themes)
+
+
+def _theme_divergence_summary(
+    members: list[tuple[ResearchTarget, float | None]],
+) -> str:
+    comparable = [(target, change) for target, change in members if change is not None]
+    if len(comparable) < 2:
+        return "可比行情不足，主题内强弱待确认。"
+    strongest = max(comparable, key=lambda item: item[1])
+    weakest = min(comparable, key=lambda item: item[1])
+    if strongest[1] == weakest[1]:
+        return "主题内表现接近，暂未出现明显分化。"
+    return (
+        f"相对强：{_target_label(strongest[0])}（{strongest[1]:.2f}%）；"
+        f"相对弱：{_target_label(weakest[0])}（{weakest[1]:.2f}%）。"
+    )
+
+
+def _row_change(row: tuple[ResearchFact, ...]) -> float | None:
+    fact = _fact_matching(row, ("涨跌幅", "涨跌"))
+    return _numeric_value(fact.value) if fact else None
+
+
+def _finance_row_stressed(row: tuple[ResearchFact, ...]) -> bool:
+    profit = _fact_matching(row, ("归母净利润", "净利润"))
+    cash_flow = _fact_matching(row, ("经营现金流", "经营活动产生的现金流"))
+    profit_value = _numeric_value(profit.value) if profit else None
+    cash_value = _numeric_value(cash_flow.value) if cash_flow else None
+    return (
+        profit_value is not None
+        and cash_value is not None
+        and profit_value <= 0
+        and cash_value < 0
+    )
+
+
+def _candidate_theme(facts: tuple[ResearchFact, ...]) -> str:
+    return _row_value(facts, ("所属概念", "概念", "所属行业", "行业"))
+
+
+def _candidate_industry(facts: tuple[ResearchFact, ...]) -> str:
+    return _row_value(facts, ("所属行业", "行业"))
+
+
+def _candidate_theme_tokens(facts: tuple[ResearchFact, ...]) -> set[str]:
+    return {
+        _normalized_theme_name(part)
+        for fact in facts
+        if any(term in fact.label for term in ("所属概念", "概念", "所属行业", "行业"))
+        for part in re.split(r"[、,，/；;]", fact.value)
+        if part.strip()
+    }
+
+
+def _candidate_matches_themes(
+    item: ResearchModuleItem,
+    theme_names: set[str],
+) -> bool:
+    return bool(_candidate_theme_tokens(item.facts) & theme_names)
+
+
+def _candidate_primary_theme(
+    item: ResearchModuleItem,
+    ordered_themes: tuple[tuple[str, str], ...],
+) -> str:
+    candidate_themes = _candidate_theme_tokens(item.facts)
+    return next(
+        (name for name, normalized in ordered_themes if normalized in candidate_themes),
+        "",
+    )
+
+
+def _normalized_theme_name(value: str) -> str:
+    cleaned = re.sub(r"(?:概念|行业|板块)$", "", value.strip())
+    return re.sub(r"\s+", "", cleaned).casefold()
+
+
+def _sector_row_is_weak(row: tuple[ResearchFact, ...]) -> bool:
+    weak_terms = ("低迷", "偏弱", "走弱", "降温", "萎缩", "缩量", "弱")
+    for fact in row:
+        if any(term in fact.label for term in ("涨跌", "涨幅")):
+            value = _numeric_value(fact.value)
+            if value is not None and value < 0:
+                return True
+        if any(term in fact.label for term in ("热度", "强度")):
+            if any(term in fact.value for term in weak_terms):
+                return True
+            value = _numeric_value(fact.value)
+            if value is not None and "排名" not in fact.label and value < 50:
+                return True
+    return False
+
+
+def _sector_row_has_strength(row: tuple[ResearchFact, ...]) -> bool:
+    if _sector_row_is_weak(row):
+        return False
+    weak_terms = ("低迷", "偏弱", "弱", "降温", "萎缩", "缩量", "低")
+    strong_terms = ("高", "强", "活跃", "放量", "升温", "领先")
+    for fact in row:
+        label = fact.label
+        if not any(
+            term in label
+            for term in (
+                "热度",
+                "强度",
+                "成交",
+                "排名",
+                "涨跌",
+                "涨幅",
+                "量比",
+                "换手",
+                "持续",
+            )
+        ):
+            continue
+        value_text = fact.value.strip()
+        if any(term in value_text for term in weak_terms):
+            continue
+        if any(term in value_text for term in strong_terms):
+            return True
+        value = _numeric_value(fact.value)
+        if any(term in fact.label for term in ("强度", "热度")):
+            if value is not None and value >= 50:
+                return True
+        if "排名" in fact.label:
+            if value is not None and 0 < value <= 10:
+                return True
+        if "成交" in fact.label:
+            if value is not None and value >= 100_000_000:
+                return True
+        if any(term in fact.label for term in ("量比", "换手")):
+            if value is not None and value >= 1:
+                return True
+        if any(term in fact.label for term in ("涨跌", "涨幅")):
+            if value is not None and value > 0:
+                return True
+    return False
+
+
+def _strong_opportunity_themes(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> set[str]:
+    return {
+        normalized
+        for _name, normalized in _ordered_strong_opportunity_themes(outcomes)
+    }
+
+
+def _ordered_strong_opportunity_themes(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> tuple[tuple[str, str], ...]:
+    themes = _outcome_for(outcomes, "sector_selector")
+    ordered: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for row in themes.rows if themes else ():
+        name = _public_classification_value(_theme_name(row), 120)
+        normalized = _normalized_theme_name(name)
+        if not name or not normalized or normalized in seen:
+            continue
+        if not _sector_row_has_strength(row):
+            continue
+        ordered.append((name, normalized))
+        seen.add(normalized)
+    return tuple(ordered)
+
+
+def _event_row_negative(row: tuple[ResearchFact, ...]) -> bool:
+    if any(_fact_is_negative(fact) for fact in row):
+        return True
+    text = " ".join(f"{fact.label} {fact.value}" for fact in row)
+    state_markers: list[tuple[int, int, bool]] = []
+    for pattern in (
+        r"撤销|撤诉|解除|未实施|不再实施|终止实施",
+        r"终止.{0,12}减持计划|减持计划.{0,12}终止",
+    ):
+        state_markers.extend(
+            (match.end(), 1, False) for match in re.finditer(pattern, text)
+        )
+    for pattern in (
+        r"预亏|预减|下修|下调|监管|诉讼|处罚|立案|减持|终止上市",
+    ):
+        state_markers.extend(
+            (match.end(), 0, True) for match in re.finditer(pattern, text)
+        )
+    return max(state_markers, default=(0, 0, False))[-1]
+
+
+def _consensus_row_negative(row: tuple[ResearchFact, ...]) -> bool:
+    ratings = [
+        rating
+        for fact in row
+        if "评级" in fact.label
+        for rating in re.findall(r"买入|增持|中性|减持|卖出", fact.value)
+    ]
+    if ratings and ratings[-1] in {"减持", "卖出"}:
+        return True
+    text = " ".join(
+        f"{fact.label} {fact.value}" for fact in row if "评级" not in fact.label
+    )
+    if any(term in text for term in ("下修", "下调", "调低", "卖出", "减持")):
+        return True
+    if ratings:
+        return False
+    return "回落" in _consensus_summary(row)
+
+
+def _portfolio_priority_risk(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> str:
+    for outcome in outcomes:
+        capability = outcome.request.capability
+        if capability not in {"event", "consensus"}:
+            continue
+        for row in outcome.rows:
+            negative = (
+                _event_row_negative(row)
+                if capability == "event"
+                else _consensus_row_negative(row)
+            )
+            if not negative:
+                continue
+            summary = _finding_summary(capability, row)
+            target = _target_label(outcome.request.target)
+            return f"{target}：{summary}" if target else summary
+    for outcome in outcomes:
+        if outcome.request.capability != "market":
+            continue
+        for row in outcome.rows:
+            change = _row_change(row)
+            if change is None or change > -5:
+                continue
+            change_fact = _fact_matching(row, ("涨跌幅", "涨跌"))
+            target = _target_label(outcome.request.target)
+            change_text = change_fact.value if change_fact else f"{change:.2f}%"
+            description = f"{target}：跌幅{change_text}，已进入相对弱势"
+            return description if target else f"跌幅{change_text}，已进入相对弱势"
+    return ""
+
+
+def _opportunity_negative_reason(
+    outcomes: tuple[_CapabilityOutcome, ...],
+) -> str:
+    for outcome in outcomes:
+        capability = outcome.request.capability
+        for row in outcome.rows:
+            if capability == "event" and _event_row_negative(row):
+                return _finding_summary(capability, row)
+            if capability == "news":
+                text = " ".join(f"{fact.label} {fact.value}" for fact in row)
+                if any(
+                    term in text
+                    for term in (
+                        "重大风险",
+                        "风险事件",
+                        "风险上升",
+                        "风险加剧",
+                        "监管",
+                        "诉讼",
+                        "处罚",
+                        "立案",
+                        "减持",
+                        "预亏",
+                        "预减",
+                        "下修",
+                    )
+                ):
+                    return _finding_summary(capability, row)
+    return ""
+
+
+def _breadth_tone(row: tuple[ResearchFact, ...]) -> str:
+    up = _numeric_fact(row, "上涨家数")
+    down = _numeric_fact(row, "下跌家数")
+    limit_up = _numeric_fact(row, "涨停家数")
+    limit_down = _numeric_fact(row, "跌停家数")
+    if up is None or down is None:
+        return "neutral"
+    limit_down_expanded = (
+        limit_down is not None
+        and limit_down >= 20
+        and (limit_up is None or limit_down >= limit_up * 2)
+    )
+    if down > up * 1.2 or limit_down_expanded:
+        return "negative"
+    if up > down * 1.2:
+        return "positive"
+    return "neutral"
+
+
+def _numeric_fact(row: tuple[ResearchFact, ...], term: str) -> float | None:
+    fact = _fact_matching(row, (term,))
+    return _numeric_value(fact.value) if fact else None
+
+
+def _hot_stock_item(row: tuple[ResearchFact, ...]) -> ResearchModuleItem | None:
+    code = _row_value(row, ("股票代码", "证券代码"))
+    name = _row_value(row, ("股票简称", "证券简称", "股票名称"))
+    if not code or not name:
+        return None
+    theme = _row_value(row, ("所属概念", "概念", "所属行业", "行业"))
+    return ResearchModuleItem(
+        kind="hot_stock",
+        code=code,
+        name=name,
+        label=theme or "主题待确认",
+        summary=_hot_stock_summary(row),
+        risk="成交降温或所属主题转弱时停止追踪。",
+        facts=_display_facts("hot_stock", row),
+    )
+
+
 def _market_module_item(row: tuple[ResearchFact, ...]) -> ResearchModuleItem:
     return ResearchModuleItem(
         kind="index",
@@ -653,7 +1644,7 @@ def _portfolio_module_items(
         risk = (
             finding.summary
             if finding and _finding_has_negative_signal(finding)
-            else "未发现高优先风险，仍需结合成本与仓位复核"
+            else "未发现高优先风险，仍需结合账户边界复核"
         )
         items.append(
             ResearchModuleItem(
@@ -804,6 +1795,10 @@ def _finding_summary(
         return _sector_summary(row)
     if capability == "astock_selector":
         return _candidate_summary(row)
+    if capability == "breadth":
+        return _breadth_summary(row)
+    if capability == "hot_stock":
+        return _hot_stock_summary(row)
     if capability in {"news", "announcement"}:
         return _document_summary(row)
     if capability == "market":
@@ -928,6 +1923,9 @@ def _index_summary(row: tuple[ResearchFact, ...]) -> str:
 
 def _sector_summary(row: tuple[ResearchFact, ...]) -> str:
     name = _fact_matching(row, ("板块名称", "行业名称", "概念名称", "指数简称"))
+    public_name = _public_classification_value(name.value, 120) if name else ""
+    if name and not public_name:
+        return "主题分类待确认，强度数据已返回。"
     heat = _fact_matching(row, ("热度", "排名", "强度"))
     amount = _fact_matching(row, ("成交额", "成交量"))
     metrics = [
@@ -935,8 +1933,38 @@ def _sector_summary(row: tuple[ResearchFact, ...]) -> str:
         for fact in (heat, amount)
         if fact is not None
     ]
+    if public_name and metrics:
+        return f"{public_name} {'，'.join(metrics)}"
+    if public_name:
+        return f"{public_name}，强度证据待补。"
+    return _compact_facts(row)
+
+
+def _breadth_summary(row: tuple[ResearchFact, ...]) -> str:
+    if not row:
+        return "涨跌分布待补。"
+    values = [
+        f"{_short_metric(fact.label)}{fact.value}"
+        for fact in row
+        if any(
+            term in fact.label
+            for term in ("上涨家数", "下跌家数", "平盘家数", "涨停家数", "跌停家数")
+        )
+    ]
+    return "，".join(values) if values else _compact_facts(row)
+
+
+def _hot_stock_summary(row: tuple[ResearchFact, ...]) -> str:
+    name = _fact_matching(row, ("股票简称", "证券简称", "股票名称"))
+    change = _fact_matching(row, ("涨跌幅", "涨跌"))
+    amount = _fact_matching(row, ("成交额", "成交量", "换手率"))
+    metrics = [
+        f"{_short_metric(fact.label)} {fact.value}"
+        for fact in (change, amount)
+        if fact is not None
+    ]
     if name and metrics:
-        return f"{name.value} {'，'.join(metrics)}"
+        return f"{name.value}：{'，'.join(metrics)}"
     return _compact_facts(row)
 
 
@@ -961,9 +1989,9 @@ def _document_summary(row: tuple[ResearchFact, ...]) -> str:
         summary_text = summary.value
         if summary_text.startswith(title.value):
             summary_text = summary_text[len(title.value) :].lstrip(" ：:，,。")
-        return _public_text(f"{title.value}：{summary_text}", 80)
+        return _clean_text(f"{title.value}：{summary_text}", 80)
     if title:
-        return _public_text(title.value, 180)
+        return _clean_text(title.value, 180)
     return _compact_facts(row)
 
 
@@ -1060,13 +2088,13 @@ def _workspace_verdict(
     summary = findings[0].summary
     if module == "stock":
         target = _target_label(successful[0].request.target)
-        return _public_text(f"{target}：{summary}" if target else summary, 180)
+        return _clean_text(f"{target}：{summary}" if target else summary, 180)
     prefixes = {
         "market": "市场证据显示：",
         "portfolio": "重点持仓需要先看：",
         "opportunity": "当前可核查线索：",
     }
-    return _public_text(f"{prefixes.get(module, '')}{summary}", 180)
+    return _clean_text(f"{prefixes.get(module, '')}{summary}", 180)
 
 
 def _deduplicate_findings(
@@ -1175,7 +2203,7 @@ def _primary_risk(
                         ),
                     )
                     if name:
-                        return _public_text(
+                        return _clean_text(
                             f"{name.value} · {_short_metric(negative.label)}：{negative.value}",
                             180,
                         )
@@ -1183,7 +2211,7 @@ def _primary_risk(
                 target = _target_label(outcome.request.target)
                 if module == "portfolio" and target:
                     description = f"{target} · {description}"
-                return _public_text(description, 180)
+                return _clean_text(description, 180)
             risk_fact = next(
                 (
                     fact
@@ -1200,7 +2228,7 @@ def _primary_risk(
                 target = _target_label(outcome.request.target)
                 if module == "portfolio" and target:
                     description = f"{target} · {description}"
-                return _public_text(description, 180)
+                return _clean_text(description, 180)
     return fallback
 
 
@@ -1211,7 +2239,7 @@ def _detail_label(request: CapabilityRequest) -> str:
 
 
 def _target_label(target: ResearchTarget) -> str:
-    return _public_text(target.name or target.code, 64)
+    return _public_identity_text(target.name or target.code, 64)
 
 
 def _research_cache_key(
