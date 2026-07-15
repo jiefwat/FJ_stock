@@ -53,8 +53,11 @@ CLI / Dashboard
 - Web 个股页和 Markdown 个股报告必须展示 `TradingAgents 决策链`：先展示 daily_stock_analysis 风格的信号归因与数据包，再展示技术、基本面、新闻/情绪、资金/成交四类分析师证据，最后输出多空观点、交易员触发/失效、组合经理最终意见；若数据缺失，结论必须降级并写明缺口。
 - `src/stock_ts/llm.py`：可选大模型增强层，使用 OpenAI-compatible chat completions 接口；无 Key 时输出降级说明，有 Key 时在结构化分析基础上生成 AI 研报。
 - `src/stock_ts/iwencai.py`：服务端官方数据能力适配层，统一 allowlist、OpenAPI 请求头、动态响应限制和凭证脱敏；供应商字段只存在于适配层，不进入产品页面协议。
-- `src/stock_ts/research_engine.py`：四大原生研究工作台编排层。固定组合市场、持仓、公司和机会能力，并行调用后归一化为 `verdict / action / primary_risk / findings / details / missing_sections`；默认缓存 5 分钟，部分失败可降级，全部失败时暂停判断，不回退旧本地结论。
-- `src/stock_ts/webapp/engine_workspace.py`：供应商中性的四页 HTML 和按需交互层，只消费产品结果协议；持仓上下文最多携带 3 个代码和名称，不携带股数、成本、权重、备注或账号。
+- `src/stock_ts/professional_analytics.py`：专业统计层。用本地快照确定性计算市场参与率、涨跌宽度、涨跌停平衡、扫描样本极端涨跌、主题扩散和证据覆盖；个股侧把既有八维评分拆成支持证据、反对证据、可信度、转强条件和失效条件，并由硬风险闸门覆盖分数结论。
+- `src/stock_ts/research_fallback.py`：四大工作台的本地主分析层。行情和规则分析始终生成主判断、动作与风险；没有外部研究配置或外部请求失败时，页面仍能使用本地统计和证据矩阵。
+- `src/stock_ts/research_engine.py`：可选服务端研究编排层。固定组合市场、持仓、公司和机会能力，并行调用后只输出归一化证据，不直接决定页面动作。
+- `src/stock_ts/research_fusion.py`：本地优先的证据融合边界。外部结果只能补齐缺失维度、事实和覆盖率，不能改写本地 `verdict / action / primary_risk / decision_label`；融合结果继续执行供应商品牌和内部元数据过滤。
+- `src/stock_ts/webapp/engine_workspace.py`：供应商中性的四页 HTML 和按需交互层，只消费产品结果协议；大盘展示市场脉搏，个股展示八维证据矩阵；持仓上下文最多携带代码和名称，不携带股数、成本、权重、备注或账号。
 - `src/stock_ts/watchlist.py`：自选股研究工作台，读取轻量 YAML-like 清单，沉淀研究假设、标签、价格/评分提醒，并复用深度分析生成观察排序。
 - `src/stock_ts/backtest.py`：轻量策略验证层，当前支持本地日线 CSV 的 MA 均线回测，输出收益、买入持有对照、最大回撤、胜率、交易明细和限制说明。
 - `src/stock_ts/indicators.py`：均线、涨跌幅、波动率等可测试指标函数。
@@ -113,6 +116,7 @@ CLI / Dashboard
 - watchlist/backtest 类研究工作流必须保持离线可用，不能依赖真实行情接口才能通过测试。
 - LLM 集成必须覆盖：无 Key 降级、configured/missing 安全摘要、Key 不出现在输出、CLI 烟测。
 - 问财集成必须覆盖：官方 endpoint 与 payload 路由、64 位 trace id、无 Key/超时/网关错误降级、响应大小限制、登录与限流、Key 不出现在 HTML/JSON/错误信息。
+- 专业工作台必须覆盖：市场统计公式和零分母、硬风险闸门、个股支持/反对证据分离、本地判断不被外部结论改写、供应商字段不进入 HTML/产品 JSON、1440/1280/390 宽度可用性。
 
 
 ## 持仓输入
