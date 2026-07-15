@@ -39,6 +39,7 @@ def refresh_a_share_kline_snapshot(
     skipped: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
     stale: list[dict[str, str]] = []
+    preserved_newer: list[str] = []
     market_payload = payload.get("market")
     market_trade_date = (
         str(market_payload.get("trade_date") or "")
@@ -78,8 +79,13 @@ def refresh_a_share_kline_snapshot(
                     "reason": "latest_bar_lags_market",
                 }
             )
-        _merge_stock_payload(payload, code, bars, now, price_reliable=not is_stale)
-        _merge_candidate_payload(payload, code, bars, now, price_reliable=not is_stale)
+        existing_latest = _latest_existing_bar_date(payload, code)
+        preserve_existing = bool(existing_latest and existing_latest > latest_date)
+        if preserve_existing:
+            preserved_newer.append(code)
+        else:
+            _merge_stock_payload(payload, code, bars, now, price_reliable=not is_stale)
+            _merge_candidate_payload(payload, code, bars, now, price_reliable=not is_stale)
         updated.append(code)
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -107,6 +113,8 @@ def refresh_a_share_kline_snapshot(
         "rate_limited_count": rate_limited_count,
         "stale_count": len(stale),
         "stale_codes": [item["code"] for item in stale],
+        "preserved_newer_count": len(preserved_newer),
+        "preserved_newer_codes": preserved_newer,
         "bar_count": bar_count,
         "updated_codes": updated,
         "skipped": skipped,
@@ -246,6 +254,29 @@ def _merge_candidate_payload(
                     "kline_refreshed_at": now,
                 }
             )
+
+
+def _latest_existing_bar_date(snapshot: dict[str, Any], code: str) -> str:
+    latest = ""
+    stocks = snapshot.get("stocks")
+    if isinstance(stocks, dict):
+        stock = stocks.get(code)
+        if isinstance(stock, dict):
+            bars = _as_list(stock.get("bars"))
+            if bars and isinstance(bars[-1], dict):
+                latest = str(bars[-1].get("date") or "")
+    universe = snapshot.get("candidate_universe", snapshot.get("candidates"))
+    if isinstance(universe, dict):
+        for item in _as_list(universe.get("items")):
+            if not isinstance(item, dict):
+                continue
+            if _normalize_code(item.get("code")) != code:
+                continue
+            bars = _as_list(item.get("bars"))
+            if bars and isinstance(bars[-1], dict):
+                latest = max(latest, str(bars[-1].get("date") or ""))
+            break
+    return latest
 
 
 def _load_tushare() -> object:

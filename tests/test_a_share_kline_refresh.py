@@ -218,3 +218,56 @@ def test_refresh_marks_bars_stale_when_they_lag_market_trade_date(tmp_path: Path
     assert result["stale_codes"] == ["300725"]
     assert payload["stocks"]["300725"]["price_reliable"] is False
     assert payload["candidate_universe"]["items"][0]["price_reliable"] is False
+
+
+def test_stale_response_does_not_overwrite_newer_snapshot_bars(tmp_path: Path) -> None:
+    module = _load_module()
+    snapshot = tmp_path / "tdx_snapshots.json"
+    current_bar = {
+        "date": "2026-07-15",
+        "open": 41.0,
+        "high": 42.0,
+        "low": 40.5,
+        "close": 41.5,
+        "volume": 200000,
+    }
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {"trade_date": "2026-07-15"},
+                "stocks": {
+                    "300725": {
+                        "name": "药石科技",
+                        "bars": [current_bar],
+                        "price_reliable": True,
+                    }
+                },
+                "candidate_universe": {
+                    "items": [
+                        {
+                            "code": "300725",
+                            "name": "药石科技",
+                            "bars": [current_bar],
+                            "price_reliable": True,
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.refresh_a_share_kline_snapshot(
+        snapshot,
+        holdings_path=None,
+        codes=["300725"],
+        tushare_client=StaleTushareClient(),
+    )
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert result["preserved_newer_count"] == 1
+    assert result["preserved_newer_codes"] == ["300725"]
+    assert payload["stocks"]["300725"]["bars"][-1]["date"] == "2026-07-15"
+    assert payload["stocks"]["300725"]["price_reliable"] is True
+    assert payload["candidate_universe"]["items"][0]["bars"][-1]["date"] == "2026-07-15"
