@@ -278,10 +278,16 @@ def _structured_opportunity_lines(
         support = fact_map.get("入选原因", str(item.get("summary") or "支持证据待补"))
         counter = str(item.get("risk") or "最大反证待补")
         confirmation = fact_map.get("确认条件", "等待量价确认")
-        lines.append(
-            f"{len(lines) + 1}. [{name}]({stock_url})｜[{theme}]({theme_url})｜{stage}｜"
-            f"1/3/5/10日｜支持：{support}；反证：{counter}；确认：{confirmation}"
+        prefix = (
+            f"{len(lines) + 1}. [{name}]({stock_url})｜"
+            f"[{theme}]({theme_url})｜{stage}｜"
         )
+        detail = (
+            f"1/3/5/10日｜支持：{support}；"
+            f"反证：{counter}；确认：{confirmation}"
+        )
+        detail_limit = max(20, 220 - len(prefix))
+        lines.append(prefix + _shorten_line(detail, limit=detail_limit))
         if len(lines) >= limit:
             break
     return lines

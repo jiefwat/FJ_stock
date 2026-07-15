@@ -112,6 +112,7 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
     ]
     opportunity_lines = _section_lines(content, "## 今日前瞻机会", "## 预测反馈")
     assert len(opportunity_lines) == 3
+    assert all(len(line) <= 220 for line in opportunity_lines)
     assert "候选1" in content
     assert "候选3" in content
     assert "候选4" not in content
