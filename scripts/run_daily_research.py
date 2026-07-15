@@ -10,14 +10,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from stock_ts.research_engine import ResearchContext, ResearchWorkspaceService
-from stock_ts.research_snapshots import ResearchSnapshotStore
 from stock_ts.models import DailyBar
 from stock_ts.prediction_feedback import (
     PredictionInput,
     PredictionStore,
     build_feedback_section,
 )
+from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
+from stock_ts.research_engine import ResearchContext, ResearchWorkspaceService
+from stock_ts.research_fallback import build_local_research
+from stock_ts.research_snapshots import ResearchSnapshotStore
 
 TZ = timezone(timedelta(hours=8))
 
@@ -67,6 +69,8 @@ def run_daily_research(
             modules[module] = "failed"
             errors[module] = type(exc).__name__
             continue
+        if module == "opportunity":
+            result = _prefer_local_opportunity_gate(result, snapshot_file)
         modules[module] = result.status
         if result.ok:
             payload = result.to_public_dict()
@@ -89,10 +93,18 @@ def run_daily_research(
             errors[module] = result.primary_risk[:120]
 
     summary = prediction_store.summary(horizon=3)
-    summary_path = Path(feedback_summary_path) if feedback_summary_path else root / "feedback_summary.json"
+    summary_path = (
+        Path(feedback_summary_path)
+        if feedback_summary_path
+        else root / "feedback_summary.json"
+    )
     _atomic_json(summary_path, summary.to_public_dict())
     success_count = sum(value in {"complete", "partial"} for value in modules.values())
-    status = "complete" if success_count == 2 and not errors else "partial" if success_count else "failed"
+    status = (
+        "complete"
+        if success_count == 2 and not errors
+        else "partial" if success_count else "failed"
+    )
     status_path = root / "daily.status.json"
     _atomic_json(
         status_path,
@@ -107,6 +119,30 @@ def run_daily_research(
         },
     )
     return DailyResearchResult(ok=success_count > 0, status=status, status_path=status_path)
+
+
+def _prefer_local_opportunity_gate(result: Any, snapshot_path: Path) -> Any:
+    if (
+        result.status != "partial"
+        or _opportunity_candidate_count(result) > 0
+        or not snapshot_path.exists()
+    ):
+        return result
+    try:
+        return build_local_research(
+            "opportunity",
+            ResearchContext(),
+            provider=TdxSnapshotProvider(snapshot_path),
+        )
+    except Exception:
+        return result
+
+
+def _opportunity_candidate_count(result: Any) -> int:
+    for section in result.module_sections:
+        if section.key == "opportunity-candidates":
+            return len(section.items)
+    return 0
 
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:

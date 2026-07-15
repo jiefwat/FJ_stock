@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import scripts.run_daily_research as daily_research_module
 from scripts.run_daily_research import run_daily_research
 from stock_ts.prediction_feedback import PredictionStore
 from stock_ts.research_engine import (
@@ -98,6 +99,95 @@ class ForecastDailyService:
             subject_count=1,
             module_sections=sections,
         )
+
+
+class PartialThemeOnlyDailyService(FakeDailyService):
+    def research(self, module, _context, *, refresh=False):
+        result = super().research(module, _context, refresh=refresh)
+        if module != "opportunity":
+            return result
+        return ResearchWorkspaceResult(
+            ok=True,
+            status="partial",
+            module=module,
+            generated_at=NOW.isoformat(timespec="seconds"),
+            verdict="主题已出现，但候选证据不足。",
+            action="继续核查",
+            primary_risk="候选为空",
+            module_sections=(
+                ResearchModuleSection(
+                    key="opportunity-themes",
+                    title="主题",
+                    conclusion="主题待验证",
+                    items=(
+                        ResearchModuleItem(
+                            kind="theme",
+                            name="主题但无股票",
+                            label="主题",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+
+def test_daily_research_uses_local_gate_when_remote_has_themes_without_stocks(
+    tmp_path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {"trade_date": "2026-07-15"},
+                "stocks": {
+                    "600001": {
+                        "name": "稳步上行",
+                        "bars": [
+                            {
+                                "date": "2026-07-15",
+                                "open": 100,
+                                "high": 102,
+                                "low": 99,
+                                "close": 101,
+                                "volume": 1000000,
+                            }
+                        ],
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    local_result = ForecastDailyService().research(
+        "opportunity", None, refresh=True
+    )
+    monkeypatch.setattr(
+        daily_research_module,
+        "build_local_research",
+        lambda *_args, **_kwargs: local_result,
+    )
+
+    prediction_db = tmp_path / "predictions.sqlite3"
+    result = run_daily_research(
+        output_dir=tmp_path / "research",
+        service=PartialThemeOnlyDailyService(),
+        now=NOW,
+        snapshot_path=snapshot,
+        prediction_db=prediction_db,
+    )
+
+    assert result.ok is True
+    assert PredictionStore(prediction_db).count() == 1
+    opportunity = json.loads(
+        (tmp_path / "research/opportunity/latest.json").read_text(encoding="utf-8")
+    )
+    candidates = next(
+        section["items"]
+        for section in opportunity["module_sections"]
+        if section["key"] == "opportunity-candidates"
+    )
+    assert [item["name"] for item in candidates] == ["稳步上行"]
 
 
 def test_daily_research_records_predictions_and_writes_feedback(tmp_path) -> None:
