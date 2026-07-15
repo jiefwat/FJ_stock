@@ -71,7 +71,7 @@ class ForecastDailyService:
                     items=(
                         ResearchModuleItem(
                             kind="candidate",
-                            code="600001",
+                            code="600001.SH",
                             name="稳步上行",
                             label="半导体",
                             summary="可进入投资候选",
@@ -95,7 +95,7 @@ class ForecastDailyService:
             verdict=f"{module} 已更新",
             action="继续核查",
             primary_risk="证据变化",
-            as_of="2026-07-15",
+            as_of="2026-07-16T07:20:00+08:00",
             subject_count=1,
             module_sections=sections,
         )
@@ -108,7 +108,7 @@ class PartialThemeOnlyDailyService(FakeDailyService):
             return result
         return ResearchWorkspaceResult(
             ok=True,
-            status="partial",
+            status="complete",
             module=module,
             generated_at=NOW.isoformat(timespec="seconds"),
             verdict="主题已出现，但候选证据不足。",
@@ -124,6 +124,19 @@ class PartialThemeOnlyDailyService(FakeDailyService):
                             kind="theme",
                             name="主题但无股票",
                             label="主题",
+                        ),
+                    ),
+                ),
+                ResearchModuleSection(
+                    key="opportunity-candidates",
+                    title="候选",
+                    conclusion="候选与主题不一致",
+                    items=(
+                        ResearchModuleItem(
+                            kind="candidate",
+                            code="600002.SH",
+                            name="错配候选",
+                            label="另一个主题",
                         ),
                     ),
                 ),

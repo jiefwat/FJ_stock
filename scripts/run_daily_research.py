@@ -122,11 +122,7 @@ def run_daily_research(
 
 
 def _prefer_local_opportunity_gate(result: Any, snapshot_path: Path) -> Any:
-    if (
-        result.status != "partial"
-        or _opportunity_candidate_count(result) > 0
-        or not snapshot_path.exists()
-    ):
+    if not _opportunity_result_requires_local_gate(result) or not snapshot_path.exists():
         return result
     try:
         return build_local_research(
@@ -138,11 +134,26 @@ def _prefer_local_opportunity_gate(result: Any, snapshot_path: Path) -> Any:
         return result
 
 
-def _opportunity_candidate_count(result: Any) -> int:
+def _opportunity_result_requires_local_gate(result: Any) -> bool:
+    themes: tuple[Any, ...] = ()
+    candidates: tuple[Any, ...] = ()
     for section in result.module_sections:
+        if section.key == "opportunity-themes":
+            themes = section.items
         if section.key == "opportunity-candidates":
-            return len(section.items)
-    return 0
+            candidates = section.items
+    if result.status == "partial" and not candidates:
+        return True
+    if not themes:
+        return False
+    candidate_themes = {
+        _theme_key(item.label) for item in candidates if _theme_key(item.label)
+    }
+    return any(_theme_key(theme.name) not in candidate_themes for theme in themes)
+
+
+def _theme_key(value: object) -> str:
+    return "".join(str(value or "").lower().split())
 
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
@@ -282,13 +293,21 @@ def _record_opportunity_predictions(
         stage = fact_map.get("阶段判断", "")
         if stage not in {"可进入投资候选", "等待确认"}:
             continue
-        code = str(item.get("code") or "")
+        code = _stock_code(item.get("code"))
         raw = stocks.get(code)
         bars = _daily_bars(raw.get("bars") if isinstance(raw, dict) else None)
-        data_as_of = str(payload.get("as_of") or "")
-        baseline = next((bar for bar in reversed(bars) if bar.date == data_as_of), None)
+        requested_as_of = str(payload.get("as_of") or "")[:10]
+        baseline = next(
+            (
+                bar
+                for bar in reversed(bars)
+                if not requested_as_of or bar.date <= requested_as_of
+            ),
+            None,
+        )
         if baseline is None:
             continue
+        data_as_of = baseline.date
         prediction_id = store.record(
             PredictionInput(
                 baseline_trade_date=data_as_of,
@@ -315,6 +334,11 @@ def _record_opportunity_predictions(
             facts.append({"label": "预测编号", "value": prediction_id})
         recorded += 1
     return recorded
+
+
+def _stock_code(value: object) -> str:
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    return digits[:6] if len(digits) >= 6 else digits
 
 
 def _score_value(value: str) -> int:
