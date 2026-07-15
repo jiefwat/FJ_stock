@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlencode
 
 from stock_ts.config import get_settings
 from stock_ts.daily_decisions import read_decision_artifact
@@ -27,6 +29,7 @@ class SendResult:
 def build_morning_report(
     *,
     daily_dir: str | Path = "reports/daily",
+    research_dir: str | Path = "reports/research",
     html_dir: str | Path = "reports/html",
     announcement_dir: str | Path = "reports/announcements",
     holdings_path: str | Path = "data/portfolio/holdings.csv",
@@ -36,22 +39,19 @@ def build_morning_report(
     decisions_path = Path(daily_dir) / "latest_decisions.json"
     pipeline_path = Path(daily_dir) / "pipeline.status"
     announcements_path = Path(announcement_dir) / "latest.md"
+    opportunity_path = Path(research_dir) / "opportunity" / "latest.json"
+    feedback_path = Path(research_dir) / "feedback_summary.json"
     daily = _read_text(daily_path)
     decisions = read_decision_artifact(decisions_path)
     pipeline = _read_text(pipeline_path)
     announcements = _read_text(announcements_path)
     trade_date = _decision_trade_date(decisions) or _report_trade_date(daily)
     name_map = _stock_name_map(daily, holdings_path=holdings_path)
-    conclusion = _section(daily, "## 深度结论", max_lines=8)
     market = _first_section(
         daily,
         ["## 每日大盘情况", "## 每日大盘分析", "## A股大盘"],
         max_lines=10,
     )
-    decision_market = _decision_market_summary(decisions)
-    if decision_market:
-        conclusion = f"- {decision_market}"
-        market = f"- {decision_market}"
     sectors = _first_section(
         daily,
         ["## 板块情况", "## 每日板块情况", "## 板块主题"],
@@ -79,9 +79,9 @@ def build_morning_report(
         limit=15,
     )
     generated_at = datetime.now().isoformat(timespec="seconds")
-    first_conclusion = _first_content_line(conclusion) or "未读取到深度结论，请检查日报生成状态。"
-    execution_guard = _execution_guard_lines(trade_date, generated_at[:10], pipeline)
-    holding_lines = _commuter_holding_lines(portfolio_actions, portfolio)
+    holding_lines = _structured_holding_lines(decisions) or _commuter_holding_lines(
+        portfolio_actions, portfolio
+    )
     action_limit_lines = _decision_action_limit_lines(decisions)
     automation_lines = _decision_automation_lines(decisions)
     data_lines = _subway_data_risk_lines(
@@ -91,44 +91,48 @@ def build_morning_report(
         announcements=announcement_actions,
         extra_limits=action_limit_lines + automation_lines,
     )
-    quick_lines = _commuter_decision_brief(
-        conclusion=first_conclusion,
-        market=market,
-        sectors=sectors,
-        portfolio_actions=portfolio_actions,
-        opportunity_actions=opportunity_actions,
-        pipeline=pipeline,
-        execution_guard=execution_guard,
+    market_lines = _morning_market_fact_lines(market, sectors)
+    candidate_lines = _structured_opportunity_lines(
+        _read_json_file(opportunity_path),
+        site_url=site_url,
+        limit=3,
     )
-    candidate_lines = [_shorten_line(item, limit=90) for item in opportunity_actions[:3]]
+    if not candidate_lines:
+        candidate_lines = [_shorten_line(item, limit=120) for item in opportunity_actions[:3]]
     if not candidate_lines:
         candidate_lines = _compact_block(
             opportunities,
-            fallback="暂无满足条件的观察票；今天不为了交易而交易。",
+            fallback="暂无通过前瞻闸门的股票；不为凑数降低标准。",
             max_items=3,
         ).splitlines()
-    discipline_lines = _commuter_discipline_lines(
-        execution_guard=execution_guard,
-        data_lines=data_lines,
+    feedback_line = _morning_feedback_line(_read_json_file(feedback_path))
+    review_links = (
+        f"[每日大盘]({site_url}/#market)｜[我的持仓]({site_url}/#portfolio)｜"
+        f"[热门机会]({site_url}/#opportunity)"
     )
-    review_lines = _commuter_review_links(site_url, trade_date)
     lines = [
         f"# StockTS 30秒晨报（{generated_at[:10]}｜交易日 {trade_date}）",
         "",
-        "## 30秒结论",
-        "\n".join(quick_lines),
+        "## 最新市场事实",
+        "\n".join(market_lines),
         "",
         "## 先处理持仓",
-        "\n".join(holding_lines[:4]),
+        "\n".join(holding_lines[:3]),
         "",
-        "## 今日只看3只",
+        "## 今日前瞻机会",
         "\n".join(candidate_lines),
         "",
-        "## 三条纪律",
-        "\n".join(discipline_lines),
+        "## 预测反馈",
+        feedback_line,
         "",
-        "## 到公司再看",
-        "\n".join(review_lines),
+        "## 数据风险",
+        "\n".join(
+            _priority_data_risk_lines(data_lines)
+            or ["- 当前未发现改变判断的核心数据阻断项。"]
+        ),
+        "- 纪律：先处理持仓风险，再验证机会；没有确认，不扩大风险。",
+        f"- {review_links}",
+        "- 内容仅用于研究复盘，不构成投资建议。",
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -136,6 +140,7 @@ def build_morning_report(
 def send_morning_report(
     *,
     daily_dir: str | Path = "reports/daily",
+    research_dir: str | Path = "reports/research",
     html_dir: str | Path = "reports/html",
     announcement_dir: str | Path = "reports/announcements",
     holdings_path: str | Path = "data/portfolio/holdings.csv",
@@ -148,6 +153,7 @@ def send_morning_report(
 ) -> SendResult:
     content = build_morning_report(
         daily_dir=daily_dir,
+        research_dir=research_dir,
         html_dir=html_dir,
         announcement_dir=announcement_dir,
         holdings_path=holdings_path,
@@ -173,6 +179,129 @@ def send_morning_report(
                 os.environ["EMAIL_RECEIVERS"] = previous_receivers
     return SendResult(
         ok=bool(getattr(result, "ok", False)), markdown=str(getattr(result, "markdown", ""))
+    )
+
+
+def _read_json_file(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _morning_market_fact_lines(market: str, sectors: str) -> list[str]:
+    forbidden = ("明日", "未来", "候选", "建议", "仓位", "机会", "买入", "卖出")
+    lines = [
+        line
+        for line in [*_content_items(market), *_content_items(sectors)]
+        if not any(word in line for word in forbidden)
+    ]
+    compact = [_bullet(_shorten_line(_strip_bullet(line), limit=150)) for line in lines[:3]]
+    return compact or [_bullet("未读取到可复核的大盘事实，请先检查 07:00 数据刷新。")]
+
+
+def _structured_holding_lines(decisions: dict[str, object]) -> list[str]:
+    lights = decisions.get("traffic_lights") if isinstance(decisions, dict) else None
+    if not isinstance(lights, dict):
+        return []
+    lines: list[str] = []
+    for key, judgment in (("red", "先降风险"), ("yellow", "等待确认"), ("green", "持有跟踪")):
+        items = lights.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            action = str(item.get("action") or judgment).strip()
+            reason = str(item.get("reason") or "原因待补").strip()
+            lines.append(_bullet(f"{name}：判断：{judgment}；动作：{action}；触发：{reason}"))
+            if len(lines) >= 3:
+                return lines
+    return lines
+
+
+def _priority_data_risk_lines(lines: list[str]) -> list[str]:
+    keywords = ("数据缺口", "不可用", "失败", "部分K线", "公告风险", "阻断", "过期")
+    ranked = sorted(
+        enumerate(lines),
+        key=lambda item: (
+            0 if any(keyword in item[1] for keyword in keywords) else 1,
+            item[0],
+        ),
+    )
+    return [line for _index, line in ranked[:2]]
+
+
+def _structured_opportunity_lines(
+    payload: dict[str, object],
+    *,
+    site_url: str,
+    limit: int,
+) -> list[str]:
+    sections = payload.get("module_sections")
+    if not isinstance(sections, list):
+        return []
+    section = next(
+        (
+            item
+            for item in sections
+            if isinstance(item, dict) and item.get("key") == "opportunity-candidates"
+        ),
+        None,
+    )
+    if not isinstance(section, dict) or not isinstance(section.get("items"), list):
+        return []
+    lines: list[str] = []
+    for item in section["items"]:
+        if not isinstance(item, dict):
+            continue
+        facts = item.get("facts")
+        fact_map = {
+            str(fact.get("label") or ""): str(fact.get("value") or "")
+            for fact in facts
+            if isinstance(facts, list) and isinstance(fact, dict)
+        }
+        stage = fact_map.get("阶段判断", "")
+        if stage not in {"可进入投资候选", "等待确认"}:
+            continue
+        code = str(item.get("code") or "").strip()
+        name = str(item.get("name") or code or "未识别股票").strip()
+        theme = str(item.get("label") or "主题待确认").strip()
+        stock_url = f"{site_url}/?{urlencode({'code': code, 'source_theme': theme})}#stock"
+        theme_url = f"{site_url}/?{urlencode({'theme': theme})}#opportunity"
+        support = fact_map.get("入选原因", str(item.get("summary") or "支持证据待补"))
+        counter = str(item.get("risk") or "最大反证待补")
+        confirmation = fact_map.get("确认条件", "等待量价确认")
+        lines.append(
+            f"{len(lines) + 1}. [{name}]({stock_url})｜[{theme}]({theme_url})｜{stage}｜"
+            f"1/3/5/10日｜支持：{support}；反证：{counter}；确认：{confirmation}"
+        )
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _morning_feedback_line(payload: dict[str, object]) -> str:
+    try:
+        sample_count = int(payload.get("sample_count") or 0)
+        hit_rate = float(payload.get("hit_rate") or 0)
+        excess = float(payload.get("average_excess_return") or 0)
+        mae = float(payload.get("average_mae") or 0)
+    except (TypeError, ValueError):
+        return "- 暂无到期样本；预测反馈等待数据补齐。"
+    state = str(payload.get("sample_state") or "暂无到期样本")
+    if sample_count == 0:
+        return "- 暂无到期样本；预测反馈等待数据补齐。"
+    miss_reason = str(payload.get("top_miss_reason") or "暂无")
+    return (
+        f"- {state}｜近 {sample_count} 个有效预测｜3日命中率 {hit_rate:.1f}%｜"
+        f"平均超额 {excess:+.2f}%｜平均 MAE {mae:+.2f}%｜主要误判：{miss_reason}"
     )
 
 
