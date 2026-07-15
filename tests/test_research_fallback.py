@@ -2,7 +2,7 @@ from dataclasses import replace
 
 from stock_ts.models import NewsItem
 from stock_ts.providers.sample import SampleDataProvider
-from stock_ts.research_engine import ResearchContext
+from stock_ts.research_engine import ResearchContext, ResearchTarget
 from stock_ts.research_fallback import build_local_research
 
 
@@ -46,3 +46,47 @@ def test_local_stock_fallback_keeps_available_dimensions_and_marks_gaps() -> Non
         "公告事项",
     }
     assert "机构预期" in payload["missing_sections"]
+
+
+def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_path) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,10,1500,白酒,核心\n"
+        "000001,平安银行,100,12,银行,观察\n"
+        "300750,宁德时代,20,200,新能源车,观察\n",
+        encoding="utf-8",
+    )
+    result = build_local_research(
+        "portfolio",
+        ResearchContext(
+            holdings=(
+                ResearchTarget(code="600519", name="贵州茅台"),
+                ResearchTarget(code="000001", name="平安银行"),
+                ResearchTarget(code="300750", name="宁德时代"),
+            )
+        ),
+        provider=LocalFixtureProvider(),
+        holdings_path=holdings,
+    )
+
+    payload = result.to_public_dict()
+    assert payload["subject_count"] == 3
+    assert len(payload["module_items"]) == 3
+    assert {section["key"] for section in payload["module_sections"]} == {
+        "portfolio-themes",
+        "portfolio-divergence",
+    }
+    assert len(payload["findings"]) <= 3
+
+
+def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
+    market = build_local_research("market", ResearchContext(), provider=LocalFixtureProvider())
+    opportunity = build_local_research(
+        "opportunity", ResearchContext(), provider=LocalFixtureProvider()
+    )
+
+    assert market.module_sections
+    assert opportunity.module_sections
+    assert market.module_items
+    assert opportunity.module_items
