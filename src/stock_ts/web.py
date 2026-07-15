@@ -13404,7 +13404,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
 
 def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> bool:
     required_sections = {
-        "market": {"market-pulse", "market-movers"},
+        "market": {"market-pulse", "market-continuation", "market-movers"},
         "opportunity": {"opportunity-candidates"},
     }.get(module)
     if not required_sections:
@@ -13420,8 +13420,27 @@ def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> boo
     if not required_sections <= set(sections):
         return False
     facts_required = {
+        "market-continuation": {
+            "阶段判断",
+            "持续性评分",
+            "5日表现",
+            "10日表现",
+            "20日表现",
+            "入选原因",
+            "确认条件",
+            "失效条件",
+        },
         "market-movers": {"涨跌幅", "异动原因", "确认条件", "失效条件"},
-        "opportunity-candidates": {"观察分", "入选原因", "确认条件", "失效条件"},
+        "opportunity-candidates": {
+            "阶段判断",
+            "持续性评分",
+            "5日表现",
+            "10日表现",
+            "20日表现",
+            "入选原因",
+            "确认条件",
+            "失效条件",
+        },
     }
     for section_key, labels in facts_required.items():
         if section_key not in sections:

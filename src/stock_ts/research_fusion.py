@@ -46,7 +46,7 @@ def fuse_research_results(
     merged_sections = _merge_sections(local.module_sections, enriched_items)
     merged_findings = _merge_findings(local.findings, enriched.findings)
     ready = sum(item.status == "ready" for item in merged_items)
-    total = len(merged_items)
+    total = max(local.coverage_total, len(merged_items))
     filled_labels = {item.label for item in merged_items if item.status == "ready"}
     missing = tuple(label for label in local.missing_sections if label not in filled_labels)
 
@@ -74,6 +74,7 @@ def _merge_module_items(
         _item_key(item): item for item in enriched_items if item.status == "ready"
     }
     merged: list[ResearchModuleItem] = []
+    local_keys = {_item_key(item) for item in local_items}
     for local_item in local_items:
         enriched_item = enriched_by_label.get(_item_key(local_item))
         if enriched_item is None or local_item.status == "ready":
@@ -88,6 +89,27 @@ def _merge_module_items(
                 facts=_merge_facts(local_item.facts, enriched_item.facts),
             )
         )
+    additions = [
+        item
+        for item in enriched_items
+        if item.status == "ready" and _item_key(item) not in local_keys
+    ]
+    if additions and any(item.kind == "stock_missing_evidence" for item in merged):
+        filled = {item.label for item in additions}
+        compacted: list[ResearchModuleItem] = []
+        for item in merged:
+            if item.kind != "stock_missing_evidence":
+                compacted.append(item)
+                continue
+            remaining = [
+                label.strip()
+                for label in item.summary.split("、")
+                if label.strip() and label.strip() not in filled
+            ]
+            compacted.extend(additions)
+            if remaining:
+                compacted.append(replace(item, summary="、".join(remaining)))
+        merged = compacted
     return tuple(merged)
 
 

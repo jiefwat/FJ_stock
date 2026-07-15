@@ -650,7 +650,7 @@ def engine_app_script() -> str:
       article.classList.add('is-opportunity-list');
       const list = engineNode('div', 'engine-research-list engine-opportunity-list');
       const header = engineNode('div', 'engine-research-list-head');
-      ['#', '股票', '主题', '分数 / 涨跌', '入选原因', '风险 / 失效', '确认条件', '操作']
+      ['#', '股票', '主题', '阶段 / 评分', '5 / 10 / 20日', '判断依据', '确认 / 失效', '操作']
         .forEach((label) => header.append(engineNode('span', '', label)));
       list.append(header);
       const items = engineSectionItems(section);
@@ -665,26 +665,30 @@ def engine_app_script() -> str:
           ),
           engineListCell('主题', 'engine-list-theme', item.label || '主题待确认'),
           engineListCell(
-            '分数 / 涨跌',
+            '阶段 / 评分',
             'engine-list-score',
-            `${engineFactValue(item, ['观察分']) || '—'} / ${
-              engineFactValue(item, ['涨跌幅']) || '—'
+            `${engineFactValue(item, ['阶段判断']) || '待确认'} / ${
+              engineFactValue(item, ['持续性评分', '观察分']) || '—'
             }`
           ),
           engineListCell(
-            '入选原因',
+            '5 / 10 / 20日',
+            'engine-list-move',
+            `${engineFactValue(item, ['5日表现']) || '—'} / ${
+              engineFactValue(item, ['10日表现']) || '—'
+            } / ${engineFactValue(item, ['20日表现']) || '—'}`
+          ),
+          engineListCell(
+            '判断依据',
             'engine-list-reason',
             engineFactValue(item, ['入选原因'])
           ),
           engineListCell(
-            '风险 / 失效',
+            '确认 / 失效',
             'engine-list-risk',
-            engineFactValue(item, ['失效条件'])
-          ),
-          engineListCell(
-            '确认条件',
-            'engine-list-confirm',
-            engineFactValue(item, ['确认条件'])
+            `${engineFactValue(item, ['确认条件']) || '待确认'} / ${
+              engineFactValue(item, ['失效条件']) || '待确认'
+            }`
           )
         );
         row.append(engineStockAnalysisLink(item));
@@ -802,8 +806,14 @@ def engine_app_script() -> str:
         article.append(renderEngineSectionHeading(section));
         if (section.key === 'market-pulse') {
           renderEngineMarketPulseSection(section, article);
+        } else if (section.key === 'market-continuation') {
+          renderEngineOpportunityList(section, article);
         } else if (section.key === 'market-movers') {
           renderEngineMarketMoverSection(section, article);
+        } else if (section.key === 'stock-data-gate') {
+          renderEngineStockDecisionSection(section, article);
+        } else if (section.key === 'stock-multi-horizon') {
+          renderEngineStockDecisionSection(section, article);
         } else if (section.key === 'stock-decision') {
           renderEngineStockDecisionSection(section, article);
         } else if (section.key === 'stock-evidence') {

@@ -346,8 +346,11 @@ def test_engine_has_professional_market_pulse_and_stock_evidence_renderers() -> 
         "section.key === 'stock-evidence'",
         "renderEngineMarketMoverSection",
         "section.key === 'market-movers'",
+        "section.key === 'market-continuation'",
         "renderEngineStockDecisionSection",
         "section.key === 'stock-decision'",
+        "section.key === 'stock-data-gate'",
+        "section.key === 'stock-multi-horizon'",
         "renderEngineOpportunityList",
     ):
         assert fragment in script
