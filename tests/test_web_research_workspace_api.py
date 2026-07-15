@@ -242,6 +242,9 @@ def test_workspace_endpoint_returns_supplier_neutral_product_result(
 def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path) -> None:
     snapshot_dir = tmp_path / "research"
     monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    generated_at = datetime.now(timezone(timedelta(hours=8))).isoformat(
+        timespec="seconds"
+    )
     store = ResearchSnapshotStore(snapshot_dir)
     store.save(
         "market",
@@ -249,7 +252,7 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
             "ok": True,
             "status": "complete",
             "module": "market",
-            "generated_at": "2026-07-15T07:20:00+08:00",
+            "generated_at": generated_at,
             "verdict": "快照判断",
             "action": "保持观察",
             "primary_risk": "成交缩量",

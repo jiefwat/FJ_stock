@@ -178,10 +178,18 @@ def _build_stock_research(
             key="stock-decision",
             title="整体结论与执行边界",
             conclusion=(
-                f"当前结论为{evidence_matrix.decision_label}；"
-                "动作、支持、反证和失效线必须同时成立。"
+                f"数据闸门未解除：{blocked_reason}；暂停形成方向性结论。"
+                if blocked_reason
+                else (
+                    f"当前结论为{evidence_matrix.decision_label}；"
+                    "动作、支持、反证和失效线必须同时成立。"
+                )
             ),
-            tone="negative" if evidence_matrix.hard_gate_reasons else "neutral",
+            tone=(
+                "negative"
+                if blocked_reason or evidence_matrix.hard_gate_reasons
+                else "neutral"
+            ),
             items=(
                 _blocked_stock_decision_items(blocked_reason)
                 if blocked_reason
@@ -192,10 +200,18 @@ def _build_stock_research(
             key="stock-evidence",
             title="八维证据矩阵",
             conclusion=(
-                "支持证据、反对证据和失效条件分开呈现；"
-                f"当前整体可信度为{_confidence_label(evidence_matrix.confidence)}。"
+                "当前证据覆盖不足，八维内容仅用于盘点缺口，不形成方向性结论。"
+                if blocked_reason
+                else (
+                    "支持证据、反对证据和失效条件分开呈现；"
+                    f"当前整体可信度为{_confidence_label(evidence_matrix.confidence)}。"
+                )
             ),
-            tone="negative" if evidence_matrix.hard_gate_reasons else "neutral",
+            tone=(
+                "negative"
+                if blocked_reason or evidence_matrix.hard_gate_reasons
+                else "neutral"
+            ),
             items=evidence_items,
         ),
     )
@@ -811,16 +827,28 @@ def _build_opportunity_research(
     candidate_universe: list[Any],
     selected_theme: str = "",
 ) -> ResearchWorkspaceResult:
-    matching_sectors = [
-        item
-        for item in sectors.sectors
-        if not selected_theme or _same_theme(item.name, selected_theme)
-    ]
-    theme_items = tuple(_theme_item(item) for item in matching_sectors[:5])
     forward_stages = {
         "延续观察": "可进入投资候选",
         "突破待确认": "等待确认",
     }
+    qualified_rows = [
+        (raw, profile, assessment)
+        for raw, profile, assessment in _rank_continuation_candidates(
+            candidate_universe,
+            market_trade_date=market.trade_date,
+            sectors=sectors,
+        )
+        if assessment.stage in forward_stages
+        and _is_classified_theme(raw.sector)
+        and (not selected_theme or _same_theme(raw.sector, selected_theme))
+    ][:10]
+    qualified_themes = list(
+        dict.fromkeys(raw.sector for raw, _profile, _assessment in qualified_rows)
+    )
+    theme_items = tuple(
+        _opportunity_theme_item(theme, qualified_rows, sectors.sectors)
+        for theme in qualified_themes[:5]
+    )
     candidate_items = tuple(
         _continuation_candidate_item(
             raw,
@@ -829,38 +857,40 @@ def _build_opportunity_research(
             kind="candidate",
             public_stage=forward_stages[assessment.stage],
         )
-        for raw, profile, assessment in _rank_continuation_candidates(
-            candidate_universe,
-            market_trade_date=market.trade_date,
-            sectors=sectors,
-        )
-        if assessment.stage in forward_stages
-        and (not selected_theme or _same_theme(raw.sector, selected_theme))
-    )[:10]
-    theme_label = selected_theme or _first_theme(sectors)
+        for raw, profile, assessment in qualified_rows
+    )
+    theme_summary = _join_or_default(
+        qualified_themes[:5], "暂无通过闸门的主题"
+    )
+    theme_label = selected_theme or theme_summary
+    candidate_risks = [
+        f"{raw.sector}：{assessment.counter_evidence}"
+        for raw, _profile, assessment in qualified_rows[:2]
+    ]
+    top_qualified_score = max(
+        (assessment.score for _raw, _profile, assessment in qualified_rows),
+        default=0,
+    )
     findings = (
         ResearchFinding(
             title="主线方向",
             summary=(
                 f"当前聚焦主题：{selected_theme}。"
                 if selected_theme
-                else _join_or_default(
-                    sectors.market_mainline[:3],
-                    "当前没有确认度足够的主线，候选只按个股条件排序。",
-                )
+                else theme_summary
             ),
         ),
         ResearchFinding(
             title="候选覆盖",
             summary=(
                 f"本轮保留 {len(candidate_items)} 只候选；"
-                f"最高观察分 {_top_candidate_score(candidates)}。"
+                f"最高观察分 {top_qualified_score}/100。"
             ),
         ),
         ResearchFinding(
             title="统一排除规则",
             summary=_join_or_default(
-                sectors.risk_notes[:1],
+                candidate_risks[:1],
                 "主题退潮、成交失配或跌破失效线时移出观察列表。",
             ),
         ),
@@ -872,9 +902,7 @@ def _build_opportunity_research(
             conclusion=(
                 f"当前只展示 {selected_theme} 主题及其匹配股票。"
                 if selected_theme
-                else _join_or_default(
-                    sectors.market_mainline[:3], "当前没有确认度足够的主线。"
-                )
+                else theme_summary
             ),
             items=theme_items,
         ),
@@ -893,7 +921,10 @@ def _build_opportunity_research(
             f"优先围绕{theme_label}做验证。"
         ),
         action="先确认主题持续性，再逐只等待价格与成交条件，不追逐临时脉冲。",
-        risk=_join_or_default(sectors.risk_notes[:2], "热点强度可能快速衰减，候选不等于交易信号。"),
+        risk=_join_or_default(
+            candidate_risks,
+            "热点强度可能快速衰减，候选不等于交易信号。",
+        ),
         findings=findings,
         items=candidate_items,
         sections=sections,
@@ -912,6 +943,15 @@ def _same_theme(left: str, right: str) -> bool:
         return text
 
     return bool(normalize(left)) and normalize(left) == normalize(right)
+
+
+def _is_classified_theme(value: str) -> bool:
+    return str(value or "").strip() not in {
+        "",
+        "未分类",
+        "未识别主题",
+        "主题待确认",
+    }
 
 
 def _result(
@@ -1070,6 +1110,39 @@ def _theme_item(sector: Any) -> ResearchModuleItem:
             f"上涨占比 {sector.advancing_ratio:.0%}，{sector.continuity}。"
         ),
         risk=sector.risk,
+        status="ready",
+    )
+
+
+def _opportunity_theme_item(
+    theme: str,
+    qualified_rows: list[tuple[Any, MultiHorizonProfile, ContinuationAssessment]],
+    ranked_sectors: list[Any],
+) -> ResearchModuleItem:
+    matched_sector = next(
+        (sector for sector in ranked_sectors if _same_theme(sector.name, theme)),
+        None,
+    )
+    if matched_sector is not None:
+        return _theme_item(matched_sector)
+
+    theme_rows = [
+        row for row in qualified_rows if _same_theme(row[0].sector, theme)
+    ]
+    top_score = max((row[2].score for row in theme_rows), default=0)
+    risks = list(dict.fromkeys(row[2].counter_evidence for row in theme_rows))
+    return ResearchModuleItem(
+        kind="theme",
+        name=theme,
+        label="候选主题",
+        summary=(
+            f"{len(theme_rows)} 只候选通过持续性闸门，"
+            f"最高评分 {top_score}/100；等待板块扩散确认。"
+        ),
+        risk=_join_or_default(
+            risks[:2],
+            "板块榜单暂未覆盖该主题，需继续验证扩散与成交。",
+        ),
         status="ready",
     )
 

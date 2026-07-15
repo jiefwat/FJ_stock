@@ -113,6 +113,38 @@ class MultiThemeCandidateProvider(MultiDayCandidateProvider):
         ]
 
 
+class UnknownThemeCandidateProvider(MultiDayCandidateProvider):
+    def fetch_candidate_universe(self):
+        trend = super().fetch_candidate_universe()[0]
+        return [
+            replace(
+                trend,
+                code="600021",
+                name="未知主题趋势",
+                sector="未识别主题",
+            ),
+            replace(
+                trend,
+                code="600022",
+                name="机器人趋势",
+                sector="机器人",
+            ),
+        ]
+
+
+class CandidateThemeOutsideSectorRankProvider(MultiDayCandidateProvider):
+    def fetch_candidate_universe(self):
+        trend = super().fetch_candidate_universe()[0]
+        return [
+            replace(
+                trend,
+                code="600031",
+                name="旅游趋势",
+                sector="旅游概念",
+            )
+        ]
+
+
 def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
     result = build_local_research(
         "stock",
@@ -129,6 +161,15 @@ def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missin
     assert [item.label for item in result.module_items] == ["行情资金", "关键缺口"]
     assert result.module_items[-1].status == "missing"
     assert "行情日期" in result.module_sections[0].conclusion
+    decision_section = next(
+        section for section in result.module_sections if section.key == "stock-decision"
+    )
+    evidence_section = next(
+        section for section in result.module_sections if section.key == "stock-evidence"
+    )
+    assert "数据闸门未解除" in decision_section.conclusion
+    assert "谨慎进攻" not in decision_section.conclusion
+    assert "不形成方向性结论" in evidence_section.conclusion
 
 
 def test_local_stock_fallback_keeps_available_dimensions_and_marks_gaps() -> None:
@@ -341,6 +382,52 @@ def test_opportunity_selected_theme_only_returns_matching_candidates() -> None:
     assert [item.name for item in themes.items] == ["机器人"]
     assert [item.name for item in candidates.items] == ["机器人趋势"]
     assert "机器人" in result.verdict
+
+
+def test_opportunity_themes_only_link_to_gated_classified_candidates() -> None:
+    result = build_local_research(
+        "opportunity",
+        ResearchContext(),
+        provider=UnknownThemeCandidateProvider(),
+    )
+
+    themes = next(
+        section for section in result.module_sections if section.key == "opportunity-themes"
+    )
+    candidates = next(
+        section for section in result.module_sections if section.key == "opportunity-candidates"
+    )
+
+    assert [item.name for item in themes.items] == ["机器人"]
+    assert [item.name for item in candidates.items] == ["机器人趋势"]
+    assert all(item.label != "未识别主题" for item in candidates.items)
+
+
+def test_opportunity_builds_theme_card_when_candidate_theme_is_outside_sector_rank() -> None:
+    result = build_local_research(
+        "opportunity",
+        ResearchContext(),
+        provider=CandidateThemeOutsideSectorRankProvider(),
+    )
+
+    themes = next(
+        section for section in result.module_sections if section.key == "opportunity-themes"
+    )
+    candidates = next(
+        section for section in result.module_sections if section.key == "opportunity-candidates"
+    )
+
+    assert [item.name for item in themes.items] == ["旅游概念"]
+    assert [item.name for item in candidates.items] == ["旅游趋势"]
+    assert "旅游概念" in result.verdict
+    assert themes.conclusion == "旅游概念"
+    assert result.findings[0].summary == "旅游概念"
+    assert "旅游概念" in result.primary_risk
+    assert "旅游概念" in result.findings[2].summary
+    candidate_score = next(
+        fact.value for fact in candidates.items[0].facts if fact.label == "持续性评分"
+    )
+    assert candidate_score in result.findings[1].summary
 
 
 def test_local_market_leads_with_professional_pulse_metrics() -> None:
