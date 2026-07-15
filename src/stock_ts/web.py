@@ -1007,6 +1007,8 @@ def _render_native_research_page(
     *,
     stock_code: str,
     holdings_path: str,
+    provider_name: str,
+    edit_code: str,
     current_user: AuthUser | None,
     portfolio_notice: PortfolioNotice | None,
     settings_notice: SettingsNotice | None,
@@ -1021,10 +1023,17 @@ def _render_native_research_page(
         sidebar_query = selected_stock
     holdings_context = _privacy_safe_holdings_context(holdings_path)
     service_status = _iwencai_research_ui_status()
+    portfolio_manager = _render_native_portfolio_manager(
+        holdings_path=holdings_path,
+        stock_code=selected_stock,
+        provider_name=provider_name,
+        edit_code=edit_code,
+    )
     portfolio_workspace = render_engine_workspace(
         "portfolio",
         status=service_status,
         context={"holdings": holdings_context},
+        supplemental_html=portfolio_manager,
     )
     if portfolio_notice is not None:
         portfolio_workspace = _render_portfolio_notice(portfolio_notice) + portfolio_workspace
@@ -1076,6 +1085,150 @@ def _privacy_safe_holdings_context(holdings_path: str) -> list[dict[str, str]]:
     ]
 
 
+def _render_native_portfolio_manager(
+    *,
+    holdings_path: str,
+    stock_code: str,
+    provider_name: str,
+    edit_code: str,
+) -> str:
+    try:
+        holdings = load_holdings_csv(holdings_path, allow_empty=True)
+    except Exception:
+        holdings = []
+    editing = next((item for item in holdings if item.code == edit_code), None)
+    readonly = _is_public_readonly()
+    rows = "".join(
+        _render_native_holding_row(
+            item,
+            stock_code=stock_code,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+            readonly=readonly,
+        )
+        for item in holdings
+    )
+    if not rows:
+        rows = (
+            '<tr><td colspan="4"><div class="empty-state"><strong>还没有持仓</strong>'
+            '<p>用下方表单录入股票、数量和成本，保存后自动生成逐股结论。</p>'
+            "</div></td></tr>"
+        )
+    editor = (
+        '<p class="module-desc">当前为只读模式，持仓写入已关闭。</p>'
+        if readonly
+        else _render_native_holding_editor(
+            editing,
+            stock_code=stock_code,
+            provider_name=provider_name,
+            holdings_path=holdings_path,
+        )
+    )
+    mode = "只读" if readonly else "可编辑"
+    return f"""
+      <section class="engine-native-tools" data-native-portfolio-manager>
+        <header class="engine-native-tools-header">
+          <div><h3>持仓管理与分析入口</h3>
+          <p>数量和成本只保存在当前账号账本；研究接口只接收代码和名称。</p></div>
+          <span class="portfolio-chip">{mode} · {len(holdings)} 只</span>
+        </header>
+        <div class="native-portfolio-table-wrap">
+          <table class="data-table native-portfolio-table">
+            <thead><tr><th>股票</th><th>数量 / 成本</th><th>主题</th><th>操作</th></tr></thead>
+            <tbody>{rows}</tbody>
+          </table>
+        </div>
+        {editor}
+      </section>"""
+
+
+def _render_native_holding_row(
+    holding: Holding,
+    *,
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+    readonly: bool,
+) -> str:
+    actions = _render_open_stock_form(holding.code, provider_name, holdings_path)
+    if not readonly:
+        edit_query = urlencode(
+            {
+                "code": stock_code,
+                "provider": provider_name,
+                "holdings": holdings_path,
+                "edit": holding.code,
+            }
+        )
+        actions += f'<a class="ghost-button" href="/?{edit_query}#portfolio">编辑</a>'
+        actions += _render_delete_holding_form(
+            holding.code,
+            stock_code,
+            provider_name,
+            holdings_path,
+        )
+    return (
+        "<tr>"
+        f'<td class="name-cell"><strong>{escape(holding.name)}</strong>'
+        f"<span>{escape(holding.code)}</span></td>"
+        f"<td>{_format_form_number(holding.shares)} 股 · 成本 "
+        f"{_format_form_number(holding.cost_price)}</td>"
+        f"<td>{escape(holding.sector or '主题待确认')}</td>"
+        f'<td class="action-cell">{actions}</td>'
+        "</tr>"
+    )
+
+
+def _render_native_holding_editor(
+    holding: Holding | None,
+    *,
+    stock_code: str,
+    provider_name: str,
+    holdings_path: str,
+) -> str:
+    code = holding.code if holding else ""
+    name = holding.name if holding else ""
+    shares = _format_form_number(holding.shares) if holding else ""
+    cost = _format_form_number(holding.cost_price) if holding else ""
+    sector = holding.sector if holding else ""
+    note = holding.note if holding else ""
+    title = f"编辑 {holding.name}" if holding else "新增持仓"
+    cancel = ""
+    if holding:
+        query = urlencode(
+            {
+                "code": stock_code,
+                "provider": provider_name,
+                "holdings": holdings_path,
+            }
+        )
+        cancel = f'<a class="ghost-button" href="/?{query}#portfolio">取消编辑</a>'
+    return f"""
+      <form class="inline-form native-holding-form" method="post" action="/holdings">
+        <input type="hidden" name="portfolio_action" value="upsert" />
+        <input type="hidden" name="page_code" value="{escape(stock_code, quote=True)}" />
+        <input type="hidden" name="provider" value="{escape(provider_name, quote=True)}" />
+        <input type="hidden" name="holdings_path" value="{escape(holdings_path, quote=True)}" />
+        <div class="editor-toolbar"><strong>{escape(title)}</strong>{cancel}</div>
+        <div class="portfolio-form-grid" style="margin-top:12px">
+          <label class="field-stack">股票代码<input name="holding_code"
+            value="{escape(code, quote=True)}" placeholder="6 位股票代码" required /></label>
+          <label class="field-stack">股票名称<input name="holding_name"
+            value="{escape(name, quote=True)}" placeholder="股票简称" required /></label>
+          <label class="field-stack">持股数量<input name="holding_shares"
+            value="{escape(shares, quote=True)}" placeholder="持股数量" required /></label>
+          <label class="field-stack">成本价<input name="holding_cost_price"
+            value="{escape(cost, quote=True)}" placeholder="持仓成本价" required /></label>
+          <label class="field-stack">所属主题<input name="holding_sector"
+            value="{escape(sector, quote=True)}" placeholder="行业或概念" /></label>
+          <label class="field-stack">备注<input name="holding_note"
+            value="{escape(note, quote=True)}" placeholder="仓位角色或风险备注" /></label>
+        </div>
+        <div class="form-actions"><span class="form-hint">保存后自动刷新持仓结论。</span>
+          <button class="primary-button" type="submit">保存持仓</button></div>
+      </form>"""
+
+
 def _render_native_account_module(
     *,
     holdings_path: str,
@@ -1116,6 +1269,8 @@ def render_page(
         return _render_native_research_page(
             stock_code=stock_code,
             holdings_path=holdings_path,
+            provider_name=provider_name,
+            edit_code=edit_code,
             current_user=current_user,
             portfolio_notice=portfolio_notice,
             settings_notice=settings_notice,

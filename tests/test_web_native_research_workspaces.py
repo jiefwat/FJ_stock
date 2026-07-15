@@ -234,6 +234,47 @@ def test_portfolio_page_context_keeps_twenty_names_and_codes_only(tmp_path) -> N
     assert "备注" not in serialized
 
 
+def test_native_portfolio_restores_authenticated_ledger_controls_and_stock_links(tmp_path) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心仓\n",
+        encoding="utf-8",
+    )
+
+    soup = BeautifulSoup(
+        render_page(
+            stock_code="600519",
+            holdings_path=str(holdings),
+            edit_code="600519",
+        ),
+        "html.parser",
+    )
+    portfolio = soup.select_one('[data-engine-workspace="portfolio"]')
+    assert portfolio is not None
+    manager = portfolio.select_one("[data-native-portfolio-manager]")
+    assert manager is not None
+    assert manager.select_one('form[action="/holdings"] input[name="holding_shares"]')
+    assert manager.select_one('form[action="/holdings"] input[name="holding_cost_price"]')
+    assert manager.select_one(
+        'form[action="/holdings"] input[name="portfolio_action"][value="delete"]'
+    )
+    assert manager.select_one('a[href*="code=600519"][href$="#stock"]')
+    assert manager.select_one('input[name="holding_code"]')["value"] == "600519"
+
+
+def test_native_stock_workspace_has_switcher_and_full_market_entry() -> None:
+    soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
+    stock = soup.select_one('[data-engine-workspace="stock"]')
+    assert stock is not None
+
+    switcher = stock.select_one("[data-engine-stock-switcher]")
+    assert switcher is not None
+    assert switcher.select_one('input[name="code"]')["value"] == "600519"
+    assert switcher.select_one('button[type="submit"]')
+    assert switcher.select_one('a[href="#opportunity"]')
+
+
 def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
     script = engine_app_script()
 
@@ -303,6 +344,11 @@ def test_engine_has_professional_market_pulse_and_stock_evidence_renderers() -> 
         "renderEngineStockEvidenceSection",
         "section.key === 'market-pulse'",
         "section.key === 'stock-evidence'",
+        "renderEngineMarketMoverSection",
+        "section.key === 'market-movers'",
+        "renderEngineStockDecisionSection",
+        "section.key === 'stock-decision'",
+        "renderEngineOpportunityList",
     ):
         assert fragment in script
 
@@ -311,6 +357,8 @@ def test_engine_has_professional_market_pulse_and_stock_evidence_renderers() -> 
         ".engine-pulse-metric",
         ".engine-evidence-grid",
         ".engine-evidence-card",
+        ".engine-opportunity-list",
+        ".engine-mover-list",
     ):
         assert class_name in CSS
 
@@ -454,7 +502,37 @@ def test_engine_script_renders_module_items_without_inner_html() -> None:
     assert "payload.module === 'stock'" in script
     assert "item.label || '研究维度'" in script
     assert "encodeURIComponent" in script
+    assert "payload.module === 'portfolio'" in script
+    assert "payload.module === 'opportunity'" in script
     assert ".innerHTML" not in script
+
+
+def test_opportunity_uses_one_reasoned_list_and_suppresses_duplicate_module_items() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+const article = new FakeNode('article');
+renderEngineOpportunityList({items: [
+  {code:'001', name:'甲', label:'半导体', summary:'依据', risk:'风险', facts:[
+    {label:'观察分', value:'88'}, {label:'涨跌幅', value:'+4.2%'},
+    {label:'入选原因', value:'主题与量价共振'}, {label:'确认条件', value:'放量站稳'},
+    {label:'失效条件', value:'跌破关键位'}
+  ]}
+]}, article);
+console.log(JSON.stringify({
+  lists: findByClass(article, 'engine-opportunity-list').length,
+  rows: findByClass(article, 'engine-opportunity-row').length,
+  links: findByClass(article, 'engine-list-action').length,
+  text: article.textContent
+}));
+"""
+    )
+
+    assert result["lists"] == 1
+    assert result["rows"] == 1
+    assert result["links"] == 1
+    assert "主题与量价共振" in result["text"]
+    assert "放量站稳" in result["text"]
+    assert "跌破关键位" in result["text"]
 
 
 def test_module_item_grid_is_responsive_and_marks_stale_delivery() -> None:

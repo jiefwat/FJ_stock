@@ -18,6 +18,7 @@ def render_engine_workspace(
     *,
     status: str,
     context: dict[str, object] | None = None,
+    supplemental_html: str = "",
 ) -> str:
     if module not in MODULE_META:
         raise ValueError("不支持的研究模块。")
@@ -29,6 +30,7 @@ def render_engine_workspace(
         separators=(",", ":"),
     )
     disabled = "" if available else " disabled"
+    stock_switcher = _render_stock_switcher(context or {}) if module == "stock" else ""
     return f"""
     <section class="module engine-module" id="module-{escape(module)}"
       data-engine-workspace="{escape(module)}"
@@ -44,6 +46,7 @@ def render_engine_workspace(
         </div>
       </header>
       <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
+      {stock_switcher}
       <section class="engine-judgment state-idle" data-engine-judgment>
         <div class="engine-signal-band" aria-hidden="true"><i></i></div>
         <div class="engine-verdict" data-engine-verdict-block>
@@ -91,6 +94,7 @@ def render_engine_workspace(
         </div>
         <div class="engine-module-item-grid" data-engine-module-item-grid></div>
       </section>
+      {supplemental_html}
       <div class="engine-actions">
         <details class="engine-disclosure" data-engine-disclosure
           data-engine-target="evidence" tabindex="-1">
@@ -105,6 +109,23 @@ def render_engine_workspace(
       <p class="engine-live-state" data-engine-live-state aria-live="polite">
         {escape(status_label)}</p>
     </section>"""
+
+
+def _render_stock_switcher(context: dict[str, object]) -> str:
+    query = str(context.get("code") or context.get("name") or "").strip()
+    return f"""
+      <section class="engine-stock-switcher" data-engine-stock-switcher>
+        <div>
+          <span>切换研究对象</span>
+          <strong>输入代码或名称，直接生成整股结论</strong>
+        </div>
+        <form method="get" action="/#stock">
+          <input name="code" value="{escape(query, quote=True)}"
+            placeholder="例如：600519 / 贵州茅台" autocomplete="off" required />
+          <button type="submit">分析这只股票</button>
+        </form>
+        <a href="#opportunity">进入全市场筛选</a>
+      </section>"""
 
 
 def render_engine_mobile_dock() -> str:
@@ -284,6 +305,11 @@ def engine_app_script() -> str:
       const count = workspace.querySelector('[data-engine-module-items-count]');
       if (!section || !root || !heading || !count) return;
       const items = Array.isArray(payload.module_items) ? payload.module_items : [];
+      if (payload.module === 'opportunity') {
+        root.replaceChildren();
+        section.hidden = true;
+        return;
+      }
       const titles = {
         market: '指数趋势',
         portfolio: '全部持仓',
@@ -311,8 +337,12 @@ def engine_app_script() -> str:
         );
         card.append(meta, title, engineNode('p', '', item.summary || '证据待补。'));
         if (item.risk) card.append(engineNode('small', '', item.risk));
-        if (payload.module === 'opportunity' && item.code) {
-          const link = engineNode('a', 'engine-module-item-link', '进入个股分析');
+        if ((payload.module === 'opportunity' || payload.module === 'portfolio') && item.code) {
+          const link = engineNode(
+            'a',
+            'engine-module-item-link',
+            payload.module === 'portfolio' ? '查看完整个股结论' : '进入个股分析'
+          );
           link.href = `/?code=${encodeURIComponent(item.code)}#stock`;
           card.append(link);
         }
@@ -540,6 +570,132 @@ def engine_app_script() -> str:
       article.append(grid);
     }
 
+    function renderEngineStockDecisionSection(section, article) {
+      article.classList.add('is-stock-decision');
+      const grid = engineNode('div', 'engine-stock-decision-grid');
+      const items = engineSectionItems(section);
+      items.forEach((item) => {
+        const card = engineNode('article', 'engine-stock-decision-card');
+        card.append(
+          engineNode('span', '', item.label || '决策项'),
+          engineNode('strong', '', item.summary || '结论待确认。')
+        );
+        if (item.risk) card.append(engineNode('small', '', item.risk));
+        grid.append(card);
+      });
+      if (!items.length) {
+        grid.append(engineNode('div', 'engine-section-empty', '整体结论待补。'));
+      }
+      article.append(grid);
+    }
+
+    function engineListCell(label, className, value) {
+      const cell = engineNode('div', className, value || '待确认');
+      cell.dataset.label = label;
+      return cell;
+    }
+
+    function engineStockAnalysisLink(item) {
+      const link = engineNode('a', 'engine-list-action', '个股分析');
+      link.href = `/?code=${encodeURIComponent(item.code || '')}#stock`;
+      link.setAttribute('aria-label', `打开 ${item.name || item.code || '候选'} 个股分析`);
+      return link;
+    }
+
+    function renderEngineMarketMoverSection(section, article) {
+      article.classList.add('is-market-movers');
+      const list = engineNode('div', 'engine-research-list engine-mover-list');
+      const header = engineNode('div', 'engine-research-list-head');
+      ['股票', '主题', '涨跌', '异动原因', '确认条件', '失效条件', '操作'].forEach(
+        (label) => header.append(engineNode('span', '', label))
+      );
+      list.append(header);
+      const items = engineSectionItems(section);
+      items.forEach((item) => {
+        const row = engineNode('article', 'engine-research-list-row engine-mover-row');
+        row.append(
+          engineListCell(
+            '股票',
+            'engine-list-stock',
+            `${item.name || '待确认'} · ${item.code || '—'}`
+          ),
+          engineListCell('主题', 'engine-list-theme', item.label || '主题待确认'),
+          engineListCell('涨跌', 'engine-list-move', engineFactValue(item, ['涨跌幅'])),
+          engineListCell(
+            '异动原因',
+            'engine-list-reason',
+            engineFactValue(item, ['异动原因'])
+          ),
+          engineListCell(
+            '确认条件',
+            'engine-list-confirm',
+            engineFactValue(item, ['确认条件'])
+          ),
+          engineListCell(
+            '失效条件',
+            'engine-list-risk',
+            engineFactValue(item, ['失效条件'])
+          )
+        );
+        row.append(engineStockAnalysisLink(item));
+        list.append(row);
+      });
+      if (!items.length) {
+        list.append(engineNode('div', 'engine-section-empty', '当前扫描没有可分析异动。'));
+      }
+      article.append(list);
+    }
+
+    function renderEngineOpportunityList(section, article) {
+      article.classList.add('is-opportunity-list');
+      const list = engineNode('div', 'engine-research-list engine-opportunity-list');
+      const header = engineNode('div', 'engine-research-list-head');
+      ['#', '股票', '主题', '分数 / 涨跌', '入选原因', '风险 / 失效', '确认条件', '操作']
+        .forEach((label) => header.append(engineNode('span', '', label)));
+      list.append(header);
+      const items = engineSectionItems(section);
+      items.forEach((item, index) => {
+        const row = engineNode('article', 'engine-research-list-row engine-opportunity-row');
+        row.append(
+          engineListCell('排名', 'engine-list-rank', String(index + 1).padStart(2, '0')),
+          engineListCell(
+            '股票',
+            'engine-list-stock',
+            `${item.name || '待确认'} · ${item.code || '—'}`
+          ),
+          engineListCell('主题', 'engine-list-theme', item.label || '主题待确认'),
+          engineListCell(
+            '分数 / 涨跌',
+            'engine-list-score',
+            `${engineFactValue(item, ['观察分']) || '—'} / ${
+              engineFactValue(item, ['涨跌幅']) || '—'
+            }`
+          ),
+          engineListCell(
+            '入选原因',
+            'engine-list-reason',
+            engineFactValue(item, ['入选原因'])
+          ),
+          engineListCell(
+            '风险 / 失效',
+            'engine-list-risk',
+            engineFactValue(item, ['失效条件'])
+          ),
+          engineListCell(
+            '确认条件',
+            'engine-list-confirm',
+            engineFactValue(item, ['确认条件'])
+          )
+        );
+        row.append(engineStockAnalysisLink(item));
+        list.append(row);
+      });
+      if (!items.length) {
+        list.append(engineNode('div', 'engine-section-empty', '当前没有通过风险排除的候选。'));
+      }
+      article.append(list);
+    }
+
     function renderEngineStockCard(item) {
       const card = engineNode('article', `engine-stock-card state-${item.status || 'ready'}`);
       const meta = engineNode('div', 'engine-stock-card-meta');
@@ -646,6 +802,10 @@ def engine_app_script() -> str:
         article.append(renderEngineSectionHeading(section));
         if (section.key === 'market-pulse') {
           renderEngineMarketPulseSection(section, article);
+        } else if (section.key === 'market-movers') {
+          renderEngineMarketMoverSection(section, article);
+        } else if (section.key === 'stock-decision') {
+          renderEngineStockDecisionSection(section, article);
         } else if (section.key === 'stock-evidence') {
           renderEngineStockEvidenceSection(section, article);
         } else if (section.key === 'market-breadth') {
@@ -653,7 +813,7 @@ def engine_app_script() -> str:
         } else if (section.key === 'portfolio-divergence') {
           renderEngineDivergenceSection(section, article);
         } else if (section.key === 'opportunity-candidates') {
-          renderEngineCandidateSection(section, article);
+          renderEngineOpportunityList(section, article);
         } else if (section.key === 'market-hot') {
           renderEngineStockSection(section, article);
         } else if (String(section.key || '').endsWith('-themes')) {
