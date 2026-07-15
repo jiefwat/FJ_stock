@@ -82,13 +82,13 @@ from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
 from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
-from .research_delivery import deliver_research
 from .research_engine import (
     ResearchContext,
     ResearchTarget,
     ResearchWorkspaceService,
 )
 from .research_fallback import build_local_research
+from .research_fusion import fuse_research_results
 from .research_playbook import DecisionDashboard
 from .research_snapshots import ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
@@ -13216,14 +13216,31 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             result["stale"] = snapshot.stale
             return result
         return local_fallback(module, context).to_public_dict() | {"stale": False}
-    return deliver_research(
-        RESEARCH_WORKSPACE_SERVICE,
-        store,
-        module,
-        context,
-        refresh=refresh,
-        fallback=local_fallback,
-    )
+
+    if module in {"market", "opportunity"} and not refresh:
+        snapshot = store.load(module)
+        if snapshot is not None:
+            result = dict(snapshot.payload)
+            result["delivery"] = "snapshot"
+            result["data_label"] = "当日快照"
+            result["stale"] = False
+            return result
+
+    local_result = local_fallback(module, context)
+    try:
+        enriched_result = RESEARCH_WORKSPACE_SERVICE.research(
+            module,
+            context,
+            refresh=refresh,
+        )
+    except Exception:
+        return local_result.to_public_dict() | {"stale": False}
+
+    fused_result = fuse_research_results(local_result, enriched_result)
+    result = fused_result.to_public_dict() | {"stale": False}
+    if module in {"market", "opportunity"} and fused_result.ok:
+        store.save(module, result)
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):

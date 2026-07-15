@@ -11,7 +11,11 @@ import pytest
 
 import stock_ts.web as web_module
 from stock_ts.providers.sample import SampleDataProvider
-from stock_ts.research_engine import ResearchContext
+from stock_ts.research_engine import (
+    ResearchContext,
+    ResearchModuleItem,
+    ResearchWorkspaceResult,
+)
 from stock_ts.research_snapshots import ResearchSnapshotStore
 from stock_ts.web import (
     Handler,
@@ -263,6 +267,59 @@ def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigur
     assert response["verdict"]
     assert response["findings"]
     assert response["module_items"]
+
+
+def test_workspace_response_keeps_local_decision_when_enrichment_succeeds(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(tmp_path / "research"))
+    monkeypatch.setenv("IWENCAI_API_KEY", "configured-for-test")
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+
+    class EnrichedService:
+        def research(self, *_args, **_kwargs):
+            return ResearchWorkspaceResult(
+                ok=True,
+                status="complete",
+                module="stock",
+                generated_at="2026-07-15T20:00:00+08:00",
+                verdict="外部结论不应接管",
+                action="外部动作不应接管",
+                primary_risk="外部风险不应接管",
+                module_items=(
+                    ResearchModuleItem(
+                        kind="stock_dimension",
+                        label="财务质量",
+                        summary="营收与利润证据已补齐。",
+                        risk="现金流仍需复核。",
+                        status="ready",
+                    ),
+                ),
+                decision_label="外部买入",
+            )
+
+    monkeypatch.setattr(web_module, "RESEARCH_WORKSPACE_SERVICE", EnrichedService())
+
+    response = web_module._research_workspace_response(
+        {
+            "module": "stock",
+            "context": ResearchContext(code="603278", name="大业股份"),
+            "refresh": True,
+            "holdings_path": str(tmp_path / "private-holdings.csv"),
+        }
+    )
+
+    assert response["delivery"] == "hybrid"
+    assert response["data_label"] == "综合证据"
+    assert response["verdict"] != "外部结论不应接管"
+    assert response["action"] != "外部动作不应接管"
+    assert response["decision_label"] != "外部买入"
+    financial = next(
+        item for item in response["module_items"] if item["label"] == "财务质量"
+    )
+    assert financial["status"] == "ready"
+    assert "营收与利润" in financial["summary"]
 
 
 def test_workspace_endpoint_requires_login_when_auth_is_enabled(
