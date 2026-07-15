@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import date, timedelta
 
-from stock_ts.models import DailyBar, NewsItem, StockRawData
+from stock_ts.models import CandidateStockRawData, DailyBar, NewsItem, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import ResearchContext, ResearchTarget
 from stock_ts.research_fallback import build_local_research
@@ -49,6 +49,58 @@ class StalePriceOnlyProvider(SampleDataProvider):
             for index in range(25)
         ]
         return StockRawData(code=code, name="药石科技", bars=bars)
+
+
+def _candidate_bars(closes: list[float], *, end: date) -> list[DailyBar]:
+    start = end - timedelta(days=len(closes) - 1)
+    return [
+        DailyBar(
+            date=(start + timedelta(days=index)).isoformat(),
+            open=close * 0.995,
+            high=close * 1.01,
+            low=close * 0.99,
+            close=close,
+            volume=1_000_000 + index * 15_000,
+        )
+        for index, close in enumerate(closes)
+    ]
+
+
+class MultiDayCandidateProvider(LocalFixtureProvider):
+    def fetch_market(self):
+        return replace(super().fetch_market(), trade_date="2026-07-15")
+
+    def fetch_candidate_universe(self):
+        return [
+            CandidateStockRawData(
+                code="600001",
+                name="稳步上行",
+                sector="半导体",
+                bars=_candidate_bars(
+                    [100 + index * 0.8 for index in range(25)],
+                    end=date(2026, 7, 15),
+                ),
+                fund_flow=2.0,
+            ),
+            CandidateStockRawData(
+                code="600002",
+                name="单日脉冲",
+                sector="半导体",
+                bars=_candidate_bars(
+                    [100.0] * 24 + [106.0],
+                    end=date(2026, 7, 15),
+                ),
+            ),
+            CandidateStockRawData(
+                code="600003",
+                name="陈旧行情",
+                sector="半导体",
+                bars=_candidate_bars(
+                    [100 + index * 0.7 for index in range(25)],
+                    end=date(2026, 7, 14),
+                ),
+            ),
+        ]
 
 
 def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
@@ -190,6 +242,10 @@ def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_pat
         assert facts["主要原因"]
         assert facts["确认条件"]
         assert facts["失效条件"]
+        assert facts["阶段判断"]
+        assert facts["5日表现"]
+        assert facts["10日表现"]
+        assert facts["20日表现"]
 
 
 def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
@@ -202,6 +258,44 @@ def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
     assert opportunity.module_sections
     assert market.module_items
     assert opportunity.module_items
+
+
+def test_market_and_opportunity_separate_continuation_from_one_day_moves() -> None:
+    provider = MultiDayCandidateProvider()
+    market = build_local_research("market", ResearchContext(), provider=provider)
+    opportunity = build_local_research("opportunity", ResearchContext(), provider=provider)
+
+    continuation = next(
+        section for section in market.module_sections if section.key == "market-continuation"
+    )
+    movers = next(
+        section for section in market.module_sections if section.key == "market-movers"
+    )
+    assert [item.name for item in continuation.items] == ["稳步上行"]
+    assert "单日脉冲" in {item.name for item in movers.items}
+    assert "陈旧行情" not in {item.name for item in continuation.items}
+
+    candidates = next(
+        section
+        for section in opportunity.module_sections
+        if section.key == "opportunity-candidates"
+    )
+    assert candidates.items[0].name == "稳步上行"
+    assert "陈旧行情" not in {item.name for item in candidates.items}
+    pulse = next(item for item in candidates.items if item.name == "单日脉冲")
+    assert {fact.label for fact in pulse.facts} >= {
+        "阶段判断",
+        "持续性评分",
+        "5日表现",
+        "10日表现",
+        "20日表现",
+        "上涨天数",
+        "最大回撤",
+        "入选原因",
+        "确认条件",
+        "失效条件",
+    }
+    assert pulse.facts[0].value == "脉冲待验证"
 
 
 def test_local_market_leads_with_professional_pulse_metrics() -> None:

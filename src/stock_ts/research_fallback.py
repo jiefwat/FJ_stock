@@ -63,15 +63,25 @@ def build_local_research(
             market=market,
             allow_empty=True,
         )
-        return _build_portfolio_research(portfolio)
+        return _build_portfolio_research(portfolio, provider=provider)
     if module == "opportunity":
-        candidates = build_candidate_report(
+        try:
+            candidate_universe = provider.fetch_candidate_universe()
+        except Exception:
+            candidate_universe = []
+        candidates = _candidate_report(
             provider,
             market=market,
             sectors=sectors,
+            candidate_universe=candidate_universe,
             limit=10,
         )
-        return _build_opportunity_research(market, sectors, candidates)
+        return _build_opportunity_research(
+            market,
+            sectors,
+            candidates,
+            candidate_universe=candidate_universe,
+        )
     raise ValueError(f"unsupported local research module: {module}")
 
 
@@ -377,6 +387,7 @@ def _fetch_stock_raw(
             news_items=candidate.news_items,
             announcements=candidate.announcements,
             data_sources=["candidate_snapshot"],
+            price_reliable=candidate.price_reliable,
         )
 
 
@@ -641,6 +652,15 @@ def _build_market_research(
     mover_items = tuple(
         _market_mover_item(item) for item in _market_mover_candidates(candidates.candidates)
     )
+    continuation_items = tuple(
+        _continuation_candidate_item(raw, profile, assessment, kind="market_continuation")
+        for raw, profile, assessment in _rank_continuation_candidates(
+            candidate_universe,
+            market_trade_date=market.trade_date,
+            sectors=sectors,
+        )
+        if assessment.stage in {"延续观察", "突破待确认"}
+    )[:8]
     findings = (
         ResearchFinding(title="市场宽度", summary=breadth.summary),
         ResearchFinding(
@@ -675,6 +695,17 @@ def _build_market_research(
             items=theme_items,
         ),
         ResearchModuleSection(
+            key="market-continuation",
+            title="持续性观察名单",
+            conclusion=(
+                "只保留多周期趋势通过数据闸门的股票；单日异动不进入本名单。"
+                if continuation_items
+                else "当前无满足多周期条件的股票，不使用单日涨幅榜补位。"
+            ),
+            tone="positive" if continuation_items else "neutral",
+            items=continuation_items,
+        ),
+        ResearchModuleSection(
             key="market-movers",
             title="异动股票分析",
             conclusion=(
@@ -705,12 +736,26 @@ def _build_market_research(
         items=index_items,
         sections=sections,
         decision_label=_market_pulse_label(pulse.regime),
-        subject_count=len(index_items) + len(mover_items),
+        subject_count=len(index_items) + len(continuation_items) + len(mover_items),
     )
 
 
-def _build_portfolio_research(portfolio: Any) -> ResearchWorkspaceResult:
-    position_items = tuple(_position_item(position) for position in portfolio.positions)
+def _build_portfolio_research(
+    portfolio: Any,
+    *,
+    provider: StockDataProvider,
+) -> ResearchWorkspaceResult:
+    position_items = tuple(
+        _position_item(
+            position,
+            continuation=_position_continuation(
+                position,
+                provider=provider,
+                market_trade_date=portfolio.trade_date,
+            ),
+        )
+        for position in portfolio.positions
+    )
     theme_items = tuple(
         ResearchModuleItem(
             kind="portfolio_theme",
@@ -784,9 +829,19 @@ def _build_opportunity_research(
     market: Any,
     sectors: Any,
     candidates: Any,
+    *,
+    candidate_universe: list[Any],
 ) -> ResearchWorkspaceResult:
     theme_items = tuple(_theme_item(item) for item in sectors.sectors[:5])
-    candidate_items = tuple(_candidate_item(item) for item in candidates.candidates[:10])
+    candidate_items = tuple(
+        _continuation_candidate_item(raw, profile, assessment, kind="candidate")
+        for raw, profile, assessment in _rank_continuation_candidates(
+            candidate_universe,
+            market_trade_date=market.trade_date,
+            sectors=sectors,
+        )
+        if assessment.stage not in {"剔除", "过热回避"}
+    )[:10]
     findings = (
         ResearchFinding(
             title="主线方向",
@@ -1059,6 +1114,96 @@ def _market_mover_item(candidate: Any) -> ResearchModuleItem:
     )
 
 
+def _rank_continuation_candidates(
+    candidate_universe: list[Any],
+    *,
+    market_trade_date: str,
+    sectors: Any,
+) -> list[tuple[Any, MultiHorizonProfile, ContinuationAssessment]]:
+    mainline = set(sectors.market_mainline)
+    ranked: list[tuple[Any, MultiHorizonProfile, ContinuationAssessment]] = []
+    for raw in candidate_universe:
+        profile = build_multi_horizon_profile(
+            raw.bars,
+            market_trade_date=market_trade_date,
+            price_reliable=raw.price_reliable,
+        )
+        evidence_count = sum(
+            (
+                raw.fund_flow is not None,
+                raw.pe_ttm is not None,
+                bool(raw.news_items),
+                bool(raw.announcements),
+            )
+        )
+        assessment = assess_continuation(
+            profile,
+            theme_confirmed=raw.sector in mainline,
+            fund_flow=raw.fund_flow,
+            evidence_count=evidence_count,
+        )
+        ranked.append((raw, profile, assessment))
+    stage_priority = {
+        "延续观察": 0,
+        "突破待确认": 1,
+        "反弹待验证": 2,
+        "脉冲待验证": 3,
+        "过热回避": 4,
+        "剔除": 5,
+    }
+    ranked.sort(
+        key=lambda item: (
+            stage_priority.get(item[2].stage, 9),
+            -item[2].score,
+            -(item[1].return_10d if item[1].return_10d is not None else -999.0),
+            item[1].drawdown_10d if item[1].drawdown_10d is not None else 999.0,
+            item[0].code,
+        )
+    )
+    return ranked
+
+
+def _continuation_candidate_item(
+    raw: Any,
+    profile: MultiHorizonProfile,
+    assessment: ContinuationAssessment,
+    *,
+    kind: str,
+) -> ResearchModuleItem:
+    return ResearchModuleItem(
+        kind=kind,
+        code=raw.code,
+        name=raw.name,
+        label=raw.sector or "主题待确认",
+        summary=(
+            f"{assessment.stage} · 持续性评分 {assessment.score}/100；"
+            f"{assessment.support}"
+        ),
+        risk=assessment.counter_evidence,
+        status="ready" if assessment.stage not in {"剔除", "过热回避"} else "missing",
+        facts=(
+            ResearchFact(label="阶段判断", value=assessment.stage),
+            ResearchFact(label="持续性评分", value=f"{assessment.score}/100"),
+            ResearchFact(label="观察分", value=str(assessment.score)),
+            ResearchFact(label="涨跌幅", value=_format_return(profile.latest_return)),
+            ResearchFact(label="5日表现", value=_format_return(profile.return_5d)),
+            ResearchFact(label="10日表现", value=_format_return(profile.return_10d)),
+            ResearchFact(label="20日表现", value=_format_return(profile.return_20d)),
+            ResearchFact(
+                label="上涨天数",
+                value=f"近5日 {profile.up_days_5d} 天，近10日 {profile.up_days_10d} 天",
+            ),
+            ResearchFact(
+                label="最大回撤",
+                value=_format_return(profile.drawdown_10d, signed=False),
+            ),
+            ResearchFact(label="入选原因", value=assessment.support),
+            ResearchFact(label="确认条件", value=assessment.confirmation),
+            ResearchFact(label="失效条件", value=assessment.invalidation),
+        ),
+    )
+
+
 def _candidate_item(candidate: Any, *, kind: str = "candidate") -> ResearchModuleItem:
     confirm = (
         candidate.watch_conditions[0]
@@ -1091,11 +1236,24 @@ def _candidate_reason(candidate: Any) -> str:
     return reason.replace(name, "该股") if name else reason
 
 
-def _position_item(position: Any) -> ResearchModuleItem:
+def _position_item(
+    position: Any,
+    *,
+    continuation: tuple[MultiHorizonProfile, ContinuationAssessment] | None = None,
+) -> ResearchModuleItem:
     action = _position_action(position)
     reason = _position_reason(position)
     confirm = _position_confirmation(position)
     invalidate = _position_invalidation(position)
+    continuation_facts: tuple[ResearchFact, ...] = ()
+    if continuation is not None:
+        profile, assessment = continuation
+        continuation_facts = (
+            ResearchFact(label="阶段判断", value=assessment.stage),
+            ResearchFact(label="5日表现", value=_format_return(profile.return_5d)),
+            ResearchFact(label="10日表现", value=_format_return(profile.return_10d)),
+            ResearchFact(label="20日表现", value=_format_return(profile.return_20d)),
+        )
     return ResearchModuleItem(
         kind="holding",
         code=position.holding.code,
@@ -1112,8 +1270,39 @@ def _position_item(position: Any) -> ResearchModuleItem:
             ResearchFact(label="主要原因", value=reason),
             ResearchFact(label="确认条件", value=confirm),
             ResearchFact(label="失效条件", value=invalidate),
+        )
+        + continuation_facts,
+    )
+
+
+def _position_continuation(
+    position: Any,
+    *,
+    provider: StockDataProvider,
+    market_trade_date: str,
+) -> tuple[MultiHorizonProfile, ContinuationAssessment] | None:
+    try:
+        raw = provider.fetch_stock(position.holding.code)
+    except Exception:
+        return None
+    profile = build_multi_horizon_profile(
+        raw.bars,
+        market_trade_date=market_trade_date,
+        price_reliable=raw.price_reliable,
+    )
+    assessment = assess_continuation(
+        profile,
+        fund_flow=raw.fund_flow,
+        evidence_count=sum(
+            (
+                bool(raw.fundamental_metrics),
+                bool(raw.news_items),
+                bool(raw.announcements),
+                raw.pe_ttm is not None,
+            )
         ),
     )
+    return profile, assessment
 
 
 def _position_action(position: Any) -> str:
