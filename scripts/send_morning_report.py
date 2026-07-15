@@ -286,8 +286,12 @@ def _structured_opportunity_lines(
             f"1/3/5/10日｜支持：{support}；"
             f"反证：{counter}；确认：{confirmation}"
         )
-        detail_limit = max(20, 220 - len(prefix))
-        lines.append(prefix + _shorten_line(detail, limit=detail_limit))
+        detail_limit = 220 - len(prefix)
+        lines.append(
+            prefix + _shorten_line(detail, limit=max(1, detail_limit))
+            if detail_limit > 0
+            else prefix.rstrip("｜")
+        )
         if len(lines) >= limit:
             break
     return lines

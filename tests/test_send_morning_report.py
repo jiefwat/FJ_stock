@@ -57,7 +57,7 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
             {
                 "code": f"60000{index}",
                 "name": f"候选{index}",
-                "label": "半导体",
+                "label": "基因概念",
                 "risk": "最大反证：波动仍高",
                 "facts": [
                     {"label": "阶段判断", "value": "可进入投资候选"},
@@ -99,7 +99,7 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
         daily_dir=daily_dir,
         research_dir=research_dir,
         announcement_dir=announcement_dir,
-        site_url="https://stock.example.com",
+        site_url="https://stock.jiewat-kaka-fj.com",
     )
 
     headings = [line for line in content.splitlines() if line.startswith("## ")]
@@ -118,8 +118,8 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
     assert "候选4" not in content
     assert "样本积累中" in content
     assert "3日命中率 62.5%" in content
-    assert "theme=%E5%8D%8A%E5%AF%BC%E4%BD%93" in content
-    assert "source_theme=%E5%8D%8A%E5%AF%BC%E4%BD%93" in content
+    assert "theme=%E5%9F%BA%E5%9B%A0%E6%A6%82%E5%BF%B5" in content
+    assert "source_theme=%E5%9F%BA%E5%9B%A0%E6%A6%82%E5%BF%B5" in content
     assert "不构成投资建议" in content
 
 
