@@ -3,7 +3,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from stock_ts.announcements import AnnouncementItem, AnnouncementReport
 
@@ -22,6 +26,8 @@ def _load_pipeline_module():
 pipeline_module = _load_pipeline_module()
 DailyPipelineConfig = pipeline_module.DailyPipelineConfig
 run_daily_pipeline = pipeline_module.run_daily_pipeline
+BEIJING = ZoneInfo("Asia/Shanghai")
+PIPELINE_NOW = datetime(2026, 7, 10, 7, 0, tzinfo=BEIJING)
 
 
 def _write_snapshot(path: Path) -> None:
@@ -52,6 +58,9 @@ def _write_snapshot(path: Path) -> None:
                     }
                 ],
                 "candidate_universe": {
+                    "scanned_count": 5128,
+                    "enriched_count": 2,
+                    "eligible_count": 2,
                     "items": [
                         {
                             "code": "688362",
@@ -107,6 +116,75 @@ def _write_snapshot(path: Path) -> None:
     )
 
 
+def _status_map(path: Path) -> dict[str, str]:
+    return {
+        key: value
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+        for key, value in [line.split("=", 1)]
+    }
+
+
+@pytest.mark.parametrize(
+    ("hour", "session", "intraday"),
+    [
+        (7, "morning", False),
+        (9, "preopen", False),
+        (13, "midday", True),
+        (15, "close", False),
+        (11, "manual", False),
+    ],
+)
+def test_pipeline_status_records_refresh_session(
+    tmp_path: Path, hour: int, session: str, intraday: bool
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n",
+        encoding="utf-8",
+    )
+
+    def runner(command: list[str], timeout_seconds: int) -> None:
+        if any("run_daily_analysis.py" in item for item in command):
+            out_dir = Path(command[command.index("--output-dir") + 1])
+            html_dir = Path(command[command.index("--html-dir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            html_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "latest.md").write_text("# report", encoding="utf-8")
+            (html_dir / "latest.html").write_text("<html></html>", encoding="utf-8")
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=tmp_path / "reports" / "daily",
+            html_dir=tmp_path / "reports" / "html",
+            announcement_dir=tmp_path / "reports" / "announcements",
+            skip_refresh=True,
+            skip_tdx_enrich=True,
+            skip_a_share_kline=True,
+            skip_external_enrich=True,
+            skip_announcements=True,
+        ),
+        runner=runner,
+        now=PIPELINE_NOW.replace(hour=hour),
+    )
+
+    status = _status_map(result.status_path)
+    assert status["session_name"] == session
+    assert status["intraday"] == str(intraday).lower()
+    assert status["scheduled_at"].endswith(f"{hour:02d}:00:00+08:00")
+    assert status["started_at"].endswith(f"{hour:02d}:00:00+08:00")
+    assert status["completed_at"]
+    assert status["market_trade_date"] == "2026-07-10"
+    assert status["scanned_count"] == "5128"
+    assert status["enriched_count"] == "2"
+    assert status["eligible_count"] == "2"
+
+
 def test_daily_pipeline_runs_refresh_enrich_announcements_and_report(tmp_path: Path) -> None:
     snapshot = tmp_path / "tdx_snapshots.json"
     holdings = tmp_path / "holdings.csv"
@@ -156,6 +234,7 @@ def test_daily_pipeline_runs_refresh_enrich_announcements_and_report(tmp_path: P
             skip_announcements=False,
         ),
         runner=fake_runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is True
@@ -303,12 +382,46 @@ def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path
             skip_refresh=False,
         ),
         runner=failing_runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is False
     status = result.status_path.read_text(encoding="utf-8")
     assert "status=failed" in status
     assert "network down" in status
+
+
+def test_daily_pipeline_restores_last_snapshot_when_refresh_fails(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    previous = snapshot.read_bytes()
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n",
+        encoding="utf-8",
+    )
+
+    def failing_runner(command: list[str], timeout_seconds: int) -> None:
+        if any("refresh_tdx_snapshot.py" in item for item in command):
+            snapshot.write_text('{"partial": true}', encoding="utf-8")
+            raise RuntimeError("refresh interrupted")
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=tmp_path / "reports" / "daily",
+            html_dir=tmp_path / "reports" / "html",
+        ),
+        runner=failing_runner,
+        now=PIPELINE_NOW,
+    )
+
+    assert result.ok is False
+    assert snapshot.read_bytes() == previous
+    status = _status_map(result.status_path)
+    assert status["market_trade_date"] == "2026-07-10"
 
 
 def test_daily_pipeline_continues_when_external_enrichment_times_out(tmp_path: Path) -> None:
@@ -344,6 +457,7 @@ def test_daily_pipeline_continues_when_external_enrichment_times_out(tmp_path: P
             skip_announcements=True,
         ),
         runner=runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is True
@@ -389,6 +503,7 @@ def test_daily_pipeline_continues_when_a_share_kline_hits_rate_limit(tmp_path: P
             skip_announcements=True,
         ),
         runner=runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is True
@@ -439,6 +554,7 @@ def test_daily_pipeline_enriches_holdings_with_news_before_broad_candidate_chunk
             skip_announcements=True,
         ),
         runner=runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is True
@@ -524,6 +640,7 @@ def test_daily_pipeline_writes_data_chain_artifact_and_degrades_on_skipped_steps
             skip_announcements=True,
         ),
         runner=runner,
+        now=PIPELINE_NOW,
     )
 
     assert result.ok is True

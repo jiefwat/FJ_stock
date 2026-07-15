@@ -8,16 +8,18 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from traceback import format_exception_only
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from stock_ts.announcements import fetch_cninfo_announcements, render_announcement_markdown
 from stock_ts.daily_decisions import write_decision_artifact
 from stock_ts.data_chain import validate_data_chain
 
 CommandRunner = Callable[[list[str], int], None]
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -54,12 +56,16 @@ def run_daily_pipeline(
     config: DailyPipelineConfig,
     *,
     runner: CommandRunner | None = None,
+    now: datetime | None = None,
 ) -> DailyPipelineResult:
+    started_at = _beijing_time(now)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     status_path = output_dir / "pipeline.status"
     command_runner = runner or _run_command
     steps: dict[str, str] = {}
+    snapshot_path = Path(config.snapshot_path)
+    previous_snapshot = snapshot_path.read_bytes() if snapshot_path.exists() else None
 
     try:
         if config.skip_refresh:
@@ -102,16 +108,39 @@ def run_daily_pipeline(
 
         command_runner(_report_command(config), 180)
         steps["report"] = "ok"
-        data_chain = _write_data_chain_status(config, steps)
+        data_chain = _write_data_chain_status(
+            config,
+            steps,
+            now=_data_validation_time(started_at),
+        )
         steps["data_chain"] = str(data_chain.get("status") or "unknown")
         final_status = _pipeline_status_from_chain(data_chain)
         error = _data_chain_error_summary(data_chain) if final_status == "failed" else ""
-        _write_pipeline_status(status_path, final_status, steps, codes, error, data_chain)
+        completed_at = _completion_time(now)
+        _write_pipeline_status(
+            status_path,
+            final_status,
+            steps,
+            codes,
+            error,
+            data_chain,
+            metadata=_pipeline_run_metadata(config, started_at, completed_at),
+        )
         _write_pipeline_decisions(config, status_path)
         return DailyPipelineResult(ok=final_status != "failed", status_path=status_path)
     except Exception as exc:
+        if steps.get("refresh") != "ok":
+            _restore_previous_snapshot(snapshot_path, previous_snapshot)
         error = "".join(format_exception_only(type(exc), exc)).strip()
-        _write_pipeline_status(status_path, "failed", steps, _safe_pipeline_codes(config), error)
+        completed_at = _completion_time(now)
+        _write_pipeline_status(
+            status_path,
+            "failed",
+            steps,
+            _safe_pipeline_codes(config),
+            error,
+            metadata=_pipeline_run_metadata(config, started_at, completed_at),
+        )
         return DailyPipelineResult(ok=False, status_path=status_path)
 
 
@@ -474,12 +503,18 @@ def _write_pipeline_decisions(config: DailyPipelineConfig, status_path: Path) ->
     )
 
 
-def _write_data_chain_status(config: DailyPipelineConfig, steps: dict[str, str]) -> dict:
+def _write_data_chain_status(
+    config: DailyPipelineConfig,
+    steps: dict[str, str],
+    *,
+    now: datetime | None = None,
+) -> dict:
     return validate_data_chain(
         snapshot_path=config.snapshot_path,
         holdings_path=config.holdings_path,
         output_path=Path(config.output_dir) / "data_chain_status.json",
         pipeline_steps=steps,
+        now=now,
     )
 
 
@@ -506,12 +541,33 @@ def _write_pipeline_status(
     codes: list[str],
     error: str,
     data_chain: dict | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> None:
+    run_metadata = metadata or {}
+    generated_at = run_metadata.get("completed_at") or datetime.now().isoformat(
+        timespec="seconds"
+    )
     lines = [
         f"status={status}",
-        f"generated_at={datetime.now().isoformat(timespec='seconds')}",
-        f"codes={','.join(codes)}",
+        f"generated_at={generated_at}",
     ]
+    lines.extend(
+        f"{key}={run_metadata.get(key, '')}"
+        for key in (
+            "scheduled_at",
+            "started_at",
+            "completed_at",
+            "session_name",
+            "intraday",
+            "market_trade_date",
+            "data_as_of",
+            "scanned_count",
+            "enriched_count",
+            "eligible_count",
+        )
+        if key in run_metadata
+    )
+    lines.append(f"codes={','.join(codes)}")
     lines.extend(f"{key}={value}" for key, value in steps.items())
     if data_chain:
         blockers = data_chain.get("blockers")
@@ -523,6 +579,85 @@ def _write_pipeline_status(
     if error:
         lines.append(f"error={error}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _beijing_time(value: datetime | None) -> datetime:
+    current = value or datetime.now(BEIJING_TZ)
+    if current.tzinfo is None:
+        return current.replace(tzinfo=BEIJING_TZ)
+    return current.astimezone(BEIJING_TZ)
+
+
+def _completion_time(started_override: datetime | None) -> datetime:
+    if started_override is not None:
+        return _beijing_time(started_override)
+    return datetime.now(BEIJING_TZ)
+
+
+def _refresh_session(current: datetime) -> tuple[str, bool]:
+    session_name = {
+        7: "morning",
+        9: "preopen",
+        13: "midday",
+        15: "close",
+    }.get(current.hour, "manual")
+    return session_name, session_name == "midday"
+
+
+def _data_validation_time(current: datetime) -> datetime:
+    session_name, _intraday = _refresh_session(current)
+    if session_name in {"morning", "preopen"}:
+        return current - timedelta(days=1)
+    return current
+
+
+def _pipeline_run_metadata(
+    config: DailyPipelineConfig,
+    started_at: datetime,
+    completed_at: datetime,
+) -> dict[str, str]:
+    session_name, intraday = _refresh_session(started_at)
+    scheduled_at = started_at.replace(minute=0, second=0, microsecond=0)
+    snapshot = _read_snapshot_payload(Path(config.snapshot_path))
+    market = snapshot.get("market") if isinstance(snapshot, dict) else None
+    market = market if isinstance(market, dict) else {}
+    universe = snapshot.get("candidate_universe") if isinstance(snapshot, dict) else None
+    universe = universe if isinstance(universe, dict) else {}
+    market_trade_date = str(market.get("trade_date") or "").strip()[:10]
+    data_as_of = str(
+        snapshot.get("generated_at")
+        or market.get("generated_at")
+        or market_trade_date
+        or ""
+    ).strip()
+    return {
+        "scheduled_at": scheduled_at.isoformat(timespec="seconds"),
+        "started_at": started_at.isoformat(timespec="seconds"),
+        "completed_at": completed_at.isoformat(timespec="seconds"),
+        "session_name": session_name,
+        "intraday": str(intraday).lower(),
+        "market_trade_date": market_trade_date,
+        "data_as_of": data_as_of,
+        "scanned_count": _metadata_count(universe, "scanned_count"),
+        "enriched_count": _metadata_count(universe, "enriched_count"),
+        "eligible_count": _metadata_count(universe, "eligible_count"),
+    }
+
+
+def _metadata_count(payload: dict, key: str) -> str:
+    value = payload.get(key)
+    try:
+        return str(max(0, int(value)))
+    except (TypeError, ValueError):
+        return "0"
+
+
+def _restore_previous_snapshot(path: Path, previous: bytes | None) -> None:
+    if previous is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(previous)
+    elif path.exists():
+        path.unlink()
 
 
 def _short_error(exc: Exception) -> str:

@@ -1,17 +1,15 @@
 from pathlib import Path
 
 
-def test_stock_ts_daily_timer_uses_required_refresh_windows() -> None:
+def test_stock_ts_daily_timer_uses_four_beijing_refresh_windows() -> None:
     timer = Path("deploy/systemd/stock-ts-daily-analysis.timer")
     text = timer.read_text(encoding="utf-8")
 
-    assert "OnCalendar=*-*-* 00:00:00" in text
-    assert "OnCalendar=*-*-* 09:00:00" in text
-    assert "OnCalendar=*-*-* 13:00:00" in text
-    assert "OnCalendar=*-*-* 06:00:00" not in text
-    assert "OnCalendar=*-*-* 12:30:00" not in text
-    assert "OnCalendar=*-*-* 14:00:00" not in text
-    assert "02,04,06,08,10,12,14,16,18,20,22" not in text
+    assert text.count("OnCalendar=") == 4
+    for checkpoint in ("07:00:00", "09:00:00", "13:00:00", "15:00:00"):
+        assert f"OnCalendar=*-*-* {checkpoint}" in text
+    assert "AccuracySec=1m" in text
+    assert "OnCalendar=*-*-* 00:00:00" not in text
 
 
 def test_stock_ts_daily_service_runs_full_pipeline_with_enough_timeout() -> None:
