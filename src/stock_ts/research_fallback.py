@@ -5,6 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from .analysis import analyze_candidates, analyze_stock
+from .continuation import (
+    ContinuationAssessment,
+    MultiHorizonProfile,
+    assess_continuation,
+    build_multi_horizon_profile,
+)
 from .models import StockRawData
 from .professional_analytics import (
     MarketPulse,
@@ -76,8 +82,13 @@ def _build_stock_research(
     raw = _fetch_stock_raw(provider, context)
     report = analyze_stock(raw)
     evidence_matrix = build_stock_evidence_matrix(raw, report)
+    profile = build_multi_horizon_profile(
+        raw.bars,
+        market_trade_date=_safe_market_trade_date(provider),
+        price_reliable=raw.price_reliable,
+    )
     industry = str(raw.fundamental_metrics.get("industry") or "").strip()
-    items = (
+    dimension_items = (
         _stock_item(
             "财务质量",
             _fundamental_summary(raw.fundamental_metrics),
@@ -97,8 +108,19 @@ def _build_stock_research(
         _stock_item("公告事项", _announcement_summary(raw.announcements), bool(raw.announcements)),
         _stock_item("研报观点", "研报观点需要实时研究恢复后补充。", False),
     )
-    available_items = tuple(item for item in items if item.status == "ready")
-    missing = tuple(item.label for item in items if item.status != "ready")
+    available_items = tuple(item for item in dimension_items if item.status == "ready")
+    missing = tuple(item.label for item in dimension_items if item.status != "ready")
+    items = (
+        available_items + (_missing_evidence_item(missing),)
+        if len(available_items) <= 1 and missing
+        else dimension_items
+    )
+    continuation = assess_continuation(
+        profile,
+        fund_flow=raw.fund_flow,
+        evidence_count=len(available_items),
+    )
+    blocked_reason = _stock_gate_reason(profile, len(available_items))
     findings = (
         ResearchFinding(
             title="价格与资金",
@@ -125,6 +147,23 @@ def _build_stock_research(
     )
     sections = (
         ResearchModuleSection(
+            key="stock-data-gate",
+            title="数据可信度",
+            conclusion=_stock_gate_conclusion(profile, len(available_items), blocked_reason),
+            tone="negative" if blocked_reason else "positive",
+            items=_stock_gate_items(profile, len(available_items), blocked_reason),
+        ),
+        ResearchModuleSection(
+            key="stock-multi-horizon",
+            title="多周期价格结构",
+            conclusion=(
+                f"当前阶段为{continuation.stage}；"
+                "单日涨跌只作为一项事实，多周期结构优先。"
+            ),
+            tone="negative" if continuation.stage in {"剔除", "过热回避"} else "neutral",
+            items=_stock_horizon_items(profile, continuation),
+        ),
+        ResearchModuleSection(
             key="stock-decision",
             title="整体结论与执行边界",
             conclusion=(
@@ -132,7 +171,11 @@ def _build_stock_research(
                 "动作、支持、反证和失效线必须同时成立。"
             ),
             tone="negative" if evidence_matrix.hard_gate_reasons else "neutral",
-            items=_stock_decision_items(evidence_matrix),
+            items=(
+                _blocked_stock_decision_items(blocked_reason)
+                if blocked_reason
+                else _stock_decision_items(evidence_matrix)
+            ),
         ),
         ResearchModuleSection(
             key="stock-evidence",
@@ -151,22 +194,159 @@ def _build_stock_research(
         status="partial",
         module="stock",
         generated_at=generated_at,
-        verdict=_stock_overall_verdict(report, evidence_matrix),
-        action=evidence_matrix.action,
-        primary_risk=evidence_matrix.primary_risk,
+        verdict=(
+            f"{report.name}数据不足：{blocked_reason}，暂停形成方向性判断。"
+            if blocked_reason
+            else _stock_overall_verdict(report, evidence_matrix)
+        ),
+        action=(
+            "等待行情日期与关键研究证据补齐后再判断。"
+            if blocked_reason
+            else evidence_matrix.action
+        ),
+        primary_risk=blocked_reason or evidence_matrix.primary_risk,
         findings=findings,
         missing_sections=missing,
         subject_count=1,
         coverage_ready=len(available_items),
-        coverage_total=len(items),
+        coverage_total=len(dimension_items),
         delivery="local_fallback",
         data_label="本地证据",
         fallback_reason=FALLBACK_REASON,
         as_of=report.latest_date,
         module_items=items,
-        decision_label=evidence_matrix.decision_label,
+        decision_label="数据不足" if blocked_reason else evidence_matrix.decision_label,
         module_sections=sections,
     )
+
+
+def _safe_market_trade_date(provider: StockDataProvider) -> str:
+    try:
+        return provider.fetch_market().trade_date
+    except Exception:
+        return ""
+
+
+def _stock_gate_reason(profile: MultiHorizonProfile, ready_dimensions: int) -> str:
+    if not profile.price_reliable:
+        return "价格可靠性未通过"
+    if profile.stale_days > 0:
+        return f"行情日期 {profile.as_of} 落后市场 {profile.stale_days} 天"
+    if profile.bar_count < 20:
+        return f"真实日线仅 {profile.bar_count} 根，少于多周期判断所需的 20 根"
+    if ready_dimensions < 4:
+        return f"八维研究仅 {ready_dimensions} 项有效，少于形成方向结论所需的 4 项"
+    return ""
+
+
+def _stock_gate_conclusion(
+    profile: MultiHorizonProfile,
+    ready_dimensions: int,
+    blocked_reason: str,
+) -> str:
+    if blocked_reason:
+        return (
+            f"行情日期 {profile.as_of or '待补'}；{blocked_reason}。"
+            "当前只允许历史复盘，不形成方向性结论。"
+        )
+    return (
+        f"行情日期 {profile.as_of}，八维研究 {ready_dimensions}/8 项有效；"
+        "数据闸门已通过。"
+    )
+
+
+def _stock_gate_items(
+    profile: MultiHorizonProfile,
+    ready_dimensions: int,
+    blocked_reason: str,
+) -> tuple[ResearchModuleItem, ...]:
+    return (
+        ResearchModuleItem(
+            kind="stock_data_gate",
+            label="行情日期",
+            summary=profile.as_of or "待补",
+            risk=blocked_reason or "日期与市场同步。",
+            status="missing" if blocked_reason else "ready",
+        ),
+        ResearchModuleItem(
+            kind="stock_data_gate",
+            label="证据覆盖",
+            summary=f"{ready_dimensions}/8 项有效",
+            risk="少于 4 项时阻断方向判断。",
+            status="ready" if ready_dimensions >= 4 else "missing",
+        ),
+    )
+
+
+def _stock_horizon_items(
+    profile: MultiHorizonProfile,
+    assessment: ContinuationAssessment,
+) -> tuple[ResearchModuleItem, ...]:
+    return (
+        ResearchModuleItem(
+            kind="multi_horizon",
+            label="阶段判断",
+            summary=f"{assessment.stage} · 持续性评分 {assessment.score}/100",
+            risk=assessment.counter_evidence,
+            status="missing" if assessment.stage == "剔除" else "ready",
+        ),
+        ResearchModuleItem(
+            kind="multi_horizon",
+            label="多周期表现",
+            summary=(
+                f"5日 {_format_return(profile.return_5d)}，"
+                f"10日 {_format_return(profile.return_10d)}，"
+                f"20日 {_format_return(profile.return_20d)}；"
+                f"近5日 {profile.up_days_5d} 天上涨。"
+            ),
+            risk=f"近10日最大回撤 {_format_return(profile.drawdown_10d, signed=False)}。",
+        ),
+    )
+
+
+def _missing_evidence_item(labels: tuple[str, ...]) -> ResearchModuleItem:
+    return ResearchModuleItem(
+        kind="stock_missing_evidence",
+        label="关键缺口",
+        summary="、".join(labels),
+        risk="缺失项不参与评分，也不能由价格上涨代替。",
+        status="missing",
+    )
+
+
+def _blocked_stock_decision_items(reason: str) -> tuple[ResearchModuleItem, ...]:
+    return (
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="当前动作",
+            summary="暂停方向判断，先恢复数据。",
+            risk=reason,
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="最强支持",
+            summary="现有价格历史只可用于复盘。",
+            risk="不能替代财务、资金和事件证据。",
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="主要反证",
+            summary=reason,
+            risk="数据闸门未解除。",
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="执行边界",
+            summary="行情同步且至少 4/8 维有效后重新判断。",
+            risk="此前不输出进攻类动作。",
+        ),
+    )
+
+
+def _format_return(value: float | None, *, signed: bool = True) -> str:
+    if value is None:
+        return "待补"
+    return f"{value:+.2f}%" if signed else f"{abs(value):.2f}%"
 
 
 def _fetch_stock_raw(

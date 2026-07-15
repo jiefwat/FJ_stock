@@ -83,6 +83,7 @@ class TdxSnapshotProvider(StockDataProvider):
             valuation_history=_valuation_history_from_payload(
                 stock_payload.get("valuation_history")
             ),
+            price_reliable=bool(stock_payload.get("price_reliable", True)),
         )
 
     def fetch_market(self) -> MarketRawData:

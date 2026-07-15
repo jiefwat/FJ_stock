@@ -1,6 +1,7 @@
 from dataclasses import replace
+from datetime import date, timedelta
 
-from stock_ts.models import NewsItem
+from stock_ts.models import DailyBar, NewsItem, StockRawData
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import ResearchContext, ResearchTarget
 from stock_ts.research_fallback import build_local_research
@@ -29,6 +30,43 @@ class LocalFixtureProvider(SampleDataProvider):
 class CandidateOnlyProvider(SampleDataProvider):
     def fetch_stock(self, code: str):
         raise ValueError(f"stock detail unavailable: {code}")
+
+
+class StalePriceOnlyProvider(SampleDataProvider):
+    def fetch_market(self):
+        return replace(super().fetch_market(), trade_date="2026-07-15")
+
+    def fetch_stock(self, code: str):
+        bars = [
+            DailyBar(
+                date=(date(2026, 6, 20) + timedelta(days=index)).isoformat(),
+                open=30 + index * 0.4,
+                high=31 + index * 0.4,
+                low=29 + index * 0.4,
+                close=30 + index * 0.4,
+                volume=1_000_000 + index * 20_000,
+            )
+            for index in range(25)
+        ]
+        return StockRawData(code=code, name="药石科技", bars=bars)
+
+
+def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
+    result = build_local_research(
+        "stock",
+        ResearchContext(code="300725", name="药石科技"),
+        provider=StalePriceOnlyProvider(),
+    )
+
+    assert result.decision_label == "数据不足"
+    assert "谨慎进攻" not in result.verdict
+    assert [section.key for section in result.module_sections[:2]] == [
+        "stock-data-gate",
+        "stock-multi-horizon",
+    ]
+    assert [item.label for item in result.module_items] == ["行情资金", "关键缺口"]
+    assert result.module_items[-1].status == "missing"
+    assert "行情日期" in result.module_sections[0].conclusion
 
 
 def test_local_stock_fallback_keeps_available_dimensions_and_marks_gaps() -> None:
@@ -66,7 +104,10 @@ def test_local_stock_fallback_uses_candidate_bars_when_stock_detail_is_missing()
     payload = result.to_public_dict()
     assert payload["delivery"] == "local_fallback"
     assert candidate.name in payload["verdict"]
-    assert len(payload["module_items"]) == 8
+    assert [item["label"] for item in payload["module_items"]] == [
+        "行情资金",
+        "关键缺口",
+    ]
     assert len(payload["findings"]) == 3
 
 
@@ -223,11 +264,13 @@ def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:
     evidence = next(
         section for section in result.module_sections if section.key == "stock-evidence"
     )
-    assert [section.key for section in result.module_sections[:2]] == [
+    assert [section.key for section in result.module_sections[:4]] == [
+        "stock-data-gate",
+        "stock-multi-horizon",
         "stock-decision",
         "stock-evidence",
     ]
-    decision = result.module_sections[0]
+    decision = result.module_sections[2]
     assert [item.label for item in decision.items] == [
         "当前动作",
         "最强支持",

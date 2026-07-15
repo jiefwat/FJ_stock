@@ -125,6 +125,7 @@ class StockRawData:
     data_sources: list[str] = field(default_factory=list)
     fundamental_history: list[FundamentalPeriod] = field(default_factory=list)
     valuation_history: list[ValuationPoint] = field(default_factory=list)
+    price_reliable: bool = True
 
 
 @dataclass(frozen=True)
