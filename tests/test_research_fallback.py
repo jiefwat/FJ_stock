@@ -70,6 +70,34 @@ def test_local_stock_fallback_uses_candidate_bars_when_stock_detail_is_missing()
     assert len(payload["findings"]) == 3
 
 
+def test_local_stock_fallback_uses_opportunity_snapshot_when_provider_has_no_stock() -> None:
+    result = build_local_research(
+        "stock",
+        ResearchContext(code="002384.SZ", name="东山精密"),
+        provider=CandidateOnlyProvider(),
+        opportunity_snapshot={
+            "as_of": "2026-07-15",
+            "module_items": [
+                {
+                    "code": "002384.SZ",
+                    "name": "东山精密",
+                    "label": "共封装光学(CPO)",
+                    "summary": "归母净利润同比增长，成交保持活跃。",
+                    "risk": "主题退潮或成交萎缩时移出观察。",
+                    "status": "ready",
+                }
+            ],
+        },
+    )
+
+    payload = result.to_public_dict()
+    assert payload["delivery"] == "local_fallback"
+    assert "东山精密" in payload["verdict"]
+    assert len(payload["module_items"]) == 8
+    assert len(payload["findings"]) == 3
+    assert payload["coverage"] == {"ready": 2, "total": 8}
+
+
 def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_path) -> None:
     holdings = tmp_path / "holdings.csv"
     holdings.write_text(

@@ -13192,11 +13192,16 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
         nonlocal local_provider
         if local_provider is None:
             local_provider = create_provider(WEB_DATA_PROVIDER)
+        opportunity_snapshot = None
+        if local_module == "stock":
+            snapshot = store.load("opportunity", allow_stale=True)
+            opportunity_snapshot = snapshot.payload if snapshot is not None else None
         return build_local_research(
             local_module,
             local_context,
             provider=local_provider,
             holdings_path=holdings_path,
+            opportunity_snapshot=opportunity_snapshot,
         )
 
     if iwencai_config_summary()["status"] != "configured":

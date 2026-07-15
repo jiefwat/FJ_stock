@@ -31,9 +31,15 @@ def build_local_research(
     *,
     provider: StockDataProvider,
     holdings_path: str | Path | None = None,
+    opportunity_snapshot: dict[str, object] | None = None,
 ) -> ResearchWorkspaceResult:
     if module == "stock":
-        return _build_stock_research(context, provider)
+        try:
+            return _build_stock_research(context, provider)
+        except Exception:
+            if opportunity_snapshot is not None:
+                return _build_snapshot_stock_research(context, opportunity_snapshot)
+            raise
     market = build_market_report(provider)
     sectors = build_sector_report(provider, market=market)
     if module == "market":
@@ -167,6 +173,79 @@ def _fetch_stock_raw(
 def _code_key(value: str) -> str:
     digits = "".join(character for character in value if character.isdigit())
     return digits[:6] or value.strip().upper()
+
+
+def _build_snapshot_stock_research(
+    context: ResearchContext,
+    snapshot: dict[str, object],
+) -> ResearchWorkspaceResult:
+    raw_items = snapshot.get("module_items")
+    items = raw_items if isinstance(raw_items, list) else []
+    candidate = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict)
+            and _code_key(str(item.get("code") or "")) == _code_key(context.code)
+        ),
+        None,
+    )
+    if candidate is None:
+        raise ValueError(f"opportunity snapshot missing stock {context.code}")
+    name = str(candidate.get("name") or context.name or context.code)
+    theme = str(candidate.get("label") or "主题待确认")
+    summary = str(candidate.get("summary") or "候选入选依据待补。")
+    risk = str(candidate.get("risk") or "候选失效条件待补。")
+    module_items = (
+        _stock_item("财务质量", "独立财务快照待补。", False),
+        _stock_item("经营结构", "经营结构需要实时研究恢复后补充。", False),
+        _stock_item("机构预期", "机构预期需要实时研究恢复后补充。", False),
+        _stock_item("事件风险", "事件风险需要实时研究恢复后补充。", False),
+        _stock_item("行情资金", summary, True),
+        _stock_item("行业位置", f"当前候选主题：{theme}。", True),
+        _stock_item("公告事项", "公告事项需要实时研究恢复后补充。", False),
+        _stock_item("研报观点", "研报观点需要实时研究恢复后补充。", False),
+    )
+    findings = (
+        ResearchFinding(
+            title="候选依据",
+            summary=summary,
+            target=name,
+        ),
+        ResearchFinding(
+            title="主题位置",
+            summary=f"当前归入{theme}，主题持续性仍需复核。",
+            target=name,
+        ),
+        ResearchFinding(
+            title="下一步验证",
+            summary="补齐独立行情、财务和事件证据后，再判断是否继续跟踪。",
+            target=name,
+        ),
+    )
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    return ResearchWorkspaceResult(
+        ok=True,
+        status="partial",
+        module="stock",
+        generated_at=generated_at,
+        verdict=f"{name}当前仅有候选快照；独立行情与财务补齐前保持等待确认。",
+        action="先核对候选入选依据，等待独立行情、财务和事件至少两项确认。",
+        primary_risk=risk,
+        findings=findings,
+        missing_sections=tuple(
+            item.label for item in module_items if item.status != "ready"
+        ),
+        subject_count=1,
+        coverage_ready=2,
+        coverage_total=8,
+        delivery="local_fallback",
+        data_label="本地证据",
+        fallback_reason=FALLBACK_REASON,
+        as_of=str(snapshot.get("as_of") or snapshot.get("generated_at") or generated_at),
+        module_items=module_items,
+        decision_label="等待确认",
+    )
 
 
 def _stock_item(label: str, summary: str, available: bool) -> ResearchModuleItem:
