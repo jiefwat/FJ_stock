@@ -184,6 +184,17 @@ def test_local_market_leads_with_professional_pulse_metrics() -> None:
         "结构进攻",
         "风险开启",
     }
+    breadth = next(
+        section for section in result.module_sections if section.key == "market-breadth"
+    )
+    assert [item.name for item in breadth.items] == [
+        "上涨家数",
+        "下跌家数",
+        "平盘家数",
+        "涨停家数",
+        "跌停家数",
+    ]
+    assert all(item.summary.isdigit() for item in breadth.items)
 
 
 def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:

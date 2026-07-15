@@ -422,7 +422,7 @@ def _build_market_research(
             title="市场涨跌分布",
             conclusion=breadth.summary,
             tone=_market_tone(market),
-            items=(breadth,),
+            items=_breadth_items(market),
         ),
         ResearchModuleSection(
             key="market-themes",
@@ -625,6 +625,28 @@ def _breadth_item(market: Any) -> ResearchModuleItem:
         summary=summary if total else "全市场涨跌分布待补。",
         risk="若上涨家数与涨停数同步回落，视为扩散减弱。",
         status="ready" if total else "missing",
+    )
+
+
+def _breadth_items(market: Any) -> tuple[ResearchModuleItem, ...]:
+    total = market.advancing_count + market.declining_count + market.unchanged_count
+    values = (
+        ("上涨家数", market.advancing_count),
+        ("下跌家数", market.declining_count),
+        ("平盘家数", market.unchanged_count),
+        ("涨停家数", market.limit_up_count),
+        ("跌停家数", market.limit_down_count),
+    )
+    return tuple(
+        ResearchModuleItem(
+            kind="breadth_metric",
+            name=label,
+            label="全市场统计",
+            summary=str(value),
+            risk="全市场家数口径" if total else "全市场涨跌家数待补。",
+            status="ready" if total else "missing",
+        )
+        for label, value in values
     )
 
 
