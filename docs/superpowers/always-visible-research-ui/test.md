@@ -44,3 +44,11 @@
 ## 已知全仓基线
 
 默认原生页面模式仍有 141 项既有失败：136 项旧页面断言与原生四工作台目标冲突，5 项为既有日报流水线测试。Legacy Web 独立回滚集全绿，本次没有增加失败集合。
+
+## 公网
+
+- `https://stock.jiewat-kaka-fj.com/healthz`：HTTP 200。
+- 根路径：HTTP 303，跳转登录页；登录页 HTTP 200。
+- 登录态四模块 API：全部 HTTP 200；持仓 11 项、个股 8 维、机会 10 项，四页均有 3 条发现。
+- `stock-ts.service`、`stock-ts-daily-research.timer`、`stock-ts-daily-analysis.timer`：均为 `active`。
+- GitHub `main`、本地 `main` 和 `/opt/stock-ts` 提交一致。

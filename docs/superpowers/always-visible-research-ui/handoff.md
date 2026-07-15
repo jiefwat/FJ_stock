@@ -25,3 +25,10 @@
 ## 回滚
 
 代码回滚到部署前提交并只重启 `stock-ts.service`；如果只需切回旧页面，可设置 `STOCK_TS_WEB_VERSION=legacy`。数据、账号、凭证和历史报告不随代码回滚。
+
+## 公网交付
+
+- 公网地址：`https://stock.jiewat-kaka-fj.com/`。
+- 部署前源码备份：`/opt/stock-ts/.deploy_backups/always-visible-20260715-155740/source-before.tar`。
+- 部署保留了服务器 `.env`、`.secrets`、`data`、`reports`、认证库、私有持仓和既有备份目录。
+- 登录态四个研究接口和匿名健康检查均已验证。
