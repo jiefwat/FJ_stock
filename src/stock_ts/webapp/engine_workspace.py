@@ -43,6 +43,7 @@ def render_engine_workspace(
           <time data-engine-generated>尚未生成</time>
         </div>
       </header>
+      <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
       <section class="engine-judgment state-idle" data-engine-judgment>
         <div class="engine-signal-band" aria-hidden="true"><i></i></div>
         <div class="engine-verdict" data-engine-verdict-block>
@@ -137,7 +138,7 @@ def render_research_service_status(status: str) -> str:
       <section class="engine-system-card">
         <div><span>页面模式</span><strong>按需生成</strong></div>
         <div><span>结果缓存</span><strong>5 分钟</strong></div>
-        <div><span>失败处理</span><strong>暂停判断，不沿用旧结论</strong></div>
+        <div><span>失败处理</span><strong>自动切换本地证据</strong></div>
         <div><span>账户数据</span><strong>只提交研究对象，不提交仓位隐私</strong></div>
       </section>
     </section>"""
@@ -607,6 +608,7 @@ def engine_app_script() -> str:
       const details = Array.isArray(payload.details) ? payload.details : [];
       const coverage = workspace.querySelector('[data-engine-coverage]');
       const delivery = workspace.querySelector('[data-engine-delivery]');
+      const fallbackReason = workspace.querySelector('[data-engine-fallback-reason]');
       if (decisionLabel) {
         const label = payload.decision_label || '待确认';
         const tone = engineDecisionTone(label);
@@ -618,7 +620,8 @@ def engine_app_script() -> str:
       if (action) action.textContent = payload.action || '稍后重新分析。';
       if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
       if (generated) {
-        const date = payload.generated_at ? new Date(payload.generated_at) : null;
+        const evidenceTime = payload.as_of || payload.generated_at;
+        const date = evidenceTime ? new Date(evidenceTime) : null;
         generated.textContent = date && !Number.isNaN(date.getTime())
           ? date.toLocaleString('zh-CN', {hour12: false})
           : '刚刚生成';
@@ -632,12 +635,21 @@ def engine_app_script() -> str:
       }
       if (delivery) {
         const deliveryLabels = {
-          live: '实时结果',
-          snapshot: '今日快照',
-          stale_snapshot: '历史快照'
+          live: '实时研究',
+          snapshot: '当日快照',
+          stale_snapshot: '历史参考',
+          local_fallback: '本地证据',
+          unavailable: '数据缺失'
         };
-        delivery.textContent = deliveryLabels[payload.delivery] || '实时结果';
+        delivery.textContent = payload.data_label
+          || deliveryLabels[payload.delivery]
+          || '实时研究';
         delivery.classList.toggle('is-stale', Boolean(payload.stale));
+      }
+      workspace.dataset.engineDelivery = payload.delivery || 'live';
+      if (fallbackReason) {
+        fallbackReason.textContent = payload.fallback_reason || '';
+        fallbackReason.hidden = !fallbackReason.textContent;
       }
       const findingsRoot = workspace.querySelector('[data-engine-findings]');
       if (findingsRoot) {
@@ -689,15 +701,23 @@ def engine_app_script() -> str:
         engineCache.set(key, payload);
         renderEngineResult(workspace, payload);
       } catch (error) {
-        renderEngineResult(workspace, {
-          status: 'unavailable',
-          verdict: '研究服务暂时不可用，当前没有可执行结论。',
-          action: '稍后重新分析；当前不沿用旧结论。',
-          primary_risk: error.message || '研究请求失败。',
-          findings: [],
-          details: [],
-          missing_sections: []
-        });
+        if (engineCache.has(key)) {
+          renderEngineResult(workspace, engineCache.get(key));
+          const live = workspace.querySelector('[data-engine-live-state]');
+          if (live) live.textContent = '刷新失败，已保留现有内容';
+        } else {
+          renderEngineResult(workspace, {
+            status: 'unavailable',
+            delivery: 'unavailable',
+            data_label: '数据缺失',
+            verdict: '研究服务暂时不可用，当前没有可执行结论。',
+            action: '稍后重新分析；当前不沿用旧结论。',
+            primary_risk: error.message || '研究请求失败。',
+            findings: [],
+            details: [],
+            missing_sections: []
+          });
+        }
       } finally {
         setEngineLoading(workspace, false);
       }
@@ -823,4 +843,4 @@ def _service_status(status: str) -> tuple[str, str, bool]:
         return "服务就绪", "ready", True
     if status == "requires_login":
         return "登录后可用", "blocked", False
-    return "服务未配置", "missing", False
+    return "本地证据可用", "ready", True

@@ -295,12 +295,120 @@ def test_engine_workspace_exposes_evidence_completeness() -> None:
     assert "已确认维度" in html
 
 
+def test_missing_external_service_keeps_local_research_available() -> None:
+    html = render_engine_workspace("stock", status="missing")
+
+    assert "本地证据可用" in html
+    assert "data-engine-run disabled" not in html
+
+
 def test_workspace_exposes_module_specific_list_and_delivery_state() -> None:
     html = render_engine_workspace("market", status="configured")
 
     assert "data-engine-module-items" in html
     assert "data-engine-module-items-title" in html
     assert "data-engine-delivery" in html
+    assert "data-engine-fallback-reason" in html
+
+
+def test_engine_renders_local_fallback_state_and_reason() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+function makeWorkspace() {
+  const nodes = {};
+  [
+    '[data-engine-judgment]', '[data-engine-verdict]',
+    '[data-engine-decision-label]', '[data-engine-action]', '[data-engine-risk]',
+    '[data-engine-generated]', '[data-engine-live-state]', '[data-engine-coverage]',
+    '[data-engine-delivery]', '[data-engine-fallback-reason]', '[data-engine-findings]',
+    '[data-engine-sections]', '[data-engine-section-grid]', '[data-engine-details]',
+    '[data-engine-module-items]', '[data-engine-module-item-grid]',
+    '[data-engine-module-items-title]', '[data-engine-module-items-count]',
+    '[data-engine-run]'
+  ].forEach((selector) => { nodes[selector] = new FakeNode('div'); });
+  return {
+    dataset: {
+      engineWorkspace: 'stock',
+      engineContext: '{"code":"603278"}',
+      engineAvailable: 'true'
+    },
+    querySelector: (selector) => nodes[selector] || null,
+    nodes
+  };
+}
+const workspace = makeWorkspace();
+renderEngineResult(workspace, {
+  status: 'partial', module: 'stock', delivery: 'local_fallback',
+  data_label: '本地证据', fallback_reason: '实时研究暂不可用，已使用本地证据。',
+  verdict: '本地结论', action: '条件观察', primary_risk: '部分维度待补',
+  findings: [{title:'一', summary:'甲'}, {title:'二', summary:'乙'}, {title:'三', summary:'丙'}],
+  module_items: [{label:'财务质量', status:'ready', summary:'证据'}],
+  module_sections: [], details: [], missing_sections: [], coverage: {ready: 1, total: 8}
+});
+console.log(JSON.stringify({
+  delivery: workspace.nodes['[data-engine-delivery]'].textContent,
+  reason: workspace.nodes['[data-engine-fallback-reason]'].textContent,
+  findings: workspace.nodes['[data-engine-findings]'].children.length,
+  items: workspace.nodes['[data-engine-module-item-grid]'].children.length
+}));
+"""
+    )
+
+    assert result["delivery"] == "本地证据"
+    assert result["reason"] == "实时研究暂不可用，已使用本地证据。"
+    assert result["findings"] == 3
+    assert result["items"] > 0
+
+
+def test_refresh_error_preserves_previous_content() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+function makeWorkspace() {
+  const nodes = {};
+  [
+    '[data-engine-judgment]', '[data-engine-verdict]',
+    '[data-engine-decision-label]', '[data-engine-action]', '[data-engine-risk]',
+    '[data-engine-generated]', '[data-engine-live-state]', '[data-engine-coverage]',
+    '[data-engine-delivery]', '[data-engine-fallback-reason]', '[data-engine-findings]',
+    '[data-engine-sections]', '[data-engine-section-grid]', '[data-engine-details]',
+    '[data-engine-module-items]', '[data-engine-module-item-grid]',
+    '[data-engine-module-items-title]', '[data-engine-module-items-count]',
+    '[data-engine-run]'
+  ].forEach((selector) => { nodes[selector] = new FakeNode('div'); });
+  return {
+    dataset: {
+      engineWorkspace: 'stock',
+      engineContext: '{"code":"603278"}',
+      engineAvailable: 'true'
+    },
+    querySelector: (selector) => nodes[selector] || null,
+    nodes
+  };
+}
+(async () => {
+  const workspace = makeWorkspace();
+  const cached = {
+    status: 'partial', module: 'stock', delivery: 'local_fallback',
+    verdict: '刷新前结论', action: '继续观察', primary_risk: '证据待补',
+    findings: [{title:'依据', summary:'仍然有效'}], module_items: [],
+    module_sections: [], details: [], missing_sections: []
+  };
+  engineCache.set(engineKey(workspace), cached);
+  global.fetch = async () => ({
+    ok: false,
+    json: async () => ({message: '刷新请求失败'})
+  });
+  await runEngineWorkspace(workspace, true);
+  console.log(JSON.stringify({
+    verdict: workspace.nodes['[data-engine-verdict]'].textContent,
+    live: workspace.nodes['[data-engine-live-state]'].textContent
+  }));
+})();
+"""
+    )
+
+    assert result["verdict"] == "刷新前结论"
+    assert result["live"] == "刷新失败，已保留现有内容"
 
 
 def test_engine_script_renders_module_items_without_inner_html() -> None:
