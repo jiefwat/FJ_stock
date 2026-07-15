@@ -62,6 +62,7 @@ from .news_fetcher import fetch_akshare_stock_news
 from .notification import dispatch_report
 from .portfolio import delete_holding_csv, load_holdings_csv, upsert_holding_csv
 from .portfolio_advice import PortfolioAdvice, PositionAdvice, build_portfolio_advice
+from .prediction_feedback import PredictionStore, build_feedback_section
 from .professional_research import (
     EventRadar,
     TechnicalProfile,
@@ -13262,6 +13263,30 @@ def _parse_research_workspace_payload(payload: bytes) -> dict[str, object]:
     return {"module": module, "context": context, "refresh": refresh}
 
 
+def _parse_prediction_feedback_payload(payload: bytes) -> dict[str, str]:
+    try:
+        parsed = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("请求体必须是有效 JSON。") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("请求体必须是 JSON 对象。")
+    result = {
+        "prediction_id": _clean_iwencai_text(parsed.get("prediction_id"), 64),
+        "usefulness": _clean_iwencai_text(parsed.get("usefulness"), 16),
+        "reason_accuracy": _clean_iwencai_text(parsed.get("reason_accuracy"), 16),
+        "disposition": _clean_iwencai_text(parsed.get("disposition"), 16),
+    }
+    if not result["prediction_id"] or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", result["prediction_id"]):
+        raise ValueError("预测编号无效。")
+    if result["usefulness"] not in {"有用", "没用"}:
+        raise ValueError("有用性反馈无效。")
+    if result["reason_accuracy"] not in {"原因正确", "原因错误"}:
+        raise ValueError("原因反馈无效。")
+    if result["disposition"] not in {"已关注", "已忽略"}:
+        raise ValueError("处置反馈无效。")
+    return result
+
+
 def _clean_iwencai_text(value: object, limit: int) -> str:
     if not isinstance(value, str):
         return ""
@@ -13360,6 +13385,23 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
     holdings_path = str(payload.get("holdings_path") or DEFAULT_HOLDINGS_PATH)
     local_provider: StockDataProvider | None = None
 
+    def with_prediction_feedback(result: dict[str, object]) -> dict[str, object]:
+        if module != "opportunity":
+            return result
+        sections = result.setdefault("module_sections", [])
+        if not isinstance(sections, list):
+            return result
+        sections[:] = [
+            section
+            for section in sections
+            if not isinstance(section, dict) or section.get("key") != "opportunity-feedback"
+        ]
+        prediction_store = PredictionStore(
+            os.getenv("STOCK_TS_PREDICTION_DB", "data/research/predictions.sqlite3")
+        )
+        sections.append(build_feedback_section(prediction_store.summary(horizon=3)))
+        return result
+
     def local_fallback(local_module: str, local_context: ResearchContext):
         nonlocal local_provider
         if local_provider is None:
@@ -13386,9 +13428,9 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             result = dict(snapshot.payload)
             result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
             result["stale"] = snapshot.stale
-            return result
+            return with_prediction_feedback(result)
         local_result = local_fallback(module, context)
-        result = local_result.to_public_dict() | {"stale": False}
+        result = with_prediction_feedback(local_result.to_public_dict() | {"stale": False})
         if module in {"market", "opportunity"} and not contextual_opportunity and local_result.ok:
             store.save(module, result)
         return result
@@ -13400,7 +13442,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             result["delivery"] = "snapshot"
             result["data_label"] = "当日快照"
             result["stale"] = False
-            return result
+            return with_prediction_feedback(result)
 
     local_result = local_fallback(module, context)
     try:
@@ -13410,10 +13452,10 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             refresh=refresh,
         )
     except Exception:
-        return local_result.to_public_dict() | {"stale": False}
+        return with_prediction_feedback(local_result.to_public_dict() | {"stale": False})
 
     fused_result = fuse_research_results(local_result, enriched_result)
-    result = fused_result.to_public_dict() | {"stale": False}
+    result = with_prediction_feedback(fused_result.to_public_dict() | {"stale": False})
     if module in {"market", "opportunity"} and not contextual_opportunity and fused_result.ok:
         store.save(module, result)
     return result
@@ -13585,6 +13627,20 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         config = AuthConfig.from_env()
+        if parsed.path == "/api/predictions/feedback":
+            user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+            if user is None:
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "请先登录后提交研究反馈。",
+                    },
+                )
+                return
+            self._handle_prediction_feedback_post(user)
+            return
         if parsed.path == "/api/research/workspace":
             if not is_auth_enabled(config) and (
                 _is_public_readonly() or not _allow_anonymous_iwencai()
@@ -13773,6 +13829,43 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         self._send_json(200, result)
+
+    def _handle_prediction_feedback_post(self, user: AuthUser) -> None:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json(
+                415,
+                {"ok": False, "status": "invalid_request", "message": "仅接受 JSON 请求。"},
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_IWENCAI_REQUEST_BYTES:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": "请求长度无效。"},
+            )
+            return
+        try:
+            payload = _parse_prediction_feedback_payload(self.rfile.read(length))
+            PredictionStore(
+                os.getenv("STOCK_TS_PREDICTION_DB", "data/research/predictions.sqlite3")
+            ).record_user_feedback(
+                prediction_id=payload["prediction_id"],
+                user_id=user.id,
+                usefulness=payload["usefulness"],
+                reason_accuracy=payload["reason_accuracy"],
+                disposition=payload["disposition"],
+            )
+        except (ValueError, KeyError) as exc:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": str(exc)},
+            )
+            return
+        self._send_json(200, {"ok": True, "status": "saved"})
 
     def _handle_iwencai_research_post(self) -> None:
         config = AuthConfig.from_env()

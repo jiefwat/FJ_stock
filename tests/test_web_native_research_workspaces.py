@@ -251,6 +251,15 @@ def test_theme_context_banner_has_terminal_and_mobile_styles() -> None:
     assert "[data-selected-theme]" in CSS
 
 
+def test_opportunity_rows_offer_account_bound_prediction_feedback() -> None:
+    script = engine_app_script()
+
+    assert "/api/predictions/feedback" in script
+    assert "data-prediction-feedback" in script
+    assert "预测编号" in script
+    assert ".engine-prediction-feedback" in CSS
+
+
 def test_portfolio_page_context_keeps_twenty_names_and_codes_only(tmp_path) -> None:
     holdings = tmp_path / "holdings.csv"
     rows = [

@@ -20,6 +20,7 @@ from stock_ts.research_snapshots import ResearchSnapshotStore
 from stock_ts.web import (
     Handler,
     ResearchRateLimiter,
+    _parse_prediction_feedback_payload,
     _parse_research_workspace_payload,
 )
 
@@ -113,6 +114,69 @@ def test_parse_workspace_payload_keeps_only_product_context() -> None:
 def test_parse_workspace_payload_rejects_invalid_contract(payload: bytes) -> None:
     with pytest.raises(ValueError):
         _parse_research_workspace_payload(payload)
+
+
+def test_parse_prediction_feedback_payload_allowlists_product_values() -> None:
+    parsed = _parse_prediction_feedback_payload(
+        json.dumps(
+            {
+                "prediction_id": "abc123",
+                "usefulness": "有用",
+                "reason_accuracy": "原因正确",
+                "disposition": "已关注",
+                "provider": "must-be-ignored",
+            },
+            ensure_ascii=False,
+        ).encode()
+    )
+
+    assert parsed == {
+        "prediction_id": "abc123",
+        "usefulness": "有用",
+        "reason_accuracy": "原因正确",
+        "disposition": "已关注",
+    }
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("prediction_id", ""),
+        ("usefulness", "一般"),
+        ("reason_accuracy", "不知道"),
+        ("disposition", "已买入"),
+    ],
+)
+def test_parse_prediction_feedback_payload_rejects_unknown_values(field, value) -> None:
+    payload = {
+        "prediction_id": "abc123",
+        "usefulness": "有用",
+        "reason_accuracy": "原因正确",
+        "disposition": "已关注",
+    }
+    payload[field] = value
+
+    with pytest.raises(ValueError):
+        _parse_prediction_feedback_payload(json.dumps(payload, ensure_ascii=False).encode())
+
+
+def test_local_opportunity_response_appends_prediction_feedback(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(tmp_path / "research"))
+    monkeypatch.setenv("STOCK_TS_PREDICTION_DB", str(tmp_path / "predictions.sqlite3"))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+
+    response = web_module._research_workspace_response(
+        {"module": "opportunity", "context": ResearchContext(), "refresh": True}
+    )
+
+    feedback = next(
+        section
+        for section in response["module_sections"]
+        if section["key"] == "opportunity-feedback"
+    )
+    assert feedback["conclusion"] == "暂无到期样本"
+    assert "provider" not in json.dumps(feedback, ensure_ascii=False).lower()
 
 
 def test_workspace_endpoint_returns_supplier_neutral_product_result(

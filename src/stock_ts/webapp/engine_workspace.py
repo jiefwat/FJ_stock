@@ -726,13 +726,51 @@ def engine_app_script() -> str:
             }`
           )
         );
-        row.append(engineStockAnalysisLink(item, 'opportunity'));
+        const actions = engineNode('div', 'engine-list-actions');
+        actions.append(engineStockAnalysisLink(item, 'opportunity'));
+        const feedback = renderPredictionFeedback(item);
+        if (feedback) actions.append(feedback);
+        row.append(actions);
         list.append(row);
       });
       if (!items.length) {
         list.append(engineNode('div', 'engine-section-empty', '当前没有通过风险排除的候选。'));
       }
       article.append(list);
+    }
+
+    function renderPredictionFeedback(item) {
+      const predictionId = engineFactValue(item, ['预测编号']);
+      if (!predictionId) return null;
+      const root = engineNode('div', 'engine-prediction-feedback');
+      root.setAttribute('data-prediction-feedback', predictionId);
+      [['有用', '有用'], ['没用', '没用']].forEach(([label, usefulness]) => {
+        const button = engineNode('button', '', label);
+        button.type = 'button';
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          try {
+            const response = await fetch('/api/predictions/feedback', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              credentials: 'same-origin',
+              body: JSON.stringify({
+                prediction_id: predictionId,
+                usefulness,
+                reason_accuracy: usefulness === '有用' ? '原因正确' : '原因错误',
+                disposition: usefulness === '有用' ? '已关注' : '已忽略'
+              })
+            });
+            if (!response.ok) throw new Error('反馈保存失败');
+            root.replaceChildren(engineNode('span', '', '已记录'));
+          } catch (_error) {
+            button.disabled = false;
+            root.setAttribute('data-feedback-error', 'true');
+          }
+        });
+        root.append(button);
+      });
+      return root;
     }
 
     function renderEngineStockCard(item) {

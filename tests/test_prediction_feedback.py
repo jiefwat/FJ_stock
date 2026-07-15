@@ -162,3 +162,17 @@ def test_user_feedback_is_account_isolated_and_does_not_change_score(tmp_path: P
     assert store.user_feedback(prediction_id, user_id=1).usefulness == "有用"
     assert store.user_feedback(prediction_id, user_id=2).usefulness == "没用"
     assert store.get(prediction_id).score == 82
+
+
+def test_benchmark_closes_are_upserted_by_trade_date(tmp_path: Path) -> None:
+    store = PredictionStore(tmp_path / "predictions.sqlite3")
+
+    store.record_benchmark_close("000001", "2026-07-15", 3950.0)
+    store.record_benchmark_close("000001", "2026-07-15", 3955.0)
+    store.record_benchmark_close("000001", "2026-07-16", 3970.0)
+
+    bars = store.benchmark_bars("000001")
+    assert [(item.date, item.close) for item in bars] == [
+        ("2026-07-15", 3955.0),
+        ("2026-07-16", 3970.0),
+    ]

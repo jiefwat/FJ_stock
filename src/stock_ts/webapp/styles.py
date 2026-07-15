@@ -5832,6 +5832,21 @@ body {
 }
 .engine-stock-switcher > a:hover,
 .engine-list-action:hover { text-decoration:underline; }
+.engine-list-actions { display:grid; justify-items:start; gap:6px; }
+.engine-prediction-feedback { display:flex; align-items:center; gap:4px; }
+.engine-prediction-feedback button {
+  min-height:24px;
+  padding:3px 7px;
+  border:1px solid #b8c8ce;
+  border-radius:999px;
+  color:var(--muted);
+  background:#fff;
+  font:750 10px/1 var(--body);
+  cursor:pointer;
+}
+.engine-prediction-feedback button:hover,
+.engine-prediction-feedback button:focus-visible { border-color:#19538d; color:#19538d; }
+.engine-prediction-feedback span { color:#0e6a5c; font-size:10px; font-weight:800; }
 .engine-context-banner {
   display:flex;
   align-items:center;

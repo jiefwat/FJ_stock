@@ -166,6 +166,13 @@ class PredictionStore:
                     PRIMARY KEY (prediction_id, user_id),
                     FOREIGN KEY (prediction_id) REFERENCES predictions(prediction_id)
                 );
+                CREATE TABLE IF NOT EXISTS benchmark_closes (
+                    benchmark_code TEXT NOT NULL,
+                    trade_date TEXT NOT NULL,
+                    close REAL NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (benchmark_code, trade_date)
+                );
                 """
             )
 
@@ -440,6 +447,43 @@ class PredictionStore:
             updated_at=str(row["updated_at"]),
         )
 
+    def record_benchmark_close(self, code: str, trade_date: str, close: float) -> None:
+        if not code or not trade_date or close <= 0:
+            return
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO benchmark_closes (
+                    benchmark_code, trade_date, close, updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(benchmark_code, trade_date) DO UPDATE SET
+                    close=excluded.close,
+                    updated_at=excluded.updated_at
+                """,
+                (code, trade_date, close, _now()),
+            )
+
+    def benchmark_bars(self, code: str) -> tuple[DailyBar, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT trade_date, close FROM benchmark_closes
+                WHERE benchmark_code = ? ORDER BY trade_date
+                """,
+                (code,),
+            ).fetchall()
+        return tuple(
+            DailyBar(
+                date=str(row["trade_date"]),
+                open=float(row["close"]),
+                high=float(row["close"]),
+                low=float(row["close"]),
+                close=float(row["close"]),
+                volume=0.0,
+            )
+            for row in rows
+        )
+
 
 def prediction_identifier(prediction: PredictionInput) -> str:
     stable = {
@@ -450,6 +494,41 @@ def prediction_identifier(prediction: PredictionInput) -> str:
     }
     raw = json.dumps(stable, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def build_feedback_section(summary: PredictionSummary) -> dict[str, object]:
+    return {
+        "key": "opportunity-feedback",
+        "title": "历史预测反馈",
+        "conclusion": summary.sample_state,
+        "tone": "neutral",
+        "items": [
+            {
+                "kind": "prediction_feedback",
+                "code": "",
+                "name": "3日窗口",
+                "label": summary.sample_state,
+                "summary": (
+                    f"有效样本 {summary.sample_count}；命中率 {summary.hit_rate:.1f}%；"
+                    f"平均超额 {summary.average_excess_return:+.2f}%。"
+                ),
+                "risk": (
+                    f"平均 MAE {summary.average_mae:+.2f}%；"
+                    f"主要误判：{summary.top_miss_reason}。"
+                ),
+                "status": "ready" if summary.sample_count else "missing",
+                "facts": [
+                    {"label": "样本量", "value": str(summary.sample_count)},
+                    {"label": "3日命中率", "value": f"{summary.hit_rate:.1f}%"},
+                    {
+                        "label": "平均超额",
+                        "value": f"{summary.average_excess_return:+.2f}%",
+                    },
+                    {"label": "平均MAE", "value": f"{summary.average_mae:+.2f}%"},
+                ],
+            }
+        ],
+    }
 
 
 def _prediction_record(row: sqlite3.Row) -> PredictionRecord:
