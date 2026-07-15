@@ -260,30 +260,41 @@ def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
     assert opportunity.module_items
 
 
-def test_market_and_opportunity_separate_continuation_from_one_day_moves() -> None:
+def test_market_contains_facts_but_no_forecast_watchlist() -> None:
     provider = MultiDayCandidateProvider()
     market = build_local_research("market", ResearchContext(), provider=provider)
-    opportunity = build_local_research("opportunity", ResearchContext(), provider=provider)
-
-    continuation = next(
-        section for section in market.module_sections if section.key == "market-continuation"
-    )
+    section_keys = {section.key for section in market.module_sections}
     movers = next(
         section for section in market.module_sections if section.key == "market-movers"
     )
-    assert [item.name for item in continuation.items] == ["稳步上行"]
+
+    assert {"market-pulse", "market-breadth", "market-themes", "market-movers"} <= (
+        section_keys
+    )
+    assert "market-continuation" not in section_keys
     assert "单日脉冲" in {item.name for item in movers.items}
-    assert "陈旧行情" not in {item.name for item in continuation.items}
+    assert "未来" not in market.action
+    assert "候选" not in market.action
+
+
+def test_opportunity_top10_contains_only_investable_continuation_stages() -> None:
+    opportunity = build_local_research(
+        "opportunity",
+        ResearchContext(),
+        provider=MultiDayCandidateProvider(),
+    )
 
     candidates = next(
         section
         for section in opportunity.module_sections
         if section.key == "opportunity-candidates"
     )
+    assert len(candidates.items) <= 10
     assert candidates.items[0].name == "稳步上行"
     assert "陈旧行情" not in {item.name for item in candidates.items}
-    pulse = next(item for item in candidates.items if item.name == "单日脉冲")
-    assert {fact.label for fact in pulse.facts} >= {
+    assert "单日脉冲" not in {item.name for item in candidates.items}
+    item = candidates.items[0]
+    assert {fact.label for fact in item.facts} >= {
         "阶段判断",
         "持续性评分",
         "5日表现",
@@ -295,7 +306,12 @@ def test_market_and_opportunity_separate_continuation_from_one_day_moves() -> No
         "确认条件",
         "失效条件",
     }
-    assert pulse.facts[0].value == "脉冲待验证"
+    stages = {
+        next(fact.value for fact in candidate.facts if fact.label == "阶段判断")
+        for candidate in candidates.items
+    }
+    assert stages <= {"可进入投资候选", "等待确认"}
+    assert all(candidate.status == "ready" for candidate in candidates.items)
 
 
 def test_local_market_leads_with_professional_pulse_metrics() -> None:
@@ -317,7 +333,7 @@ def test_local_market_leads_with_professional_pulse_metrics() -> None:
         "主题扩散",
         "证据覆盖",
     }
-    assert "风险预算" in result.action
+    assert result.action == "这里只记录已发生的市场事实；条件研究请进入热门机会。"
     assert result.decision_label in {
         "风险关闭",
         "防守",

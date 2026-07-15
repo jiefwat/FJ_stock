@@ -193,11 +193,12 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
             "details": [],
             "missing_sections": [],
             "module_items": [],
-            "module_sections": [
-                {"key": "market-pulse", "items": []},
-                {"key": "market-continuation", "items": []},
-                {"key": "market-movers", "items": []},
-            ],
+                "module_sections": [
+                    {"key": "market-pulse", "items": []},
+                    {"key": "market-breadth", "items": []},
+                    {"key": "market-themes", "items": []},
+                    {"key": "market-movers", "items": []},
+                ],
         },
     )
 
@@ -239,11 +240,12 @@ def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
             "details": [],
             "missing_sections": [],
             "module_items": [],
-            "module_sections": [
-                {"key": "market-pulse", "items": []},
-                {"key": "market-continuation", "items": []},
-                {"key": "market-movers", "items": []},
-            ],
+                "module_sections": [
+                    {"key": "market-pulse", "items": []},
+                    {"key": "market-breadth", "items": []},
+                    {"key": "market-themes", "items": []},
+                    {"key": "market-movers", "items": []},
+                ],
         },
     )
 
@@ -292,7 +294,8 @@ def test_workspace_response_rebuilds_incompatible_market_snapshot(
     assert response["verdict"] != "旧协议快照"
     assert response["delivery"] == "local_fallback"
     keys = {section["key"] for section in response["module_sections"]}
-    assert {"market-pulse", "market-continuation", "market-movers"} <= keys
+    assert {"market-pulse", "market-breadth", "market-themes", "market-movers"} <= keys
+    assert "market-continuation" not in keys
 
 
 def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigured(

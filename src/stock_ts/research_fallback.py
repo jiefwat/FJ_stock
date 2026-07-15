@@ -652,15 +652,6 @@ def _build_market_research(
     mover_items = tuple(
         _market_mover_item(item) for item in _market_mover_candidates(candidates.candidates)
     )
-    continuation_items = tuple(
-        _continuation_candidate_item(raw, profile, assessment, kind="market_continuation")
-        for raw, profile, assessment in _rank_continuation_candidates(
-            candidate_universe,
-            market_trade_date=market.trade_date,
-            sectors=sectors,
-        )
-        if assessment.stage in {"延续观察", "突破待确认"}
-    )[:8]
     findings = (
         ResearchFinding(title="市场宽度", summary=breadth.summary),
         ResearchFinding(
@@ -668,8 +659,8 @@ def _build_market_research(
             summary=_join_or_default(sectors.market_mainline[:3], "主线尚未形成一致确认。"),
         ),
         ResearchFinding(
-            title="退潮条件",
-            summary=_join_or_default(market.risks[:2], "若上涨家数与成交同步回落，降低风险暴露。"),
+            title="当日风险事实",
+            summary=_join_or_default(market.risks[:2], "当前未记录额外市场风险事件。"),
         ),
     )
     sections = (
@@ -695,17 +686,6 @@ def _build_market_research(
             items=theme_items,
         ),
         ResearchModuleSection(
-            key="market-continuation",
-            title="持续性观察名单",
-            conclusion=(
-                "只保留多周期趋势通过数据闸门的股票；单日异动不进入本名单。"
-                if continuation_items
-                else "当前无满足多周期条件的股票，不使用单日涨幅榜补位。"
-            ),
-            tone="positive" if continuation_items else "neutral",
-            items=continuation_items,
-        ),
-        ResearchModuleSection(
             key="market-movers",
             title="异动股票分析",
             conclusion=(
@@ -723,10 +703,7 @@ def _build_market_research(
         module="market",
         as_of=market.trade_date,
         verdict=_market_pulse_conclusion(pulse),
-        action=(
-            f"研究风险预算上限 {pulse.risk_budget}；"
-            "先看前三主题能否扩散，再按市场宽度调整风险暴露。"
-        ),
+        action="这里只记录已发生的市场事实；条件研究请进入热门机会。",
         risk=(
             "；".join(pulse.hard_gate_reasons)
             if pulse.hard_gate_reasons
@@ -736,7 +713,7 @@ def _build_market_research(
         items=index_items,
         sections=sections,
         decision_label=_market_pulse_label(pulse.regime),
-        subject_count=len(index_items) + len(continuation_items) + len(mover_items),
+        subject_count=len(index_items) + len(mover_items),
     )
 
 
@@ -833,14 +810,24 @@ def _build_opportunity_research(
     candidate_universe: list[Any],
 ) -> ResearchWorkspaceResult:
     theme_items = tuple(_theme_item(item) for item in sectors.sectors[:5])
+    forward_stages = {
+        "延续观察": "可进入投资候选",
+        "突破待确认": "等待确认",
+    }
     candidate_items = tuple(
-        _continuation_candidate_item(raw, profile, assessment, kind="candidate")
+        _continuation_candidate_item(
+            raw,
+            profile,
+            assessment,
+            kind="candidate",
+            public_stage=forward_stages[assessment.stage],
+        )
         for raw, profile, assessment in _rank_continuation_candidates(
             candidate_universe,
             market_trade_date=market.trade_date,
             sectors=sectors,
         )
-        if assessment.stage not in {"剔除", "过热回避"}
+        if assessment.stage in forward_stages
     )[:10]
     findings = (
         ResearchFinding(
@@ -1169,20 +1156,22 @@ def _continuation_candidate_item(
     assessment: ContinuationAssessment,
     *,
     kind: str,
+    public_stage: str | None = None,
 ) -> ResearchModuleItem:
+    stage = public_stage or assessment.stage
     return ResearchModuleItem(
         kind=kind,
         code=raw.code,
         name=raw.name,
         label=raw.sector or "主题待确认",
         summary=(
-            f"{assessment.stage} · 持续性评分 {assessment.score}/100；"
+            f"{stage} · 持续性评分 {assessment.score}/100；"
             f"{assessment.support}"
         ),
         risk=assessment.counter_evidence,
         status="ready" if assessment.stage not in {"剔除", "过热回避"} else "missing",
         facts=(
-            ResearchFact(label="阶段判断", value=assessment.stage),
+            ResearchFact(label="阶段判断", value=stage),
             ResearchFact(label="持续性评分", value=f"{assessment.score}/100"),
             ResearchFact(label="观察分", value=str(assessment.score)),
             ResearchFact(label="涨跌幅", value=_format_return(profile.latest_return)),
