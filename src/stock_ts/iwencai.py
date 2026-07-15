@@ -81,6 +81,8 @@ SKILLS = {
     "macro": IwencaiSkill("hithink-macro-query", "宏观变量"),
     "sector_selector": IwencaiSkill("hithink-sector-selector", "板块筛选"),
     "astock_selector": IwencaiSkill("hithink-astock-selector", "A股筛选"),
+    "breadth": IwencaiSkill("hithink-astock-selector", "市场涨跌分布"),
+    "hot_stock": IwencaiSkill("hithink-astock-selector", "市场热门股票"),
 }
 
 ROUTING_RULES = (

@@ -235,6 +235,44 @@ def test_industry_and_report_rows_require_professional_evidence() -> None:
     assert any(fact.label == "标题" for fact in report[0])
 
 
+def test_breadth_and_hot_stock_rows_keep_required_fields() -> None:
+    breadth = normalize_capability_rows(
+        "breadth",
+        {
+            "datas": [
+                {
+                    "指数简称": "同花顺全A(沪深京)",
+                    "上涨家数[20260715]": 3681,
+                    "下跌家数[20260715]": 1771,
+                    "平盘家数[20260715]": 71,
+                    "涨停家数[20260715]": 63,
+                    "跌停家数[20260715]": 16,
+                }
+            ]
+        },
+    )
+    hot = normalize_capability_rows(
+        "hot_stock",
+        {
+            "datas": [
+                {
+                    "股票代码": "002384.SZ",
+                    "股票简称": "东山精密",
+                    "涨跌幅[20260715]": 2.68,
+                    "成交额[20260715]": 29_117_831_192,
+                    "所属概念": ["CPO", "PCB概念"],
+                }
+            ]
+        },
+    )
+
+    assert {fact.label for fact in breadth[0]} >= {
+        "上涨家数[20260715]",
+        "下跌家数[20260715]",
+    }
+    assert any(fact.label == "所属概念" for fact in hot[0])
+
+
 def test_growth_rate_formats_as_percent_before_profit_amount() -> None:
     rows = normalize_capability_rows(
         "event",

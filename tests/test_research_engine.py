@@ -7,6 +7,7 @@ from stock_ts.iwencai import SKILLS
 from stock_ts.research_engine import (
     ResearchContext,
     ResearchModuleItem,
+    ResearchModuleSection,
     ResearchTarget,
     ResearchWorkspaceResult,
     ResearchWorkspaceService,
@@ -46,6 +47,31 @@ def test_workspace_result_exposes_complete_product_contract() -> None:
     assert payload["delivery"] == "live"
     assert payload["as_of"] == "2026-07-15T07:20:00+08:00"
     assert payload["module_items"][0]["kind"] == "index"
+
+
+def test_workspace_result_exposes_decision_label_and_sections() -> None:
+    result = ResearchWorkspaceResult(
+        ok=True,
+        status="complete",
+        module="market",
+        generated_at="2026-07-15T09:30:00+08:00",
+        verdict="指数修复，但短周期仍有分化。",
+        action="关注主线持续性。",
+        primary_risk="修复未扩散。",
+        decision_label="修复中",
+        module_sections=(
+            ResearchModuleSection(
+                key="market-themes",
+                title="当前主题",
+                conclusion="制造与创新药靠前。",
+            ),
+        ),
+    )
+
+    payload = result.to_public_dict()
+
+    assert payload["decision_label"] == "修复中"
+    assert payload["module_sections"][0]["key"] == "market-themes"
 
 
 class FakeClient:

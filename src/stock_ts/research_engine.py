@@ -40,6 +40,8 @@ CAPABILITY_LABELS = {
     "finance": "财务质量",
     "business": "经营结构",
     "astock_selector": "候选筛选",
+    "breadth": "涨跌分布",
+    "hot_stock": "热门股票",
     "industry": "行业位置",
     "report": "研报观点",
 }
@@ -56,6 +58,8 @@ FINDING_TITLES = {
     "finance": "财务方向",
     "business": "经营与竞争",
     "astock_selector": "候选线索",
+    "breadth": "涨跌分布",
+    "hot_stock": "热门股票",
     "industry": "行业位置",
     "report": "研报观点",
 }
@@ -198,6 +202,24 @@ class ResearchModuleItem:
 
 
 @dataclass(frozen=True)
+class ResearchModuleSection:
+    key: str
+    title: str
+    conclusion: str
+    tone: str = "neutral"
+    items: tuple[ResearchModuleItem, ...] = ()
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "title": self.title,
+            "conclusion": self.conclusion,
+            "tone": self.tone,
+            "items": [item.to_public_dict() for item in self.items],
+        }
+
+
+@dataclass(frozen=True)
 class ResearchWorkspaceResult:
     ok: bool
     status: str
@@ -215,6 +237,8 @@ class ResearchWorkspaceResult:
     delivery: str = "live"
     as_of: str = ""
     module_items: tuple[ResearchModuleItem, ...] = ()
+    decision_label: str = "待确认"
+    module_sections: tuple[ResearchModuleSection, ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
         return {
@@ -236,6 +260,8 @@ class ResearchWorkspaceResult:
             "delivery": self.delivery,
             "as_of": self.as_of or self.generated_at,
             "module_items": [item.to_public_dict() for item in self.module_items],
+            "decision_label": self.decision_label,
+            "module_sections": [item.to_public_dict() for item in self.module_sections],
         }
 
 

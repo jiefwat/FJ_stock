@@ -114,6 +114,31 @@ CAPABILITY_SCHEMAS = {
         context_groups=(("股票代码", "证券代码"), ("股票简称", "证券简称", "股票名称")),
         allow_quote_fields=True,
     ),
+    "breadth": CapabilitySchema(
+        (
+            ("上涨家数",),
+            ("下跌家数",),
+            ("平盘家数",),
+            ("涨停家数",),
+            ("跌停家数",),
+        ),
+        context_groups=(("指数名称", "指数简称", "指数代码"),),
+        minimum_facts=2,
+        allow_quote_fields=True,
+    ),
+    "hot_stock": CapabilitySchema(
+        (
+            ("涨跌幅", "涨跌"),
+            ("成交额", "成交量", "换手率"),
+            ("所属概念", "概念"),
+            ("所属行业", "行业"),
+        ),
+        context_groups=(
+            ("股票代码", "证券代码"),
+            ("股票简称", "证券简称", "股票名称"),
+        ),
+        allow_quote_fields=True,
+    ),
     "market": CapabilitySchema(
         (
             ("收盘价", "最新价", "开盘价", "最高价", "最低价"),
