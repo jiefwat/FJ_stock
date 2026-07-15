@@ -279,6 +279,8 @@ class ResearchWorkspaceResult:
     coverage_ready: int = 0
     coverage_total: int = 0
     delivery: str = "live"
+    data_label: str = ""
+    fallback_reason: str = ""
     as_of: str = ""
     module_items: tuple[ResearchModuleItem, ...] = ()
     decision_label: str = "待确认"
@@ -311,6 +313,8 @@ class ResearchWorkspaceResult:
                 "total": self.coverage_total,
             },
             "delivery": self.delivery,
+            "data_label": _public_free_text(self.data_label, 64),
+            "fallback_reason": _public_free_text(self.fallback_reason, 200),
             "as_of": self.as_of or self.generated_at,
             "module_items": [item.to_public_dict() for item in self.module_items],
             "decision_label": _public_free_text(self.decision_label, 120),
