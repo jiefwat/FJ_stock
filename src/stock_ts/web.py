@@ -1012,6 +1012,9 @@ def _render_native_research_page(
     current_user: AuthUser | None,
     portfolio_notice: PortfolioNotice | None,
     settings_notice: SettingsNotice | None,
+    selected_theme: str = "",
+    source_theme: str = "",
+    candidate_source: str = "",
 ) -> str:
     selected_stock = _default_stock_query(stock_code, holdings_path)
     try:
@@ -1043,9 +1046,17 @@ def _render_native_research_page(
         "stock": render_engine_workspace(
             "stock",
             status=service_status,
-            context=stock_context,
+            context={
+                **stock_context,
+                **({"source_theme": source_theme} if source_theme else {}),
+                **({"candidate_source": candidate_source} if candidate_source else {}),
+            },
         ),
-        "opportunity": render_engine_workspace("opportunity", status=service_status),
+        "opportunity": render_engine_workspace(
+            "opportunity",
+            status=service_status,
+            context={"sector": selected_theme} if selected_theme else {},
+        ),
         "data-center": render_research_service_status(service_status),
         "account": _render_native_account_module(
             holdings_path=holdings_path,
@@ -1259,6 +1270,8 @@ def render_page(
     candidate_group: str = "all",
     candidate_strategy: str = "all",
     candidate_source: str = "",
+    selected_theme: str = "",
+    source_theme: str = "",
     candidate_strategy_label: str = "",
     candidate_evidence: str = "",
     current_user: AuthUser | None = None,
@@ -1274,6 +1287,9 @@ def render_page(
             current_user=current_user,
             portfolio_notice=portfolio_notice,
             settings_notice=settings_notice,
+            selected_theme=selected_theme,
+            source_theme=source_theme,
+            candidate_source=candidate_source,
         )
 
     try:
@@ -13340,6 +13356,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
         os.getenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", "reports/research")
     )
     refresh = bool(payload["refresh"])
+    contextual_opportunity = module == "opportunity" and bool(context.sector)
     holdings_path = str(payload.get("holdings_path") or DEFAULT_HOLDINGS_PATH)
     local_provider: StockDataProvider | None = None
 
@@ -13362,7 +13379,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
     if iwencai_config_summary()["status"] != "configured":
         snapshot = (
             store.load(module, allow_stale=True)
-            if module in {"market", "opportunity"}
+            if module in {"market", "opportunity"} and not contextual_opportunity
             else None
         )
         if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
@@ -13372,11 +13389,11 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             return result
         local_result = local_fallback(module, context)
         result = local_result.to_public_dict() | {"stale": False}
-        if module in {"market", "opportunity"} and local_result.ok:
+        if module in {"market", "opportunity"} and not contextual_opportunity and local_result.ok:
             store.save(module, result)
         return result
 
-    if module in {"market", "opportunity"} and not refresh:
+    if module in {"market", "opportunity"} and not contextual_opportunity and not refresh:
         snapshot = store.load(module)
         if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
             result = dict(snapshot.payload)
@@ -13397,7 +13414,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
 
     fused_result = fuse_research_results(local_result, enriched_result)
     result = fused_result.to_public_dict() | {"stale": False}
-    if module in {"market", "opportunity"} and fused_result.ok:
+    if module in {"market", "opportunity"} and not contextual_opportunity and fused_result.ok:
         store.save(module, result)
     return result
 
@@ -13500,6 +13517,8 @@ class Handler(BaseHTTPRequestHandler):
         candidate_group = query.get("candidate_tier", ["all"])[0]
         candidate_strategy = query.get("candidate_strategy", ["all"])[0]
         candidate_source = query.get("candidate_source", [""])[0]
+        selected_theme = _clean_iwencai_text(query.get("theme", [""])[0], 64)
+        source_theme = _clean_iwencai_text(query.get("source_theme", [""])[0], 64)
         candidate_strategy_label = query.get("candidate_strategy_label", [""])[0]
         candidate_evidence = query.get("candidate_evidence", [""])[0]
         refresh = query.get("refresh", [""])[0] == "1"
@@ -13535,6 +13554,8 @@ class Handler(BaseHTTPRequestHandler):
             candidate_group=candidate_group,
             candidate_strategy=candidate_strategy,
             candidate_source=candidate_source,
+            selected_theme=selected_theme,
+            source_theme=source_theme,
             candidate_strategy_label=candidate_strategy_label,
             candidate_evidence=candidate_evidence,
             current_user=current_user,

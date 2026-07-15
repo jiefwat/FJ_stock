@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from html import escape
+from urllib.parse import urlencode
 
 MODULE_META = {
     "market": ("每日大盘", "市场判断"),
@@ -31,6 +32,7 @@ def render_engine_workspace(
     )
     disabled = "" if available else " disabled"
     stock_switcher = _render_stock_switcher(context or {}) if module == "stock" else ""
+    context_banner = _render_context_banner(module, context or {})
     return f"""
     <section class="module engine-module" id="module-{escape(module)}"
       data-engine-workspace="{escape(module)}"
@@ -46,6 +48,7 @@ def render_engine_workspace(
         </div>
       </header>
       <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
+      {context_banner}
       {stock_switcher}
       <section class="engine-judgment state-idle" data-engine-judgment>
         <div class="engine-signal-band" aria-hidden="true"><i></i></div>
@@ -126,6 +129,26 @@ def _render_stock_switcher(context: dict[str, object]) -> str:
         </form>
         <a href="#opportunity">进入全市场筛选</a>
       </section>"""
+
+
+def _render_context_banner(module: str, context: dict[str, object]) -> str:
+    if module == "opportunity":
+        theme = str(context.get("sector") or "").strip()
+        if theme:
+            return f"""
+      <aside class="engine-context-banner" data-selected-theme>
+        <strong>正在查看主题：{escape(theme)}</strong>
+        <a href="/#opportunity">返回全部主题</a>
+      </aside>"""
+    if module == "stock":
+        theme = str(context.get("source_theme") or "").strip()
+        if theme:
+            return f"""
+      <aside class="engine-context-banner" data-source-theme>
+        <strong>来自热门机会 · {escape(theme)}</strong>
+        <a href="/?{escape(urlencode({'theme': theme}), quote=True)}#opportunity">返回主题研究</a>
+      </aside>"""
+    return ""
 
 
 def render_engine_mobile_dock() -> str:
@@ -400,7 +423,15 @@ def engine_app_script() -> str:
       strip.setAttribute('aria-label', '主题横向列表');
       const items = engineSectionItems(section);
       items.forEach((item) => {
-        const card = engineNode('article', `engine-theme-card state-${item.status || 'ready'}`);
+        const clickable = ['market-themes', 'opportunity-themes'].includes(section.key);
+        const card = engineNode(
+          clickable ? 'a' : 'article',
+          `engine-theme-card state-${item.status || 'ready'}`
+        );
+        if (clickable) {
+          card.href = `/?theme=${encodeURIComponent(item.name || '')}#opportunity`;
+          card.setAttribute('aria-label', `查看 ${item.name || '主题'} 的热门股票`);
+        }
         const meta = engineNode('div', 'engine-theme-card-meta');
         meta.append(
           engineNode('span', '', item.label || '主题'),
@@ -595,9 +626,13 @@ def engine_app_script() -> str:
       return cell;
     }
 
-    function engineStockAnalysisLink(item) {
+    function engineStockAnalysisLink(item, candidateSource = '') {
       const link = engineNode('a', 'engine-list-action', '个股分析');
-      link.href = `/?code=${encodeURIComponent(item.code || '')}#stock`;
+      const base = `/?code=${encodeURIComponent(item.code || '')}`;
+      link.href = candidateSource === 'opportunity'
+        ? `${base}&source_theme=${encodeURIComponent(item.label || '')}`
+          + '&candidate_source=opportunity#stock'
+        : `${base}#stock`;
       link.setAttribute('aria-label', `打开 ${item.name || item.code || '候选'} 个股分析`);
       return link;
     }
@@ -691,7 +726,7 @@ def engine_app_script() -> str:
             }`
           )
         );
-        row.append(engineStockAnalysisLink(item));
+        row.append(engineStockAnalysisLink(item, 'opportunity'));
         list.append(row);
       });
       if (!items.length) {

@@ -81,6 +81,7 @@ def build_local_research(
             sectors,
             candidates,
             candidate_universe=candidate_universe,
+            selected_theme=context.sector,
         )
     raise ValueError(f"unsupported local research module: {module}")
 
@@ -808,8 +809,14 @@ def _build_opportunity_research(
     candidates: Any,
     *,
     candidate_universe: list[Any],
+    selected_theme: str = "",
 ) -> ResearchWorkspaceResult:
-    theme_items = tuple(_theme_item(item) for item in sectors.sectors[:5])
+    matching_sectors = [
+        item
+        for item in sectors.sectors
+        if not selected_theme or _same_theme(item.name, selected_theme)
+    ]
+    theme_items = tuple(_theme_item(item) for item in matching_sectors[:5])
     forward_stages = {
         "延续观察": "可进入投资候选",
         "突破待确认": "等待确认",
@@ -828,13 +835,19 @@ def _build_opportunity_research(
             sectors=sectors,
         )
         if assessment.stage in forward_stages
+        and (not selected_theme or _same_theme(raw.sector, selected_theme))
     )[:10]
+    theme_label = selected_theme or _first_theme(sectors)
     findings = (
         ResearchFinding(
             title="主线方向",
-            summary=_join_or_default(
-                sectors.market_mainline[:3],
-                "当前没有确认度足够的主线，候选只按个股条件排序。",
+            summary=(
+                f"当前聚焦主题：{selected_theme}。"
+                if selected_theme
+                else _join_or_default(
+                    sectors.market_mainline[:3],
+                    "当前没有确认度足够的主线，候选只按个股条件排序。",
+                )
             ),
         ),
         ResearchFinding(
@@ -856,7 +869,13 @@ def _build_opportunity_research(
         ResearchModuleSection(
             key="opportunity-themes",
             title="主线主题",
-            conclusion=_join_or_default(sectors.market_mainline[:3], "当前没有确认度足够的主线。"),
+            conclusion=(
+                f"当前只展示 {selected_theme} 主题及其匹配股票。"
+                if selected_theme
+                else _join_or_default(
+                    sectors.market_mainline[:3], "当前没有确认度足够的主线。"
+                )
+            ),
             items=theme_items,
         ),
         ResearchModuleSection(
@@ -871,7 +890,7 @@ def _build_opportunity_research(
         as_of=candidates.trade_date,
         verdict=(
             f"当前保留 {len(candidate_items)} 只条件候选，"
-            f"优先围绕{_first_theme(sectors)}做验证。"
+            f"优先围绕{theme_label}做验证。"
         ),
         action="先确认主题持续性，再逐只等待价格与成交条件，不追逐临时脉冲。",
         risk=_join_or_default(sectors.risk_notes[:2], "热点强度可能快速衰减，候选不等于交易信号。"),
@@ -881,6 +900,18 @@ def _build_opportunity_research(
         decision_label="条件观察" if candidate_items else "暂停筛选",
         subject_count=len(candidate_items),
     )
+
+
+def _same_theme(left: str, right: str) -> bool:
+    def normalize(value: str) -> str:
+        text = "".join(str(value or "").split()).casefold()
+        for suffix in ("概念板块", "行业板块", "概念", "行业", "板块"):
+            if text.endswith(suffix):
+                text = text[: -len(suffix)]
+                break
+        return text
+
+    return bool(normalize(left)) and normalize(left) == normalize(right)
 
 
 def _result(

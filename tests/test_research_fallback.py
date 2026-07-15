@@ -103,6 +103,16 @@ class MultiDayCandidateProvider(LocalFixtureProvider):
         ]
 
 
+class MultiThemeCandidateProvider(MultiDayCandidateProvider):
+    def fetch_candidate_universe(self):
+        items = super().fetch_candidate_universe()
+        return [
+            replace(items[0], code="600011", name="机器人趋势", sector="机器人"),
+            replace(items[0], code="600012", name="半导体趋势", sector="半导体"),
+            *items[1:],
+        ]
+
+
 def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
     result = build_local_research(
         "stock",
@@ -312,6 +322,25 @@ def test_opportunity_top10_contains_only_investable_continuation_stages() -> Non
     }
     assert stages <= {"可进入投资候选", "等待确认"}
     assert all(candidate.status == "ready" for candidate in candidates.items)
+
+
+def test_opportunity_selected_theme_only_returns_matching_candidates() -> None:
+    result = build_local_research(
+        "opportunity",
+        ResearchContext(sector="机器人"),
+        provider=MultiThemeCandidateProvider(),
+    )
+
+    themes = next(
+        section for section in result.module_sections if section.key == "opportunity-themes"
+    )
+    candidates = next(
+        section for section in result.module_sections if section.key == "opportunity-candidates"
+    )
+
+    assert [item.name for item in themes.items] == ["机器人"]
+    assert [item.name for item in candidates.items] == ["机器人趋势"]
+    assert "机器人" in result.verdict
 
 
 def test_local_market_leads_with_professional_pulse_metrics() -> None:

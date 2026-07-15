@@ -207,6 +207,50 @@ def test_portfolio_page_context_only_contains_code_and_name(tmp_path) -> None:
         assert forbidden not in serialized
 
 
+def test_native_page_passes_selected_theme_to_opportunity_workspace() -> None:
+    soup = BeautifulSoup(
+        render_page(stock_code="600519", selected_theme="半导体"),
+        "html.parser",
+    )
+    workspace = soup.select_one('[data-engine-workspace="opportunity"]')
+
+    assert workspace is not None
+    assert json.loads(workspace["data-engine-context"]) == {"sector": "半导体"}
+    assert "正在查看主题：半导体" in workspace.get_text(" ", strip=True)
+    assert workspace.select_one('a[href="/#opportunity"]') is not None
+
+
+def test_native_stock_page_shows_opportunity_source_theme() -> None:
+    soup = BeautifulSoup(
+        render_page(
+            stock_code="600519",
+            source_theme="白酒",
+            candidate_source="opportunity",
+        ),
+        "html.parser",
+    )
+    workspace = soup.select_one('[data-engine-workspace="stock"]')
+
+    assert workspace is not None
+    context = json.loads(workspace["data-engine-context"])
+    assert context["source_theme"] == "白酒"
+    assert "来自热门机会 · 白酒" in workspace.get_text(" ", strip=True)
+
+
+def test_engine_theme_and_candidate_links_preserve_context() -> None:
+    script = engine_app_script()
+
+    assert "/?theme=${encodeURIComponent" in script
+    assert "source_theme=${encodeURIComponent" in script
+    assert "candidate_source=opportunity" in script
+
+
+def test_theme_context_banner_has_terminal_and_mobile_styles() -> None:
+    assert ".engine-context-banner" in CSS
+    assert ".engine-context-banner a" in CSS
+    assert "[data-selected-theme]" in CSS
+
+
 def test_portfolio_page_context_keeps_twenty_names_and_codes_only(tmp_path) -> None:
     holdings = tmp_path / "holdings.csv"
     rows = [
