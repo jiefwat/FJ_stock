@@ -605,8 +605,8 @@ def _refresh_session(current: datetime) -> tuple[str, bool]:
 
 
 def _data_validation_time(current: datetime) -> datetime:
-    session_name, _intraday = _refresh_session(current)
-    if session_name in {"morning", "preopen"}:
+    # Before 10:00, the latest complete A-share session is still the prior day.
+    if current.hour < 10:
         return current - timedelta(days=1)
     return current
 

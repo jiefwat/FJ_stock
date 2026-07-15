@@ -126,6 +126,26 @@ def _status_map(path: Path) -> dict[str, str]:
 
 
 @pytest.mark.parametrize(
+    ("hour", "expected_date"),
+    [
+        (1, "2026-07-09"),
+        (7, "2026-07-09"),
+        (9, "2026-07-09"),
+        (10, "2026-07-10"),
+        (13, "2026-07-10"),
+    ],
+)
+def test_data_validation_uses_last_completed_session_before_open(
+    hour: int, expected_date: str
+) -> None:
+    validation_time = pipeline_module._data_validation_time(
+        PIPELINE_NOW.replace(hour=hour)
+    )
+
+    assert validation_time.date().isoformat() == expected_date
+
+
+@pytest.mark.parametrize(
     ("hour", "session", "intraday"),
     [
         (7, "morning", False),
