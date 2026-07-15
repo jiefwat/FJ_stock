@@ -143,6 +143,12 @@ def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_pat
         "portfolio-divergence",
     }
     assert len(payload["findings"]) <= 3
+    for item in payload["module_items"]:
+        facts = {fact["label"]: fact["value"] for fact in item["facts"]}
+        assert facts["当前动作"]
+        assert facts["主要原因"]
+        assert facts["确认条件"]
+        assert facts["失效条件"]
 
 
 def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
@@ -195,6 +201,16 @@ def test_local_market_leads_with_professional_pulse_metrics() -> None:
         "跌停家数",
     ]
     assert all(item.summary.isdigit() for item in breadth.items)
+    movers = next(
+        section for section in result.module_sections if section.key == "market-movers"
+    )
+    assert movers.items
+    for item in movers.items:
+        facts = {fact.label: fact.value for fact in item.facts}
+        assert facts["涨跌幅"]
+        assert facts["异动原因"]
+        assert facts["确认条件"]
+        assert facts["失效条件"]
 
 
 def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:
@@ -207,6 +223,17 @@ def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:
     evidence = next(
         section for section in result.module_sections if section.key == "stock-evidence"
     )
+    assert [section.key for section in result.module_sections[:2]] == [
+        "stock-decision",
+        "stock-evidence",
+    ]
+    decision = result.module_sections[0]
+    assert [item.label for item in decision.items] == [
+        "当前动作",
+        "最强支持",
+        "主要反证",
+        "执行边界",
+    ]
     assert len(evidence.items) == 8
     assert all(item.kind == "stock_evidence" for item in evidence.items)
     for item in evidence.items:
@@ -217,3 +244,27 @@ def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:
         assert facts["失效条件"]
         assert item.summary
         assert item.risk
+
+
+def test_local_opportunity_candidates_have_reasoned_list_facts_without_candidate_findings() -> None:
+    result = build_local_research(
+        "opportunity",
+        ResearchContext(),
+        provider=LocalFixtureProvider(),
+    )
+
+    payload = result.to_public_dict()
+    candidates = next(
+        section
+        for section in payload["module_sections"]
+        if section["key"] == "opportunity-candidates"
+    )
+    assert candidates["items"]
+    for item in candidates["items"]:
+        facts = {fact["label"]: fact["value"] for fact in item["facts"]}
+        assert facts["观察分"]
+        assert facts["涨跌幅"]
+        assert facts["入选原因"]
+        assert facts["确认条件"]
+        assert facts["失效条件"]
+    assert all(not finding["title"].startswith("候选：") for finding in payload["findings"])

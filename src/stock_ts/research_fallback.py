@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .analysis import analyze_stock
+from .analysis import analyze_candidates, analyze_stock
 from .models import StockRawData
 from .professional_analytics import (
     MarketPulse,
@@ -125,6 +125,16 @@ def _build_stock_research(
     )
     sections = (
         ResearchModuleSection(
+            key="stock-decision",
+            title="整体结论与执行边界",
+            conclusion=(
+                f"当前结论为{evidence_matrix.decision_label}；"
+                "动作、支持、反证和失效线必须同时成立。"
+            ),
+            tone="negative" if evidence_matrix.hard_gate_reasons else "neutral",
+            items=_stock_decision_items(evidence_matrix),
+        ),
+        ResearchModuleSection(
             key="stock-evidence",
             title="八维证据矩阵",
             conclusion=(
@@ -141,10 +151,7 @@ def _build_stock_research(
         status="partial",
         module="stock",
         generated_at=generated_at,
-        verdict=(
-            f"{report.name}当前为{evidence_matrix.decision_label}：{report.trend}，"
-            f"先按{report.risk_level}风险级别处理，等待下一项确认。"
-        ),
+        verdict=_stock_overall_verdict(report, evidence_matrix),
         action=evidence_matrix.action,
         primary_risk=evidence_matrix.primary_risk,
         findings=findings,
@@ -191,6 +198,59 @@ def _fetch_stock_raw(
             announcements=candidate.announcements,
             data_sources=["candidate_snapshot"],
         )
+
+
+def _stock_decision_items(matrix: Any) -> tuple[ResearchModuleItem, ...]:
+    strongest = max(matrix.dimensions, key=lambda item: item.score)
+    support = (
+        strongest.supporting_evidence[0]
+        if strongest.supporting_evidence
+        else "最强支持证据待补。"
+    )
+    return (
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="当前动作",
+            summary=matrix.action,
+            risk="动作必须同时服从主要反证与失效线。",
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="最强支持",
+            summary=f"{strongest.name} {strongest.score}/100：{support}",
+            risk="单一优势不能独立构成买卖依据。",
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="主要反证",
+            summary=matrix.primary_risk,
+            risk="反证未消除前不提高仓位或结论强度。",
+        ),
+        ResearchModuleItem(
+            kind="stock_decision",
+            label="执行边界",
+            summary=f"转强：{matrix.strengthen_condition}",
+            risk=f"失效：{matrix.invalidation_condition}",
+            facts=(
+                ResearchFact(label="转强条件", value=matrix.strengthen_condition),
+                ResearchFact(label="失效条件", value=matrix.invalidation_condition),
+            ),
+        ),
+    )
+
+
+def _stock_overall_verdict(report: Any, matrix: Any) -> str:
+    strongest = max(matrix.dimensions, key=lambda item: item.score)
+    support = (
+        strongest.supporting_evidence[0]
+        if strongest.supporting_evidence
+        else "支持证据待补"
+    )
+    return (
+        f"{report.name}整体结论：{matrix.decision_label}。"
+        f"最强支持来自{strongest.name}（{support}）；"
+        f"主要反证为{matrix.primary_risk}。"
+    )
 
 
 def _code_key(value: str) -> str:
@@ -377,11 +437,12 @@ def _build_market_research(
         candidate_universe = provider.fetch_candidate_universe()
     except Exception:
         candidate_universe = []
-    candidates = build_candidate_report(
+    candidates = _candidate_report(
         provider,
         market=market,
         sectors=sectors,
-        limit=5,
+        candidate_universe=candidate_universe,
+        limit=20,
     )
     pulse = build_market_pulse(market, sectors, candidate_universe)
     breadth = _breadth_item(market)
@@ -397,7 +458,9 @@ def _build_market_research(
         for index in market.indices
     )
     theme_items = tuple(_theme_item(item) for item in sectors.sectors[:5])
-    hot_items = tuple(_candidate_item(item, kind="hot_stock") for item in candidates.candidates[:5])
+    mover_items = tuple(
+        _market_mover_item(item) for item in _market_mover_candidates(candidates.candidates)
+    )
     findings = (
         ResearchFinding(title="市场宽度", summary=breadth.summary),
         ResearchFinding(
@@ -432,10 +495,17 @@ def _build_market_research(
             items=theme_items,
         ),
         ResearchModuleSection(
-            key="market-hot-stocks",
-            title="热门股票",
-            conclusion="只保留具备主题、价格与风险条件的代表股。",
-            items=hot_items,
+            key="market-movers",
+            title="异动股票分析",
+            conclusion=(
+                "优先展示涨跌超过 3% 的扫描样本；不足时展示绝对波动最大的五只。"
+            ),
+            tone=(
+                "warning"
+                if any(item.risk.startswith("下跌") for item in mover_items)
+                else "neutral"
+            ),
+            items=mover_items,
         ),
     )
     return _result(
@@ -452,10 +522,10 @@ def _build_market_research(
             else _join_or_default(market.risks[:2], "主题快速轮动，避免只按单一热点行动。")
         ),
         findings=findings,
-        items=index_items + hot_items,
+        items=index_items,
         sections=sections,
         decision_label=_market_pulse_label(pulse.regime),
-        subject_count=len(index_items) + len(hot_items),
+        subject_count=len(index_items) + len(mover_items),
     )
 
 
@@ -537,13 +607,28 @@ def _build_opportunity_research(
 ) -> ResearchWorkspaceResult:
     theme_items = tuple(_theme_item(item) for item in sectors.sectors[:5])
     candidate_items = tuple(_candidate_item(item) for item in candidates.candidates[:10])
-    findings = tuple(
+    findings = (
         ResearchFinding(
-            title=f"候选：{item.name}",
-            summary=(item.reasons[0] if item.reasons else "候选证据待核对。"),
-            target=item.name,
-        )
-        for item in candidates.candidates[:3]
+            title="主线方向",
+            summary=_join_or_default(
+                sectors.market_mainline[:3],
+                "当前没有确认度足够的主线，候选只按个股条件排序。",
+            ),
+        ),
+        ResearchFinding(
+            title="候选覆盖",
+            summary=(
+                f"本轮保留 {len(candidate_items)} 只候选；"
+                f"最高观察分 {_top_candidate_score(candidates)}。"
+            ),
+        ),
+        ResearchFinding(
+            title="统一排除规则",
+            summary=_join_or_default(
+                sectors.risk_notes[:1],
+                "主题退潮、成交失配或跌破失效线时移出观察列表。",
+            ),
+        ),
     )
     sections = (
         ResearchModuleSection(
@@ -736,6 +821,64 @@ def _theme_item(sector: Any) -> ResearchModuleItem:
     )
 
 
+def _candidate_report(
+    provider: StockDataProvider,
+    *,
+    market: Any,
+    sectors: Any,
+    candidate_universe: list[Any],
+    limit: int,
+) -> Any:
+    if candidate_universe:
+        try:
+            return analyze_candidates(
+                candidate_universe,
+                sectors,
+                market,
+                limit=min(limit, len(candidate_universe)),
+            )
+        except Exception:
+            pass
+    return build_candidate_report(
+        provider,
+        market=market,
+        sectors=sectors,
+        limit=limit,
+    )
+
+
+def _market_mover_candidates(candidates: list[Any]) -> tuple[Any, ...]:
+    ranked = sorted(candidates, key=lambda item: abs(item.pct_change), reverse=True)
+    abnormal = [item for item in ranked if abs(item.pct_change) >= 3]
+    return tuple((abnormal or ranked[:5])[:10])
+
+
+def _market_mover_item(candidate: Any) -> ResearchModuleItem:
+    reason = _candidate_reason(candidate)
+    confirm = (
+        candidate.watch_conditions[0]
+        if candidate.watch_conditions
+        else "等待价格与成交继续确认。"
+    )
+    invalidate = candidate.risks[0] if candidate.risks else "异动未获承接则移出观察。"
+    direction = "上涨异动" if candidate.pct_change >= 0 else "下跌异动"
+    return ResearchModuleItem(
+        kind="market_mover",
+        code=candidate.code,
+        name=candidate.name,
+        label=candidate.sector or "主题待确认",
+        summary=f"{direction} {candidate.pct_change:+.2f}%；原因：{reason}",
+        risk=f"{direction}风险：{invalidate}",
+        status="ready",
+        facts=(
+            ResearchFact(label="涨跌幅", value=f"{candidate.pct_change:+.2f}%"),
+            ResearchFact(label="异动原因", value=reason),
+            ResearchFact(label="确认条件", value=confirm),
+            ResearchFact(label="失效条件", value=invalidate),
+        ),
+    )
+
+
 def _candidate_item(candidate: Any, *, kind: str = "candidate") -> ResearchModuleItem:
     confirm = (
         candidate.watch_conditions[0]
@@ -743,7 +886,7 @@ def _candidate_item(candidate: Any, *, kind: str = "candidate") -> ResearchModul
         else "等待价格与成交确认。"
     )
     invalidate = candidate.risks[0] if candidate.risks else "主题强度回落则移出观察。"
-    reason = candidate.reasons[0] if candidate.reasons else "候选证据待复核。"
+    reason = _candidate_reason(candidate)
     return ResearchModuleItem(
         kind=kind,
         code=candidate.code,
@@ -752,19 +895,80 @@ def _candidate_item(candidate: Any, *, kind: str = "candidate") -> ResearchModul
         summary=f"观察分 {candidate.score}；入选：{reason}；确认：{confirm}",
         risk=f"淘汰条件：{invalidate}",
         status="ready",
+        facts=(
+            ResearchFact(label="观察分", value=str(candidate.score)),
+            ResearchFact(label="涨跌幅", value=f"{candidate.pct_change:+.2f}%"),
+            ResearchFact(label="入选原因", value=reason),
+            ResearchFact(label="确认条件", value=confirm),
+            ResearchFact(label="失效条件", value=invalidate),
+        ),
     )
 
 
+def _candidate_reason(candidate: Any) -> str:
+    reason = candidate.reasons[0] if candidate.reasons else "候选证据待复核。"
+    name = str(candidate.name or "").strip()
+    return reason.replace(name, "该股") if name else reason
+
+
 def _position_item(position: Any) -> ResearchModuleItem:
+    action = _position_action(position)
+    reason = _position_reason(position)
+    confirm = _position_confirmation(position)
+    invalidate = _position_invalidation(position)
     return ResearchModuleItem(
         kind="holding",
         code=position.holding.code,
         name=position.holding.name,
         label=position.holding.sector or "主题待确认",
-        summary=_position_summary(position),
-        risk=f"风险级别：{position.risk_level}；弱于主题时优先复核。",
+        summary=(
+            f"动作：{action}；主因：{reason}；"
+            f"触发：{confirm}；失效：{invalidate}"
+        ),
+        risk=f"风险级别：{position.risk_level}；失效：{invalidate}",
         status="ready",
+        facts=(
+            ResearchFact(label="当前动作", value=action),
+            ResearchFact(label="主要原因", value=reason),
+            ResearchFact(label="确认条件", value=confirm),
+            ResearchFact(label="失效条件", value=invalidate),
+        ),
     )
+
+
+def _position_action(position: Any) -> str:
+    if position.risk_level == "高":
+        return "减仓控风险"
+    if position.trend == "下降趋势":
+        return "防守观察"
+    if position.trend == "上升趋势" and position.pnl_ratio >= 0:
+        return "持有跟踪"
+    if position.trend == "上升趋势":
+        return "观察修复"
+    return "持有观察"
+
+
+def _position_reason(position: Any) -> str:
+    return (
+        f"趋势{position.trend}，累计盈亏 {position.pnl_ratio:+.2f}%，"
+        f"仓位 {position.weight:.1%}，风险{position.risk_level}"
+    )
+
+
+def _position_confirmation(position: Any) -> str:
+    if position.risk_level == "高" or position.trend == "下降趋势":
+        return "重新站回短期均线且不再弱于所属主题"
+    if position.trend == "上升趋势":
+        return "量价继续配合且不跌破短期趋势线"
+    return "放量站回短期均线后再提高处理优先级"
+
+
+def _position_invalidation(position: Any) -> str:
+    if position.risk_level == "高" or position.trend == "下降趋势":
+        return "反弹无量或继续弱于所属主题"
+    if position.pnl_ratio < 0:
+        return "再次跌破成本下沿且成交放大"
+    return "跌破短期趋势线且资金转弱"
 
 
 def _position_summary(position: Any) -> str:
@@ -838,6 +1042,12 @@ def _first_theme(sectors: Any) -> str:
     if sectors.sectors:
         return sectors.sectors[0].name
     return "待确认主题"
+
+
+def _top_candidate_score(candidates: Any) -> str:
+    if not candidates.candidates:
+        return "待补"
+    return f"{candidates.candidates[0].score}/100"
 
 
 def _risk_rank(level: str) -> int:
