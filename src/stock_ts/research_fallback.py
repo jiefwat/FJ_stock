@@ -181,7 +181,7 @@ def _build_snapshot_stock_research(
 ) -> ResearchWorkspaceResult:
     raw_items = snapshot.get("module_items")
     items = raw_items if isinstance(raw_items, list) else []
-    candidate = next(
+    primary_candidate = next(
         (
             item
             for item in items
@@ -190,10 +190,23 @@ def _build_snapshot_stock_research(
         ),
         None,
     )
+    nested_candidate = next(
+        (
+            item
+            for item in _snapshot_section_items(snapshot)
+            if _code_key(str(item.get("code") or "")) == _code_key(context.code)
+        ),
+        None,
+    )
+    candidate = primary_candidate or nested_candidate
     if candidate is None:
         raise ValueError(f"opportunity snapshot missing stock {context.code}")
     name = str(candidate.get("name") or context.name or context.code)
-    theme = str(candidate.get("label") or "主题待确认")
+    theme = str(
+        (nested_candidate or {}).get("label")
+        or candidate.get("label")
+        or "主题待确认"
+    )
     summary = str(candidate.get("summary") or "候选入选依据待补。")
     risk = str(candidate.get("risk") or "候选失效条件待补。")
     module_items = (
@@ -246,6 +259,20 @@ def _build_snapshot_stock_research(
         module_items=module_items,
         decision_label="等待确认",
     )
+
+
+def _snapshot_section_items(snapshot: dict[str, object]) -> list[dict[str, object]]:
+    raw_sections = snapshot.get("module_sections")
+    sections = raw_sections if isinstance(raw_sections, list) else []
+    result: list[dict[str, object]] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        raw_items = section.get("items")
+        if not isinstance(raw_items, list):
+            continue
+        result.extend(item for item in raw_items if isinstance(item, dict))
+    return result
 
 
 def _stock_item(label: str, summary: str, available: bool) -> ResearchModuleItem:
