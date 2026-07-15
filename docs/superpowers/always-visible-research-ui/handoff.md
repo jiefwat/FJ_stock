@@ -20,7 +20,7 @@
 - 只重启 `stock-ts.service`。
 - 必须保留 `.env`、`.secrets`、`data`、`reports`、认证数据库、私有持仓和 `.deploy_backups`。
 - `stock-ts-daily-research.timer` 和 `stock-ts-daily-analysis.timer` 不重启、不禁用。
-- 部署后必须确认 GitHub、本地 `main` 和服务器提交一致，并验证 `/healthz`、登录跳转和登录态四模块 API。
+- 部署后必须确认 GitHub、本地独立分支和服务器提交一致，确认 `main` 仍为改造前基线，并验证 `/healthz`、登录跳转和登录态四模块 API。
 
 ## 回滚
 

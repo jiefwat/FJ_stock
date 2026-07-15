@@ -51,4 +51,4 @@
 - 根路径：HTTP 303，跳转登录页；登录页 HTTP 200。
 - 登录态四模块 API：全部 HTTP 200；持仓 11 项、个股 8 维、机会 10 项，四页均有 3 条发现。
 - `stock-ts.service`、`stock-ts-daily-research.timer`、`stock-ts-daily-analysis.timer`：均为 `active`。
-- GitHub `main`、本地 `main` 和 `/opt/stock-ts` 提交一致。
+- GitHub 独立分支、本地独立分支和 `/opt/stock-ts` 提交一致；`main` 保持在改造前基线。
