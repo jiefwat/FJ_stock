@@ -469,6 +469,77 @@ def engine_app_script() -> str:
       article.append(grid);
     }
 
+    function renderEngineMarketPulseSection(section, article) {
+      article.classList.add('is-market-pulse');
+      const items = engineSectionItems(section);
+      const grid = engineNode('div', 'engine-pulse-grid');
+      items.forEach((item) => {
+        const state = engineFactValue(item, ['状态']) || '中性';
+        const tone = state.includes('强')
+          ? 'positive'
+          : state.includes('弱')
+            ? 'negative'
+            : 'caution';
+        const card = engineNode('article', `engine-pulse-metric tone-${tone}`);
+        card.append(
+          engineNode('span', '', item.label || item.name || '统计项'),
+          engineNode('strong', '', item.summary || '待补'),
+          engineNode('p', '', item.risk || '统计口径待确认。')
+        );
+        grid.append(card);
+      });
+      if (!items.length) {
+        grid.append(engineNode('div', 'engine-section-empty', '市场统计待补。'));
+      }
+      article.append(grid);
+    }
+
+    function renderEngineStockEvidenceSection(section, article) {
+      article.classList.add('is-stock-evidence');
+      const items = engineSectionItems(section);
+      const grid = engineNode('div', 'engine-evidence-grid');
+      items.forEach((item) => {
+        const card = engineNode(
+          'article',
+          `engine-evidence-card state-${item.status || 'partial'}`
+        );
+        const head = engineNode('div', 'engine-evidence-head');
+        head.append(
+          engineNode('strong', '', item.label || item.name || '研究维度'),
+          engineNode('span', '', engineFactValue(item, ['评分']) || '待评分'),
+          engineNode('i', '', engineFactValue(item, ['可信度']) || '低')
+        );
+        const support = engineNode('div', 'engine-evidence-copy is-support');
+        support.append(
+          engineNode('span', '', '支持证据'),
+          engineNode('p', '', item.summary || '支持证据待补。')
+        );
+        const counter = engineNode('div', 'engine-evidence-copy is-counter');
+        counter.append(
+          engineNode('span', '', '反对证据'),
+          engineNode('p', '', item.risk || '反对证据待补。')
+        );
+        const conditions = engineNode('dl', 'engine-evidence-conditions');
+        const strengthen = engineNode('div', '');
+        strengthen.append(
+          engineNode('dt', '', '转强条件'),
+          engineNode('dd', '', engineFactValue(item, ['转强条件']) || '待确认')
+        );
+        const invalidation = engineNode('div', '');
+        invalidation.append(
+          engineNode('dt', '', '失效条件'),
+          engineNode('dd', '', engineFactValue(item, ['失效条件']) || '待确认')
+        );
+        conditions.append(strengthen, invalidation);
+        card.append(head, support, counter, conditions);
+        grid.append(card);
+      });
+      if (!items.length) {
+        grid.append(engineNode('div', 'engine-section-empty', '个股证据矩阵待补。'));
+      }
+      article.append(grid);
+    }
+
     function renderEngineStockCard(item) {
       const card = engineNode('article', `engine-stock-card state-${item.status || 'ready'}`);
       const meta = engineNode('div', 'engine-stock-card-meta');
@@ -573,7 +644,11 @@ def engine_app_script() -> str:
         );
         article.dataset.engineSectionKey = section.key || '';
         article.append(renderEngineSectionHeading(section));
-        if (section.key === 'market-breadth') {
+        if (section.key === 'market-pulse') {
+          renderEngineMarketPulseSection(section, article);
+        } else if (section.key === 'stock-evidence') {
+          renderEngineStockEvidenceSection(section, article);
+        } else if (section.key === 'market-breadth') {
           renderEngineBreadthSection(section, article);
         } else if (section.key === 'portfolio-divergence') {
           renderEngineDivergenceSection(section, article);

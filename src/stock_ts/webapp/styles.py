@@ -5750,7 +5750,7 @@ body {
 .engine-system-module {
   display:grid;
   width:100%;
-  max-width:1180px;
+  max-width:1440px;
   margin:0 auto;
   gap:12px;
 }
@@ -6050,6 +6050,106 @@ body {
   line-height:1.5;
 }
 .engine-breadth-grid { display:grid; gap:10px; }
+.engine-research-section.is-market-pulse,
+.engine-research-section.is-stock-evidence { grid-column:1/-1; }
+.engine-pulse-grid {
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+}
+.engine-pulse-metric {
+  display:grid;
+  align-content:start;
+  min-width:0;
+  gap:7px;
+  padding:13px;
+  border:1px solid #cad7da;
+  border-top:3px solid #7d9099;
+  border-radius:7px;
+  background:#fff;
+}
+.engine-pulse-metric.tone-positive { border-top-color:#258273; }
+.engine-pulse-metric.tone-caution { border-top-color:#b4853a; }
+.engine-pulse-metric.tone-negative { border-top-color:#b64a3c; }
+.engine-pulse-metric > span {
+  color:#5d727d;
+  font:850 9px/1.2 var(--mono);
+  letter-spacing:.04em;
+}
+.engine-pulse-metric > strong {
+  color:#10263a;
+  font:900 clamp(19px,2vw,28px)/1 var(--display);
+  letter-spacing:-.035em;
+}
+.engine-pulse-metric > p {
+  margin:0;
+  color:#536a76;
+  font-size:10px;
+  line-height:1.45;
+}
+.engine-evidence-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;
+}
+.engine-evidence-card {
+  display:grid;
+  min-width:0;
+  gap:10px;
+  padding:14px;
+  border:1px solid #cdd9dc;
+  border-left:3px solid #258273;
+  border-radius:7px;
+  background:#fff;
+}
+.engine-evidence-card.state-partial,
+.engine-evidence-card.state-missing,
+.engine-evidence-card.state-stale { border-left-color:#b4853a; background:#fffbf3; }
+.engine-evidence-head {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:8px;
+}
+.engine-evidence-head strong { color:#10263a; font-size:14px; }
+.engine-evidence-head span {
+  color:#10263a;
+  font:900 12px/1 var(--mono);
+}
+.engine-evidence-head i {
+  min-width:24px;
+  padding:4px 6px;
+  border-radius:999px;
+  color:#49636f;
+  background:#edf3f4;
+  font:850 9px/1 var(--mono);
+  font-style:normal;
+  text-align:center;
+}
+.engine-evidence-copy {
+  display:grid;
+  grid-template-columns:64px minmax(0,1fr);
+  gap:8px;
+  padding:9px 10px;
+  border-radius:6px;
+}
+.engine-evidence-copy.is-support { background:#eef8f4; }
+.engine-evidence-copy.is-counter { background:#fff3f1; }
+.engine-evidence-copy span { color:#536a76; font-size:9px; font-weight:850; }
+.engine-evidence-copy p { margin:0; color:#304b5c; font-size:10px; line-height:1.5; }
+.engine-evidence-conditions { display:grid; gap:6px; margin:0; }
+.engine-evidence-conditions > div {
+  display:grid;
+  grid-template-columns:64px minmax(0,1fr);
+  gap:8px;
+}
+.engine-evidence-conditions dt { color:#657984; font-size:9px; }
+.engine-evidence-conditions dd {
+  margin:0;
+  color:#304b5c;
+  font-size:10px;
+  line-height:1.45;
+}
 .engine-breadth-row { display:grid; gap:6px; min-width:0; }
 .engine-breadth-meta { display:flex; align-items:center; justify-content:space-between; gap:9px; }
 .engine-breadth-meta span { color:#536a76; font-size:10px; font-weight:850; }
@@ -6347,6 +6447,10 @@ body {
 
 .engine-mobile-dock { display:none; }
 
+@media (max-width: 1180px) {
+  .engine-pulse-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+
 @media (max-width: 760px) {
   .essence-action-risk,
   .stock-core-facts { grid-template-columns:1fr; }
@@ -6369,6 +6473,8 @@ body {
   .engine-section-grid,
   .engine-stock-card-grid,
   .engine-divergence-grid { grid-template-columns:minmax(0,1fr); }
+  .engine-pulse-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .engine-evidence-grid { grid-template-columns:minmax(0,1fr); }
   .engine-divergence-comparison { grid-template-columns:minmax(0,1fr); }
   .engine-module-item-grid,
   .workspace-pane[data-workspace="market"] .engine-module-item-grid,
@@ -6558,6 +6664,10 @@ body {
   .engine-sections,
   .engine-research-section { max-width:100%; min-width:0; }
   .engine-section-grid { grid-template-columns:minmax(0,1fr); }
+  .engine-pulse-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  .engine-pulse-metric { padding:10px; }
+  .engine-evidence-copy,
+  .engine-evidence-conditions > div { grid-template-columns:minmax(0,1fr); gap:3px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .engine-signal-band i,

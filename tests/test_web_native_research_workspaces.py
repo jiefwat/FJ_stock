@@ -295,6 +295,41 @@ def test_engine_workspace_exposes_evidence_completeness() -> None:
     assert "已确认维度" in html
 
 
+def test_engine_has_professional_market_pulse_and_stock_evidence_renderers() -> None:
+    script = engine_app_script()
+
+    for fragment in (
+        "renderEngineMarketPulseSection",
+        "renderEngineStockEvidenceSection",
+        "section.key === 'market-pulse'",
+        "section.key === 'stock-evidence'",
+    ):
+        assert fragment in script
+
+    for class_name in (
+        ".engine-pulse-grid",
+        ".engine-pulse-metric",
+        ".engine-evidence-grid",
+        ".engine-evidence-card",
+    ):
+        assert class_name in CSS
+
+    engine_module_rule = CSS.split(".engine-module,", 1)[1].split("}", 1)[0]
+    assert "max-width:1440px" in engine_module_rule.replace(" ", "")
+
+
+def test_professional_workspaces_do_not_add_a_vendor_console_or_entry_point() -> None:
+    html = render_page(stock_code="600519")
+    soup = BeautifulSoup(html, "html.parser")
+    script = engine_app_script()
+
+    assert not soup.select(".iwencai-research-console, [data-iwencai-research]")
+    assert "/api/iwencai/research" not in script
+    visible_text = soup.get_text(" ", strip=True)
+    for forbidden in ("问财", "iWencai", "同花顺", "问财核查", "技能列表"):
+        assert forbidden not in visible_text
+
+
 def test_missing_external_service_keeps_local_research_available() -> None:
     html = render_engine_workspace("stock", status="missing")
 
