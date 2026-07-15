@@ -187,3 +187,46 @@ def test_portfolio_never_reads_or_writes_shared_snapshot(tmp_path) -> None:
     assert delivered["delivery"] == "live"
     assert service.calls == 1
     assert not (tmp_path / "portfolio").exists()
+
+
+def test_non_global_unavailable_result_uses_local_fallback(tmp_path) -> None:
+    calls = []
+
+    def fallback(module, context):
+        calls.append((module, context))
+        return ResearchWorkspaceResult(
+            ok=True,
+            status="partial",
+            module="stock",
+            generated_at=NOW.isoformat(),
+            verdict="本地结论",
+            action="条件观察",
+            primary_risk="部分维度待补",
+            delivery="local_fallback",
+        )
+
+    delivered = deliver_research(
+        FakeService(_result(ok=False, status="unavailable")),
+        ResearchSnapshotStore(tmp_path),
+        "stock",
+        ResearchContext(code="603278"),
+        fallback=fallback,
+    )
+
+    assert delivered["delivery"] == "local_fallback"
+    assert len(calls) == 1
+
+
+def test_live_success_never_calls_local_fallback(tmp_path) -> None:
+    def fallback(*_args):
+        raise AssertionError("live success must not call fallback")
+
+    delivered = deliver_research(
+        FakeService(_result(ok=True, status="complete")),
+        ResearchSnapshotStore(tmp_path),
+        "stock",
+        ResearchContext(code="603278"),
+        fallback=fallback,
+    )
+
+    assert delivered["delivery"] == "live"

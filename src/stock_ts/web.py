@@ -88,6 +88,7 @@ from .research_engine import (
     ResearchTarget,
     ResearchWorkspaceService,
 )
+from .research_fallback import build_local_research
 from .research_playbook import DecisionDashboard
 from .research_snapshots import ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
@@ -13184,6 +13185,20 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
         os.getenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", "reports/research")
     )
     refresh = bool(payload["refresh"])
+    holdings_path = str(payload.get("holdings_path") or DEFAULT_HOLDINGS_PATH)
+    local_provider: StockDataProvider | None = None
+
+    def local_fallback(local_module: str, local_context: ResearchContext):
+        nonlocal local_provider
+        if local_provider is None:
+            local_provider = create_provider(WEB_DATA_PROVIDER)
+        return build_local_research(
+            local_module,
+            local_context,
+            provider=local_provider,
+            holdings_path=holdings_path,
+        )
+
     if iwencai_config_summary()["status"] != "configured":
         snapshot = (
             store.load(module, allow_stale=True)
@@ -13195,13 +13210,14 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
             result["stale"] = snapshot.stale
             return result
-        raise IwencaiConfigurationError("研究服务尚未配置。")
+        return local_fallback(module, context).to_public_dict() | {"stale": False}
     return deliver_research(
         RESEARCH_WORKSPACE_SERVICE,
         store,
         module,
         context,
         refresh=refresh,
+        fallback=local_fallback,
     )
 
 
@@ -13464,6 +13480,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = _parse_research_workspace_payload(self.rfile.read(length))
+            payload["holdings_path"] = _effective_holdings_path(user)
             result = _research_workspace_response(payload)
         except ValueError as exc:
             self._send_json(

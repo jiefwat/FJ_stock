@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 import stock_ts.web as web_module
+from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import ResearchContext
 from stock_ts.research_snapshots import ResearchSnapshotStore
 from stock_ts.web import (
@@ -139,7 +140,11 @@ def test_workspace_endpoint_returns_supplier_neutral_product_result(
             json.dumps(
                 {
                     "module": "stock",
-                    "context": {"code": "600519", "name": "贵州茅台"},
+                    "context": {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "holdings_path": "/tmp/browser-controlled.csv",
+                    },
                     "refresh": False,
                 },
                 ensure_ascii=False,
@@ -150,6 +155,7 @@ def test_workspace_endpoint_returns_supplier_neutral_product_result(
         assert response.status == 200
         assert response.headers["Cache-Control"] == "no-store"
         assert captured["module"] == "stock"
+        assert captured["holdings_path"] == "data/portfolio/holdings.csv"
         serialized = json.dumps(body, ensure_ascii=False)
         for forbidden in (
             "问财",
@@ -234,6 +240,29 @@ def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
     assert response["verdict"] == "历史快照判断"
     assert response["delivery"] == "stale_snapshot"
     assert response["stale"] is True
+
+
+def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigured(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(tmp_path / "research"))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+
+    response = web_module._research_workspace_response(
+        {
+            "module": "stock",
+            "context": ResearchContext(code="603278", name="大业股份"),
+            "refresh": True,
+            "holdings_path": str(tmp_path / "private-holdings.csv"),
+        }
+    )
+
+    assert response["delivery"] == "local_fallback"
+    assert response["verdict"]
+    assert response["findings"]
+    assert response["module_items"]
 
 
 def test_workspace_endpoint_requires_login_when_auth_is_enabled(
