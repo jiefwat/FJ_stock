@@ -6,6 +6,12 @@ from typing import Any
 
 from .analysis import analyze_stock
 from .models import StockRawData
+from .professional_analytics import (
+    MarketPulse,
+    StockEvidenceDimension,
+    build_market_pulse,
+    build_stock_evidence_matrix,
+)
 from .providers.base import StockDataProvider
 from .research_engine import (
     ResearchContext,
@@ -69,6 +75,7 @@ def _build_stock_research(
 ) -> ResearchWorkspaceResult:
     raw = _fetch_stock_raw(provider, context)
     report = analyze_stock(raw)
+    evidence_matrix = build_stock_evidence_matrix(raw, report)
     industry = str(raw.fundamental_metrics.get("industry") or "").strip()
     items = (
         _stock_item(
@@ -113,6 +120,21 @@ def _build_stock_research(
             target=report.name,
         ),
     )
+    evidence_items = tuple(
+        _stock_evidence_item(item) for item in evidence_matrix.dimensions
+    )
+    sections = (
+        ResearchModuleSection(
+            key="stock-evidence",
+            title="八维证据矩阵",
+            conclusion=(
+                "支持证据、反对证据和失效条件分开呈现；"
+                f"当前整体可信度为{_confidence_label(evidence_matrix.confidence)}。"
+            ),
+            tone="negative" if evidence_matrix.hard_gate_reasons else "neutral",
+            items=evidence_items,
+        ),
+    )
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     return ResearchWorkspaceResult(
         ok=True,
@@ -120,11 +142,11 @@ def _build_stock_research(
         module="stock",
         generated_at=generated_at,
         verdict=(
-            f"{report.name}当前为{report.decision.verdict}：{report.trend}，"
+            f"{report.name}当前为{evidence_matrix.decision_label}：{report.trend}，"
             f"先按{report.risk_level}风险级别处理，等待下一项确认。"
         ),
-        action=report.decision.today_action,
-        primary_risk=_primary_constraint(raw, report),
+        action=evidence_matrix.action,
+        primary_risk=evidence_matrix.primary_risk,
         findings=findings,
         missing_sections=missing,
         subject_count=1,
@@ -135,7 +157,8 @@ def _build_stock_research(
         fallback_reason=FALLBACK_REASON,
         as_of=report.latest_date,
         module_items=items,
-        decision_label=report.decision.verdict,
+        decision_label=evidence_matrix.decision_label,
+        module_sections=sections,
     )
 
 
@@ -350,12 +373,17 @@ def _build_market_research(
     market: Any,
     sectors: Any,
 ) -> ResearchWorkspaceResult:
+    try:
+        candidate_universe = provider.fetch_candidate_universe()
+    except Exception:
+        candidate_universe = []
     candidates = build_candidate_report(
         provider,
         market=market,
         sectors=sectors,
         limit=5,
     )
+    pulse = build_market_pulse(market, sectors, candidate_universe)
     breadth = _breadth_item(market)
     index_items = tuple(
         ResearchModuleItem(
@@ -383,6 +411,13 @@ def _build_market_research(
     )
     sections = (
         ResearchModuleSection(
+            key="market-pulse",
+            title="市场脉搏",
+            conclusion=_market_pulse_conclusion(pulse),
+            tone=_pulse_tone(pulse),
+            items=tuple(_market_pulse_item(item) for item in pulse.metrics),
+        ),
+        ResearchModuleSection(
             key="market-breadth",
             title="市场涨跌分布",
             conclusion=breadth.summary,
@@ -406,13 +441,20 @@ def _build_market_research(
     return _result(
         module="market",
         as_of=market.trade_date,
-        verdict=f"市场处于{market.regime}，{market.summary}",
-        action="先看前三主题能否扩散，再按市场宽度调整风险暴露。",
-        risk=_join_or_default(market.risks[:2], "主题快速轮动，避免只按单一热点行动。"),
+        verdict=_market_pulse_conclusion(pulse),
+        action=(
+            f"研究风险预算上限 {pulse.risk_budget}；"
+            "先看前三主题能否扩散，再按市场宽度调整风险暴露。"
+        ),
+        risk=(
+            "；".join(pulse.hard_gate_reasons)
+            if pulse.hard_gate_reasons
+            else _join_or_default(market.risks[:2], "主题快速轮动，避免只按单一热点行动。")
+        ),
         findings=findings,
         items=index_items + hot_items,
         sections=sections,
-        decision_label=market.regime,
+        decision_label=_market_pulse_label(pulse.regime),
         subject_count=len(index_items) + len(hot_items),
     )
 
@@ -584,6 +626,78 @@ def _breadth_item(market: Any) -> ResearchModuleItem:
         risk="若上涨家数与涨停数同步回落，视为扩散减弱。",
         status="ready" if total else "missing",
     )
+
+
+def _market_pulse_item(metric: Any) -> ResearchModuleItem:
+    return ResearchModuleItem(
+        kind="market_metric",
+        name=metric.label,
+        label=metric.label,
+        summary=metric.value,
+        risk=metric.interpretation,
+        status="missing" if metric.value == "待补" else "ready",
+        facts=(ResearchFact(label="状态", value=_tone_label(metric.tone)),),
+    )
+
+
+def _market_pulse_conclusion(pulse: MarketPulse) -> str:
+    label = _market_pulse_label(pulse.regime)
+    return (
+        f"当前市场为{label}，研究风险预算上限 {pulse.risk_budget}；"
+        f"涨跌宽度比 {pulse.breadth_ratio:.2f}，确认主题 {pulse.confirmed_theme_count} 个。"
+    )
+
+
+def _market_pulse_label(regime: str) -> str:
+    return {
+        "risk_off": "风险关闭",
+        "defensive": "防守",
+        "balanced": "均衡",
+        "constructive": "结构进攻",
+        "risk_on": "风险开启",
+    }.get(regime, "待确认")
+
+
+def _pulse_tone(pulse: MarketPulse) -> str:
+    if pulse.regime in {"risk_on", "constructive"}:
+        return "positive"
+    if pulse.regime in {"risk_off", "defensive"}:
+        return "negative"
+    return "neutral"
+
+
+def _tone_label(tone: str) -> str:
+    return {
+        "positive": "偏强",
+        "negative": "偏弱",
+        "caution": "待确认",
+    }.get(tone, "中性")
+
+
+def _stock_evidence_item(item: StockEvidenceDimension) -> ResearchModuleItem:
+    return ResearchModuleItem(
+        kind="stock_evidence",
+        name=item.name,
+        label=item.name,
+        summary="；".join(item.supporting_evidence),
+        risk="反对证据：" + "；".join(item.counter_evidence),
+        status="ready" if item.coverage == "ready" else item.coverage,
+        facts=(
+            ResearchFact(label="评分", value=f"{item.score}/100"),
+            ResearchFact(label="可信度", value=_confidence_label(item.confidence)),
+            ResearchFact(label="转强条件", value=item.strengthen_condition),
+            ResearchFact(label="失效条件", value=item.invalidation_condition),
+        ),
+    )
+
+
+def _confidence_label(confidence: str) -> str:
+    return {
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+        "blocked": "阻断",
+    }.get(confidence, "低")
 
 
 def _theme_item(sector: Any) -> ResearchModuleItem:

@@ -155,3 +155,54 @@ def test_local_global_fallback_returns_market_and_opportunity_content() -> None:
     assert opportunity.module_sections
     assert market.module_items
     assert opportunity.module_items
+
+
+def test_local_market_leads_with_professional_pulse_metrics() -> None:
+    result = build_local_research(
+        "market",
+        ResearchContext(),
+        provider=LocalFixtureProvider(),
+    )
+
+    assert result.module_sections[0].key == "market-pulse"
+    pulse_items = result.module_sections[0].items
+    assert len(pulse_items) == 6
+    assert all(item.kind == "market_metric" for item in pulse_items)
+    assert {item.label for item in pulse_items} >= {
+        "上涨参与率",
+        "涨跌宽度比",
+        "涨跌停平衡",
+        "扫描样本强弱差",
+        "主题扩散",
+        "证据覆盖",
+    }
+    assert "风险预算" in result.action
+    assert result.decision_label in {
+        "风险关闭",
+        "防守",
+        "均衡",
+        "结构进攻",
+        "风险开启",
+    }
+
+
+def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:
+    result = build_local_research(
+        "stock",
+        ResearchContext(code="603278", name="大业股份"),
+        provider=LocalFixtureProvider(),
+    )
+
+    evidence = next(
+        section for section in result.module_sections if section.key == "stock-evidence"
+    )
+    assert len(evidence.items) == 8
+    assert all(item.kind == "stock_evidence" for item in evidence.items)
+    for item in evidence.items:
+        facts = {fact.label: fact.value for fact in item.facts}
+        assert facts["评分"]
+        assert facts["可信度"] in {"高", "中", "低", "阻断"}
+        assert facts["转强条件"]
+        assert facts["失效条件"]
+        assert item.summary
+        assert item.risk
