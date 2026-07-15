@@ -13365,16 +13365,20 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             if module in {"market", "opportunity"}
             else None
         )
-        if snapshot is not None:
+        if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
             result = dict(snapshot.payload)
             result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
             result["stale"] = snapshot.stale
             return result
-        return local_fallback(module, context).to_public_dict() | {"stale": False}
+        local_result = local_fallback(module, context)
+        result = local_result.to_public_dict() | {"stale": False}
+        if module in {"market", "opportunity"} and local_result.ok:
+            store.save(module, result)
+        return result
 
     if module in {"market", "opportunity"} and not refresh:
         snapshot = store.load(module)
-        if snapshot is not None:
+        if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
             result = dict(snapshot.payload)
             result["delivery"] = "snapshot"
             result["data_label"] = "当日快照"
@@ -13396,6 +13400,49 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
     if module in {"market", "opportunity"} and fused_result.ok:
         store.save(module, result)
     return result
+
+
+def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> bool:
+    required_sections = {
+        "market": {"market-pulse", "market-movers"},
+        "opportunity": {"opportunity-candidates"},
+    }.get(module)
+    if not required_sections:
+        return True
+    raw_sections = payload.get("module_sections")
+    if not isinstance(raw_sections, list):
+        return False
+    sections = {
+        str(section.get("key") or ""): section
+        for section in raw_sections
+        if isinstance(section, dict)
+    }
+    if not required_sections <= set(sections):
+        return False
+    facts_required = {
+        "market-movers": {"涨跌幅", "异动原因", "确认条件", "失效条件"},
+        "opportunity-candidates": {"观察分", "入选原因", "确认条件", "失效条件"},
+    }
+    for section_key, labels in facts_required.items():
+        if section_key not in sections:
+            continue
+        raw_items = sections[section_key].get("items")
+        if not isinstance(raw_items, list):
+            return False
+        for item in raw_items:
+            if not isinstance(item, dict):
+                return False
+            facts = item.get("facts")
+            if not isinstance(facts, list):
+                return False
+            fact_labels = {
+                str(fact.get("label") or "")
+                for fact in facts
+                if isinstance(fact, dict)
+            }
+            if not labels <= fact_labels:
+                return False
+    return True
 
 
 class Handler(BaseHTTPRequestHandler):

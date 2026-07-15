@@ -193,6 +193,10 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
             "details": [],
             "missing_sections": [],
             "module_items": [],
+            "module_sections": [
+                {"key": "market-pulse", "items": []},
+                {"key": "market-movers", "items": []},
+            ],
         },
     )
 
@@ -234,6 +238,10 @@ def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
             "details": [],
             "missing_sections": [],
             "module_items": [],
+            "module_sections": [
+                {"key": "market-pulse", "items": []},
+                {"key": "market-movers", "items": []},
+            ],
         },
     )
 
@@ -244,6 +252,42 @@ def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
     assert response["verdict"] == "历史快照判断"
     assert response["delivery"] == "stale_snapshot"
     assert response["stale"] is True
+
+
+def test_workspace_response_rebuilds_incompatible_market_snapshot(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+    ResearchSnapshotStore(snapshot_dir).save(
+        "market",
+        {
+            "ok": True,
+            "status": "partial",
+            "module": "market",
+            "generated_at": "2026-07-15T07:20:00+08:00",
+            "verdict": "旧协议快照",
+            "action": "等待",
+            "primary_risk": "旧协议没有异动列表",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+            "module_items": [],
+            "module_sections": [{"key": "market-pulse", "items": []}],
+        },
+    )
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": False}
+    )
+
+    assert response["verdict"] != "旧协议快照"
+    assert response["delivery"] == "local_fallback"
+    keys = {section["key"] for section in response["module_sections"]}
+    assert {"market-pulse", "market-movers"} <= keys
 
 
 def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigured(
