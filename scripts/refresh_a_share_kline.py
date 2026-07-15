@@ -38,6 +38,13 @@ def refresh_a_share_kline_snapshot(
     updated: list[str] = []
     skipped: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
+    stale: list[dict[str, str]] = []
+    market_payload = payload.get("market")
+    market_trade_date = (
+        str(market_payload.get("trade_date") or "")
+        if isinstance(market_payload, dict)
+        else ""
+    )
 
     for code in selected:
         if not _is_a_share_code(code):
@@ -58,8 +65,21 @@ def refresh_a_share_kline_snapshot(
         if not bars:
             failed.append({"code": code, "reason": "empty_daily_bars"})
             continue
-        _merge_stock_payload(payload, code, bars, now)
-        _merge_candidate_payload(payload, code, bars, now)
+        latest_date = str(bars[-1].get("date") or "")
+        is_stale = bool(
+            market_trade_date and latest_date and latest_date < market_trade_date
+        )
+        if is_stale:
+            stale.append(
+                {
+                    "code": code,
+                    "latest_date": latest_date,
+                    "market_trade_date": market_trade_date,
+                    "reason": "latest_bar_lags_market",
+                }
+            )
+        _merge_stock_payload(payload, code, bars, now, price_reliable=not is_stale)
+        _merge_candidate_payload(payload, code, bars, now, price_reliable=not is_stale)
         updated.append(code)
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -68,10 +88,12 @@ def refresh_a_share_kline_snapshot(
         1 for item in failed if _is_rate_limit_message(str(item.get("reason") or ""))
     )
     status = "ok"
-    if failed and updated:
-        status = "partial"
-    elif failed and not updated:
+    if failed and not updated:
         status = "failed"
+    elif failed or (stale and len(stale) < len(updated)):
+        status = "partial"
+    elif stale:
+        status = "stale"
 
     summary: dict[str, Any] = {
         "source": "tushare.daily",
@@ -83,10 +105,13 @@ def refresh_a_share_kline_snapshot(
         "skipped_count": len(skipped),
         "failed_count": len(failed),
         "rate_limited_count": rate_limited_count,
+        "stale_count": len(stale),
+        "stale_codes": [item["code"] for item in stale],
         "bar_count": bar_count,
         "updated_codes": updated,
         "skipped": skipped,
         "failed": failed,
+        "stale": stale,
     }
     payload["kline_refresh"] = summary
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -173,7 +198,12 @@ def _is_rate_limit_message(message: str) -> bool:
 
 
 def _merge_stock_payload(
-    snapshot: dict[str, Any], code: str, bars: list[dict[str, Any]], now: str
+    snapshot: dict[str, Any],
+    code: str,
+    bars: list[dict[str, Any]],
+    now: str,
+    *,
+    price_reliable: bool,
 ) -> None:
     stocks = snapshot.setdefault("stocks", {})
     if not isinstance(stocks, dict):
@@ -186,7 +216,7 @@ def _merge_stock_payload(
         {
             "bars": bars,
             "bar_source": "tushare.daily",
-            "price_reliable": True,
+            "price_reliable": price_reliable,
             "kline_refreshed_at": now,
         }
     )
@@ -197,6 +227,8 @@ def _merge_candidate_payload(
     code: str,
     bars: list[dict[str, Any]],
     now: str,
+    *,
+    price_reliable: bool,
 ) -> None:
     universe = snapshot.get("candidate_universe", snapshot.get("candidates"))
     if not isinstance(universe, dict):
@@ -210,7 +242,7 @@ def _merge_candidate_payload(
                 {
                     "bars": bars,
                     "bar_source": "tushare.daily",
-                    "price_reliable": True,
+                    "price_reliable": price_reliable,
                     "kline_refreshed_at": now,
                 }
             )

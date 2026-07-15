@@ -169,3 +169,52 @@ def test_refresh_a_share_kline_treats_rate_limited_subset_as_partial_success(
     payload = json.loads(snapshot.read_text(encoding="utf-8"))
     assert payload["kline_refresh"]["status"] == "partial"
     assert payload["stocks"]["603278"]["bar_source"] == "tushare.daily"
+
+
+class StaleTushareClient:
+    def daily(self, ts_code: str, limit: int):
+        return MiniFrame(
+            [
+                {
+                    "trade_date": "20260714",
+                    "open": 39.0,
+                    "high": 41.2,
+                    "low": 38.8,
+                    "close": 41.0,
+                    "vol": 180000,
+                }
+            ]
+        )
+
+
+def test_refresh_marks_bars_stale_when_they_lag_market_trade_date(tmp_path: Path) -> None:
+    module = _load_module()
+    snapshot = tmp_path / "tdx_snapshots.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {"trade_date": "2026-07-15"},
+                "stocks": {"300725": {"name": "药石科技"}},
+                "candidate_universe": {
+                    "items": [{"code": "300725", "name": "药石科技"}]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.refresh_a_share_kline_snapshot(
+        snapshot,
+        holdings_path=None,
+        codes=["300725"],
+        bar_count=120,
+        tushare_client=StaleTushareClient(),
+    )
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert result["status"] == "stale"
+    assert result["stale_count"] == 1
+    assert result["stale_codes"] == ["300725"]
+    assert payload["stocks"]["300725"]["price_reliable"] is False
+    assert payload["candidate_universe"]["items"][0]["price_reliable"] is False
