@@ -24,8 +24,15 @@
 
 ## 部署检查
 
-- [ ] 本地 `main` 快进到交付提交。
-- [ ] `origin/main` 推送成功。
-- [ ] 服务器 `/opt/stock-ts` 快进到同一提交。
-- [ ] `stock-ts.service` 和 `stock-ts-daily-research.timer` 为 active。
-- [ ] 公网四模块请求和 `/healthz` 验证通过。
+- [x] 本地 `main` 快进到交付提交。
+- [x] `origin/main` 推送成功。
+- [x] 服务器 `/opt/stock-ts` 快进到同一提交。
+- [x] `stock-ts.service` 和 `stock-ts-daily-research.timer` 为 active。
+- [x] 公网登录、四模块 HTTP 合约和 `/healthz` 验证通过。
+
+## 上线时外部状态
+
+- 大盘：HTTP 200，最新共享快照包含 5 个主题、5 项涨跌分布和 10 只热门股。
+- 热点机会：HTTP 200，最新共享快照包含 5 个主题和 10 只候选。
+- 持仓与个股：HTTP 200，但问财返回“今日次数已用完”，因此安全降级为“待确认”，没有沿用或编造旧结论。
+- 定时器保持 active；额度恢复后会继续按既定时间刷新。持仓与个股在用户进入页面时重新请求。

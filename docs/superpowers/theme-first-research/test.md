@@ -40,3 +40,10 @@ PYTHONPATH=src python scripts/run_daily_research.py \
 - 持仓研究仅提交代码、名称和已有主题字段，不提交股数、成本、权重或账号身份。
 - 页面动态结果使用 DOM 节点和 `textContent`，不使用 `innerHTML`。
 - 结论不包含收益承诺、自动交易或无条件买卖语言。
+
+## 公网验证
+
+- `https://stock.jiewat-kaka-fj.com/healthz` 返回 200。
+- 登录后四模块 endpoint 均返回 200。
+- 大盘与机会读取最新共享快照；持仓与个股在外部额度耗尽时明确降级为“待确认”。
+- `stock-ts.service` 和 `stock-ts-daily-research.timer` 均为 active。
