@@ -137,7 +137,10 @@ def test_summary_marks_small_sample_and_reports_calibration(tmp_path: Path) -> N
     assert summary.hit_rate == 100.0
     assert summary.average_excess_return > 0
     assert summary.average_mae <= 0
-    assert summary.calibration == {"中": {"count": 2, "hit_rate": 100.0}, "高": {"count": 1, "hit_rate": 100.0}}
+    assert summary.calibration == {
+        "中": {"count": 2, "hit_rate": 100.0},
+        "高": {"count": 1, "hit_rate": 100.0},
+    }
 
 
 def test_user_feedback_is_account_isolated_and_does_not_change_score(tmp_path: Path) -> None:
