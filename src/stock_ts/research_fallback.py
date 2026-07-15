@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .analysis import analyze_stock
+from .models import StockRawData
 from .providers.base import StockDataProvider
 from .research_engine import (
     ResearchContext,
@@ -60,7 +61,7 @@ def _build_stock_research(
     context: ResearchContext,
     provider: StockDataProvider,
 ) -> ResearchWorkspaceResult:
-    raw = provider.fetch_stock(context.code)
+    raw = _fetch_stock_raw(provider, context)
     report = analyze_stock(raw)
     industry = str(raw.fundamental_metrics.get("industry") or "").strip()
     items = (
@@ -130,6 +131,42 @@ def _build_stock_research(
         module_items=items,
         decision_label=report.decision.verdict,
     )
+
+
+def _fetch_stock_raw(
+    provider: StockDataProvider,
+    context: ResearchContext,
+) -> StockRawData:
+    try:
+        return provider.fetch_stock(context.code)
+    except Exception as stock_error:
+        target = _code_key(context.code)
+        try:
+            candidates = provider.fetch_candidate_universe()
+        except Exception as candidate_error:
+            raise stock_error from candidate_error
+        candidate = next(
+            (item for item in candidates if _code_key(item.code) == target),
+            None,
+        )
+        if candidate is None:
+            raise stock_error from None
+        return StockRawData(
+            code=candidate.code,
+            name=candidate.name or context.name or candidate.code,
+            bars=candidate.bars,
+            fund_flow=candidate.fund_flow,
+            pe_ttm=candidate.pe_ttm,
+            fund_flow_detail={"source": "candidate_snapshot"},
+            news_items=candidate.news_items,
+            announcements=candidate.announcements,
+            data_sources=["candidate_snapshot"],
+        )
+
+
+def _code_key(value: str) -> str:
+    digits = "".join(character for character in value if character.isdigit())
+    return digits[:6] or value.strip().upper()
 
 
 def _stock_item(label: str, summary: str, available: bool) -> ResearchModuleItem:

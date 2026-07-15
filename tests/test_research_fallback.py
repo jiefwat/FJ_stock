@@ -26,6 +26,11 @@ class LocalFixtureProvider(SampleDataProvider):
         )
 
 
+class CandidateOnlyProvider(SampleDataProvider):
+    def fetch_stock(self, code: str):
+        raise ValueError(f"stock detail unavailable: {code}")
+
+
 def test_local_stock_fallback_keeps_available_dimensions_and_marks_gaps() -> None:
     result = build_local_research(
         "stock",
@@ -46,6 +51,23 @@ def test_local_stock_fallback_keeps_available_dimensions_and_marks_gaps() -> Non
         "公告事项",
     }
     assert "机构预期" in payload["missing_sections"]
+
+
+def test_local_stock_fallback_uses_candidate_bars_when_stock_detail_is_missing() -> None:
+    provider = CandidateOnlyProvider()
+    candidate = provider.fetch_candidate_universe()[0]
+
+    result = build_local_research(
+        "stock",
+        ResearchContext(code=candidate.code, name=candidate.name),
+        provider=provider,
+    )
+
+    payload = result.to_public_dict()
+    assert payload["delivery"] == "local_fallback"
+    assert candidate.name in payload["verdict"]
+    assert len(payload["module_items"]) == 8
+    assert len(payload["findings"]) == 3
 
 
 def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_path) -> None:
