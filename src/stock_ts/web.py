@@ -1054,10 +1054,6 @@ def _render_native_research_page(
         auth_enabled=is_auth_enabled(auth_config),
     )}
     <main class="workspace engine-workspace-root">
-      <header class="engine-page-intro">
-        <div><span>STOCKTS / RESEARCH DESK</span><strong>只看判断、动作与风险</strong></div>
-        <p>四个工作台按需生成，单个模块失败不影响其他页面。</p>
-      </header>
       {build_workspace_sections(section_map)}
     </main>
     {render_engine_mobile_dock()}

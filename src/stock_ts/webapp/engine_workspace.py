@@ -4,10 +4,10 @@ import json
 from html import escape
 
 MODULE_META = {
-    "market": ("每日大盘", "市场判断", "判断指数、宏观、主线与风险是否同向"),
-    "portfolio": ("我的持仓", "组合诊断", "逐只核对事件、预期与价格风险"),
-    "stock": ("个股分析", "公司研究", "核对经营、财务、预期与事件变化"),
-    "opportunity": ("热点机会", "机会扫描", "先找方向，再筛候选并排除风险"),
+    "market": ("每日大盘", "市场判断"),
+    "portfolio": ("我的持仓", "组合诊断"),
+    "stock": ("个股分析", "公司研究"),
+    "opportunity": ("热点机会", "机会扫描"),
 }
 
 CORE_MODULES = ("market", "portfolio", "stock", "opportunity")
@@ -21,7 +21,7 @@ def render_engine_workspace(
 ) -> str:
     if module not in MODULE_META:
         raise ValueError("不支持的研究模块。")
-    title, label, scope = MODULE_META[module]
+    title, label = MODULE_META[module]
     status_label, status_class, available = _service_status(status)
     context_json = json.dumps(
         context or {},
@@ -46,9 +46,10 @@ def render_engine_workspace(
       <section class="engine-judgment state-idle" data-engine-judgment>
         <div class="engine-signal-band" aria-hidden="true"><i></i></div>
         <div class="engine-verdict" data-engine-verdict-block>
+          <strong class="engine-decision-label state-idle" data-engine-decision-label>
+            待确认</strong>
           <span>当前判断</span>
           <h3 data-engine-verdict>等待生成判断</h3>
-          <p>{escape(scope)}</p>
         </div>
         <div class="engine-action-risk">
           <article class="engine-action">
@@ -60,6 +61,9 @@ def render_engine_workspace(
             <strong data-engine-risk>研究完成前，不沿用旧结论。</strong>
           </article>
         </div>
+      </section>
+      <section class="engine-sections" data-engine-sections aria-label="主题与分化" hidden>
+        <div class="engine-section-grid" data-engine-section-grid></div>
       </section>
       <nav class="engine-action-rail" aria-label="结果直达">
         <button type="button" data-engine-jump="risk">先看风险</button>
@@ -316,6 +320,276 @@ def engine_app_script() -> str:
       section.hidden = items.length === 0;
     }
 
+    function engineItemState(item) {
+      return item.status === 'ready' ? '已确认' : '待确认';
+    }
+
+    function engineSectionItems(section) {
+      if (!section || !Array.isArray(section.items)) return [];
+      return section.items.filter((item) => item && typeof item === 'object');
+    }
+
+    function engineDecisionTone(label) {
+      const value = String(label || '').trim();
+      if (['偏弱', '基本面承压', '先处理风险'].includes(value)) return 'negative';
+      if (['修复中', '等待确认', '主线待确认', '主题待补'].includes(value)) {
+        return 'caution';
+      }
+      if (['偏强', '有主线', '可继续跟踪'].includes(value)) return 'positive';
+      return 'neutral';
+    }
+
+    function engineFactValue(item, terms) {
+      const facts = Array.isArray(item.facts) ? item.facts : [];
+      const fact = facts.find((candidate) => terms.some(
+        (term) => String(candidate.label || '').includes(term)
+      ));
+      return fact ? String(fact.value || '') : '';
+    }
+
+    function engineNumericValue(value) {
+      const match = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+      return match ? Number(match[0]) : null;
+    }
+
+    function renderEngineSectionHeading(section) {
+      const heading = engineNode('header', 'engine-research-section-heading');
+      heading.append(
+        engineNode('h3', '', section.title || '重点结论'),
+        engineNode('p', '', section.conclusion || '证据待确认。')
+      );
+      return heading;
+    }
+
+    function renderEngineThemeSection(section, article) {
+      article.classList.add('is-theme');
+      const strip = engineNode('div', 'engine-theme-strip');
+      strip.setAttribute('tabindex', '0');
+      strip.setAttribute('role', 'region');
+      strip.setAttribute('aria-label', '主题横向列表');
+      const items = engineSectionItems(section);
+      items.forEach((item) => {
+        const card = engineNode('article', `engine-theme-card state-${item.status || 'ready'}`);
+        const meta = engineNode('div', 'engine-theme-card-meta');
+        meta.append(
+          engineNode('span', '', item.label || '主题'),
+          engineNode('i', '', engineItemState(item))
+        );
+        card.append(
+          meta,
+          engineNode('strong', '', item.name || '主题待确认'),
+          engineNode('p', '', item.summary || '主题证据待确认。')
+        );
+        strip.append(card);
+      });
+      if (!items.length) strip.append(engineNode('div', 'engine-section-empty', '主题待确认。'));
+      article.append(strip);
+    }
+
+    function engineBreadthClass(name) {
+      if (name.includes('涨停')) return 'is-limit-up';
+      if (name.includes('跌停')) return 'is-limit-down';
+      if (name.includes('上涨')) return 'is-rise';
+      if (name.includes('下跌')) return 'is-fall';
+      return 'is-flat';
+    }
+
+    function renderEngineBreadthSection(section, article) {
+      const items = engineSectionItems(section);
+      if (!items.length) {
+        article.append(engineNode('div', 'engine-section-empty', '市场分布待补。'));
+        return;
+      }
+      const returnedMetrics = items.map((item) => ({
+        item,
+        name: String(item.name || item.label || '分布待确认'),
+        value: engineNumericValue(
+          item.summary || engineFactValue(
+            item,
+            ['上涨家数', '下跌家数', '平盘家数', '涨停家数', '跌停家数']
+          )
+        )
+      }));
+      const coreBreadthNames = ['上涨家数', '下跌家数', '平盘家数'];
+      const breadthNames = [...coreBreadthNames, '涨停家数', '跌停家数'];
+      const metrics = breadthNames.map((name) => (
+        returnedMetrics.find((metric) => metric.name.includes(name)) || {
+          item: {status: 'missing'},
+          name,
+          value: null
+        }
+      ));
+      const coreBreadthComplete = coreBreadthNames.every((name) => {
+        const metric = metrics.find((candidate) => candidate.name.includes(name));
+        return metric && metric.value !== null;
+      });
+      const marketTotal = coreBreadthComplete ? metrics
+          .filter((metric) => coreBreadthNames.some(
+            (name) => metric.name.includes(name)
+          ))
+          .reduce((total, metric) => total + metric.value, 0)
+        : null;
+      const grid = engineNode('div', 'engine-breadth-grid');
+      metrics.forEach((metric) => {
+        const row = engineNode('div', `engine-breadth-row ${engineBreadthClass(metric.name)}`);
+        const ratio = metric.value !== null && marketTotal !== null && marketTotal > 0
+          ? Math.min(100, Math.max(0, metric.value / marketTotal * 100))
+          : null;
+        const ratioLabel = ratio === null ? '比例待补' : `${ratio.toFixed(1)}%`;
+        const meta = engineNode('div', 'engine-breadth-meta');
+        meta.append(
+          engineNode('span', '', metric.name),
+          engineNode(
+            'strong',
+            '',
+            metric.value === null
+              ? `待确认 · ${ratioLabel}`
+              : `${metric.value} 家 · ${ratioLabel}`
+          )
+        );
+        const track = engineNode('div', 'engine-breadth-track');
+        const bar = engineNode('i', 'engine-breadth-fill');
+        if (ratio !== null) {
+          bar.style.width = `${ratio.toFixed(1)}%`;
+          track.setAttribute('role', 'meter');
+          track.setAttribute('aria-label', metric.name);
+          track.setAttribute('aria-valuemin', '0');
+          track.setAttribute('aria-valuemax', '100');
+          track.setAttribute('aria-valuenow', ratio.toFixed(1));
+        } else {
+          row.classList.add('is-pending');
+          track.setAttribute('role', 'status');
+          track.setAttribute('aria-label', `${metric.name}：${ratioLabel}`);
+        }
+        track.append(bar);
+        row.append(meta, track);
+        grid.append(row);
+      });
+      article.append(grid);
+    }
+
+    function renderEngineStockCard(item) {
+      const card = engineNode('article', `engine-stock-card state-${item.status || 'ready'}`);
+      const meta = engineNode('div', 'engine-stock-card-meta');
+      meta.append(
+        engineNode('span', '', item.code || '代码待确认'),
+        engineNode('i', '', engineItemState(item))
+      );
+      card.append(
+        meta,
+        engineNode('strong', '', item.name || '股票待确认'),
+        engineNode('span', 'engine-stock-theme', item.label || '主题待确认'),
+        engineNode('p', '', item.summary || '入选依据待确认。'),
+        engineNode('small', '', item.risk || '风险待确认。')
+      );
+      return card;
+    }
+
+    function renderEngineStockSection(section, article) {
+      const grid = engineNode('div', 'engine-stock-card-grid');
+      const items = engineSectionItems(section);
+      items.forEach((item) => grid.append(renderEngineStockCard(item)));
+      if (!items.length) grid.append(engineNode('div', 'engine-section-empty', '候选待确认。'));
+      article.append(grid);
+    }
+
+    function engineCandidateTheme(label) {
+      const normalized = String(label || '').trim().replace(/\s+/g, ' ');
+      return normalized || '主题待确认';
+    }
+
+    function renderEngineCandidateSection(section, article) {
+      const items = engineSectionItems(section);
+      const groups = new Map();
+      items.forEach((item) => {
+        const theme = engineCandidateTheme(item.label);
+        if (!groups.has(theme)) groups.set(theme, []);
+        groups.get(theme).push(item);
+      });
+      const entries = [...groups.entries()].sort(([left], [right]) => {
+        if (left === '主题待确认') return 1;
+        if (right === '主题待确认') return -1;
+        return 0;
+      });
+      entries.forEach(([theme, candidates]) => {
+        const group = engineNode('section', 'engine-candidate-group');
+        group.append(engineNode('h4', 'engine-candidate-group-title', theme));
+        const grid = engineNode('div', 'engine-stock-card-grid');
+        candidates.forEach((item) => grid.append(renderEngineStockCard(item)));
+        group.append(grid);
+        article.append(group);
+      });
+      if (!entries.length) {
+        article.append(engineNode('div', 'engine-section-empty', '候选待确认。'));
+      }
+    }
+
+    function renderEngineDivergenceSection(section, article) {
+      const grid = engineNode('div', 'engine-divergence-grid');
+      const items = engineSectionItems(section);
+      items.forEach((item) => {
+        const card = engineNode(
+          'article',
+          `engine-divergence-card state-${item.status || 'ready'}`
+        );
+        card.append(engineNode('strong', '', item.name || '主题待确认'));
+        const comparison = engineNode('div', 'engine-divergence-comparison');
+        const summary = String(item.summary || '分化待确认。');
+        const strong = summary.match(/相对强：([^；。]+)/);
+        const weak = summary.match(/相对弱：([^；。]+)/);
+        if (strong || weak) {
+          comparison.append(
+            engineNode('p', 'is-strong', strong ? `相对强 ${strong[1]}` : '相对强 待确认'),
+            engineNode('p', 'is-weak', weak ? `相对弱 ${weak[1]}` : '相对弱 待确认')
+          );
+        } else {
+          comparison.append(engineNode('p', 'is-pending', summary));
+        }
+        card.append(comparison);
+        if (item.risk) card.append(engineNode('small', '', item.risk));
+        grid.append(card);
+      });
+      if (!items.length) {
+        grid.append(engineNode('div', 'engine-section-empty', '主题内分化待确认。'));
+      }
+      article.append(grid);
+    }
+
+    function renderEngineSections(workspace, payload) {
+      const sectionRoot = workspace.querySelector('[data-engine-sections]');
+      const grid = workspace.querySelector('[data-engine-section-grid]');
+      if (!sectionRoot || !grid) return;
+      const sections = Array.isArray(payload.module_sections)
+        ? payload.module_sections.filter(
+          (section) => section && typeof section === 'object'
+        )
+        : [];
+      grid.replaceChildren();
+      sections.forEach((section) => {
+        const article = engineNode(
+          'article',
+          `engine-research-section tone-${section.tone || 'neutral'}`
+        );
+        article.dataset.engineSectionKey = section.key || '';
+        article.append(renderEngineSectionHeading(section));
+        if (section.key === 'market-breadth') {
+          renderEngineBreadthSection(section, article);
+        } else if (section.key === 'portfolio-divergence') {
+          renderEngineDivergenceSection(section, article);
+        } else if (section.key === 'opportunity-candidates') {
+          renderEngineCandidateSection(section, article);
+        } else if (section.key === 'market-hot') {
+          renderEngineStockSection(section, article);
+        } else if (String(section.key || '').endsWith('-themes')) {
+          renderEngineThemeSection(section, article);
+        } else {
+          renderEngineStockSection(section, article);
+        }
+        grid.append(article);
+      });
+      sectionRoot.hidden = sections.length === 0;
+    }
+
     function renderEngineResult(workspace, payload) {
       const navigationState = normalizeEngineNavigationState(payload.status);
       workspace.dataset.engineResultStatus = navigationState;
@@ -325,6 +599,7 @@ def engine_app_script() -> str:
         judgment.className = `engine-judgment state-${payload.status || 'partial'}`;
       }
       const verdict = workspace.querySelector('[data-engine-verdict]');
+      const decisionLabel = workspace.querySelector('[data-engine-decision-label]');
       const action = workspace.querySelector('[data-engine-action]');
       const risk = workspace.querySelector('[data-engine-risk]');
       const generated = workspace.querySelector('[data-engine-generated]');
@@ -332,6 +607,13 @@ def engine_app_script() -> str:
       const details = Array.isArray(payload.details) ? payload.details : [];
       const coverage = workspace.querySelector('[data-engine-coverage]');
       const delivery = workspace.querySelector('[data-engine-delivery]');
+      if (decisionLabel) {
+        const label = payload.decision_label || '待确认';
+        const tone = engineDecisionTone(label);
+        decisionLabel.textContent = label;
+        decisionLabel.dataset.engineDecisionTone = tone;
+        decisionLabel.className = `engine-decision-label state-${tone}`;
+      }
       if (verdict) verdict.textContent = payload.verdict || '本次证据不足，判断暂停。';
       if (action) action.textContent = payload.action || '稍后重新分析。';
       if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
@@ -367,6 +649,7 @@ def engine_app_script() -> str:
           findingsRoot.append(engineNode('div', 'engine-empty', '本次没有足够的关键事实。'));
         }
       }
+      renderEngineSections(workspace, payload);
       renderEngineDetails(workspace, payload);
       renderEngineModuleItems(workspace, payload);
       if (live) {
