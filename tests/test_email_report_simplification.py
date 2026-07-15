@@ -38,12 +38,12 @@ def test_morning_report_hides_ops_run_card_and_keeps_actionable_sections(tmp_pat
     assert "## 研究运行卡" not in content
     assert "Shadow Account" not in content
     assert "## 使用边界" not in content
-    assert "## 30秒结论" in content
+    assert "## 最新市场事实" in content
     assert "## 先处理持仓" in content
-    assert "## 今日只看3只" in content
-    assert "## 到公司再看" in content
+    assert "## 今日前瞻机会" in content
+    assert "## 数据风险" in content
     assert "测试股票" in content
-    assert "## 三条纪律" in content
+    assert "## 预测反馈" in content
 
 
 def test_morning_report_marks_trade_date_and_stale_data(tmp_path: Path) -> None:
@@ -71,8 +71,8 @@ def test_morning_report_marks_trade_date_and_stale_data(tmp_path: Path) -> None:
         announcement_dir=announcement_dir,
     )
 
-    assert "基于交易日 2026-06-26" in content
-    assert "先别按今天盘面执行" in content
+    assert "基于交易日：2026-06-26" in content
+    assert "## 数据风险" in content
     assert "2026-06-26" in content.splitlines()[0]
 
 
@@ -110,7 +110,7 @@ def test_morning_report_deduplicates_repeated_opportunities(tmp_path: Path) -> N
         html_dir=html_dir,
         announcement_dir=announcement_dir,
     )
-    opportunity_lines = _lines_between(content, "## 今日只看3只", "## 三条纪律")
+    opportunity_lines = _lines_between(content, "## 今日前瞻机会", "## 预测反馈")
 
     assert sum("迈赫股份" in line for line in opportunity_lines) == 1
     assert sum("泰胜风能" in line for line in opportunity_lines) == 1
@@ -123,7 +123,7 @@ def _lines_between(content: str, start: str, end: str) -> list[str]:
     return content[start_index:end_index].splitlines()
 
 
-def test_morning_report_frontloads_execution_guard_for_stale_artifacts(tmp_path: Path) -> None:
+def test_morning_report_puts_stale_artifact_warning_in_data_risk(tmp_path: Path) -> None:
     daily_dir = tmp_path / "daily"
     html_dir = tmp_path / "html"
     announcement_dir = tmp_path / "announcements"
@@ -147,10 +147,10 @@ def test_morning_report_frontloads_execution_guard_for_stale_artifacts(tmp_path:
         html_dir=html_dir,
         announcement_dir=announcement_dir,
     )
-    first_block = "\n".join(content.splitlines()[:18])
+    risk_lines = _lines_between(content, "## 数据风险", "- 纪律：")
 
-    assert "先别按今天盘面执行" in first_block
-    assert first_block.index("先别按今天盘面执行") < content.index("## 先处理持仓")
+    assert any("基于交易日：2026-06-26" in line for line in risk_lines)
+    assert content.index("## 数据风险") > content.index("## 预测反馈")
 
 
 def test_morning_report_is_a_thirty_second_commuter_brief(tmp_path: Path) -> None:
@@ -199,19 +199,19 @@ def test_morning_report_is_a_thirty_second_commuter_brief(tmp_path: Path) -> Non
 
     headings = [line for line in content.splitlines() if line.startswith("## ")]
     assert headings == [
-        "## 30秒结论",
+        "## 最新市场事实",
         "## 先处理持仓",
-        "## 今日只看3只",
-        "## 三条纪律",
-        "## 到公司再看",
+        "## 今日前瞻机会",
+        "## 预测反馈",
+        "## 数据风险",
     ]
     assert "## 投资建议 15只票" not in content
     assert "## 今日市场机会" not in content
-    holding_lines = _lines_between(content, "## 先处理持仓", "## 今日只看3只")
-    candidate_lines = _lines_between(content, "## 今日只看3只", "## 三条纪律")
+    holding_lines = _lines_between(content, "## 先处理持仓", "## 今日前瞻机会")
+    candidate_lines = _lines_between(content, "## 今日前瞻机会", "## 预测反馈")
     assert len([line for line in holding_lines if line.startswith("- ")]) <= 4
     assert len([line for line in candidate_lines if re.match(r"^\d+[.、]", line)]) <= 3
-    for anchor in ["#market", "#portfolio", "#opportunity", "#data-center"]:
+    for anchor in ["#market", "#portfolio", "#opportunity"]:
         assert f"https://stock.example.com/{anchor}" in content
     assert len([line for line in content.splitlines() if line.strip()]) <= 28
-    assert len(content) <= 1100
+    assert len(content) <= 1350
