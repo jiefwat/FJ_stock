@@ -112,7 +112,10 @@ def run_daily_pipeline(
             steps["a_share_kline"] = "skipped"
         else:
             try:
-                command_runner(_a_share_kline_command(work_config), 1200)
+                command_runner(
+                    _a_share_kline_command(work_config),
+                    _a_share_kline_timeout(work_config),
+                )
                 steps["a_share_kline"] = "ok"
             except Exception as exc:
                 steps["a_share_kline"] = f"failed:{_short_error(exc)}"
@@ -288,6 +291,11 @@ def _a_share_kline_command(config: DailyPipelineConfig) -> list[str]:
         "--retry-rate-limit",
         "1",
     ]
+
+
+def _a_share_kline_timeout(config: DailyPipelineConfig) -> int:
+    # The refresh is deliberately rate-limited, so the timeout must scale with scope.
+    return max(1200, min(3600, max(config.candidate_limit, 0) * 4))
 
 
 def _tdx_bridge_python(config: DailyPipelineConfig) -> str:

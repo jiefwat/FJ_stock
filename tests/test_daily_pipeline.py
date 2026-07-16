@@ -147,6 +147,12 @@ def test_data_validation_uses_last_completed_session_before_open(
     assert validation_time.date().isoformat() == expected_date
 
 
+def test_a_share_kline_timeout_scales_for_expanded_candidate_pool() -> None:
+    assert pipeline_module._a_share_kline_timeout(
+        DailyPipelineConfig(candidate_limit=500)
+    ) == 2000
+
+
 @pytest.mark.parametrize(
     ("hour", "session", "intraday"),
     [

@@ -101,7 +101,8 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 法定休市日优先使用 Tushare 交易日历，不只按周末推算。主流水线为正式快照加
 跨进程互斥锁，并在 run-specific staging 中完成刷新、补强、报告和数据链验收；
 成功后才发布正式快照、日报与 HTML，失败任务保留上一套完整产物。发布版本写入
-`snapshot_version`，研究快照和页面必须与该版本一致。
+`snapshot_version`，研究快照和页面必须与该版本一致。A 股日线子任务的超时会随
+候选数量扩展，500 只候选按最多 2000 秒执行，避免正常节流刷新在 20 分钟被误杀。
 
 模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。公网开放账号注册时，把 `deploy/systemd/stock-ts-auth-open.conf` 放到 `/etc/systemd/system/stock-ts.service.d/auth.conf`，真实管理员密码和 session secret 仍只放服务器环境或 `.env`。
 

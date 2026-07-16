@@ -8,5 +8,5 @@ Type=oneshot
 User=admin
 WorkingDirectory=/opt/stock-ts
 Environment=PYTHONPATH=/opt/stock-ts/src
-TimeoutStartSec=3600
+TimeoutStartSec=5400
 ExecStart=/opt/stock-ts/.venv/bin/python scripts/run_daily_pipeline.py --python /opt/stock-ts/.venv/bin/python --snapshot data/imports/tdx_snapshots.json --holdings data/portfolio/holdings.csv --provider tdx-snapshot --candidate-limit 500 --enrich-limit 50 --external-enrich-timeout 300 --announcement-limit 5 --output-dir reports/daily --html-dir reports/html --announcement-dir reports/announcements

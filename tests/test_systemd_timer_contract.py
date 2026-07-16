@@ -16,7 +16,7 @@ def test_stock_ts_daily_service_runs_full_pipeline_with_enough_timeout() -> None
     service = Path("deploy/systemd/stock-ts-daily-analysis.service")
     text = service.read_text(encoding="utf-8")
 
-    assert "TimeoutStartSec=3600" in text
+    assert "TimeoutStartSec=5400" in text
     assert "scripts/run_daily_pipeline.py" in text
     assert "--provider tdx-snapshot" in text
     assert "--candidate-limit 500" in text
