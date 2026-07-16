@@ -51,7 +51,19 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
         "session_name=morning\nmarket_trade_date=2026-07-15\n",
         encoding="utf-8",
     )
-    opportunity_items = []
+    opportunity_items = [
+        {
+            "code": "699999",
+            "name": "历史候选",
+            "label": "旧协议主题",
+            "risk": "最大反证：历史快照",
+            "facts": [
+                {"label": "阶段判断", "value": "可进入投资候选"},
+                {"label": "入选原因", "value": "兼容旧快照"},
+                {"label": "确认条件", "value": "等待确认"},
+            ],
+        }
+    ]
     for index in range(1, 5):
         opportunity_items.append(
             {
@@ -60,7 +72,7 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
                 "label": "基因概念",
                 "risk": "最大反证：波动仍高",
                 "facts": [
-                    {"label": "阶段判断", "value": "可进入投资候选"},
+                    {"label": "阶段判断", "value": "价格延续观察"},
                     {"label": "入选原因", "value": "多周期趋势同向"},
                     {"label": "确认条件", "value": "量能保持"},
                 ],
@@ -116,11 +128,52 @@ def test_morning_report_uses_five_fact_forecast_feedback_sections(tmp_path: Path
     assert "候选1" in content
     assert "候选3" in content
     assert "候选4" not in content
-    assert "样本积累中" in content
-    assert "3日命中率 62.5%" in content
+    assert "历史候选" not in content
+    assert all("价格延续观察" in line for line in opportunity_lines)
+    assert "样本积累中 8/20，暂不评价命中率" in content
+    assert "3日命中率" not in content
+    assert "平均超额" not in content
+    assert "平均 MAE" not in content
+    assert "62.5%" not in content
+    assert "+1.25%" not in content
+    assert "-2.10%" not in content
     assert "theme=%E5%9F%BA%E5%9B%A0%E6%A6%82%E5%BF%B5" in content
     assert "source_theme=%E5%9F%BA%E5%9B%A0%E6%A6%82%E5%BF%B5" in content
     assert "不构成投资建议" in content
+
+
+def test_morning_feedback_metrics_require_twenty_samples() -> None:
+    module = _load_module()
+    metrics = {
+        "horizon": 3,
+        "hit_rate": 62.5,
+        "average_excess_return": 1.25,
+        "average_mae": -2.1,
+        "top_miss_reason": "主题退潮",
+    }
+
+    empty = module._morning_feedback_line(
+        {**metrics, "sample_count": 0, "sample_state": "暂无到期样本"}
+    )
+    accumulating = module._morning_feedback_line(
+        {**metrics, "sample_count": 19, "sample_state": "样本积累中"}
+    )
+    calibrated = module._morning_feedback_line(
+        {**metrics, "sample_count": 20, "sample_state": "可校准"}
+    )
+
+    assert "暂无可回评样本" in empty
+    assert accumulating == "- 样本积累中 19/20，暂不评价命中率。"
+    for content in (empty, accumulating):
+        assert "3日命中率" not in content
+        assert "平均超额" not in content
+        assert "平均 MAE" not in content
+        assert "62.5%" not in content
+        assert "+1.25%" not in content
+        assert "-2.10%" not in content
+    assert "3日命中率 62.5%" in calibrated
+    assert "平均超额 +1.25%" in calibrated
+    assert "平均 MAE -2.10%" in calibrated
 
 
 def test_build_morning_report_combines_latest_artifacts(tmp_path: Path) -> None:

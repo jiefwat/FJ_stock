@@ -13,6 +13,7 @@ from .models import DailyBar
 
 MODEL_VERSION = "continuation-v1"
 HORIZONS = (1, 3, 5, 10)
+CALIBRATION_MIN_SAMPLES = 20
 USEFULNESS_VALUES = {"有用", "没用"}
 REASON_VALUES = {"原因正确", "原因错误"}
 DISPOSITION_VALUES = {"已关注", "已忽略"}
@@ -379,7 +380,9 @@ class PredictionStore:
         return PredictionSummary(
             horizon=horizon,
             sample_count=len(rows),
-            sample_state="样本积累中" if len(rows) < 20 else "可校准",
+            sample_state=(
+                "样本积累中" if len(rows) < CALIBRATION_MIN_SAMPLES else "可校准"
+            ),
             hit_rate=round(results.count("命中") / len(rows) * 100, 2),
             average_excess_return=round(mean(excess), 4),
             median_excess_return=round(median(excess), 4),
@@ -497,6 +500,36 @@ def prediction_identifier(prediction: PredictionInput) -> str:
 
 
 def build_feedback_section(summary: PredictionSummary) -> dict[str, object]:
+    if summary.sample_count < CALIBRATION_MIN_SAMPLES:
+        progress = (
+            "暂无可回评样本"
+            if summary.sample_count == 0
+            else (
+                f"样本积累中 {summary.sample_count}/{CALIBRATION_MIN_SAMPLES}，"
+                "暂不评价命中率"
+            )
+        )
+        return {
+            "key": "opportunity-feedback",
+            "title": "历史预测反馈",
+            "conclusion": progress,
+            "tone": "neutral",
+            "items": [
+                {
+                    "kind": "prediction_feedback",
+                    "code": "",
+                    "name": "3日窗口",
+                    "label": progress,
+                    "summary": progress,
+                    "risk": "达到校准门槛后再展示完整反馈指标。",
+                    "status": "ready" if summary.sample_count else "missing",
+                    "facts": [
+                        {"label": "样本量", "value": str(summary.sample_count)},
+                        {"label": "校准状态", "value": progress},
+                    ],
+                }
+            ],
+        }
     return {
         "key": "opportunity-feedback",
         "title": "历史预测反馈",

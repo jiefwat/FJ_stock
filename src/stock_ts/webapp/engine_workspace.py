@@ -5,10 +5,28 @@ from html import escape
 from urllib.parse import urlencode
 
 MODULE_META = {
-    "market": ("每日大盘", "市场判断"),
-    "portfolio": ("我的持仓", "组合诊断"),
-    "stock": ("个股分析", "公司研究"),
-    "opportunity": ("热点机会", "机会扫描"),
+    "market": ("每日大盘", "市场判断", "今天市场发生了什么？", "事实判断", "当前交易日"),
+    "portfolio": (
+        "我的持仓",
+        "组合诊断",
+        "今天先处理哪只持仓？",
+        "相对行动",
+        "今天 / 下次复核",
+    ),
+    "stock": (
+        "个股分析",
+        "公司研究",
+        "这只股票现在怎么看？",
+        "研究备忘",
+        "1-20 个交易日",
+    ),
+    "opportunity": (
+        "热点机会",
+        "机会扫描",
+        "今天值得继续研究哪些股票？",
+        "条件预测",
+        "T+1 / T+3 / T+5",
+    ),
 }
 
 CORE_MODULES = ("market", "portfolio", "stock", "opportunity")
@@ -23,7 +41,7 @@ def render_engine_workspace(
 ) -> str:
     if module not in MODULE_META:
         raise ValueError("不支持的研究模块。")
-    title, label = MODULE_META[module]
+    title, label, question, statement_type, horizon = MODULE_META[module]
     status_label, status_class, available = _service_status(status)
     context_json = json.dumps(
         context or {},
@@ -39,7 +57,11 @@ def render_engine_workspace(
       data-engine-context="{escape(context_json, quote=True)}"
       data-engine-available="{'true' if available else 'false'}">
       <header class="engine-header">
-        <div><span>{escape(label)}</span><h2>{escape(title)}</h2></div>
+        <div>
+          <span>{escape(label)}</span>
+          <h2>{escape(title)}</h2>
+          <p class="engine-question" data-engine-question>{escape(question)}</p>
+        </div>
         <div class="engine-meta">
           <strong class="engine-service-state state-{status_class}" data-engine-service-state>
             {escape(status_label)}</strong>
@@ -47,6 +69,12 @@ def render_engine_workspace(
           <time data-engine-generated>尚未生成</time>
         </div>
       </header>
+      <section class="engine-session-line" aria-label="本次研究口径">
+        <div><span>结论类型</span><strong>{escape(statement_type)}</strong></div>
+        <div><span>适用周期</span><strong>{escape(horizon)}</strong></div>
+        <div><span>数据时点</span><strong data-engine-session-as-of>等待本次研究</strong></div>
+        <div><span>证据覆盖</span><strong data-engine-session-coverage>等待本次研究</strong></div>
+      </section>
       <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
       {context_banner}
       {stock_switcher}
@@ -55,17 +83,17 @@ def render_engine_workspace(
         <div class="engine-verdict" data-engine-verdict-block>
           <strong class="engine-decision-label state-idle" data-engine-decision-label>
             待确认</strong>
-          <span>当前判断</span>
+          <span>一句话结论</span>
           <h3 data-engine-verdict>等待生成判断</h3>
         </div>
         <div class="engine-action-risk">
           <article class="engine-action">
-            <span>现在怎么做</span>
-            <strong data-engine-action>进入页面后生成本次判断。</strong>
+            <span>今天怎么做</span>
+            <strong data-engine-action>页面打开后会生成今天的判断。</strong>
           </article>
-          <article class="engine-risk" data-engine-target="risk" tabindex="-1">
-            <span>最大风险</span>
-            <strong data-engine-risk>研究完成前，不沿用旧结论。</strong>
+          <article class="engine-risk">
+            <span>最需要防什么</span>
+            <strong data-engine-risk>本次判断生成前，不沿用上次结论。</strong>
           </article>
         </div>
       </section>
@@ -73,14 +101,13 @@ def render_engine_workspace(
         <div class="engine-section-grid" data-engine-section-grid></div>
       </section>
       <nav class="engine-action-rail" aria-label="结果直达">
-        <button type="button" data-engine-jump="risk">先看风险</button>
-        <button type="button" data-engine-jump="findings">看三条发现</button>
-        <button type="button" data-engine-jump="evidence">展开完整依据</button>
+        <button type="button" data-engine-jump="findings">为什么这样判断</button>
+        <button type="button" data-engine-jump="evidence">查看数据和依据</button>
       </nav>
       <section class="engine-findings-block" aria-label="关键发现"
         data-engine-target="findings" tabindex="-1">
         <div class="engine-section-heading">
-          <h3>关键发现</h3>
+          <h3>为什么这样判断</h3>
           <div class="engine-section-meta">
             <span class="engine-coverage" data-engine-coverage>已确认维度 0/4</span>
             <small>最多三条</small>
@@ -101,13 +128,13 @@ def render_engine_workspace(
       <div class="engine-actions">
         <details class="engine-disclosure" data-engine-disclosure
           data-engine-target="evidence" tabindex="-1">
-          <summary>查看完整依据</summary>
+          <summary>查看数据和依据</summary>
           <div class="engine-details" data-engine-details>
             <p>完整依据会按研究维度归档在这里。</p>
           </div>
         </details>
         <button class="engine-run-button" type="button" data-engine-run{disabled}>
-          重新分析</button>
+          刷新今天的判断</button>
       </div>
       <p class="engine-live-state" data-engine-live-state aria-live="polite">
         {escape(status_label)}</p>
@@ -227,6 +254,26 @@ def engine_app_script() -> str:
       return node;
     }
 
+    function formatEngineEvidenceTime(value) {
+      const raw = String(value ?? '').trim();
+      const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnly) {
+        const year = Number(dateOnly[1]);
+        const month = Number(dateOnly[2]);
+        const day = Number(dateOnly[3]);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        const isValid = date.getUTCFullYear() === year
+          && date.getUTCMonth() === month - 1
+          && date.getUTCDate() === day;
+        return isValid ? raw : '时间待补';
+      }
+      if (!/^\d{4}-\d{2}-\d{2}(?:T|\s)\d{2}:\d{2}/.test(raw)) return '时间待补';
+      const date = new Date(raw);
+      return Number.isNaN(date.getTime())
+        ? '时间待补'
+        : date.toLocaleString('zh-CN', {hour12: false});
+    }
+
     function engineContext(workspace) {
       try {
         return JSON.parse(workspace.dataset.engineContext || '{}');
@@ -245,7 +292,7 @@ def engine_app_script() -> str:
       const live = workspace.querySelector('[data-engine-live-state]');
       if (button) {
         button.disabled = loading || workspace.dataset.engineAvailable !== 'true';
-        button.textContent = loading ? '分析中' : '重新分析';
+        button.textContent = loading ? '正在刷新' : '刷新今天的判断';
       }
       if (judgment) judgment.classList.toggle('is-loading', loading);
       if (live && loading) {
@@ -922,6 +969,8 @@ def engine_app_script() -> str:
       const action = workspace.querySelector('[data-engine-action]');
       const risk = workspace.querySelector('[data-engine-risk]');
       const generated = workspace.querySelector('[data-engine-generated]');
+      const sessionAsOf = workspace.querySelector('[data-engine-session-as-of]');
+      const sessionCoverage = workspace.querySelector('[data-engine-session-coverage]');
       const live = workspace.querySelector('[data-engine-live-state]');
       const details = Array.isArray(payload.details) ? payload.details : [];
       const coverage = workspace.querySelector('[data-engine-coverage]');
@@ -939,10 +988,10 @@ def engine_app_script() -> str:
       if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
       if (generated) {
         const evidenceTime = payload.as_of || payload.generated_at;
-        const date = evidenceTime ? new Date(evidenceTime) : null;
-        generated.textContent = date && !Number.isNaN(date.getTime())
-          ? date.toLocaleString('zh-CN', {hour12: false})
-          : '刚刚生成';
+        generated.textContent = formatEngineEvidenceTime(evidenceTime);
+      }
+      if (sessionAsOf) {
+        sessionAsOf.textContent = formatEngineEvidenceTime(payload.as_of);
       }
       if (coverage) {
         const readyDetails = details.filter((detail) => detail.status === 'ready').length;
@@ -950,6 +999,9 @@ def engine_app_script() -> str:
         const total = payload.coverage?.total ?? (details.length || 4);
         coverage.textContent = `已确认维度 ${ready}/${total}`;
         coverage.classList.toggle('is-complete', ready > 0 && ready === total);
+        if (sessionCoverage) {
+          sessionCoverage.textContent = `已确认 ${ready}/${total} 个维度`;
+        }
       }
       if (delivery) {
         const deliveryLabels = {

@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 from stock_ts.config import get_settings
 from stock_ts.daily_decisions import read_decision_artifact
 from stock_ts.notification import dispatch_report
+from stock_ts.prediction_feedback import CALIBRATION_MIN_SAMPLES
 from stock_ts.symbols import stock_name_for_code
 
 DispatchFunc = Callable[..., object]
@@ -257,7 +258,12 @@ def _structured_opportunity_lines(
     )
     if not isinstance(section, dict) or not isinstance(section.get("items"), list):
         return []
-    lines: list[str] = []
+    stage_priority = {
+        "价格延续观察": 0,
+        "可进入投资候选": 1,
+        "等待确认": 2,
+    }
+    ranked_items = []
     for item in section["items"]:
         if not isinstance(item, dict):
             continue
@@ -268,8 +274,13 @@ def _structured_opportunity_lines(
             if isinstance(facts, list) and isinstance(fact, dict)
         }
         stage = fact_map.get("阶段判断", "")
-        if stage not in {"可进入投资候选", "等待确认"}:
+        priority = stage_priority.get(stage)
+        if priority is None:
             continue
+        ranked_items.append((priority, item, fact_map))
+    lines: list[str] = []
+    for _, item, fact_map in sorted(ranked_items, key=lambda entry: entry[0]):
+        stage = fact_map["阶段判断"]
         code = str(item.get("code") or "").strip()
         name = str(item.get("name") or code or "未识别股票").strip()
         theme = str(item.get("label") or "主题待确认").strip()
@@ -300,14 +311,22 @@ def _structured_opportunity_lines(
 def _morning_feedback_line(payload: dict[str, object]) -> str:
     try:
         sample_count = int(payload.get("sample_count") or 0)
+    except (TypeError, ValueError):
+        return "- 暂无可回评样本；预测反馈等待数据补齐。"
+    if sample_count == 0:
+        return "- 暂无可回评样本；预测反馈等待数据补齐。"
+    if sample_count < CALIBRATION_MIN_SAMPLES:
+        return (
+            f"- 样本积累中 {sample_count}/{CALIBRATION_MIN_SAMPLES}，"
+            "暂不评价命中率。"
+        )
+    try:
         hit_rate = float(payload.get("hit_rate") or 0)
         excess = float(payload.get("average_excess_return") or 0)
         mae = float(payload.get("average_mae") or 0)
     except (TypeError, ValueError):
-        return "- 暂无到期样本；预测反馈等待数据补齐。"
+        return "- 预测反馈指标暂不可用，请检查反馈数据。"
     state = str(payload.get("sample_state") or "暂无到期样本")
-    if sample_count == 0:
-        return "- 暂无到期样本；预测反馈等待数据补齐。"
     miss_reason = str(payload.get("top_miss_reason") or "暂无")
     return (
         f"- {state}｜近 {sample_count} 个有效预测｜3日命中率 {hit_rate:.1f}%｜"

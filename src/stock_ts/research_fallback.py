@@ -681,6 +681,7 @@ def _build_market_research(
     mover_items = tuple(
         _market_mover_item(item) for item in _market_mover_candidates(candidates.candidates)
     )
+    market_risk = _market_risk_summary(pulse.hard_gate_reasons, market.risks)
     findings = (
         ResearchFinding(title="市场宽度", summary=breadth.summary),
         ResearchFinding(
@@ -689,7 +690,7 @@ def _build_market_research(
         ),
         ResearchFinding(
             title="当日风险事实",
-            summary=_join_or_default(market.risks[:2], "当前未记录额外市场风险事件。"),
+            summary=market_risk,
         ),
     )
     sections = (
@@ -733,11 +734,7 @@ def _build_market_research(
         as_of=market.trade_date,
         verdict=_market_pulse_conclusion(pulse),
         action="这里只记录已发生的市场事实；条件研究请进入热门机会。",
-        risk=(
-            "；".join(pulse.hard_gate_reasons)
-            if pulse.hard_gate_reasons
-            else _join_or_default(market.risks[:2], "主题快速轮动，避免只按单一热点行动。")
-        ),
+        risk=market_risk,
         findings=findings,
         items=index_items,
         sections=sections,
@@ -841,7 +838,7 @@ def _build_opportunity_research(
     market_trade_date: str = "",
 ) -> ResearchWorkspaceResult:
     forward_stages = {
-        "延续观察": "可进入投资候选",
+        "延续观察": "价格延续观察",
         "突破待确认": "等待确认",
         "反弹待验证": "反弹观察",
     }
@@ -1052,28 +1049,64 @@ def _market_pulse_item(metric: Any) -> ResearchModuleItem:
         name=metric.label,
         label=metric.label,
         summary=metric.value,
-        risk=metric.interpretation,
+        risk=metric.interpretation.replace("候选扫描样本", "扫描样本"),
         status="missing" if metric.value == "待补" else "ready",
         facts=(ResearchFact(label="状态", value=_tone_label(metric.tone)),),
+    )
+
+
+def _market_risk_summary(
+    hard_gate_reasons: tuple[str, ...],
+    observed_risks: list[str],
+) -> str:
+    facts: list[str] = []
+    for value in (*hard_gate_reasons, *observed_risks):
+        fact = _neutral_market_risk(value)
+        if fact and fact not in facts:
+            facts.append(fact)
+    return "；".join(facts) or "当日未触发市场极端风险闸门。"
+
+
+def _neutral_market_risk(value: str) -> str:
+    text = str(value or "").strip().replace("；", "，").replace("。", "，")
+    action_markers = (
+        "建议",
+        "仓位",
+        "加仓",
+        "减仓",
+        "买入",
+        "卖出",
+        "追高",
+        "注意",
+        "避免",
+        "未见极端风险信号",
+    )
+    clauses = (
+        clause.strip()
+        for clause in text.split("，")
+        if clause.strip()
+    )
+    return "，".join(
+        clause for clause in clauses if not any(marker in clause for marker in action_markers)
     )
 
 
 def _market_pulse_conclusion(pulse: MarketPulse) -> str:
     label = _market_pulse_label(pulse.regime)
     return (
-        f"当前市场为{label}，研究风险预算上限 {pulse.risk_budget}；"
+        f"当前市场为{label}；"
         f"涨跌宽度比 {pulse.breadth_ratio:.2f}，确认主题 {pulse.confirmed_theme_count} 个。"
     )
 
 
 def _market_pulse_label(regime: str) -> str:
     return {
-        "risk_off": "风险关闭",
-        "defensive": "防守",
-        "balanced": "均衡",
-        "constructive": "结构进攻",
-        "risk_on": "风险开启",
-    }.get(regime, "待确认")
+        "risk_off": "宽度偏弱",
+        "defensive": "宽度偏弱",
+        "balanced": "宽度均衡",
+        "constructive": "宽度偏强",
+        "risk_on": "宽度偏强",
+    }.get(regime, "数据不足")
 
 
 def _pulse_tone(pulse: MarketPulse) -> str:
@@ -1199,26 +1232,24 @@ def _market_mover_candidates(candidates: list[Any]) -> tuple[Any, ...]:
 
 def _market_mover_item(candidate: Any) -> ResearchModuleItem:
     reason = _candidate_reason(candidate)
-    confirm = (
-        candidate.watch_conditions[0]
-        if candidate.watch_conditions
-        else "等待价格与成交继续确认。"
-    )
-    invalidate = candidate.risks[0] if candidate.risks else "异动未获承接则移出观察。"
     direction = "上涨异动" if candidate.pct_change >= 0 else "下跌异动"
+    risk = (
+        "单日涨幅较大，不代表趋势已经形成。"
+        if candidate.pct_change >= 0
+        else "单日跌幅较大，反映当日波动风险。"
+    )
     return ResearchModuleItem(
         kind="market_mover",
         code=candidate.code,
         name=candidate.name,
         label=candidate.sector or "主题待确认",
         summary=f"{direction} {candidate.pct_change:+.2f}%；原因：{reason}",
-        risk=f"{direction}风险：{invalidate}",
+        risk=risk,
         status="ready",
         facts=(
             ResearchFact(label="涨跌幅", value=f"{candidate.pct_change:+.2f}%"),
             ResearchFact(label="异动原因", value=reason),
-            ResearchFact(label="确认条件", value=confirm),
-            ResearchFact(label="失效条件", value=invalidate),
+            ResearchFact(label="风险", value=risk),
         ),
     )
 
@@ -1241,8 +1272,6 @@ def _rank_continuation_candidates(
             (
                 raw.fund_flow is not None,
                 raw.pe_ttm is not None,
-                bool(raw.news_items),
-                bool(raw.announcements),
             )
         )
         assessment = assess_continuation(

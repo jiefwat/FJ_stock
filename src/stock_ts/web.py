@@ -83,6 +83,7 @@ from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
 from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
+from .research_delivery import with_research_delivery
 from .research_engine import (
     ResearchContext,
     ResearchTarget,
@@ -13453,13 +13454,19 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             and _snapshot_supports_workspace(module, snapshot.payload)
             and _research_snapshot_covers_latest_pipeline(snapshot.payload)
         ):
-            result = dict(snapshot.payload)
-            result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
-            result["stale"] = snapshot.stale
-            return with_prediction_feedback(result)
+            result = with_prediction_feedback(dict(snapshot.payload))
+            return with_research_delivery(
+                result,
+                "stale_snapshot" if snapshot.stale else "snapshot",
+                stale=snapshot.stale,
+            )
         local_result = local_fallback(module, context)
         result = with_prediction_feedback(
-            local_result.to_public_dict() | {"stale": False} | local_source_fields()
+            with_research_delivery(
+                local_result.to_public_dict() | local_source_fields(),
+                "local_fallback",
+                stale=False,
+            )
         )
         if (
             module in {"market", "opportunity"}
@@ -13477,20 +13484,20 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             and _snapshot_supports_workspace(module, snapshot.payload)
             and _research_snapshot_covers_latest_pipeline(snapshot.payload)
         ):
-            result = dict(snapshot.payload)
-            result["delivery"] = "snapshot"
-            result["data_label"] = "当日快照"
-            result["stale"] = False
-            return with_prediction_feedback(result)
+            return with_prediction_feedback(
+                with_research_delivery(
+                    snapshot.payload,
+                    "snapshot",
+                    stale=False,
+                )
+            )
         local_result = local_fallback(module, context)
         result = with_prediction_feedback(
-            local_result.to_public_dict()
-            | {
-                "delivery": "local_fallback",
-                "data_label": "最新本地事实",
-                "stale": False,
-            }
-            | local_source_fields()
+            with_research_delivery(
+                local_result.to_public_dict() | local_source_fields(),
+                "local_fallback",
+                stale=False,
+            )
         )
         if local_result.ok and local_result_can_be_saved():
             store.save(module, result)

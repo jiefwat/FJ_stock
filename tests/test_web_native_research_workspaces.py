@@ -97,10 +97,10 @@ def test_root_page_renders_four_lazy_workspaces_without_local_provider_calls() -
     )
 
     assert html.count('data-engine-workspace="') == 4
-    assert "当前判断" in html
-    assert "现在怎么做" in html
-    assert "最大风险" in html
-    assert "重新分析" in html
+    assert "一句话结论" in html
+    assert "今天怎么做" in html
+    assert "最需要防什么" in html
+    assert "刷新今天的判断" in html
 
 
 def test_native_page_removes_global_research_method_narration() -> None:
@@ -138,19 +138,106 @@ def test_each_primary_workspace_has_one_judgment_band_and_three_finding_slots() 
         assert "open" not in details.attrs
 
 
-def test_each_workspace_exposes_three_result_shortcuts() -> None:
+def test_each_workspace_exposes_two_result_shortcuts() -> None:
     soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
 
     for module in ("market", "portfolio", "stock", "opportunity"):
         workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
         assert workspace is not None
         assert [node["data-engine-jump"] for node in workspace.select("[data-engine-jump]")] == [
-            "risk",
             "findings",
             "evidence",
         ]
-        for target in ("risk", "findings", "evidence"):
+        for target in ("findings", "evidence"):
             assert workspace.select_one(f'[data-engine-target="{target}"]') is not None
+
+
+def test_each_workspace_states_its_question_type_horizon_and_session_facts() -> None:
+    expected = {
+        "market": ("今天市场发生了什么？", "事实判断", "当前交易日"),
+        "portfolio": ("今天先处理哪只持仓？", "相对行动", "今天 / 下次复核"),
+        "stock": ("这只股票现在怎么看？", "研究备忘", "1-20 个交易日"),
+        "opportunity": (
+            "今天值得继续研究哪些股票？",
+            "条件预测",
+            "T+1 / T+3 / T+5",
+        ),
+    }
+
+    for module, (question, statement_type, horizon) in expected.items():
+        soup = BeautifulSoup(render_engine_workspace(module, status="configured"), "html.parser")
+        workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
+        assert workspace is not None
+        assert workspace.select_one("[data-engine-question]").get_text(strip=True) == question
+        session = workspace.select_one(".engine-session-line")
+        assert session is not None
+        assert [item.get_text(" ", strip=True) for item in session.select("div")] == [
+            f"结论类型 {statement_type}",
+            f"适用周期 {horizon}",
+            "数据时点 等待本次研究",
+            "证据覆盖 等待本次研究",
+        ]
+        assert session.select_one("[data-engine-session-as-of]") is not None
+        assert session.select_one("[data-engine-session-coverage]") is not None
+
+
+def test_first_screen_uses_plain_language_decision_actions() -> None:
+    html = render_engine_workspace("market", status="configured")
+
+    for label in (
+        "一句话结论",
+        "今天怎么做",
+        "最需要防什么",
+        "为什么这样判断",
+        "查看数据和依据",
+        "刷新今天的判断",
+    ):
+        assert label in html
+    assert "先看风险" not in html
+    assert "当前判断" not in html
+    assert "现在怎么做" not in html
+    assert "最大风险" not in html
+
+
+def test_engine_result_updates_session_fact_time_and_coverage_from_payload() -> None:
+    script = engine_app_script()
+
+    assert "payload.as_of" in script
+    assert "payload.coverage" in script
+    assert "[data-engine-session-as-of]" in script
+    assert "[data-engine-session-coverage]" in script
+    assert "时间待补" in script
+    assert "已确认 ${ready}/${total} 个维度" in script
+
+
+def test_evidence_time_formatter_keeps_date_only_values_free_of_fake_times() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+console.log(JSON.stringify({
+  dateOnly: formatEngineEvidenceTime('2026-07-16'),
+  timestamp: formatEngineEvidenceTime('2026-07-16T07:30:15+08:00'),
+  invalid: formatEngineEvidenceTime('not-a-date'),
+  invalidMonth: formatEngineEvidenceTime('2026-99-99'),
+  invalidDay: formatEngineEvidenceTime('2026-02-30')
+}));
+"""
+    )
+
+    assert result["dateOnly"] == "2026-07-16"
+    assert "08:00" not in result["dateOnly"]
+    assert "2026" in result["timestamp"]
+    assert ":30:15" in result["timestamp"]
+    assert result["invalid"] == "时间待补"
+    assert result["invalidMonth"] == "时间待补"
+    assert result["invalidDay"] == "时间待补"
+
+
+def test_generated_and_session_times_share_the_evidence_time_formatter() -> None:
+    script = engine_app_script()
+
+    assert "function formatEngineEvidenceTime(value)" in script
+    assert "generated.textContent = formatEngineEvidenceTime(evidenceTime)" in script
+    assert "sessionAsOf.textContent = formatEngineEvidenceTime(payload.as_of)" in script
 
 
 def test_native_page_has_four_item_mobile_research_dock() -> None:

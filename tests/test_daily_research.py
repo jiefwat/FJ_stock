@@ -399,4 +399,9 @@ def test_daily_research_records_predictions_and_writes_feedback(tmp_path) -> Non
         for section in opportunity["module_sections"]
         if section["key"] == "opportunity-feedback"
     )
-    assert feedback["conclusion"] == "暂无到期样本"
+    assert feedback["conclusion"] == "暂无可回评样本"
+    rendered_feedback = json.dumps(feedback, ensure_ascii=False)
+    assert "3日命中率" not in rendered_feedback
+    assert "平均超额" not in rendered_feedback
+    assert "平均MAE" not in rendered_feedback
+    assert "0.0%" not in rendered_feedback

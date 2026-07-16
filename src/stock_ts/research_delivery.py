@@ -23,7 +23,7 @@ def deliver_research(
     if is_global and not refresh:
         fresh = store.load(normalized)
         if fresh is not None:
-            return _with_delivery(fresh.payload, "snapshot", stale=False)
+            return with_research_delivery(fresh.payload, "snapshot", stale=False)
 
     try:
         result = service.research(normalized, context, refresh=refresh)
@@ -31,14 +31,18 @@ def deliver_research(
         if is_global:
             stale = store.load(normalized, allow_stale=True)
             if stale is not None:
-                return _with_delivery(stale.payload, "stale_snapshot", stale=True)
+                return with_research_delivery(
+                    stale.payload,
+                    "stale_snapshot",
+                    stale=True,
+                )
         local = _local_payload(fallback, normalized, context)
         if local is not None:
             return local
         raise
     payload = result.to_public_dict()
     if result.ok:
-        delivered = _with_delivery(payload, "live", stale=False)
+        delivered = with_research_delivery(payload, "live", stale=False)
         if is_global:
             store.save(normalized, delivered)
         return delivered
@@ -46,11 +50,15 @@ def deliver_research(
     if is_global:
         stale = store.load(normalized, allow_stale=True)
         if stale is not None:
-            return _with_delivery(stale.payload, "stale_snapshot", stale=True)
+            return with_research_delivery(
+                stale.payload,
+                "stale_snapshot",
+                stale=True,
+            )
     local = _local_payload(fallback, normalized, context)
     if local is not None:
         return local
-    return _with_delivery(payload, "live", stale=False)
+    return with_research_delivery(payload, "live", stale=False)
 
 
 def _local_payload(
@@ -61,10 +69,10 @@ def _local_payload(
     if fallback is None:
         return None
     payload = fallback(module, context).to_public_dict()
-    return _with_delivery(payload, "local_fallback", stale=False)
+    return with_research_delivery(payload, "local_fallback", stale=False)
 
 
-def _with_delivery(
+def with_research_delivery(
     payload: dict[str, object],
     delivery: str,
     *,
@@ -80,4 +88,16 @@ def _with_delivery(
         "unavailable": "数据缺失",
     }.get(delivery, str(result.get("data_label") or ""))
     result["stale"] = stale
+    if stale:
+        verdict = str(result.get("verdict") or "").strip()
+        if verdict and not verdict.startswith("历史记录："):
+            result["verdict"] = f"历史记录：{verdict}"
+        result["decision_label"] = "历史参考"
+        result["action"] = "历史数据仅供复盘，不作为今天的操作依据。"
+        result["primary_risk"] = (
+            "数据过期：历史快照可能不反映当前市场，禁止沿用旧评分、候选与执行条件。"
+        )
+        result["findings"] = []
+        result["module_items"] = []
+        result["module_sections"] = []
     return result

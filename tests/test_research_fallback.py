@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -5,6 +6,7 @@ from stock_ts.models import CandidateStockRawData, DailyBar, NewsItem, StockRawD
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import ResearchContext, ResearchTarget
 from stock_ts.research_fallback import build_local_research
+from stock_ts.workflows import build_market_report
 
 
 class LocalFixtureProvider(SampleDataProvider):
@@ -160,6 +162,55 @@ class ExpandedCandidateProvider(MultiDayCandidateProvider):
             for index in range(1, 10)
         ]
         return [trend, *rebounds]
+
+
+class StrongBreadthProvider(LocalFixtureProvider):
+    def fetch_candidate_universe(self):
+        candidates = super().fetch_candidate_universe()
+        boosted = []
+        for candidate in candidates[:4]:
+            bars = list(candidate.bars)
+            bars[-1] = replace(bars[-1], close=bars[-2].close * 1.04)
+            boosted.append(replace(candidate, sector="半导体", bars=bars))
+        return [*boosted, *candidates[4:]]
+
+
+class MissingCandidateProvider(LocalFixtureProvider):
+    def __init__(self):
+        self.candidate_calls = 0
+
+    def fetch_candidate_universe(self):
+        self.candidate_calls += 1
+        if self.candidate_calls == 1:
+            raise ValueError("candidate scan unavailable")
+        return super().fetch_candidate_universe()
+
+
+class NegativeEventCandidateProvider(MultiDayCandidateProvider):
+    def fetch_candidate_universe(self):
+        trend = replace(
+            super().fetch_candidate_universe()[0],
+            code="600041",
+            name="无事件趋势",
+            fund_flow=None,
+            pe_ttm=None,
+        )
+        negative = replace(
+            trend,
+            code="600042",
+            name="负面事件趋势",
+            news_items=[
+                NewsItem(
+                    date="2026-07-15",
+                    source="公开新闻",
+                    title="公司遭监管问询",
+                    summary="监管要求公司说明相关风险。",
+                    sentiment="negative",
+                )
+            ],
+            announcements=[{"title": "股东减持公告", "date": "2026-07-15"}],
+        )
+        return [trend, negative]
 
 
 def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
@@ -343,6 +394,54 @@ def test_market_contains_facts_but_no_forecast_watchlist() -> None:
     assert "单日脉冲" in {item.name for item in movers.items}
     assert "未来" not in market.action
     assert "候选" not in market.action
+    visible_text = json.dumps(market.to_public_dict(), ensure_ascii=False)
+    for forbidden in ("风险预算", "仓位", "可投资", "候选", "买入", "卖出", "明日上涨"):
+        assert forbidden not in visible_text
+    for item in movers.items:
+        fact_labels = {fact.label for fact in item.facts}
+        assert "确认条件" not in fact_labels
+        assert "失效条件" not in fact_labels
+
+
+def test_market_mover_public_text_uses_observation_only_risks() -> None:
+    cases = (
+        (
+            MultiDayCandidateProvider(),
+            "上涨异动",
+            "单日涨幅较大，不代表趋势已经形成。",
+        ),
+        (
+            LocalFixtureProvider(),
+            "下跌异动",
+            "单日跌幅较大，反映当日波动风险。",
+        ),
+    )
+    for provider, direction, expected_risk in cases:
+        payload = build_local_research(
+            "market",
+            ResearchContext(),
+            provider=provider,
+        ).to_public_dict()
+        movers = next(
+            section
+            for section in payload["module_sections"]
+            if section["key"] == "market-movers"
+        )
+        item = next(row for row in movers["items"] if direction in row["summary"])
+        facts = {fact["label"]: fact["value"] for fact in item["facts"]}
+        visible_text = json.dumps(
+            {
+                "summary": item["summary"],
+                "risk": item["risk"],
+                "facts": item["facts"],
+            },
+            ensure_ascii=False,
+        )
+
+        assert item["risk"] == expected_risk
+        assert facts["风险"] == expected_risk
+        for forbidden in ("开盘", "承接", "确认", "追高", "等待", "次日"):
+            assert forbidden not in visible_text
 
 
 def test_opportunity_top10_keeps_strict_candidates_and_ranked_rebound_watchlist() -> None:
@@ -376,7 +475,8 @@ def test_opportunity_top10_keeps_strict_candidates_and_ranked_rebound_watchlist(
         next(fact.value for fact in candidate.facts if fact.label == "阶段判断")
         for candidate in candidates.items
     }
-    assert stages <= {"可进入投资候选", "等待确认", "反弹观察"}
+    assert stages <= {"价格延续观察", "等待确认", "反弹观察"}
+    assert candidates.items[0].facts[0].value == "价格延续观察"
     assert "反弹观察" in stages
     assert all(candidate.status == "ready" for candidate in candidates.items)
 
@@ -467,13 +567,8 @@ def test_local_market_leads_with_professional_pulse_metrics() -> None:
         "证据覆盖",
     }
     assert result.action == "这里只记录已发生的市场事实；条件研究请进入热门机会。"
-    assert result.decision_label in {
-        "风险关闭",
-        "防守",
-        "均衡",
-        "结构进攻",
-        "风险开启",
-    }
+    assert result.decision_label == "宽度均衡"
+    assert "宽度均衡" in result.verdict
     breadth = next(
         section for section in result.module_sections if section.key == "market-breadth"
     )
@@ -493,8 +588,99 @@ def test_local_market_leads_with_professional_pulse_metrics() -> None:
         facts = {fact.label: fact.value for fact in item.facts}
         assert facts["涨跌幅"]
         assert facts["异动原因"]
-        assert facts["确认条件"]
-        assert facts["失效条件"]
+        assert "确认条件" not in facts
+        assert "失效条件" not in facts
+
+
+def test_missing_market_scan_uses_neutral_public_wording() -> None:
+    result = build_local_research(
+        "market",
+        ResearchContext(),
+        provider=MissingCandidateProvider(),
+    )
+    pulse = next(
+        section for section in result.module_sections if section.key == "market-pulse"
+    )
+    scan = next(item for item in pulse.items if item.label == "扫描样本强弱差")
+
+    assert scan.summary == "待补"
+    assert scan.risk == "扫描样本未返回"
+    assert "候选扫描样本" not in json.dumps(result.to_public_dict(), ensure_ascii=False)
+
+
+def test_market_risk_keeps_observed_fact_without_account_action(monkeypatch) -> None:
+    provider = LocalFixtureProvider()
+    market = replace(
+        build_market_report(provider),
+        risks=["北向大额净流出", "建议降低仓位"],
+    )
+    monkeypatch.setattr(
+        "stock_ts.research_fallback.build_market_report",
+        lambda _provider: market,
+    )
+
+    result = build_local_research("market", ResearchContext(), provider=provider)
+    risk_finding = next(item for item in result.findings if item.title == "当日风险事实")
+
+    assert risk_finding.summary == "北向大额净流出"
+    assert result.primary_risk == "北向大额净流出"
+    assert "仓位" not in json.dumps(result.to_public_dict(), ensure_ascii=False)
+    assert "建议" not in risk_finding.summary
+
+
+def test_market_risk_merges_and_deduplicates_hard_gate_with_observed_fact(
+    monkeypatch,
+) -> None:
+    provider = LocalFixtureProvider()
+    market = replace(
+        build_market_report(provider),
+        limit_down_count=50,
+        risks=["跌停压力进入高风险区", "北向大额净流出", "建议降低仓位"],
+    )
+    monkeypatch.setattr(
+        "stock_ts.research_fallback.build_market_report",
+        lambda _provider: market,
+    )
+
+    result = build_local_research("market", ResearchContext(), provider=provider)
+    risk_finding = next(item for item in result.findings if item.title == "当日风险事实")
+
+    assert risk_finding.summary == "跌停压力进入高风险区；北向大额净流出"
+    assert risk_finding.summary.count("跌停压力进入高风险区") == 1
+    assert result.primary_risk == risk_finding.summary
+    assert "仓位" not in json.dumps(result.to_public_dict(), ensure_ascii=False)
+
+
+def test_strong_market_breadth_remains_descriptive() -> None:
+    result = build_local_research(
+        "market",
+        ResearchContext(),
+        provider=StrongBreadthProvider(),
+    )
+
+    assert result.decision_label == "宽度偏强"
+    assert "宽度偏强" in result.verdict
+
+
+def test_negative_events_do_not_increase_positive_candidate_evidence() -> None:
+    result = build_local_research(
+        "opportunity",
+        ResearchContext(),
+        provider=NegativeEventCandidateProvider(),
+    )
+    candidates = next(
+        section
+        for section in result.module_sections
+        if section.key == "opportunity-candidates"
+    )
+    scores = {
+        item.name: next(
+            fact.value for fact in item.facts if fact.label == "持续性评分"
+        )
+        for item in candidates.items
+    }
+
+    assert scores["无事件趋势"] == scores["负面事件趋势"]
 
 
 def test_local_stock_exposes_eight_auditable_evidence_dimensions() -> None:

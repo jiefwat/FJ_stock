@@ -1,3 +1,5 @@
+import re
+
 from stock_ts.announcements import AnnouncementReport
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.web import render_page
@@ -67,6 +69,82 @@ def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibili
     assert "max-width: 1580px" in editorial_skin
     assert "border-radius: 4px" in editorial_skin
     assert "linear-gradient(90deg, var(--copper)" in editorial_skin
+
+
+def test_engine_first_screen_has_compact_neutral_research_status_contract() -> None:
+    editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
+    compact_skin = editorial_skin.replace(" ", "")
+
+    assert ".engine-headerh2" in compact_skin
+    assert "font:700clamp(28px,3vw,32px)" in compact_skin
+    assert ".engine-verdict{gap:11px;padding:24px" in compact_skin
+    assert ".engine-session-line" in editorial_skin
+    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in compact_skin
+    for selector in (
+        '.engine-module[data-engine-delivery="live"] .engine-delivery',
+        '.engine-module[data-engine-delivery="unavailable"] .engine-delivery',
+        ".engine-coverage.is-complete",
+        ".engine-detail-heading .state-ready",
+        ".engine-detail-heading .state-failed",
+        ".engine-detail-heading .state-missing",
+        '[data-engine-nav-state="complete"] .engine-nav-state-dot',
+        '[data-engine-nav-state="unavailable"] .engine-nav-state-dot',
+        ".engine-service-state.state-ready",
+        ".engine-service-state.state-blocked",
+        ".engine-decision-label.state-positive",
+        ".engine-decision-label.state-negative",
+    ):
+        assert selector in editorial_skin
+        rule = editorial_skin.split(selector, 1)[1].split("}", 1)[0]
+        assert "#0e6a5c" not in rule
+        assert "#b64a3c" not in rule
+        assert "#9a4036" not in rule
+
+    assert ".engine-action { box-shadow:inset 3px 0 0 var(--copper); }" in editorial_skin
+    assert ".engine-risk { box-shadow:inset 3px 0 0 var(--amber); }" in editorial_skin
+
+    neutral_research_rules = {
+        ".engine-theme-card.state-ready": "var(--navy-2)",
+        ".engine-evidence-card.state-ready": "var(--navy-2)",
+        ".engine-module-item.state-ready": "var(--copper)",
+        ".engine-stock-decision-card:nth-child(1)": "var(--navy-2)",
+        ".engine-stock-decision-card:nth-child(2)": "var(--copper)",
+        ".engine-stock-decision-card:nth-child(3)": "var(--amber)",
+        ".engine-stock-decision-card:nth-child(4)": "var(--muted)",
+        ".engine-finding-card:nth-child(1)": "var(--navy-2)",
+        ".engine-finding-card:nth-child(2)": "var(--copper)",
+        ".engine-finding-card:nth-child(3)": "var(--amber)",
+    }
+    for selector, color in neutral_research_rules.items():
+        assert selector in editorial_skin
+        rule = editorial_skin.split(selector, 1)[1].split("}", 1)[0]
+        assert color in rule
+
+    forbidden_research_colors = (
+        "#4f9284",
+        "#258273",
+        "#0e6a5c",
+        "#b64a3c",
+        "#9a4036",
+        "var(--up)",
+        "var(--down)",
+    )
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", editorial_skin):
+        selector, declarations = match.groups()
+        if ".engine" not in selector:
+            continue
+        if any(color in declarations for color in forbidden_research_colors):
+            assert ".engine-breadth-row.is-rise" in selector or (
+                ".engine-breadth-row.is-fall" in selector
+            ), selector
+
+    assert "--up:" in CSS
+    assert "--down:" in CSS
+    assert ".engine-breadth-row.is-rise" in CSS
+    assert ".engine-breadth-row.is-fall" in CSS
+    assert ".engine-action-railbutton:focus-visible" in CSS.replace(" ", "")
+    assert "@media(max-width:640px)" in compact_skin
+    assert "@media(prefers-reduced-motion:reduce)" in compact_skin
 
 
 def test_design_guide_shell_removes_old_global_project_blocks() -> None:

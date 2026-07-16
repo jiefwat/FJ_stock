@@ -175,8 +175,13 @@ def test_local_opportunity_response_appends_prediction_feedback(monkeypatch, tmp
         for section in response["module_sections"]
         if section["key"] == "opportunity-feedback"
     )
-    assert feedback["conclusion"] == "暂无到期样本"
-    assert "provider" not in json.dumps(feedback, ensure_ascii=False).lower()
+    assert feedback["conclusion"] == "暂无可回评样本"
+    rendered_feedback = json.dumps(feedback, ensure_ascii=False)
+    assert "3日命中率" not in rendered_feedback
+    assert "平均超额" not in rendered_feedback
+    assert "平均MAE" not in rendered_feedback
+    assert "0.0%" not in rendered_feedback
+    assert "provider" not in rendered_feedback.lower()
 
 
 def test_workspace_endpoint_returns_supplier_neutral_product_result(
@@ -410,14 +415,18 @@ def test_workspace_local_fallback_retries_when_snapshot_version_changes(
 
     assert builds == ["published-v1", "published-v2"]
     assert response["source_snapshot_version"] == "published-v2"
-    saved = ResearchSnapshotStore(tmp_path / "research").load("market")
+    saved = ResearchSnapshotStore(tmp_path / "research").load(
+        "market", allow_stale=True
+    )
     assert saved is not None
     assert saved.payload["source_snapshot_version"] == "published-v2"
 
 
-def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
+@pytest.mark.parametrize("module", ["market", "opportunity"])
+def test_workspace_response_blocks_stale_snapshot_actions_and_candidates(
     monkeypatch,
     tmp_path,
+    module: str,
 ) -> None:
     snapshot_dir = tmp_path / "research"
     monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
@@ -426,35 +435,47 @@ def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
         datetime.now(timezone(timedelta(hours=8))) - timedelta(days=2)
     ).isoformat(timespec="seconds")
     ResearchSnapshotStore(snapshot_dir).save(
-        "market",
+        module,
         {
             "ok": True,
             "status": "partial",
-            "module": "market",
+            "module": module,
             "generated_at": generated_at,
             "verdict": "历史快照判断",
-            "action": "等待服务恢复",
-            "primary_risk": "数据已过期",
-            "findings": [],
+            "decision_label": "可以执行",
+            "action": "沿用旧执行条件",
+            "primary_risk": "成交缩量",
+            "findings": [{"title": "旧候选"}],
             "details": [],
             "missing_sections": [],
-            "module_items": [],
-                "module_sections": [
+            "module_items": [{"label": "观察分", "value": "88"}],
+            "module_sections": (
+                [
                     {"key": "market-pulse", "items": []},
                     {"key": "market-breadth", "items": []},
                     {"key": "market-themes", "items": []},
                     {"key": "market-movers", "items": []},
-                ],
+                ]
+                if module == "market"
+                else [{"key": "opportunity-candidates", "items": []}]
+            ),
         },
     )
 
     response = web_module._research_workspace_response(
-        {"module": "market", "context": ResearchContext(), "refresh": True}
+        {"module": module, "context": ResearchContext(), "refresh": True}
     )
 
-    assert response["verdict"] == "历史快照判断"
     assert response["delivery"] == "stale_snapshot"
     assert response["stale"] is True
+    assert response["data_label"] == "历史参考"
+    assert response["decision_label"] == "历史参考"
+    assert response["verdict"] == "历史记录：历史快照判断"
+    assert response["action"] == "历史数据仅供复盘，不作为今天的操作依据。"
+    assert "数据过期" in str(response["primary_risk"])
+    assert response["findings"] == []
+    assert response["module_items"] == []
+    assert response["module_sections"] == []
 
 
 def test_workspace_response_rebuilds_incompatible_market_snapshot(

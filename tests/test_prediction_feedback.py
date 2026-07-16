@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
 from stock_ts.models import DailyBar
-from stock_ts.prediction_feedback import PredictionInput, PredictionStore
+from stock_ts.prediction_feedback import (
+    PredictionInput,
+    PredictionStore,
+    PredictionSummary,
+    build_feedback_section,
+)
 
 
 def _bars(code_offset: float = 0.0) -> list[DailyBar]:
@@ -141,6 +147,40 @@ def test_summary_marks_small_sample_and_reports_calibration(tmp_path: Path) -> N
         "中": {"count": 2, "hit_rate": 100.0},
         "高": {"count": 1, "hit_rate": 100.0},
     }
+
+
+def test_feedback_section_hides_metrics_until_twenty_samples() -> None:
+    def render(sample_count: int, sample_state: str) -> str:
+        summary = PredictionSummary(
+            horizon=3,
+            sample_count=sample_count,
+            sample_state=sample_state,
+            hit_rate=62.5,
+            average_excess_return=1.25,
+            median_excess_return=1.0,
+            average_mae=-2.1,
+            top_miss_reason="主题退潮",
+            calibration={},
+        )
+        return json.dumps(build_feedback_section(summary), ensure_ascii=False)
+
+    empty = render(0, "暂无到期样本")
+    accumulating = render(19, "样本积累中")
+    calibrated = render(20, "可校准")
+
+    assert "暂无可回评样本" in empty
+    assert "样本积累中 19/20，暂不评价命中率" in accumulating
+    for content in (empty, accumulating):
+        assert "3日命中率" not in content
+        assert "平均超额" not in content
+        assert "MAE" not in content
+        assert "62.5%" not in content
+        assert "+1.25%" not in content
+        assert "-2.10%" not in content
+    assert "3日命中率" in calibrated
+    assert "62.5%" in calibrated
+    assert "平均超额" in calibrated
+    assert "平均MAE" in calibrated
 
 
 def test_user_feedback_is_account_isolated_and_does_not_change_score(tmp_path: Path) -> None:
