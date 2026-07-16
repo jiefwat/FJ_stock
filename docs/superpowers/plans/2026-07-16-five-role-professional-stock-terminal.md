@@ -67,5 +67,14 @@
 - [x] Run `make lint`.
 - [x] Run the professional analytics, fallback, delivery, snapshot, native workspace, API, auth and timer suites.
 - [x] Run local HTTP and 1440/1680 desktop browser checks.
-- [ ] Commit and push `codex/research-data-depth-v2`.
-- [ ] Fast-forward `/opt/stock-ts`, restart only `stock-ts.service`, and verify `/healthz`, login, deployed commit, timer schedules and pipeline status.
+- [x] Commit and push `codex/research-data-depth-v2`.
+- [x] Fast-forward `/opt/stock-ts`, restart only `stock-ts.service`, and verify `/healthz`, login, deployed commit, timer schedules and pipeline status.
+
+## Delivery Record
+
+- Professional core gate: `178 passed` after isolating ignored local research artifacts.
+- Repository-wide baseline: `749 passed, 159 failed`; remaining failures are legacy/native contract conflicts, missing local fixtures, and ignored research artifact coupling, not a green full-suite claim.
+- Production commit: `a711e9f39f954269078201f38b79ba8dff05d9b4`.
+- Public checks: `/healthz` returned `200`, `/` returned `303` to login, and `/login` returned `200`.
+- Timers remain active at `07:00/09:00/13:00/15:00`; research follows at `07:30/09:30/13:30/15:30`.
+- Latest pipeline status remained `ok`; deployment did not run the data pipeline.
