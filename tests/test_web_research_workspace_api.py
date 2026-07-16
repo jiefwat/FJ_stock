@@ -283,6 +283,138 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
     assert response["delivery"] == "snapshot"
 
 
+def test_workspace_response_rejects_snapshot_older_than_latest_pipeline(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("IWENCAI_API_KEY", "configured-for-test")
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\ncompleted_at=2026-07-16T09:24:29+08:00\n"
+        "snapshot_version=published-v2\n",
+        encoding="utf-8",
+    )
+    ResearchSnapshotStore(snapshot_dir).save(
+        "market",
+        {
+            "ok": True,
+            "status": "partial",
+            "module": "market",
+            "generated_at": "2026-07-16T07:20:00+08:00",
+            "source_snapshot_version": "published-v1",
+            "verdict": "过期的半成品快照",
+            "action": "等待",
+            "primary_risk": "快照落后",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+            "module_items": [],
+            "module_sections": [
+                {"key": "market-pulse", "items": []},
+                {"key": "market-breadth", "items": []},
+                {"key": "market-themes", "items": []},
+                {"key": "market-movers", "items": []},
+            ],
+        },
+    )
+
+    class ExplodingService:
+        def research(self, *_args, **_kwargs):
+            raise AssertionError("opening fallback must not block on remote research")
+
+    monkeypatch.setattr(web_module, "RESEARCH_WORKSPACE_SERVICE", ExplodingService())
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": False}
+    )
+
+    assert response["verdict"] != "过期的半成品快照"
+    assert response["delivery"] == "local_fallback"
+    assert response["stale"] is False
+
+
+def test_workspace_open_uses_local_facts_without_waiting_for_remote(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(tmp_path / "research"))
+    monkeypatch.setenv("IWENCAI_API_KEY", "configured-for-test")
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+    calls = 0
+
+    class CountingService:
+        def research(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            raise AssertionError("page open must not wait for remote research")
+
+    monkeypatch.setattr(web_module, "RESEARCH_WORKSPACE_SERVICE", CountingService())
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": False}
+    )
+
+    assert calls == 0
+    assert response["delivery"] == "local_fallback"
+    assert response["verdict"]
+
+
+def test_workspace_local_fallback_retries_when_snapshot_version_changes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    status_path = report_dir / "pipeline.status"
+    status_path.write_text("status=ok\nsnapshot_version=published-v1\n", encoding="utf-8")
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(tmp_path / "research"))
+    monkeypatch.setenv("IWENCAI_API_KEY", "configured-for-test")
+
+    class VersionedProvider(SampleDataProvider):
+        def __init__(self, version: str) -> None:
+            super().__init__()
+            self.version = version
+
+        def fetch_candidate_universe_metadata(self) -> dict[str, str]:
+            return {"snapshot_version": self.version}
+
+    versions = iter(["published-v1", "published-v2"])
+    monkeypatch.setattr(
+        web_module,
+        "create_provider",
+        lambda _name: VersionedProvider(next(versions)),
+    )
+    original_build = web_module.build_local_research
+    builds: list[str] = []
+
+    def switching_build(module, context, *, provider, **kwargs):
+        builds.append(provider.version)
+        result = original_build(module, context, provider=provider, **kwargs)
+        if provider.version == "published-v1":
+            status_path.write_text(
+                "status=ok\nsnapshot_version=published-v2\n", encoding="utf-8"
+            )
+        return result
+
+    monkeypatch.setattr(web_module, "build_local_research", switching_build)
+
+    response = web_module._research_workspace_response(
+        {"module": "market", "context": ResearchContext(), "refresh": False}
+    )
+
+    assert builds == ["published-v1", "published-v2"]
+    assert response["source_snapshot_version"] == "published-v2"
+    saved = ResearchSnapshotStore(tmp_path / "research").load("market")
+    assert saved is not None
+    assert saved.payload["source_snapshot_version"] == "published-v2"
+
+
 def test_workspace_response_uses_stale_snapshot_when_service_is_unconfigured(
     monkeypatch,
     tmp_path,

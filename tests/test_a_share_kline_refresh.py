@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 class MiniFrame:
@@ -218,6 +220,106 @@ def test_refresh_marks_bars_stale_when_they_lag_market_trade_date(tmp_path: Path
     assert result["stale_codes"] == ["300725"]
     assert payload["stocks"]["300725"]["price_reliable"] is False
     assert payload["candidate_universe"]["items"][0]["price_reliable"] is False
+
+
+def test_intraday_refresh_accepts_previous_completed_daily_bar(tmp_path: Path) -> None:
+    module = _load_module()
+    snapshot = tmp_path / "tdx_snapshots.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {"trade_date": "2026-07-16"},
+                "stocks": {"300725": {"name": "药石科技"}},
+                "candidate_universe": {
+                    "items": [{"code": "300725", "name": "药石科技"}]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class PreviousCloseClient:
+        def daily(self, ts_code: str, limit: int):
+            return MiniFrame(
+                [
+                    {
+                        "trade_date": "20260715",
+                        "open": 39.0,
+                        "high": 41.2,
+                        "low": 38.8,
+                        "close": 41.0,
+                        "vol": 180000,
+                    }
+                ]
+            )
+
+    result = module.refresh_a_share_kline_snapshot(
+        snapshot,
+        holdings_path=None,
+        codes=["300725"],
+        tushare_client=PreviousCloseClient(),
+        now=datetime(2026, 7, 16, 13, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert result["status"] == "ok"
+    assert result["stale_count"] == 0
+    assert result["expected_trade_date"] == "2026-07-15"
+    assert payload["stocks"]["300725"]["price_reliable"] is True
+
+
+def test_refresh_uses_exchange_calendar_for_holiday(tmp_path: Path) -> None:
+    module = _load_module()
+    snapshot = tmp_path / "tdx_snapshots.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "market": {"trade_date": "2026-10-08"},
+                "stocks": {"300725": {"name": "药石科技"}},
+                "candidate_universe": {
+                    "items": [{"code": "300725", "name": "药石科技"}]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class HolidayCalendarClient:
+        def trade_cal(self, **_kwargs):
+            return MiniFrame(
+                [
+                    {"cal_date": "20260930", "is_open": 1},
+                    {"cal_date": "20261001", "is_open": 0},
+                    {"cal_date": "20261008", "is_open": 1},
+                ]
+            )
+
+        def daily(self, ts_code: str, limit: int):
+            return MiniFrame(
+                [
+                    {
+                        "trade_date": "20260930",
+                        "open": 39.0,
+                        "high": 41.2,
+                        "low": 38.8,
+                        "close": 41.0,
+                        "vol": 180000,
+                    }
+                ]
+            )
+
+    result = module.refresh_a_share_kline_snapshot(
+        snapshot,
+        holdings_path=None,
+        codes=["300725"],
+        tushare_client=HolidayCalendarClient(),
+        now=datetime(2026, 10, 8, 13, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    assert result["expected_trade_date"] == "2026-09-30"
+    assert result["stale_count"] == 0
 
 
 def test_stale_response_does_not_overwrite_newer_snapshot_bars(tmp_path: Path) -> None:

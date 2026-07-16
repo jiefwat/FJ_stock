@@ -1,6 +1,6 @@
 [Unit]
 Description=StockTS daily market and opportunity research
-After=network-online.target
+After=network-online.target stock-ts-daily-analysis.service
 Wants=network-online.target
 
 [Service]

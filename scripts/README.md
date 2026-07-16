@@ -11,7 +11,7 @@ PYTHONPATH=src python3 scripts/run_daily_pipeline.py \
   --snapshot data/imports/tdx_snapshots.json \
   --holdings data/portfolio/holdings.csv \
   --provider tdx-snapshot \
-  --candidate-limit 300 \
+  --candidate-limit 500 \
   --enrich-limit 50 \
   --announcement-limit 5 \
   --output-dir reports/daily \
@@ -45,7 +45,7 @@ PYTHONPATH=src python3 scripts/import_mcp_market_intelligence.py \
 PYTHONPATH=src python3 scripts/refresh_a_share_kline.py \
   --snapshot data/imports/tdx_snapshots.json \
   --holdings data/portfolio/holdings.csv \
-  --candidate-limit 300 \
+  --candidate-limit 500 \
   --bar-count 120 \
   --sleep 1.3 \
   --retry-rate-limit 1
@@ -90,15 +90,24 @@ PYTHONPATH=src python3 scripts/run_daily_analysis.py \
 
 `stock-ts-daily-analysis.timer` 使用固定刷新点：
 
-- 00:00：盘后/夜间归档，补齐前一交易日 K 线、资金、公告和新闻。
+- 07:00：晨间刷新，补齐上一完整交易日 K 线、资金、公告和新闻。
 - 09:00：开盘前刷新候选池、市场新闻和持仓数据。
 - 13:00：午间后复核，更新上午盘面后的候选和异动。
+- 15:00：收盘阶段刷新，更新指数、市场宽度、主题和候选风险。
+
+盘中行情日期可以是当天，但 Tushare 日线在 15:30 前只要求到上一完整交易日，
+避免把正常的上一收盘 K 线误判为过期。页面始终使用最后一次完整研究快照；研究
+快照若早于最新成功的 `pipeline.status`，会立即回退到最新本地事实，不展示半成品。
+法定休市日优先使用 Tushare 交易日历，不只按周末推算。主流水线为正式快照加
+跨进程互斥锁，并在 run-specific staging 中完成刷新、补强、报告和数据链验收；
+成功后才发布正式快照、日报与 HTML，失败任务保留上一套完整产物。发布版本写入
+`snapshot_version`，研究快照和页面必须与该版本一致。
 
 模板位于 `deploy/systemd/stock-ts-daily-analysis.service` 和 `deploy/systemd/stock-ts-daily-analysis.timer`，上线后需复制到 `/etc/systemd/system/`，再执行 `systemctl daemon-reload && systemctl restart stock-ts-daily-analysis.timer`。公网开放账号注册时，把 `deploy/systemd/stock-ts-auth-open.conf` 放到 `/etc/systemd/system/stock-ts.service.d/auth.conf`，真实管理员密码和 session secret 仍只放服务器环境或 `.env`。
 
 ### 每日研究快照
 
-大盘趋势和每日机会使用独立轻量任务，不依赖旧全量行情流水线：
+大盘趋势和每日机会使用独立轻量任务，消费最近一次已完成的全量行情流水线：
 
 ```bash
 PYTHONPATH=src python scripts/run_daily_research.py --output-dir reports/research --refresh
@@ -107,7 +116,10 @@ PYTHONPATH=src python scripts/run_daily_research.py --output-dir reports/researc
 任务写入 `reports/research/market/`、`reports/research/opportunity/` 和
 `reports/research/daily.status.json`。systemd 模板为
 `deploy/systemd/stock-ts-daily-research.service` 与
-`deploy/systemd/stock-ts-daily-research.timer`，每天 07:20、12:10、18:30 运行。
+`deploy/systemd/stock-ts-daily-research.timer`，每天 07:30、09:30、13:30、15:30
+运行。研究任务先用本地行情建立事实底座，再融合外部研究证据；外部证据不完整时
+不能覆盖本地大盘事实。主流水线发布成功后会立即运行一次研究任务，独立 timer 只作
+恢复补跑；如果运行期间正式快照版本变化，旧研究任务不得覆盖新版本。
 注意：`--python` 指项目运行环境；TDX 桥接会自动选择能 `import eltdx` 的 Python（优先项目环境，再尝试 `python3.11` / `python3.12` / `python3`），必要时可用 `--tdx-bridge-python` 显式指定。
 ## 早间邮件
 

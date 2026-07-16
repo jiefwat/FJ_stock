@@ -5,12 +5,15 @@ import argparse
 import csv
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from stock_ts.config import get_settings
 from stock_ts.providers.base import DataProviderError
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def refresh_a_share_kline_snapshot(
@@ -23,6 +26,7 @@ def refresh_a_share_kline_snapshot(
     sleep_seconds: float = 0.0,
     retry_rate_limit: int = 1,
     tushare_client: object | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Refresh only A-share daily bars in the local TDX snapshot via Tushare."""
     path = Path(snapshot_path)
@@ -34,7 +38,8 @@ def refresh_a_share_kline_snapshot(
         codes=codes,
         candidate_limit=candidate_limit,
     )
-    now = datetime.now().isoformat(timespec="seconds")
+    current = _beijing_time(now)
+    refreshed_at = current.isoformat(timespec="seconds")
     updated: list[str] = []
     skipped: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
@@ -46,6 +51,7 @@ def refresh_a_share_kline_snapshot(
         if isinstance(market_payload, dict)
         else ""
     )
+    expected_trade_date = _expected_latest_daily_bar_date(current, client)
 
     for code in selected:
         if not _is_a_share_code(code):
@@ -67,15 +73,14 @@ def refresh_a_share_kline_snapshot(
             failed.append({"code": code, "reason": "empty_daily_bars"})
             continue
         latest_date = str(bars[-1].get("date") or "")
-        is_stale = bool(
-            market_trade_date and latest_date and latest_date < market_trade_date
-        )
+        is_stale = bool(latest_date and latest_date < expected_trade_date)
         if is_stale:
             stale.append(
                 {
                     "code": code,
                     "latest_date": latest_date,
                     "market_trade_date": market_trade_date,
+                    "expected_trade_date": expected_trade_date,
                     "reason": "latest_bar_lags_market",
                 }
             )
@@ -84,8 +89,12 @@ def refresh_a_share_kline_snapshot(
         if preserve_existing:
             preserved_newer.append(code)
         else:
-            _merge_stock_payload(payload, code, bars, now, price_reliable=not is_stale)
-            _merge_candidate_payload(payload, code, bars, now, price_reliable=not is_stale)
+            _merge_stock_payload(
+                payload, code, bars, refreshed_at, price_reliable=not is_stale
+            )
+            _merge_candidate_payload(
+                payload, code, bars, refreshed_at, price_reliable=not is_stale
+            )
         updated.append(code)
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -105,7 +114,9 @@ def refresh_a_share_kline_snapshot(
         "source": "tushare.daily",
         "status": status,
         "usable": bool(updated),
-        "generated_at": now,
+        "generated_at": refreshed_at,
+        "market_trade_date": market_trade_date,
+        "expected_trade_date": expected_trade_date,
         "requested_count": len(selected),
         "updated_count": len(updated),
         "skipped_count": len(skipped),
@@ -125,6 +136,48 @@ def refresh_a_share_kline_snapshot(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
+
+
+def _beijing_time(value: datetime | None) -> datetime:
+    current = value or datetime.now(BEIJING_TZ)
+    if current.tzinfo is None:
+        return current.replace(tzinfo=BEIJING_TZ)
+    return current.astimezone(BEIJING_TZ)
+
+
+def _expected_latest_daily_bar_date(current: datetime, client: object | None = None) -> str:
+    day = current.date()
+    if (current.hour, current.minute) < (15, 30):
+        day -= timedelta(days=1)
+    calendar_date = _latest_open_calendar_date(client, day)
+    if calendar_date:
+        return calendar_date
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.isoformat()
+
+
+def _latest_open_calendar_date(client: object | None, cutoff) -> str:
+    trade_cal = getattr(client, "trade_cal", None)
+    if not callable(trade_cal):
+        return ""
+    try:
+        frame = trade_cal(
+            exchange="SSE",
+            start_date=(cutoff - timedelta(days=45)).strftime("%Y%m%d"),
+            end_date=cutoff.strftime("%Y%m%d"),
+        )
+        rows = frame.to_dict("records") if hasattr(frame, "to_dict") else []
+    except Exception:
+        return ""
+    open_dates = [
+        str(row.get("cal_date") or "")
+        for row in rows
+        if isinstance(row, dict) and int(row.get("is_open") or 0) == 1
+        and str(row.get("cal_date") or "") <= cutoff.strftime("%Y%m%d")
+    ]
+    latest = max((value for value in open_dates if len(value) == 8), default="")
+    return f"{latest[:4]}-{latest[4:6]}-{latest[6:]}" if latest else ""
 
 
 def _select_refresh_codes(

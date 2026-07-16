@@ -4167,7 +4167,7 @@ def _manual_refresh_command() -> list[str]:
         "--provider",
         "tdx-snapshot",
         "--candidate-limit",
-        os.getenv("STOCK_TS_PIPELINE_CANDIDATE_LIMIT", "300"),
+        os.getenv("STOCK_TS_PIPELINE_CANDIDATE_LIMIT", "500"),
         "--enrich-limit",
         os.getenv("STOCK_TS_PIPELINE_ENRICH_LIMIT", "50"),
         "--external-enrich-timeout",
@@ -6584,7 +6584,11 @@ def _render_system_health_summary(
         ("数据是否正常", data_state, quality.summary),
         ("邮件是否正常", email_state, "用于早间复盘和机会发送。"),
         ("账号是否正常", account_state, "持仓按账号隔离；行情和选股全站共享。"),
-        ("自动更新是否正常", auto_state, "每 2 小时刷新一次，失败看下方监控。"),
+        (
+            "自动更新是否正常",
+            auto_state,
+            "每日 07:00 / 09:00 / 13:00 / 15:00 刷新，失败看下方监控。",
+        ),
     ]
     card_html = "".join(
         f"<div class='summary-card'><span>{escape(label)}</span><strong>{escape(value)}</strong><p class='kpi-foot'>{escape(note)}</p></div>"
@@ -13384,6 +13388,7 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
     contextual_opportunity = module == "opportunity" and bool(context.sector)
     holdings_path = str(payload.get("holdings_path") or DEFAULT_HOLDINGS_PATH)
     local_provider: StockDataProvider | None = None
+    local_snapshot_version = ""
 
     def with_prediction_feedback(result: dict[str, object]) -> dict[str, object]:
         if module != "opportunity":
@@ -13403,20 +13408,39 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
         return result
 
     def local_fallback(local_module: str, local_context: ResearchContext):
-        nonlocal local_provider
-        if local_provider is None:
-            local_provider = create_provider(WEB_DATA_PROVIDER)
-        opportunity_snapshot = None
-        if local_module == "stock":
-            snapshot = store.load("opportunity", allow_stale=True)
-            opportunity_snapshot = snapshot.payload if snapshot is not None else None
-        return build_local_research(
-            local_module,
-            local_context,
-            provider=local_provider,
-            holdings_path=holdings_path,
-            opportunity_snapshot=opportunity_snapshot,
-        )
+        nonlocal local_provider, local_snapshot_version
+        for _attempt in range(3):
+            if local_provider is None:
+                local_provider = create_provider(WEB_DATA_PROVIDER)
+            source_version = _provider_snapshot_version(local_provider)
+            opportunity_snapshot = None
+            if local_module == "stock":
+                snapshot = store.load("opportunity", allow_stale=True)
+                opportunity_snapshot = snapshot.payload if snapshot is not None else None
+            result = build_local_research(
+                local_module,
+                local_context,
+                provider=local_provider,
+                holdings_path=holdings_path,
+                opportunity_snapshot=opportunity_snapshot,
+            )
+            published_version = _latest_published_snapshot_version()
+            if source_version and published_version and source_version != published_version:
+                local_provider = None
+                continue
+            local_snapshot_version = source_version
+            return result
+        raise RuntimeError("published snapshot changed during local research")
+
+    def local_source_fields() -> dict[str, str]:
+        fields = {"source_pipeline_completed_at": _latest_pipeline_marker()}
+        if local_snapshot_version:
+            fields["source_snapshot_version"] = local_snapshot_version
+        return fields
+
+    def local_result_can_be_saved() -> bool:
+        published_version = _latest_published_snapshot_version()
+        return not published_version or local_snapshot_version == published_version
 
     if iwencai_config_summary()["status"] != "configured":
         snapshot = (
@@ -13424,25 +13448,53 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             if module in {"market", "opportunity"} and not contextual_opportunity
             else None
         )
-        if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
+        if (
+            snapshot is not None
+            and _snapshot_supports_workspace(module, snapshot.payload)
+            and _research_snapshot_covers_latest_pipeline(snapshot.payload)
+        ):
             result = dict(snapshot.payload)
             result["delivery"] = "stale_snapshot" if snapshot.stale else "snapshot"
             result["stale"] = snapshot.stale
             return with_prediction_feedback(result)
         local_result = local_fallback(module, context)
-        result = with_prediction_feedback(local_result.to_public_dict() | {"stale": False})
-        if module in {"market", "opportunity"} and not contextual_opportunity and local_result.ok:
+        result = with_prediction_feedback(
+            local_result.to_public_dict() | {"stale": False} | local_source_fields()
+        )
+        if (
+            module in {"market", "opportunity"}
+            and not contextual_opportunity
+            and local_result.ok
+            and local_result_can_be_saved()
+        ):
             store.save(module, result)
         return result
 
     if module in {"market", "opportunity"} and not contextual_opportunity and not refresh:
         snapshot = store.load(module)
-        if snapshot is not None and _snapshot_supports_workspace(module, snapshot.payload):
+        if (
+            snapshot is not None
+            and _snapshot_supports_workspace(module, snapshot.payload)
+            and _research_snapshot_covers_latest_pipeline(snapshot.payload)
+        ):
             result = dict(snapshot.payload)
             result["delivery"] = "snapshot"
             result["data_label"] = "当日快照"
             result["stale"] = False
             return with_prediction_feedback(result)
+        local_result = local_fallback(module, context)
+        result = with_prediction_feedback(
+            local_result.to_public_dict()
+            | {
+                "delivery": "local_fallback",
+                "data_label": "最新本地事实",
+                "stale": False,
+            }
+            | local_source_fields()
+        )
+        if local_result.ok and local_result_can_be_saved():
+            store.save(module, result)
+        return result
 
     local_result = local_fallback(module, context)
     try:
@@ -13452,13 +13504,80 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             refresh=refresh,
         )
     except Exception:
-        return with_prediction_feedback(local_result.to_public_dict() | {"stale": False})
+        return with_prediction_feedback(
+            local_result.to_public_dict() | {"stale": False} | local_source_fields()
+        )
 
     fused_result = fuse_research_results(local_result, enriched_result)
-    result = with_prediction_feedback(fused_result.to_public_dict() | {"stale": False})
-    if module in {"market", "opportunity"} and not contextual_opportunity and fused_result.ok:
+    result = with_prediction_feedback(
+        fused_result.to_public_dict() | {"stale": False} | local_source_fields()
+    )
+    if (
+        module in {"market", "opportunity"}
+        and not contextual_opportunity
+        and fused_result.ok
+        and local_result_can_be_saved()
+    ):
         store.save(module, result)
     return result
+
+
+def _provider_snapshot_version(provider: StockDataProvider) -> str:
+    try:
+        metadata = provider.fetch_candidate_universe_metadata()
+    except Exception:
+        return ""
+    return str(metadata.get("snapshot_version") or "").strip()
+
+
+def _research_snapshot_covers_latest_pipeline(payload: dict[str, object]) -> bool:
+    published_version = _latest_published_snapshot_version()
+    if published_version:
+        return str(payload.get("source_snapshot_version") or "") == published_version
+    pipeline_marker = _latest_pipeline_marker()
+    if not pipeline_marker:
+        return True
+    research_marker = str(
+        payload.get("source_pipeline_completed_at")
+        or payload.get("generated_at")
+        or payload.get("as_of")
+        or ""
+    )
+    pipeline_time = _parse_datetime_value(pipeline_marker)
+    research_time = _parse_datetime_value(research_marker)
+    if pipeline_time is None:
+        return True
+    if research_time is None:
+        return False
+    if pipeline_time.tzinfo is None:
+        pipeline_time = pipeline_time.replace(tzinfo=timezone(timedelta(hours=8)))
+    if research_time.tzinfo is None:
+        research_time = research_time.replace(tzinfo=timezone(timedelta(hours=8)))
+    return research_time >= pipeline_time
+
+
+def _latest_published_snapshot_version() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    status = _read_key_value_status(report_dir / "pipeline.status")
+    status_version = str(status.get("snapshot_version") or "").strip()
+    if status_version:
+        return status_version
+    snapshot_path = Path(
+        os.getenv("STOCK_TS_TDX_SNAPSHOT_PATH", "data/imports/tdx_snapshots.json")
+    )
+    try:
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(payload.get("snapshot_version") or "").strip() if isinstance(payload, dict) else ""
+
+
+def _latest_pipeline_marker() -> str:
+    report_dir = Path(os.getenv("STOCK_TS_DAILY_REPORT_DIR", "reports/daily"))
+    status = _read_key_value_status(report_dir / "pipeline.status")
+    if str(status.get("status") or "").strip() not in {"ok", "degraded"}:
+        return ""
+    return str(status.get("completed_at") or status.get("generated_at") or "").strip()
 
 
 def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> bool:

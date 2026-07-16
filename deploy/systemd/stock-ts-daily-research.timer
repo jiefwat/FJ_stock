@@ -2,9 +2,10 @@
 Description=Refresh StockTS market and opportunity research
 
 [Timer]
-OnCalendar=*-*-* 07:20:00
-OnCalendar=*-*-* 12:10:00
-OnCalendar=*-*-* 18:30:00
+OnCalendar=*-*-* 07:30:00
+OnCalendar=*-*-* 09:30:00
+OnCalendar=*-*-* 13:30:00
+OnCalendar=*-*-* 15:30:00
 Persistent=true
 AccuracySec=5m
 Unit=stock-ts-daily-research.service

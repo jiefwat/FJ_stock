@@ -51,12 +51,16 @@ def test_daily_research_writes_market_opportunity_and_status(tmp_path) -> None:
     }
 
 
-def test_daily_research_timer_has_three_persistent_checkpoints() -> None:
+def test_daily_research_timer_runs_after_each_data_checkpoint() -> None:
     timer = Path("deploy/systemd/stock-ts-daily-research.timer").read_text()
 
-    for checkpoint in ("07:20:00", "12:10:00", "18:30:00"):
+    for checkpoint in ("07:30:00", "09:30:00", "13:30:00", "15:30:00"):
         assert checkpoint in timer
+    assert timer.count("OnCalendar=") == 4
     assert "Persistent=true" in timer
+
+    service = Path("deploy/systemd/stock-ts-daily-research.service").read_text()
+    assert "After=network-online.target stock-ts-daily-analysis.service" in service
 
 
 class ForecastDailyService:
@@ -142,6 +146,147 @@ class PartialThemeOnlyDailyService(FakeDailyService):
                 ),
             ),
         )
+
+
+def test_daily_research_fuses_local_market_facts_before_saving_snapshot(
+    tmp_path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "snapshot_version": "published-v1",
+                "market": {"trade_date": "2026-07-15"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def local_research(module, *_args, **_kwargs):
+        return ResearchWorkspaceResult(
+            ok=True,
+            status="complete",
+            module=module,
+            generated_at=NOW.isoformat(timespec="seconds"),
+            verdict=f"{module} 本地事实结论",
+            action="使用本地行情作为判断底座",
+            primary_risk="本地数据缺口",
+            subject_count=1,
+            delivery="local_fallback",
+        )
+
+    monkeypatch.setattr(daily_research_module, "build_local_research", local_research)
+
+    result = run_daily_research(
+        output_dir=tmp_path / "research",
+        service=FakeDailyService(),
+        now=NOW,
+        snapshot_path=snapshot,
+        prediction_db=tmp_path / "predictions.sqlite3",
+    )
+
+    assert result.ok is True
+    market = json.loads(
+        (tmp_path / "research/market/latest.json").read_text(encoding="utf-8")
+    )
+    assert market["verdict"] == "market 本地事实结论"
+    assert market["delivery"] == "snapshot"
+    assert market["evidence_delivery"] == "hybrid"
+    assert market["source_snapshot_fingerprint"]
+    assert market["source_snapshot_version"] == "published-v1"
+
+
+def test_daily_research_saves_local_facts_when_enrichment_fails(
+    tmp_path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(
+        json.dumps({"market": {"trade_date": "2026-07-15"}}),
+        encoding="utf-8",
+    )
+
+    def local_research(module, *_args, **_kwargs):
+        return ResearchWorkspaceResult(
+            ok=True,
+            status="complete",
+            module=module,
+            generated_at=NOW.isoformat(timespec="seconds"),
+            verdict=f"{module} 本地可用",
+            action="继续使用最后完整行情",
+            primary_risk="外部补强暂不可用",
+            subject_count=1,
+            delivery="local_fallback",
+        )
+
+    class ExplodingDailyService:
+        def research(self, *_args, **_kwargs):
+            raise TimeoutError("external enrichment timed out")
+
+    monkeypatch.setattr(daily_research_module, "build_local_research", local_research)
+
+    result = run_daily_research(
+        output_dir=tmp_path / "research",
+        service=ExplodingDailyService(),
+        now=NOW,
+        snapshot_path=snapshot,
+        prediction_db=tmp_path / "predictions.sqlite3",
+    )
+
+    assert result.ok is True
+    status = json.loads(result.status_path.read_text(encoding="utf-8"))
+    assert status["status"] == "partial"
+    assert status["modules"] == {"market": "complete", "opportunity": "complete"}
+    market = json.loads(
+        (tmp_path / "research/market/latest.json").read_text(encoding="utf-8")
+    )
+    assert market["verdict"] == "market 本地可用"
+    assert market["evidence_delivery"] == "local_fallback"
+
+
+def test_daily_research_does_not_publish_when_pipeline_version_changes(
+    tmp_path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "snapshot.json"
+    pipeline_status = tmp_path / "pipeline.status"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "snapshot_version": "published-v1",
+                "market": {"trade_date": "2026-07-15"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipeline_status.write_text(
+        "status=ok\nsnapshot_version=published-v1\n", encoding="utf-8"
+    )
+
+    class VersionChangingService(FakeDailyService):
+        def research(self, module, context, *, refresh=False):
+            pipeline_status.write_text(
+                "status=ok\nsnapshot_version=published-v2\n", encoding="utf-8"
+            )
+            return super().research(module, context, refresh=refresh)
+
+    monkeypatch.setattr(
+        daily_research_module,
+        "build_local_research",
+        lambda module, *_args, **_kwargs: FakeDailyService().research(
+            module, None, refresh=True
+        ),
+    )
+
+    result = run_daily_research(
+        output_dir=tmp_path / "research",
+        service=VersionChangingService(),
+        now=NOW,
+        snapshot_path=snapshot,
+        prediction_db=tmp_path / "predictions.sqlite3",
+        pipeline_status_path=pipeline_status,
+    )
+
+    assert result.ok is False
+    assert not (tmp_path / "research/market/latest.json").exists()
 
 
 def test_daily_research_uses_local_gate_when_remote_has_themes_without_stocks(

@@ -190,6 +190,19 @@ class TdxSnapshotProvider(StockDataProvider):
             metadata["snapshot_source"] = str(payload["source"])
         if payload.get("generated_at") not in {None, ""}:
             metadata["snapshot_generated_at"] = str(payload["generated_at"])
+        if payload.get("snapshot_version") not in {None, ""}:
+            metadata["snapshot_version"] = str(payload["snapshot_version"])
+        market = payload.get("market")
+        market_date = str(market.get("trade_date") or "") if isinstance(market, dict) else ""
+        history_dates = sorted(
+            str(item.get("trade_date") or "")
+            for item in payload.get("market_history", [])
+            if isinstance(item, dict)
+            and str(item.get("trade_date") or "")
+            and str(item.get("trade_date") or "") < market_date
+        )
+        if history_dates:
+            metadata["previous_market_trade_date"] = history_dates[-1]
         metadata.update(_snapshot_coverage_metadata(payload))
         for section_name, prefix in [
             ("kline_refresh", "kline_refresh"),
@@ -206,6 +219,9 @@ class TdxSnapshotProvider(StockDataProvider):
                 metadata[f"{prefix}_source"] = str(section["source"])
             if section.get("generated_at") not in {None, ""}:
                 metadata[f"{prefix}_generated_at"] = str(section["generated_at"])
+            for value_key in ["expected_trade_date", "market_trade_date"]:
+                if section.get(value_key) not in {None, ""}:
+                    metadata[f"{prefix}_{value_key}"] = str(section[value_key])
             for count_key in [
                 "updated_count",
                 "failed_count",

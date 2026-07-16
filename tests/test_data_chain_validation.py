@@ -238,3 +238,28 @@ def test_data_chain_validator_treats_skipped_pipeline_steps_as_incomplete(tmp_pa
     assert result["status"] == "warn"
     assert result["modules"]["automation"]["status"] == "warn"
     assert "refresh=skipped" in "、".join(result["warnings"])
+
+
+def test_data_chain_uses_snapshot_exchange_calendar_date_on_holiday(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    payload["market"]["trade_date"] = "2026-10-08"
+    payload["kline_refresh"] = {"expected_trade_date": "2026-09-30"}
+    for stock in payload["stocks"].values():
+        stock["bars"] = [_bar("2026-09-30")]
+    for item in payload["candidate_universe"]["items"]:
+        item["bars"] = [_bar("2026-09-30")]
+    snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_holdings(holdings, ["688362"])
+
+    result = validate_data_chain(
+        snapshot_path=snapshot,
+        holdings_path=holdings,
+        pipeline_steps=OK_STEPS,
+        now=datetime(2026, 10, 8, 13, 0, 0),
+    )
+
+    assert result["expected_trade_date"] == "2026-09-30"
+    assert not any("K线滞后" in item for item in result["blockers"])

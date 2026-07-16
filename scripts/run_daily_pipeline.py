@@ -3,15 +3,19 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from traceback import format_exception_only
-from typing import Callable
+from typing import Callable, TextIO
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from stock_ts.announcements import fetch_cninfo_announcements, render_announcement_markdown
@@ -29,8 +33,9 @@ class DailyPipelineConfig:
     output_dir: str | Path = "reports/daily"
     html_dir: str | Path = "reports/html"
     announcement_dir: str | Path = "reports/announcements"
+    research_output_dir: str | Path = "reports/research"
     provider_name: str = "tdx-snapshot"
-    candidate_limit: int = 300
+    candidate_limit: int = 500
     enrich_limit: int = 50
     kline_bar_count: int = 120
     stock_news_limit: int = 3
@@ -44,6 +49,7 @@ class DailyPipelineConfig:
     skip_a_share_kline: bool = False
     skip_external_enrich: bool = False
     skip_announcements: bool = False
+    skip_research: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,52 +70,78 @@ def run_daily_pipeline(
     status_path = output_dir / "pipeline.status"
     command_runner = runner or _run_command
     steps: dict[str, str] = {}
-    snapshot_path = Path(config.snapshot_path)
-    previous_snapshot = snapshot_path.read_bytes() if snapshot_path.exists() else None
+    published_snapshot_path = Path(config.snapshot_path)
+    lock_handle = _acquire_pipeline_lock(published_snapshot_path)
+    if lock_handle is None:
+        return DailyPipelineResult(ok=False, status_path=status_path)
+    previous_snapshot = (
+        published_snapshot_path.read_bytes() if published_snapshot_path.exists() else None
+    )
+    pipeline_run_id = _pipeline_run_id(started_at)
+    staging_snapshot_path = _staging_snapshot_path(
+        published_snapshot_path, pipeline_run_id
+    )
+    staging_output_dir = _staging_directory(Path(config.output_dir), pipeline_run_id)
+    staging_html_dir = _staging_directory(Path(config.html_dir), pipeline_run_id)
+    staging_announcement_dir = _staging_directory(
+        Path(config.announcement_dir), pipeline_run_id
+    )
+    work_config = replace(
+        config,
+        snapshot_path=staging_snapshot_path,
+        output_dir=staging_output_dir,
+        html_dir=staging_html_dir,
+        announcement_dir=staging_announcement_dir,
+    )
 
     try:
-        if config.skip_refresh:
+        _prepare_staging_snapshot(staging_snapshot_path, previous_snapshot)
+        if work_config.skip_refresh:
             steps["refresh"] = "skipped"
         else:
-            command_runner(_refresh_command(config), 1200)
+            command_runner(_refresh_command(work_config), 1200)
             steps["refresh"] = "ok"
 
-        if config.skip_tdx_enrich:
+        if work_config.skip_tdx_enrich:
             steps["tdx_enrich"] = "skipped"
         else:
-            command_runner(_tdx_enrich_command(config), 600)
+            command_runner(_tdx_enrich_command(work_config), 600)
             steps["tdx_enrich"] = "ok"
 
-        if config.skip_a_share_kline:
+        if work_config.skip_a_share_kline:
             steps["a_share_kline"] = "skipped"
         else:
             try:
-                command_runner(_a_share_kline_command(config), 1200)
+                command_runner(_a_share_kline_command(work_config), 1200)
                 steps["a_share_kline"] = "ok"
             except Exception as exc:
                 steps["a_share_kline"] = f"failed:{_short_error(exc)}"
 
-        codes = _pipeline_codes(config)
-        if config.skip_external_enrich:
+        codes = _pipeline_codes(work_config)
+        if work_config.skip_external_enrich:
             steps["external_enrich"] = "skipped"
         elif codes:
-            steps["external_enrich"] = _run_external_enrichment(config, codes, command_runner)
+            steps["external_enrich"] = _run_external_enrichment(
+                work_config, codes, command_runner
+            )
         else:
             steps["external_enrich"] = "skipped_no_codes"
 
-        if config.skip_announcements:
+        if work_config.skip_announcements:
             steps["announcements"] = "skipped"
         else:
             try:
-                _write_announcements(config, _announcement_codes(config, codes))
+                _write_announcements(
+                    work_config, _announcement_codes(work_config, codes)
+                )
                 steps["announcements"] = "ok"
             except Exception as exc:
                 steps["announcements"] = f"failed:{_short_error(exc)}"
 
-        command_runner(_report_command(config), 180)
+        command_runner(_report_command(work_config), 180)
         steps["report"] = "ok"
         data_chain = _write_data_chain_status(
-            config,
+            work_config,
             steps,
             now=_data_validation_time(started_at),
         )
@@ -117,6 +149,39 @@ def run_daily_pipeline(
         final_status = _pipeline_status_from_chain(data_chain)
         error = _data_chain_error_summary(data_chain) if final_status == "failed" else ""
         completed_at = _completion_time(now)
+        if final_status == "failed":
+            metadata = _pipeline_run_metadata(
+                config, started_at, completed_at
+            ) | {"pipeline_run_id": pipeline_run_id}
+            _write_pipeline_status(
+                status_path,
+                final_status,
+                steps,
+                codes,
+                error,
+                data_chain,
+                metadata=metadata,
+            )
+            return DailyPipelineResult(ok=False, status_path=status_path)
+
+        _stamp_staging_snapshot(staging_snapshot_path, pipeline_run_id, completed_at)
+        staging_snapshot_path.replace(published_snapshot_path)
+        _normalize_artifact_status_paths(
+            staging_output_dir=staging_output_dir,
+            published_output_dir=Path(config.output_dir),
+            staging_html_dir=staging_html_dir,
+            published_html_dir=Path(config.html_dir),
+        )
+        _publish_staged_directory(staging_output_dir, Path(config.output_dir))
+        _publish_staged_directory(staging_html_dir, Path(config.html_dir))
+        _publish_staged_directory(
+            staging_announcement_dir, Path(config.announcement_dir)
+        )
+        metadata = _pipeline_run_metadata(config, started_at, completed_at) | {
+            "pipeline_run_id": pipeline_run_id,
+            "snapshot_version": pipeline_run_id,
+            "snapshot_fingerprint": _snapshot_fingerprint(published_snapshot_path),
+        }
         _write_pipeline_status(
             status_path,
             final_status,
@@ -124,24 +189,52 @@ def run_daily_pipeline(
             codes,
             error,
             data_chain,
-            metadata=_pipeline_run_metadata(config, started_at, completed_at),
+            metadata=metadata,
+        )
+        if config.skip_research:
+            steps["research"] = "skipped"
+        else:
+            try:
+                command_runner(_research_command(config), 600)
+                steps["research"] = "ok"
+            except Exception as exc:
+                steps["research"] = f"failed:{_short_error(exc)}"
+                final_status = "degraded"
+        _write_pipeline_status(
+            status_path,
+            final_status,
+            steps,
+            codes,
+            error,
+            data_chain,
+            metadata=metadata,
         )
         _write_pipeline_decisions(config, status_path)
         return DailyPipelineResult(ok=final_status != "failed", status_path=status_path)
     except Exception as exc:
-        if steps.get("refresh") != "ok":
-            _restore_previous_snapshot(snapshot_path, previous_snapshot)
         error = "".join(format_exception_only(type(exc), exc)).strip()
         completed_at = _completion_time(now)
+        metadata = _pipeline_run_metadata(config, started_at, completed_at) | {
+            "pipeline_run_id": pipeline_run_id
+        }
         _write_pipeline_status(
             status_path,
             "failed",
             steps,
             _safe_pipeline_codes(config),
             error,
-            metadata=_pipeline_run_metadata(config, started_at, completed_at),
+            metadata=metadata,
         )
         return DailyPipelineResult(ok=False, status_path=status_path)
+    finally:
+        staging_snapshot_path.unlink(missing_ok=True)
+        for path in (
+            staging_output_dir,
+            staging_html_dir,
+            staging_announcement_dir,
+        ):
+            shutil.rmtree(path, ignore_errors=True)
+        _release_pipeline_lock(lock_handle)
 
 
 def _refresh_command(config: DailyPipelineConfig) -> list[str]:
@@ -315,6 +408,8 @@ def _report_command(config: DailyPipelineConfig) -> list[str]:
     return [
         config.python_executable,
         "scripts/run_daily_analysis.py",
+        "--snapshot",
+        str(config.snapshot_path),
         "--provider",
         config.provider_name,
         "--holdings",
@@ -325,6 +420,20 @@ def _report_command(config: DailyPipelineConfig) -> list[str]:
         str(config.output_dir),
         "--html-dir",
         str(config.html_dir),
+    ]
+
+
+def _research_command(config: DailyPipelineConfig) -> list[str]:
+    return [
+        config.python_executable,
+        "scripts/run_daily_research.py",
+        "--output-dir",
+        str(config.research_output_dir),
+        "--snapshot",
+        str(config.snapshot_path),
+        "--pipeline-status",
+        str(Path(config.output_dir) / "pipeline.status"),
+        "--refresh",
     ]
 
 
@@ -514,6 +623,7 @@ def _write_data_chain_status(
         holdings_path=config.holdings_path,
         output_path=Path(config.output_dir) / "data_chain_status.json",
         pipeline_steps=steps,
+        trust_snapshot_expected_trade_date=steps.get("a_share_kline") == "ok",
         now=now,
     )
 
@@ -564,6 +674,9 @@ def _write_pipeline_status(
             "scanned_count",
             "enriched_count",
             "eligible_count",
+            "pipeline_run_id",
+            "snapshot_version",
+            "snapshot_fingerprint",
         )
         if key in run_metadata
     )
@@ -605,8 +718,8 @@ def _refresh_session(current: datetime) -> tuple[str, bool]:
 
 
 def _data_validation_time(current: datetime) -> datetime:
-    # Before 10:00, the latest complete A-share session is still the prior day.
-    if current.hour < 10:
+    # Intraday quotes are current, but the latest complete daily bar closes at 15:30.
+    if (current.hour, current.minute) < (15, 30):
         return current - timedelta(days=1)
     return current
 
@@ -641,7 +754,90 @@ def _pipeline_run_metadata(
         "scanned_count": _metadata_count(universe, "scanned_count"),
         "enriched_count": _metadata_count(universe, "enriched_count"),
         "eligible_count": _metadata_count(universe, "eligible_count"),
+        "snapshot_version": str(snapshot.get("snapshot_version") or ""),
     }
+
+
+def _pipeline_run_id(started_at: datetime) -> str:
+    return f"{started_at:%Y%m%dT%H%M%S}-{uuid4().hex[:8]}"
+
+
+def _staging_snapshot_path(published: Path, pipeline_run_id: str) -> Path:
+    return published.parent / f".{published.name}.{pipeline_run_id}.staging"
+
+
+def _staging_directory(published: Path, pipeline_run_id: str) -> Path:
+    return published.parent / f".{published.name}.{pipeline_run_id}.staging"
+
+
+def _prepare_staging_snapshot(path: Path, previous: bytes | None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if previous is not None:
+        path.write_bytes(previous)
+
+
+def _stamp_staging_snapshot(path: Path, version: str, published_at: datetime) -> None:
+    payload = _read_snapshot_payload(path)
+    if not payload:
+        raise ValueError("staging snapshot is empty")
+    payload["snapshot_version"] = version
+    payload["published_at"] = published_at.isoformat(timespec="seconds")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _snapshot_fingerprint(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def _publish_staged_directory(staging: Path, published: Path) -> None:
+    if not staging.exists():
+        return
+    for source in sorted(path for path in staging.rglob("*") if path.is_file()):
+        destination = published / source.relative_to(staging)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source.replace(destination)
+
+
+def _normalize_artifact_status_paths(
+    *,
+    staging_output_dir: Path,
+    published_output_dir: Path,
+    staging_html_dir: Path,
+    published_html_dir: Path,
+) -> None:
+    status_path = staging_output_dir / "latest.status"
+    if not status_path.exists():
+        return
+    text = status_path.read_text(encoding="utf-8", errors="ignore")
+    text = text.replace(str(staging_output_dir), str(published_output_dir))
+    text = text.replace(str(staging_html_dir), str(published_html_dir))
+    status_path.write_text(text, encoding="utf-8")
+
+
+def _pipeline_lock_path(snapshot_path: Path) -> Path:
+    return snapshot_path.parent / f".{snapshot_path.name}.pipeline.lock"
+
+
+def _acquire_pipeline_lock(snapshot_path: Path) -> TextIO | None:
+    lock_path = _pipeline_lock_path(snapshot_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def _release_pipeline_lock(handle: TextIO) -> None:
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
 
 
 def _metadata_count(payload: dict, key: str) -> str:
@@ -650,14 +846,6 @@ def _metadata_count(payload: dict, key: str) -> str:
         return str(max(0, int(value)))
     except (TypeError, ValueError):
         return "0"
-
-
-def _restore_previous_snapshot(path: Path, previous: bytes | None) -> None:
-    if previous is not None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(previous)
-    elif path.exists():
-        path.unlink()
 
 
 def _short_error(exc: Exception) -> str:
@@ -682,8 +870,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default="reports/daily")
     parser.add_argument("--html-dir", default="reports/html")
     parser.add_argument("--announcement-dir", default="reports/announcements")
+    parser.add_argument("--research-output-dir", default="reports/research")
     parser.add_argument("--provider", default="tdx-snapshot")
-    parser.add_argument("--candidate-limit", type=int, default=300)
+    parser.add_argument("--candidate-limit", type=int, default=500)
     parser.add_argument("--enrich-limit", type=int, default=50)
     parser.add_argument("--kline-bar-count", type=int, default=120)
     parser.add_argument("--stock-news-limit", type=int, default=3)
@@ -701,6 +890,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-a-share-kline", action="store_true")
     parser.add_argument("--skip-external-enrich", action="store_true")
     parser.add_argument("--skip-announcements", action="store_true")
+    parser.add_argument("--skip-research", action="store_true")
     return parser
 
 
@@ -713,6 +903,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             html_dir=args.html_dir,
             announcement_dir=args.announcement_dir,
+            research_output_dir=args.research_output_dir,
             provider_name=args.provider,
             candidate_limit=args.candidate_limit,
             enrich_limit=args.enrich_limit,
@@ -728,6 +919,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_a_share_kline=args.skip_a_share_kline,
             skip_external_enrich=args.skip_external_enrich,
             skip_announcements=args.skip_announcements,
+            skip_research=args.skip_research,
         )
     )
     print(result.status_path)

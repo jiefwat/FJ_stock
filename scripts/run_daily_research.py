@@ -19,6 +19,7 @@ from stock_ts.prediction_feedback import (
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
 from stock_ts.research_engine import ResearchContext, ResearchWorkspaceService
 from stock_ts.research_fallback import build_local_research
+from stock_ts.research_fusion import fuse_research_results
 from stock_ts.research_snapshots import ResearchSnapshotStore
 
 TZ = timezone(timedelta(hours=8))
@@ -39,6 +40,7 @@ def run_daily_research(
     snapshot_path: str | Path = "data/imports/tdx_snapshots.json",
     prediction_db: str | Path = "data/research/predictions.sqlite3",
     feedback_summary_path: str | Path | None = None,
+    pipeline_status_path: str | Path = "reports/daily/pipeline.status",
 ) -> DailyResearchResult:
     current = now or datetime.now(TZ)
     root = Path(output_dir)
@@ -49,6 +51,26 @@ def run_daily_research(
     errors: dict[str, str] = {}
     snapshot_file = Path(snapshot_path)
     snapshot = _read_json(snapshot_file)
+    snapshot_fingerprint = _fingerprint(snapshot_file)
+    snapshot_version = str(snapshot.get("snapshot_version") or "")
+    pipeline_status = _read_status(Path(pipeline_status_path))
+    published_version = str(pipeline_status.get("snapshot_version") or "")
+    if published_version and snapshot_version != published_version:
+        status_path = root / "daily.status.json"
+        _atomic_json(
+            status_path,
+            {
+                "status": "skipped",
+                "generated_at": current.isoformat(timespec="seconds"),
+                "modules": {},
+                "errors": {"snapshot_version": "published snapshot changed"},
+                "prediction_count": 0,
+                "evaluated_count": 0,
+                "feedback_sample_count": 0,
+                "source_snapshot_version": snapshot_version,
+            },
+        )
+        return DailyResearchResult(ok=False, status="skipped", status_path=status_path)
     prediction_store = PredictionStore(prediction_db)
     prediction_count = 0
     evaluated_count = 0
@@ -59,30 +81,60 @@ def run_daily_research(
         errors["prediction_evaluation"] = type(exc).__name__
 
     for module in ("market", "opportunity"):
+        local_result = _build_local_result(module, snapshot_file)
         try:
-            result = active_service.research(
+            enriched_result = active_service.research(
                 module,
                 ResearchContext(),
                 refresh=True,
             )
         except Exception as exc:
-            modules[module] = "failed"
-            errors[module] = type(exc).__name__
-            continue
-        if module == "opportunity":
-            result = _prefer_local_opportunity_gate(result, snapshot_file)
+            errors[f"{module}_enrichment"] = type(exc).__name__
+            if local_result is None:
+                modules[module] = "failed"
+                continue
+            result = local_result
+        else:
+            result = enriched_result
+            if local_result is not None and (
+                module == "opportunity"
+                and _opportunity_result_requires_local_gate(enriched_result)
+            ):
+                result = local_result
+            elif local_result is not None:
+                result = fuse_research_results(local_result, enriched_result)
+            elif module == "opportunity":
+                result = _prefer_local_opportunity_gate(enriched_result, snapshot_file)
         modules[module] = result.status
         if result.ok:
+            current_version = str(
+                _read_status(Path(pipeline_status_path)).get("snapshot_version") or ""
+            )
+            if current_version and current_version != snapshot_version:
+                modules[module] = "skipped"
+                errors["snapshot_version"] = "published snapshot changed"
+                break
             payload = result.to_public_dict()
+            payload["evidence_delivery"] = str(payload.get("delivery") or "live")
             payload["delivery"] = "snapshot"
+            payload["data_label"] = "最新一致快照"
             payload["stale"] = False
+            payload["source_snapshot_fingerprint"] = snapshot_fingerprint
+            payload["source_snapshot_version"] = snapshot_version
+            payload["source_snapshot_generated_at"] = str(
+                snapshot.get("generated_at") or ""
+            )
+            market = snapshot.get("market")
+            payload["source_market_trade_date"] = str(
+                market.get("trade_date") if isinstance(market, dict) else ""
+            )
             if module == "opportunity":
                 try:
                     prediction_count = _record_opportunity_predictions(
                         prediction_store,
                         payload,
                         snapshot=snapshot,
-                        snapshot_fingerprint=_fingerprint(snapshot_file),
+                        snapshot_fingerprint=snapshot_fingerprint,
                         created_at=current.isoformat(timespec="seconds"),
                     )
                     _append_feedback_section(payload, prediction_store)
@@ -116,9 +168,24 @@ def run_daily_research(
             "prediction_count": prediction_count,
             "evaluated_count": evaluated_count,
             "feedback_sample_count": summary.sample_count,
+            "source_snapshot_version": snapshot_version,
         },
     )
     return DailyResearchResult(ok=success_count > 0, status=status, status_path=status_path)
+
+
+def _build_local_result(module: str, snapshot_path: Path) -> Any | None:
+    if not snapshot_path.exists():
+        return None
+    try:
+        result = build_local_research(
+            module,
+            ResearchContext(),
+            provider=TdxSnapshotProvider(snapshot_path),
+        )
+        return result if result.module == module else None
+    except Exception:
+        return None
 
 
 def _prefer_local_opportunity_gate(result: Any, snapshot_path: Path) -> Any:
@@ -174,6 +241,17 @@ def _read_json(path: Path) -> dict[str, object]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _read_status(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    return {
+        key: value
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        if "=" in line
+        for key, value in [line.split("=", 1)]
+    }
 
 
 def _fingerprint(path: Path) -> str:
@@ -368,6 +446,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snapshot", default="data/imports/tdx_snapshots.json")
     parser.add_argument("--prediction-db", default="data/research/predictions.sqlite3")
     parser.add_argument("--feedback-summary", default="reports/research/feedback_summary.json")
+    parser.add_argument("--pipeline-status", default="reports/daily/pipeline.status")
     return parser
 
 
@@ -378,6 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         snapshot_path=args.snapshot,
         prediction_db=args.prediction_db,
         feedback_summary_path=args.feedback_summary,
+        pipeline_status_path=args.pipeline_status,
     )
     print(result.status_path)
     print(result.status)

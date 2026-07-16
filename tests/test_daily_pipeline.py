@@ -126,20 +126,22 @@ def _status_map(path: Path) -> dict[str, str]:
 
 
 @pytest.mark.parametrize(
-    ("hour", "expected_date"),
+    ("hour", "minute", "expected_date"),
     [
-        (1, "2026-07-09"),
-        (7, "2026-07-09"),
-        (9, "2026-07-09"),
-        (10, "2026-07-10"),
-        (13, "2026-07-10"),
+        (1, 0, "2026-07-09"),
+        (7, 0, "2026-07-09"),
+        (9, 0, "2026-07-09"),
+        (10, 0, "2026-07-09"),
+        (13, 0, "2026-07-09"),
+        (15, 0, "2026-07-09"),
+        (15, 30, "2026-07-10"),
     ],
 )
 def test_data_validation_uses_last_completed_session_before_open(
-    hour: int, expected_date: str
+    hour: int, minute: int, expected_date: str
 ) -> None:
     validation_time = pipeline_module._data_validation_time(
-        PIPELINE_NOW.replace(hour=hour)
+        PIPELINE_NOW.replace(hour=hour, minute=minute)
     )
 
     assert validation_time.date().isoformat() == expected_date
@@ -219,14 +221,17 @@ def test_daily_pipeline_runs_refresh_enrich_announcements_and_report(tmp_path: P
     def fake_runner(command: list[str], timeout_seconds: int) -> None:
         calls.append(command)
         if any("refresh_tdx_snapshot.py" in item for item in command):
-            _write_snapshot(snapshot)
+            target = Path(command[command.index("--output") + 1])
+            if "--enrich-existing" not in command:
+                _write_snapshot(target)
         if any("enrich_tdx_snapshot.py" in item for item in command):
-            payload = json.loads(snapshot.read_text(encoding="utf-8"))
+            target = Path(command[command.index("--snapshot") + 1])
+            payload = json.loads(target.read_text(encoding="utf-8"))
             payload["external_enrichment"] = {
                 "generated_at": "2026-06-26T16:40:00",
                 "enriched_stock_count": 2,
             }
-            snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         if any("run_daily_analysis.py" in item for item in command):
             out_dir = Path(command[command.index("--output-dir") + 1])
             html_dir = Path(command[command.index("--html-dir") + 1])
@@ -411,7 +416,7 @@ def test_daily_pipeline_records_step_failure_without_hiding_error(tmp_path: Path
     assert "network down" in status
 
 
-def test_daily_pipeline_restores_last_snapshot_when_refresh_fails(tmp_path: Path) -> None:
+def test_daily_pipeline_keeps_last_snapshot_when_staged_refresh_fails(tmp_path: Path) -> None:
     snapshot = tmp_path / "tdx_snapshots.json"
     holdings = tmp_path / "holdings.csv"
     _write_snapshot(snapshot)
@@ -424,7 +429,9 @@ def test_daily_pipeline_restores_last_snapshot_when_refresh_fails(tmp_path: Path
 
     def failing_runner(command: list[str], timeout_seconds: int) -> None:
         if any("refresh_tdx_snapshot.py" in item for item in command):
-            snapshot.write_text('{"partial": true}', encoding="utf-8")
+            target = Path(command[command.index("--output") + 1])
+            assert target != snapshot
+            target.write_text('{"partial": true}', encoding="utf-8")
             raise RuntimeError("refresh interrupted")
 
     result = run_daily_pipeline(
@@ -442,6 +449,180 @@ def test_daily_pipeline_restores_last_snapshot_when_refresh_fails(tmp_path: Path
     assert snapshot.read_bytes() == previous
     status = _status_map(result.status_path)
     assert status["market_trade_date"] == "2026-07-10"
+
+
+def test_daily_pipeline_publishes_only_validated_staging_snapshot(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    previous = snapshot.read_bytes()
+    report_dir = tmp_path / "reports" / "daily"
+    html_dir = tmp_path / "reports" / "html"
+    report_dir.mkdir(parents=True)
+    html_dir.mkdir(parents=True)
+    (report_dir / "latest.md").write_text("# old report", encoding="utf-8")
+    (html_dir / "latest.html").write_text("<html>old</html>", encoding="utf-8")
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n",
+        encoding="utf-8",
+    )
+    observed: list[str] = []
+
+    def runner(command: list[str], timeout_seconds: int) -> None:
+        if any("refresh_tdx_snapshot.py" in item for item in command):
+            target = Path(command[command.index("--output") + 1])
+            assert target != snapshot
+            assert snapshot.read_bytes() == previous
+            _write_snapshot(target)
+            observed.append("refresh")
+        if any("run_daily_analysis.py" in item for item in command):
+            assert Path(command[command.index("--snapshot") + 1]) != snapshot
+            out_dir = Path(command[command.index("--output-dir") + 1])
+            staged_html_dir = Path(command[command.index("--html-dir") + 1])
+            assert out_dir != report_dir
+            assert staged_html_dir != html_dir
+            assert (report_dir / "latest.md").read_text(encoding="utf-8") == "# old report"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            staged_html_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "latest.md").write_text("# new report", encoding="utf-8")
+            (staged_html_dir / "latest.html").write_text(
+                "<html>new</html>", encoding="utf-8"
+            )
+            (out_dir / "latest.status").write_text(
+                f"status=ok\nmarkdown={out_dir / 'latest.md'}\n"
+                f"html={staged_html_dir / 'latest.html'}\n",
+                encoding="utf-8",
+            )
+            observed.append("report")
+        if any("run_daily_research.py" in item for item in command):
+            published = json.loads(snapshot.read_text(encoding="utf-8"))
+            status = _status_map(tmp_path / "reports" / "daily" / "pipeline.status")
+            assert published["snapshot_version"] == status["snapshot_version"]
+            observed.append("research")
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=tmp_path / "reports" / "daily",
+            html_dir=tmp_path / "reports" / "html",
+            announcement_dir=tmp_path / "reports" / "announcements",
+            skip_tdx_enrich=True,
+            skip_a_share_kline=True,
+            skip_external_enrich=True,
+            skip_announcements=True,
+        ),
+        runner=runner,
+        now=PIPELINE_NOW,
+    )
+
+    assert result.ok is True
+    assert observed == ["refresh", "report", "research"]
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    status = _status_map(result.status_path)
+    assert payload["snapshot_version"] == status["snapshot_version"]
+    assert (report_dir / "latest.md").read_text(encoding="utf-8") == "# new report"
+    assert (html_dir / "latest.html").read_text(encoding="utf-8") == "<html>new</html>"
+    artifact_status = (report_dir / "latest.status").read_text(encoding="utf-8")
+    assert ".staging" not in artifact_status
+    assert f"markdown={report_dir / 'latest.md'}" in artifact_status
+    assert f"html={html_dir / 'latest.html'}" in artifact_status
+    assert not list(tmp_path.glob(".*.staging"))
+
+
+def test_daily_pipeline_does_not_run_when_snapshot_lock_is_held(tmp_path: Path) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    _write_snapshot(snapshot)
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n",
+        encoding="utf-8",
+    )
+    lock_handle = pipeline_module._acquire_pipeline_lock(snapshot)
+    assert lock_handle is not None
+    calls: list[list[str]] = []
+
+    try:
+        result = run_daily_pipeline(
+            DailyPipelineConfig(
+                snapshot_path=snapshot,
+                holdings_path=holdings,
+                output_dir=tmp_path / "reports" / "daily",
+            ),
+            runner=lambda command, _timeout: calls.append(command),
+            now=PIPELINE_NOW,
+        )
+    finally:
+        pipeline_module._release_pipeline_lock(lock_handle)
+
+    assert result.ok is False
+    assert calls == []
+
+
+def test_daily_pipeline_rejects_stale_kline_after_refresh_failure_and_keeps_reports(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "tdx_snapshots.json"
+    holdings = tmp_path / "holdings.csv"
+    report_dir = tmp_path / "reports" / "daily"
+    html_dir = tmp_path / "reports" / "html"
+    _write_snapshot(snapshot)
+    payload = json.loads(snapshot.read_text(encoding="utf-8"))
+    payload["market"]["trade_date"] = "2026-07-16"
+    payload["kline_refresh"] = {"expected_trade_date": "2026-07-14"}
+    for stock in payload["stocks"].values():
+        stock["bars"][0]["date"] = "2026-07-14"
+    for item in payload["candidate_universe"]["items"]:
+        item["bars"][0]["date"] = "2026-07-14"
+    snapshot.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    previous_snapshot = snapshot.read_bytes()
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "603278,大业股份,100,10,高端装备,测试\n",
+        encoding="utf-8",
+    )
+    report_dir.mkdir(parents=True)
+    html_dir.mkdir(parents=True)
+    (report_dir / "latest.md").write_text("# accepted report", encoding="utf-8")
+    (html_dir / "latest.html").write_text("<html>accepted</html>", encoding="utf-8")
+
+    def runner(command: list[str], timeout_seconds: int) -> None:
+        if any("refresh_a_share_kline.py" in item for item in command):
+            raise RuntimeError("tushare rate limit")
+        if any("run_daily_analysis.py" in item for item in command):
+            out_dir = Path(command[command.index("--output-dir") + 1])
+            staged_html_dir = Path(command[command.index("--html-dir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            staged_html_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "latest.md").write_text("# rejected report", encoding="utf-8")
+            (staged_html_dir / "latest.html").write_text(
+                "<html>rejected</html>", encoding="utf-8"
+            )
+
+    result = run_daily_pipeline(
+        DailyPipelineConfig(
+            snapshot_path=snapshot,
+            holdings_path=holdings,
+            output_dir=report_dir,
+            html_dir=html_dir,
+            announcement_dir=tmp_path / "reports" / "announcements",
+            skip_refresh=True,
+            skip_tdx_enrich=True,
+            skip_external_enrich=True,
+            skip_announcements=True,
+        ),
+        runner=runner,
+        now=datetime(2026, 7, 16, 13, 0, tzinfo=BEIJING),
+    )
+
+    assert result.ok is False
+    assert snapshot.read_bytes() == previous_snapshot
+    assert (report_dir / "latest.md").read_text(encoding="utf-8") == "# accepted report"
+    assert (html_dir / "latest.html").read_text(encoding="utf-8") == "<html>accepted</html>"
+    status = _status_map(result.status_path)
+    assert status["status"] == "failed"
+    assert "应至少 2026-07-15" in status["data_chain_blockers"]
 
 
 def test_daily_pipeline_continues_when_external_enrichment_times_out(tmp_path: Path) -> None:

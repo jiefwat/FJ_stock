@@ -22,13 +22,19 @@ def validate_data_chain(
     holdings_path: str | Path,
     output_path: str | Path | None = None,
     pipeline_steps: dict[str, str] | None = None,
+    trust_snapshot_expected_trade_date: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Validate the reusable data chain that feeds all four Web modules."""
 
     current = now or datetime.now()
-    expected_trade_date = _expected_latest_trade_date(current)
     snapshot = _read_json(Path(snapshot_path))
+    snapshot_expected = (
+        _snapshot_expected_trade_date(snapshot)
+        if trust_snapshot_expected_trade_date
+        else ""
+    )
+    expected_trade_date = snapshot_expected or _expected_latest_trade_date(current)
     holdings = _read_holding_codes(Path(holdings_path))
     steps = pipeline_steps or {}
 
@@ -333,6 +339,17 @@ def _expected_latest_trade_date(now: datetime) -> str:
     while day.weekday() >= 5:
         day -= timedelta(days=1)
     return day.isoformat()
+
+
+def _snapshot_expected_trade_date(snapshot: dict[str, Any]) -> str:
+    refresh = snapshot.get("kline_refresh")
+    if not isinstance(refresh, dict):
+        return ""
+    value = str(refresh.get("expected_trade_date") or "")[:10]
+    try:
+        return datetime.fromisoformat(value).date().isoformat()
+    except ValueError:
+        return ""
 
 
 def _is_before(value: str, expected: str) -> bool:

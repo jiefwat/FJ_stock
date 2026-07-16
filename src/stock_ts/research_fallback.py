@@ -82,6 +82,7 @@ def build_local_research(
             candidates,
             candidate_universe=candidate_universe,
             selected_theme=context.sector,
+            market_trade_date=_safe_market_trade_date(provider) or market.trade_date,
         )
     raise ValueError(f"unsupported local research module: {module}")
 
@@ -248,6 +249,17 @@ def _build_stock_research(
 
 
 def _safe_market_trade_date(provider: StockDataProvider) -> str:
+    try:
+        metadata = provider.fetch_candidate_universe_metadata()
+    except Exception:
+        metadata = {}
+    expected = str(
+        metadata.get("kline_refresh_expected_trade_date")
+        or metadata.get("previous_market_trade_date")
+        or ""
+    )
+    if expected:
+        return expected
     try:
         return provider.fetch_market().trade_date
     except Exception:
@@ -743,9 +755,9 @@ def _build_portfolio_research(
         _position_item(
             position,
             continuation=_position_continuation(
-                position,
-                provider=provider,
-                market_trade_date=portfolio.trade_date,
+            position,
+            provider=provider,
+            market_trade_date=_safe_market_trade_date(provider) or portfolio.trade_date,
             ),
         )
         for position in portfolio.positions
@@ -826,24 +838,30 @@ def _build_opportunity_research(
     *,
     candidate_universe: list[Any],
     selected_theme: str = "",
+    market_trade_date: str = "",
 ) -> ResearchWorkspaceResult:
     forward_stages = {
         "延续观察": "可进入投资候选",
         "突破待确认": "等待确认",
+        "反弹待验证": "反弹观察",
     }
     qualified_rows = [
         (raw, profile, assessment)
         for raw, profile, assessment in _rank_continuation_candidates(
             candidate_universe,
-            market_trade_date=market.trade_date,
+            market_trade_date=market_trade_date or market.trade_date,
             sectors=sectors,
         )
         if assessment.stage in forward_stages
-        and _is_classified_theme(raw.sector)
+        and (assessment.stage != "反弹待验证" or assessment.score >= 35)
         and (not selected_theme or _same_theme(raw.sector, selected_theme))
     ][:10]
     qualified_themes = list(
-        dict.fromkeys(raw.sector for raw, _profile, _assessment in qualified_rows)
+        dict.fromkeys(
+            raw.sector
+            for raw, _profile, _assessment in qualified_rows
+            if _is_classified_theme(raw.sector)
+        )
     )
     theme_items = tuple(
         _opportunity_theme_item(theme, qualified_rows, sectors.sectors)
@@ -1267,7 +1285,7 @@ def _continuation_candidate_item(
         kind=kind,
         code=raw.code,
         name=raw.name,
-        label=raw.sector or "主题待确认",
+        label=raw.sector if _is_classified_theme(raw.sector) else "独立个股",
         summary=(
             f"{stage} · 持续性评分 {assessment.score}/100；"
             f"{assessment.support}"

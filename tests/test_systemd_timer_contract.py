@@ -19,6 +19,7 @@ def test_stock_ts_daily_service_runs_full_pipeline_with_enough_timeout() -> None
     assert "TimeoutStartSec=3600" in text
     assert "scripts/run_daily_pipeline.py" in text
     assert "--provider tdx-snapshot" in text
+    assert "--candidate-limit 500" in text
     assert "--external-enrich-timeout 300" in text
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from stock_ts.daily_artifacts import DailyArtifactConfig, run_daily_artifact_job
@@ -12,6 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate StockTS daily markdown/html artifacts for Web and systemd timers."
     )
     parser.add_argument("--provider", default="tdx-snapshot")
+    parser.add_argument("--snapshot")
     parser.add_argument("--holdings", default="data/portfolio/holdings.csv")
     parser.add_argument("--transactions")
     parser.add_argument("--news")
@@ -24,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.snapshot:
+        os.environ["STOCK_TS_TDX_SNAPSHOT_PATH"] = args.snapshot
     focus_codes = tuple(item.strip() for item in (args.focus or "").split(",") if item.strip())
     result = run_daily_artifact_job(
         DailyArtifactConfig(

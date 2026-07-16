@@ -145,6 +145,23 @@ class CandidateThemeOutsideSectorRankProvider(MultiDayCandidateProvider):
         ]
 
 
+class ExpandedCandidateProvider(MultiDayCandidateProvider):
+    def fetch_candidate_universe(self):
+        trend = super().fetch_candidate_universe()[0]
+        rebound_closes = [120 - index for index in range(19)] + [102, 103, 104, 105, 106, 107]
+        rebounds = [
+            CandidateStockRawData(
+                code=f"6001{index:02d}",
+                name=f"反弹观察{index}",
+                sector=f"主题{index}",
+                bars=_candidate_bars(rebound_closes, end=date(2026, 7, 15)),
+                fund_flow=1.0,
+            )
+            for index in range(1, 10)
+        ]
+        return [trend, *rebounds]
+
+
 def test_local_stock_blocks_direction_when_price_is_stale_and_evidence_is_missing() -> None:
     result = build_local_research(
         "stock",
@@ -328,11 +345,11 @@ def test_market_contains_facts_but_no_forecast_watchlist() -> None:
     assert "候选" not in market.action
 
 
-def test_opportunity_top10_contains_only_investable_continuation_stages() -> None:
+def test_opportunity_top10_keeps_strict_candidates_and_ranked_rebound_watchlist() -> None:
     opportunity = build_local_research(
         "opportunity",
         ResearchContext(),
-        provider=MultiDayCandidateProvider(),
+        provider=ExpandedCandidateProvider(),
     )
 
     candidates = next(
@@ -340,10 +357,8 @@ def test_opportunity_top10_contains_only_investable_continuation_stages() -> Non
         for section in opportunity.module_sections
         if section.key == "opportunity-candidates"
     )
-    assert len(candidates.items) <= 10
+    assert len(candidates.items) == 10
     assert candidates.items[0].name == "稳步上行"
-    assert "陈旧行情" not in {item.name for item in candidates.items}
-    assert "单日脉冲" not in {item.name for item in candidates.items}
     item = candidates.items[0]
     assert {fact.label for fact in item.facts} >= {
         "阶段判断",
@@ -361,7 +376,8 @@ def test_opportunity_top10_contains_only_investable_continuation_stages() -> Non
         next(fact.value for fact in candidate.facts if fact.label == "阶段判断")
         for candidate in candidates.items
     }
-    assert stages <= {"可进入投资候选", "等待确认"}
+    assert stages <= {"可进入投资候选", "等待确认", "反弹观察"}
+    assert "反弹观察" in stages
     assert all(candidate.status == "ready" for candidate in candidates.items)
 
 
@@ -399,8 +415,9 @@ def test_opportunity_themes_only_link_to_gated_classified_candidates() -> None:
     )
 
     assert [item.name for item in themes.items] == ["机器人"]
-    assert [item.name for item in candidates.items] == ["机器人趋势"]
+    assert [item.name for item in candidates.items] == ["机器人趋势", "未知主题趋势"]
     assert all(item.label != "未识别主题" for item in candidates.items)
+    assert candidates.items[1].label == "独立个股"
 
 
 def test_opportunity_builds_theme_card_when_candidate_theme_is_outside_sector_rank() -> None:
