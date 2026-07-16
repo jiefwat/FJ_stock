@@ -46,6 +46,29 @@ def test_ui_skin_uses_professional_terminal_visual_system() -> None:
         assert token in html
 
 
+def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibility_contract(
+) -> None:
+    for token in [
+        "StockTS editorial research terminal skin",
+        '--display: "Avenir Next", "IBM Plex Sans"',
+        '--body: "IBM Plex Sans", "HarmonyOS Sans SC"',
+        '--number: "IBM Plex Mono", "SFMono-Regular"',
+        "font-variant-numeric: tabular-nums",
+        ".engine-app-shell .sidebar",
+        ".engine-judgment::before",
+        ".engine-research-list-row:hover",
+        "@media (max-width: 640px)",
+        "@media (prefers-reduced-motion: reduce)",
+    ]:
+        assert token in CSS
+
+    editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
+    assert "grid-template-columns: 214px minmax(0, 1fr)" in editorial_skin
+    assert "max-width: 1580px" in editorial_skin
+    assert "border-radius: 4px" in editorial_skin
+    assert "linear-gradient(90deg, var(--copper)" in editorial_skin
+
+
 def test_design_guide_shell_removes_old_global_project_blocks() -> None:
     html = _render_sample_page()
 
