@@ -134,7 +134,9 @@ def _status_map(path: Path) -> dict[str, str]:
         (10, 0, "2026-07-09"),
         (13, 0, "2026-07-09"),
         (15, 0, "2026-07-09"),
-        (15, 30, "2026-07-10"),
+        (15, 30, "2026-07-09"),
+        (17, 59, "2026-07-09"),
+        (18, 0, "2026-07-10"),
     ],
 )
 def test_data_validation_uses_last_completed_session_before_open(

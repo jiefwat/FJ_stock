@@ -726,8 +726,8 @@ def _refresh_session(current: datetime) -> tuple[str, bool]:
 
 
 def _data_validation_time(current: datetime) -> datetime:
-    # Intraday quotes are current, but the latest complete daily bar closes at 15:30.
-    if (current.hour, current.minute) < (15, 30):
+    # Tushare's same-day daily bar is not reliably published at the close.
+    if (current.hour, current.minute) < (18, 0):
         return current - timedelta(days=1)
     return current
 

@@ -222,7 +222,9 @@ def test_refresh_marks_bars_stale_when_they_lag_market_trade_date(tmp_path: Path
     assert payload["candidate_universe"]["items"][0]["price_reliable"] is False
 
 
-def test_intraday_refresh_accepts_previous_completed_daily_bar(tmp_path: Path) -> None:
+def test_refresh_before_daily_publication_cutoff_accepts_previous_close(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     snapshot = tmp_path / "tdx_snapshots.json"
     snapshot.write_text(
@@ -259,7 +261,7 @@ def test_intraday_refresh_accepts_previous_completed_daily_bar(tmp_path: Path) -
         holdings_path=None,
         codes=["300725"],
         tushare_client=PreviousCloseClient(),
-        now=datetime(2026, 7, 16, 13, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        now=datetime(2026, 7, 16, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 
     payload = json.loads(snapshot.read_text(encoding="utf-8"))

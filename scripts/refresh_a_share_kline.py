@@ -14,6 +14,7 @@ from stock_ts.config import get_settings
 from stock_ts.providers.base import DataProviderError
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+DAILY_BAR_PUBLICATION_CUTOFF = (18, 0)
 
 
 def refresh_a_share_kline_snapshot(
@@ -147,7 +148,7 @@ def _beijing_time(value: datetime | None) -> datetime:
 
 def _expected_latest_daily_bar_date(current: datetime, client: object | None = None) -> str:
     day = current.date()
-    if (current.hour, current.minute) < (15, 30):
+    if (current.hour, current.minute) < DAILY_BAR_PUBLICATION_CUTOFF:
         day -= timedelta(days=1)
     calendar_date = _latest_open_calendar_date(client, day)
     if calendar_date:
