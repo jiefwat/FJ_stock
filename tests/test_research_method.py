@@ -60,6 +60,20 @@ class CompleteStockClient:
         return {"datas": [rows[capability]]}
 
 
+class BoundaryStockClient(CompleteStockClient):
+    def query(self, skill: object, query: str) -> dict[str, object]:
+        capability = next(key for key, value in SKILLS.items() if value == skill)
+        payload = super().query(skill, query)
+        row = payload["datas"][0]
+        if capability == "finance":
+            row["归母净利润同比增长率[2025]"] = "10%-20%"
+        elif capability == "business":
+            row["主营产品"] = "成本承压缓解"
+        elif capability == "consensus":
+            row["盈利预测下修风险解除"] = "风险已解除"
+        return payload
+
+
 def _method_section(payload: dict[str, object]) -> dict[str, object]:
     return next(
         section for section in payload["module_sections"] if section["key"] == "professional-method"
@@ -135,6 +149,18 @@ def test_local_and_external_method_dimensions_expose_structured_public_fields() 
         assert all(item["recovery"] for item in unknown)
 
 
+def test_local_stock_method_maps_only_observed_evidence_dimensions() -> None:
+    dimensions = {
+        item["key"]: item
+        for item in _method_section(_local_stock_payload())["items"]
+        if item["kind"] == "method_dimension"
+    }
+
+    assert any(item["status"] != "unknown" for item in dimensions.values())
+    assert dimensions["price"]["status"] in {"ready", "partial"}
+    assert dimensions["identity"]["status"] == "unknown"
+
+
 def test_stock_method_requires_support_counter_expectation_and_invalidation() -> None:
     method = method_for("stock")
 
@@ -199,6 +225,24 @@ def test_external_stock_outputs_change_with_opposite_public_facts() -> None:
         for fact in negative_by_name["最大反证"]["facts"]
     }
     assert support_facts.isdisjoint(counter_facts)
+
+
+def test_direction_classifier_does_not_treat_ranges_or_relief_as_negative() -> None:
+    payload = (
+        ResearchWorkspaceService(client_factory=BoundaryStockClient)
+        .research("stock", ResearchContext(code="600519", name="贵州茅台"))
+        .to_public_dict()
+    )
+    outputs = {
+        item["name"]: item
+        for item in _method_section(payload)["items"]
+        if item["kind"] == "method_output"
+    }
+    counter_text = json.dumps(outputs["最大反证"], ensure_ascii=False)
+
+    assert "10%-20%" not in counter_text
+    assert "成本承压缓解" not in counter_text
+    assert "下修风险解除" not in counter_text
 
 
 def test_local_stock_outputs_anchor_actual_result_judgment_and_evidence() -> None:

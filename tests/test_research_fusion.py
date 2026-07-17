@@ -7,6 +7,7 @@ from stock_ts.research_engine import (
     ResearchWorkspaceResult,
 )
 from stock_ts.research_fusion import fuse_research_results
+from stock_ts.research_method import build_method_section
 
 
 def _result(
@@ -127,3 +128,86 @@ def test_unavailable_enrichment_returns_local_result_without_decision_changes() 
     fused = fuse_research_results(local, unavailable)
 
     assert fused == local
+
+
+def test_fusion_rebuilds_method_section_from_merged_evidence() -> None:
+    capability_labels = (
+        "财务质量",
+        "经营结构",
+        "机构预期",
+        "事件风险",
+        "行情资金",
+        "行业位置",
+        "公告事项",
+        "研报观点",
+    )
+    local = _result(
+        verdict="本地判断",
+        action="等待补强",
+        risk="证据不足",
+        decision_label="等待确认",
+        delivery="local_fallback",
+        items=tuple(
+            ResearchModuleItem(
+                kind="stock_dimension",
+                label=label,
+                summary=f"{label}待补。",
+                status="missing",
+            )
+            for label in capability_labels
+        ),
+    )
+    local = ResearchWorkspaceResult(
+        **{
+            **local.__dict__,
+            "module_sections": (build_method_section("stock"),),
+        }
+    )
+    enriched = _result(
+        verdict="外部结论",
+        action="外部动作",
+        risk="外部风险",
+        decision_label="外部判断",
+        delivery="live",
+        items=tuple(
+            ResearchModuleItem(
+                kind="stock_dimension",
+                label=label,
+                summary=f"{label}已有公开事实。",
+                status="ready",
+            )
+            for label in capability_labels
+        ),
+    )
+    enriched = ResearchWorkspaceResult(
+        **{
+            **enriched.__dict__,
+            "module_sections": (
+                build_method_section(
+                    "stock",
+                    ready_keys={
+                        "finance",
+                        "business",
+                        "consensus",
+                        "event",
+                        "market",
+                        "industry",
+                        "announcement",
+                        "report",
+                    },
+                ),
+            ),
+        }
+    )
+
+    fused = fuse_research_results(local, enriched)
+    local_method = local.module_sections[0]
+    enriched_method = enriched.module_sections[0]
+    fused_methods = [
+        section for section in fused.module_sections if section.key == "professional-method"
+    ]
+
+    assert len(fused_methods) == 1
+    assert sum(item.status == "ready" for item in local_method.items) == 0
+    assert sum(item.status == "ready" for item in enriched_method.items) == 10
+    assert sum(item.status == "ready" for item in fused_methods[0].items) == 10

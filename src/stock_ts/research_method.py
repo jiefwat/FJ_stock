@@ -7,6 +7,22 @@ from typing import Any
 
 RESEARCH_CONTRACT_VERSION = "2026-07-17.multi-lens.v1"
 
+_EVIDENCE_ALIASES = {
+    "财务质量": ("finance",),
+    "经营结构": ("business",),
+    "机构预期": ("consensus",),
+    "事件风险": ("event",),
+    "行情资金": ("market",),
+    "行业位置": ("industry",),
+    "公告事项": ("announcement",),
+    "研报观点": ("report",),
+    "技术趋势": ("market",),
+    "量价结构": ("market",),
+    "资金行为": ("market",),
+    "估值基本面": ("finance",),
+    "消息事件": ("event", "announcement", "news"),
+}
+
 
 @dataclass(frozen=True)
 class ResearchMethodDimension:
@@ -421,6 +437,8 @@ def _dimension_status(
 
 def _fact_direction(label: str, value: str) -> int:
     combined = f"{label} {value}"
+    for resolved in ("承压缓解", "压力缓解", "下调风险解除", "下修风险解除", "风险解除"):
+        combined = combined.replace(resolved, "")
     negative_terms = (
         "预亏",
         "下修",
@@ -435,9 +453,14 @@ def _fact_direction(label: str, value: str) -> int:
     if any(term in combined for term in negative_terms):
         return -1
 
+    numeric_value = re.sub(
+        r"(?<=\d)%?\s*[-~—至]\s*(?=\d)",
+        " ",
+        value.replace(",", ""),
+    )
     numbers = [
         float(number)
-        for number in re.findall(r"(?<![\d.])[-+]?\d+(?:\.\d+)?", value.replace(",", ""))
+        for number in re.findall(r"(?<![\d.])[-+]?\d+(?:\.\d+)?", numeric_value)
     ]
     if any(number < 0 for number in numbers):
         return -1
@@ -540,7 +563,7 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
     )
     context["counter"] = next(
         (text for _section, text, direction in evidence if direction == -1),
-        context["risk"],
+        context["risk"] if _fact_direction("", context["risk"]) == -1 else "",
     )
     context["expectation"] = next(
         (
@@ -752,17 +775,39 @@ def attach_method_section(
     )
 
 
+def _evidence_aliases(value: str) -> set[str]:
+    return {
+        alias
+        for label, aliases in _EVIDENCE_ALIASES.items()
+        if label in value
+        for alias in aliases
+    }
+
+
 def _ready_keys_from_result(result: Any) -> set[str]:
-    keys = {detail.section for detail in result.details if detail.status == "ready"}
+    keys: set[str] = set()
+    for detail in result.details:
+        if detail.status == "ready":
+            keys.add(detail.section)
+            keys.update(_evidence_aliases(detail.section))
     for section in result.module_sections:
         keys.update((section.key, section.title))
     for item in result.module_items:
         if item.status == "ready":
             keys.update((item.kind, item.name, item.label))
+            keys.update(_evidence_aliases(f"{item.name} {item.label}"))
     return {key for key in keys if key}
 
 
 def _missing_keys_from_result(result: Any) -> set[str]:
-    keys = {detail.section for detail in result.details if detail.status != "ready"}
-    keys.update(result.missing_sections)
+    values = [detail.section for detail in result.details if detail.status != "ready"]
+    values.extend(result.missing_sections)
+    values.extend(
+        f"{item.name} {item.label}"
+        for item in result.module_items
+        if item.status != "ready"
+    )
+    keys = {value for value in values if value}
+    for value in values:
+        keys.update(_evidence_aliases(value))
     return {key for key in keys if key}

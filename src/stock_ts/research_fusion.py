@@ -9,6 +9,7 @@ from .research_engine import (
     ResearchModuleSection,
     ResearchWorkspaceResult,
 )
+from .research_method import attach_method_section
 
 _INTERNAL_TERMS = (
     "问财",
@@ -43,14 +44,19 @@ def fuse_research_results(
 
     enriched_items = tuple(_safe_external_item(item) for item in enriched.module_items)
     merged_items = _merge_module_items(local.module_items, enriched_items)
-    merged_sections = _merge_sections(local.module_sections, enriched_items)
+    base_sections = tuple(
+        section
+        for section in local.module_sections
+        if section.key != "professional-method"
+    )
+    merged_sections = _merge_sections(base_sections, enriched_items)
     merged_findings = _merge_findings(local.findings, enriched.findings)
     ready = sum(item.status == "ready" for item in merged_items)
     total = max(local.coverage_total, len(merged_items))
     filled_labels = {item.label for item in merged_items if item.status == "ready"}
     missing = tuple(label for label in local.missing_sections if label not in filled_labels)
 
-    return replace(
+    fused = replace(
         local,
         status="complete" if total and ready == total else "partial",
         findings=merged_findings,
@@ -64,6 +70,7 @@ def fuse_research_results(
         module_items=merged_items,
         module_sections=merged_sections,
     )
+    return attach_method_section(fused)
 
 
 def _merge_module_items(
