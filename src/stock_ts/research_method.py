@@ -418,11 +418,105 @@ def _dimension_status(
     return "unknown"
 
 
+def _stock_result_context(result: Any | None) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "verdict": "",
+        "action": "",
+        "risk": "",
+        "evidence": [],
+        "support": "",
+        "counter": "",
+        "expectation": "",
+        "price": "",
+    }
+    if result is None:
+        return context
+
+    payload = result.to_public_dict()
+    context.update(
+        verdict=str(payload.get("verdict") or ""),
+        action=str(payload.get("action") or ""),
+        risk=str(payload.get("primary_risk") or ""),
+    )
+    evidence: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add_evidence(
+        section: str,
+        summary: str,
+        facts: Iterable[dict[str, object]],
+    ) -> None:
+        fact_text = "；".join(
+            f"{fact.get('label')}：{fact.get('value')}"
+            for fact in facts
+            if fact.get("label") and fact.get("value")
+        )
+        body = summary.strip()
+        if fact_text and fact_text not in body:
+            body = f"{body}（{fact_text}）" if body else fact_text
+        text = f"{section}：{body}" if section and body else body
+        if text and text not in seen:
+            seen.add(text)
+            evidence.append((section, text))
+
+    for finding in payload.get("findings", []):
+        add_evidence(
+            str(finding.get("title") or "研究事实"),
+            str(finding.get("summary") or ""),
+            finding.get("facts", []),
+        )
+    for detail in payload.get("details", []):
+        section = str(detail.get("section") or "研究事实")
+        for finding in detail.get("findings", []):
+            add_evidence(
+                section,
+                str(finding.get("summary") or ""),
+                finding.get("facts", []),
+            )
+    for item in payload.get("module_items", []):
+        add_evidence(
+            str(item.get("label") or item.get("name") or "研究事实"),
+            str(item.get("summary") or ""),
+            item.get("facts", []),
+        )
+
+    evidence_texts = [text for _, text in evidence]
+    positive_terms = ("增长", "改善", "预增", "增持", "流入", "上涨", "修复")
+    negative_terms = ("下降", "恶化", "预亏", "减持", "流出", "下跌", "亏损", "承压")
+    context["evidence"] = evidence_texts
+    context["support"] = next(
+        (text for text in evidence_texts if any(term in text for term in positive_terms)),
+        "",
+    )
+    context["counter"] = next(
+        (text for text in evidence_texts if any(term in text for term in negative_terms)),
+        context["risk"],
+    )
+    context["expectation"] = next(
+        (
+            text
+            for section, text in evidence
+            if any(term in section for term in ("机构预期", "研报"))
+        ),
+        "",
+    )
+    context["price"] = next(
+        (
+            text
+            for section, text in evidence
+            if any(term in section for term in ("行情", "价格", "资金"))
+        ),
+        "",
+    )
+    return context
+
+
 def build_method_section(
     module: str,
     *,
     ready_keys: Iterable[str] = (),
     missing_keys: Iterable[str] = (),
+    result: Any | None = None,
 ) -> Any:
     from .research_engine import ResearchFact, ResearchModuleItem, ResearchModuleSection
 
@@ -467,66 +561,88 @@ def build_method_section(
             )
         )
     if module == "stock":
-        ready_titles = [
-            dimension.title
-            for dimension in method.dimensions
-            if dimension_statuses[dimension.key] == "ready"
-        ]
         gap_titles = [
             dimension.title
             for dimension in method.dimensions
             if dimension_statuses[dimension.key] != "ready"
         ]
-        ready_text = "、".join(ready_titles) or "无已确认维度"
         gap_text = "、".join(gap_titles) or "后续事实变化"
-        evidence_status = "partial" if ready_titles else "unknown"
-        expectation_status = (
-            "partial"
-            if dimension_statuses.get("expectation_gap") in {"ready", "partial"}
-            else "unknown"
-        )
+        context = _stock_result_context(result)
+        verdict = context["verdict"]
+        action = context["action"]
+        risk = context["risk"]
+        evidence = context["evidence"]
+        support = context["support"]
+        counter = context["counter"]
+        expectation = context["expectation"]
+        price = context["price"]
+        first_evidence = evidence[0] if evidence else ""
+        hypothesis_status = "partial" if verdict or action else "unknown"
+        support_status = "partial" if support else "unknown"
+        counter_status = "partial" if counter else "unknown"
+        expectation_status = "partial" if expectation else "unknown"
+        confirmation_status = "partial" if action else "unknown"
+        invalidation_status = "partial" if risk or price else "unknown"
         output_specs = (
             (
                 "research_hypothesis",
                 "研究假设",
-                f"已获得{ready_text}证据；当前只能建立待验证假设，不能据此判断方向。",
-                evidence_status,
+                (
+                    f"{verdict}；下一步：{action}"
+                    if verdict or action
+                    else "当前没有足够公开事实形成研究假设。"
+                ),
+                hypothesis_status,
                 f"补齐{gap_text}后形成可证伪假设。",
+                (("当前判断", verdict), ("下一步动作", action), ("公开证据", first_evidence)),
             ),
             (
                 "strongest_support",
                 "最强支持",
-                f"可复核证据覆盖{ready_text}；这只代表数据可用，尚未证明方向性支持。",
-                evidence_status,
+                support or "现有公开事实未识别出方向性支持。",
+                support_status,
                 "从已确认事实中提取与研究假设直接相关的支持证据。",
+                (("支持证据", support),),
             ),
             (
                 "counter_evidence",
                 "最大反证",
-                f"当前能力状态未确认结构化反证；需优先核对{gap_text}。",
-                "unknown",
+                counter or f"当前未识别结构化反证；需优先核对{gap_text}。",
+                counter_status,
                 "核对负面事实、预期下修、治理风险和价格失效信号。",
+                (("反证或风险", counter),),
             ),
             (
                 "expectation_gap",
                 "预期差",
-                "已有相关事实时仍需比较市场预期与实际变化；缺失时不推断预期差。",
+                expectation or "缺少机构预期或研报事实，不推断预期差。",
                 expectation_status,
                 "补齐盈利预测修正、同行比较和事件后的实际变化。",
+                (("预期证据", expectation),),
             ),
             (
                 "confirmation_condition",
                 "确认条件",
-                f"确认前必须补齐或复核{gap_text}，并验证事实、预期与价格是否同向。",
-                evidence_status,
+                (
+                    f"按实际动作复核：{action}；价格证据：{price or '待补'}。"
+                    if action
+                    else "缺少实际动作，确认条件未知。"
+                ),
+                confirmation_status,
                 "定义下一次可观察、带日期且可复核的确认条件。",
+                (("实际动作", action), ("价格证据", price)),
             ),
             (
                 "invalidation_condition",
                 "失效条件",
-                "当前没有可量化的失效阈值，不能把一般风险提示当作退出条件。",
-                "unknown",
+                (
+                    f"实际风险：{risk or '待补'}；价格证据：{price or '待补'}。"
+                    if risk or price
+                    else "缺少实际风险和价格事实，失效条件未知。"
+                ),
+                invalidation_status,
                 "根据最大反证、事件变化和价格结构定义明确失效条件。",
+                (("主要风险", risk), ("价格证据", price)),
             ),
         )
         items.extend(
@@ -540,8 +656,13 @@ def build_method_section(
                 status=status,
                 score=None,
                 recovery=recovery,
+                facts=tuple(
+                    ResearchFact(label=label, value=value)
+                    for label, value in facts
+                    if value
+                ),
             )
-            for key, name, summary, status, recovery in output_specs
+            for key, name, summary, status, recovery, facts in output_specs
         )
     return ResearchModuleSection(
         key="professional-method",
@@ -575,6 +696,7 @@ def attach_method_section(
                 result.module,
                 ready_keys=observed_ready,
                 missing_keys=observed_missing,
+                result=result,
             ),
         ),
     )

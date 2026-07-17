@@ -1,3 +1,5 @@
+import json
+
 from stock_ts.iwencai import SKILLS
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import (
@@ -15,14 +17,30 @@ from stock_ts.research_method import (
 
 
 class CompleteStockClient:
+    def __init__(self, *, negative: bool = False) -> None:
+        self.negative = negative
+
     def query(self, skill: object, _query: str) -> dict[str, object]:
         capability = next(key for key, value in SKILLS.items() if value == skill)
+        growth = "-25%" if self.negative else "18%"
+        rating = "减持" if self.negative else "增持"
+        event_type = "预亏" if self.negative else "预增"
+        price_change = "-4.5%" if self.negative else "2.5%"
         rows = {
-            "finance": {"营业收入[2025]": 5_100_000_000, "归母净利润[2025]": 162_000_000},
+            "finance": {
+                "营业收入[2025]": 5_100_000_000,
+                "归母净利润[2025]": 162_000_000,
+                "归母净利润同比增长率[2025]": growth,
+            },
             "business": {"主营产品": "核心产品", "竞争对手": "主要同行"},
-            "consensus": {"预测净利润[2027]": 320_000_000, "机构评级": "增持"},
-            "event": {"业绩预告类型": "预增", "公告日期": "20260714"},
-            "market": {"收盘价": 18.6, "成交量": 86_000_000, "交易日期": "20260714"},
+            "consensus": {"预测净利润[2027]": 320_000_000, "机构评级": rating},
+            "event": {"业绩预告类型": event_type, "公告日期": "20260714"},
+            "market": {
+                "收盘价": 18.6,
+                "涨跌幅[20260714]": price_change,
+                "成交量": 86_000_000,
+                "交易日期": "20260714",
+            },
             "industry": {"行业名称": "金属制品", "行业排名": 8, "行业市盈率": 24.6},
             "announcement": {"公告标题": "季度经营数据公告", "公告日期": "20260714"},
             "report": {
@@ -48,9 +66,11 @@ def _local_stock_payload() -> dict[str, object]:
     ).to_public_dict()
 
 
-def _external_stock_payload() -> dict[str, object]:
+def _external_stock_payload(*, negative: bool = False) -> dict[str, object]:
     return (
-        ResearchWorkspaceService(client_factory=CompleteStockClient)
+        ResearchWorkspaceService(
+            client_factory=lambda: CompleteStockClient(negative=negative)
+        )
         .research(
             "stock",
             ResearchContext(code="600519", name="贵州茅台"),
@@ -131,6 +151,42 @@ def test_local_and_external_stock_methods_emit_six_structured_outputs() -> None:
         assert [item["name"] for item in outputs] == expected
         assert all(item["summary"] for item in outputs)
         assert all(item["status"] in {"partial", "unknown"} for item in outputs)
+
+
+def test_external_stock_outputs_change_with_opposite_public_facts() -> None:
+    positive = _external_stock_payload()
+    negative = _external_stock_payload(negative=True)
+    positive_outputs = [
+        item
+        for item in _method_section(positive)["items"]
+        if item["kind"] == "method_output"
+    ]
+    negative_outputs = [
+        item
+        for item in _method_section(negative)["items"]
+        if item["kind"] == "method_output"
+    ]
+    positive_text = json.dumps(positive_outputs, ensure_ascii=False)
+    negative_text = json.dumps(negative_outputs, ensure_ascii=False)
+
+    assert positive_outputs != negative_outputs
+    assert "18%" in positive_text or "预增" in positive_text
+    assert "-25%" in negative_text or "预亏" in negative_text
+
+
+def test_local_stock_outputs_anchor_actual_result_judgment_and_evidence() -> None:
+    payload = _local_stock_payload()
+    outputs = [
+        item
+        for item in _method_section(payload)["items"]
+        if item["kind"] == "method_output"
+    ]
+    output_text = json.dumps(outputs, ensure_ascii=False)
+
+    assert payload["verdict"] in output_text
+    assert payload["action"] in output_text
+    assert payload["primary_risk"] in output_text
+    assert any(item["summary"] in output_text for item in payload["findings"])
 
 
 def test_method_section_attaches_once_and_exposes_contract_version() -> None:
