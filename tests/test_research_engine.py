@@ -559,7 +559,7 @@ def test_opportunity_selector_query_contains_parseable_conditions() -> None:
     assert "排除融资融券" in default_sector
 
 
-def test_stock_service_is_complete_with_seven_of_eight_dimensions() -> None:
+def test_stock_service_is_partial_when_a_core_dimension_is_missing() -> None:
     client = FakeClient(
         results={"finance": {"datas": [{"收入": "同比增长", "现金流": "改善"}]}},
         failures={"event"},
@@ -573,11 +573,28 @@ def test_stock_service_is_complete_with_seven_of_eight_dimensions() -> None:
     payload = result.to_public_dict()
 
     assert payload["ok"] is True
-    assert payload["status"] == "complete"
+    assert payload["status"] == "partial"
     assert payload["findings"]
     serialized = json.dumps(payload, ensure_ascii=False)
     for forbidden in ("event", "skill", "问财", "iWencai", "同花顺", "trace_id"):
         assert forbidden not in serialized
+
+
+def test_stock_peripheral_evidence_cannot_replace_missing_core_dimensions() -> None:
+    core_capabilities = {"finance", "business", "consensus", "event", "market"}
+    service = ResearchWorkspaceService(
+        client_factory=lambda: FakeClient(failures=core_capabilities)
+    )
+
+    result = service.research(
+        "stock",
+        ResearchContext(code="600519", name="贵州茅台"),
+    )
+    payload = result.to_public_dict()
+
+    assert payload["ok"] is True
+    assert payload["status"] == "partial"
+    assert payload["coverage"] == {"ready": 6, "total": 11}
 
 
 def test_service_marks_all_failed_bundle_unavailable() -> None:

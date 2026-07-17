@@ -39,6 +39,10 @@ WORKSPACE_CAPABILITIES = {
     "opportunity": ("sector_selector", "astock_selector", "event", "news"),
 }
 
+STOCK_CORE_CAPABILITIES = frozenset(
+    {"finance", "business", "consensus", "event", "market"}
+)
+
 CAPABILITY_LABELS = {
     "basicinfo": "公司身份",
     "index": "指数状态",
@@ -696,7 +700,14 @@ def _build_workspace_result(
     failed = [outcome for outcome in outcomes if outcome.failed or not outcome.rows]
     if successful:
         if module == "stock":
-            status = "complete" if len(successful) >= 6 else "partial"
+            successful_capabilities = {
+                outcome.request.capability for outcome in successful
+            }
+            status = (
+                "complete"
+                if STOCK_CORE_CAPABILITIES <= successful_capabilities
+                else "partial"
+            )
         else:
             status = "complete" if not failed else "partial"
     else:
