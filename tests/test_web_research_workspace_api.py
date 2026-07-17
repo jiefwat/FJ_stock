@@ -23,7 +23,7 @@ from stock_ts.research_engine import (
     ResearchModuleItem,
     ResearchWorkspaceResult,
 )
-from stock_ts.research_snapshots import ResearchSnapshotStore
+from stock_ts.research_snapshots import RESEARCH_CONTRACT_VERSION, ResearchSnapshotStore
 from stock_ts.stock_deep_research import StockDeepResearchService
 from stock_ts.web import (
     Handler,
@@ -294,6 +294,7 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
     store.save(
         "market",
         {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
             "ok": True,
             "status": "complete",
             "module": "market",
@@ -347,6 +348,7 @@ def test_workspace_response_rejects_snapshot_older_than_latest_pipeline(
     ResearchSnapshotStore(snapshot_dir).save(
         "market",
         {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
             "ok": True,
             "status": "partial",
             "module": "market",
@@ -477,6 +479,7 @@ def test_workspace_response_blocks_stale_snapshot_actions_and_candidates(
     ResearchSnapshotStore(snapshot_dir).save(
         module,
         {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
             "ok": True,
             "status": "partial",
             "module": module,
@@ -529,6 +532,7 @@ def test_workspace_response_rebuilds_incompatible_market_snapshot(
     ResearchSnapshotStore(snapshot_dir).save(
         "market",
         {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
             "ok": True,
             "status": "partial",
             "module": "market",
@@ -556,6 +560,20 @@ def test_workspace_response_rebuilds_incompatible_market_snapshot(
     keys = {section["key"] for section in response["module_sections"]}
     assert {"market-pulse", "market-breadth", "market-themes", "market-movers"} <= keys
     assert "market-continuation" not in keys
+
+
+def test_snapshot_workspace_gate_rejects_incompatible_contract_version() -> None:
+    payload = {
+        "research_contract_version": "2026-07-16.legacy.v1",
+        "module_sections": [
+            {"key": "market-pulse", "items": []},
+            {"key": "market-breadth", "items": []},
+            {"key": "market-themes", "items": []},
+            {"key": "market-movers", "items": []},
+        ],
+    }
+
+    assert web_module._snapshot_supports_workspace("market", payload) is False
 
 
 def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigured(
@@ -666,6 +684,74 @@ def test_workspace_endpoint_rejects_wrong_content_type_and_large_body(
         with pytest.raises(urllib.error.HTTPError) as too_large:
             _request(server, b"{" + b"x" * (16 * 1024) + b"}")
         assert too_large.value.code == 413
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_http", "expected_status", "expected_message"),
+    [
+        (
+            ValueError("opportunity snapshot missing stock 600519"),
+            400,
+            "stock_not_in_snapshot",
+            "当前股票数据尚未进入研究快照，请先刷新数据或选择其他股票。",
+        ),
+        (
+            ValueError("secret /Users/service/private/holdings.csv"),
+            400,
+            "invalid_request",
+            "研究请求无效，请检查研究对象后重试。",
+        ),
+        (
+            json.JSONDecodeError("gateway secret", "/srv/private/upstream.json", 0),
+            502,
+            "unavailable",
+            "研究服务暂时不可用，请稍后重试。",
+        ),
+    ],
+)
+def test_workspace_endpoint_maps_internal_value_errors_to_product_language(
+    monkeypatch,
+    tmp_path,
+    error: ValueError,
+    expected_http: int,
+    expected_status: str,
+    expected_message: str,
+) -> None:
+    def failing_response(_payload):
+        raise error
+
+    monkeypatch.setattr(web_module, "_research_workspace_response", failing_response)
+    server = _serve(monkeypatch, tmp_path)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _request(
+                server,
+                json.dumps(
+                    {
+                        "module": "stock",
+                        "context": {"code": "600519", "name": "贵州茅台"},
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+            )
+
+        body = _error_json(caught.value)
+        assert caught.value.code == expected_http
+        assert body["status"] == expected_status
+        assert body["message"] == expected_message
+        serialized = json.dumps(body, ensure_ascii=False)
+        for forbidden in (
+            "opportunity snapshot missing",
+            "secret",
+            "/Users/",
+            "/srv/",
+            "gateway",
+            "upstream.json",
+        ):
+            assert forbidden.casefold() not in serialized.casefold()
     finally:
         server.shutdown()
         server.server_close()

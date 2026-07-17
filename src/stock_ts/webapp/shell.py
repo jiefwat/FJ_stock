@@ -171,6 +171,10 @@ def app_script() -> str:
       'data-center': 'data-center'
     }};
 
+    function shellCanonicalUrl(hash) {{
+      return `${{window.location.pathname}}${{window.location.search}}${{hash}}`;
+    }}
+
     function activatePanel(workspace, moduleKey) {{
       const pane = document.querySelector(`.workspace-pane[data-workspace="${{workspace}}"]`);
       if (!pane) return;
@@ -207,7 +211,7 @@ def app_script() -> str:
         window.requestAnimationFrame(() => window.StockTsKlineScreens.refresh());
       }}
       if (updateHash) {{
-        history.replaceState(null, '', `#${{normalized}}`);
+        history.replaceState(null, '', shellCanonicalUrl(`#${{normalized}}`));
       }}
       keepTop();
     }}
@@ -232,7 +236,10 @@ def app_script() -> str:
       const workspace = moduleToWorkspace[moduleKey] || 'home';
       activateWorkspace(workspace, false);
       activatePanel(workspace, moduleKey);
-      history.replaceState(null, '', workspaceKeys.has(moduleKey) ? `#${{moduleKey}}` : `#module-${{moduleKey}}`);
+      const targetHash = workspaceKeys.has(moduleKey)
+        ? `#${{moduleKey}}`
+        : `#module-${{moduleKey}}`;
+      history.replaceState(null, '', shellCanonicalUrl(targetHash));
     }}
 
     function keepTop() {{
@@ -447,7 +454,7 @@ def app_script() -> str:
           const target = button.dataset.panelTarget;
           activateWorkspace(workspace, false);
           activatePanel(workspace, target);
-          history.replaceState(null, '', `#module-${{target}}`);
+          history.replaceState(null, '', shellCanonicalUrl(`#module-${{target}}`));
         }});
       }});
       document.querySelectorAll('[data-jump]').forEach((button) => {{
@@ -462,7 +469,11 @@ def app_script() -> str:
           event.preventDefault();
           event.stopPropagation();
           const target = document.getElementById(button.dataset.scroll);
-          history.replaceState(null, '', `#${{button.dataset.scroll}}`);
+          history.replaceState(
+            null,
+            '',
+            shellCanonicalUrl(`#${{button.dataset.scroll}}`)
+          );
           if (target) {{
             const placeTarget = () => {{
               const top = target.getBoundingClientRect().top + window.scrollY - 24;
@@ -579,10 +590,13 @@ def render_document(body: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{PUBLIC_SITE_NAME} 研究分析平台</title>
   <script>
-    window.__stockTsInitialHash = window.location.hash;
-    if (window.location.hash) {{
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }}
+    const initialQuery = new URLSearchParams(window.location.search);
+    const initialQueryHash = initialQuery.get('theme')
+      ? '#opportunity'
+      : initialQuery.get('code')
+        ? '#stock'
+        : '';
+    window.__stockTsInitialHash = window.location.hash || initialQueryHash;
   </script>
   <style>{CSS}</style>
 </head>

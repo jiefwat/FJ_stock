@@ -327,6 +327,10 @@ def engine_app_script() -> str:
     const stockDeepGroupKeys = ['company', 'finance', 'industry', 'consensus', 'market', 'event'];
     const stockDeepDirectionPlaceholder = '未自动判定；请与上方主结论核对';
 
+    function engineCanonicalUrl(hash) {
+      return `${window.location.pathname}${window.location.search}${hash}`;
+    }
+
     function stockDeepAffectedGroups(focus, question) {
       if (String(question || '').trim()) return [];
       if (focus === 'all') return [...stockDeepGroupKeys];
@@ -1341,6 +1345,17 @@ def engine_app_script() -> str:
       }
     }
 
+    function engineWorkspaceErrorMessage(payload) {
+      const status = String(payload && payload.status || '');
+      if (status === 'stock_not_in_snapshot') {
+        return '当前股票数据尚未进入研究快照，请先刷新数据或选择其他股票。';
+      }
+      if (status === 'invalid_request') {
+        return '研究请求无效，请检查研究对象后重试。';
+      }
+      return '研究服务暂时不可用，请稍后重试。';
+    }
+
     async function runEngineWorkspace(workspace, refresh = false) {
       if (!workspace) return;
       if (workspace.dataset.engineAvailable !== 'true') {
@@ -1365,7 +1380,7 @@ def engine_app_script() -> str:
           })
         });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.message || '研究服务暂时不可用。');
+        if (!response.ok) throw new Error(engineWorkspaceErrorMessage(payload));
         engineCache.set(key, payload);
         renderEngineResult(workspace, payload);
       } catch (error) {
@@ -1432,7 +1447,9 @@ def engine_app_script() -> str:
         if (active) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
       });
-      if (updateHash) history.replaceState(null, '', `#${normalized}`);
+      if (updateHash) {
+        history.replaceState(null, '', engineCanonicalUrl(`#${normalized}`));
+      }
       const workspace = document.querySelector(
         `.workspace-pane[data-workspace="${normalized}"] [data-engine-workspace]`
       );

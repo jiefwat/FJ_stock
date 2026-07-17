@@ -4,7 +4,11 @@ from collections.abc import Callable
 from typing import Any
 
 from .research_engine import ResearchContext, ResearchWorkspaceResult
-from .research_snapshots import GLOBAL_SNAPSHOT_MODULES, ResearchSnapshotStore
+from .research_snapshots import (
+    GLOBAL_SNAPSHOT_MODULES,
+    RESEARCH_CONTRACT_VERSION,
+    ResearchSnapshotStore,
+)
 
 Fallback = Callable[[str, ResearchContext], ResearchWorkspaceResult]
 
@@ -44,6 +48,7 @@ def deliver_research(
     if result.ok:
         delivered = with_research_delivery(payload, "live", stale=False)
         if is_global:
+            delivered["research_contract_version"] = RESEARCH_CONTRACT_VERSION
             store.save(normalized, delivered)
         return delivered
 

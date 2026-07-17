@@ -92,7 +92,7 @@ from .research_engine import (
 from .research_fallback import build_local_research
 from .research_fusion import fuse_research_results
 from .research_playbook import DecisionDashboard
-from .research_snapshots import ResearchSnapshotStore
+from .research_snapshots import RESEARCH_CONTRACT_VERSION, ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .stock_deep_research import DEEP_RESEARCH_GROUPS, StockDeepResearchService
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
@@ -1020,6 +1020,13 @@ def _render_native_research_page(
     source_theme: str = "",
     candidate_source: str = "",
 ) -> str:
+    auth_config = AuthConfig.from_env()
+    auth_enabled = is_auth_enabled(auth_config)
+    client_holdings_path = (
+        holdings_path
+        if not auth_enabled and not Path(holdings_path).is_absolute()
+        else ""
+    )
     selected_stock = _default_stock_query(stock_code, holdings_path)
     try:
         resolved = resolve_stock_query(selected_stock)
@@ -1032,6 +1039,7 @@ def _render_native_research_page(
     service_status = _iwencai_research_ui_status()
     portfolio_manager = _render_native_portfolio_manager(
         holdings_path=holdings_path,
+        client_holdings_path=client_holdings_path,
         stock_code=selected_stock,
         provider_name=provider_name,
         edit_code=edit_code,
@@ -1068,12 +1076,11 @@ def _render_native_research_page(
             current_user=current_user,
         ),
     }
-    auth_config = AuthConfig.from_env()
     shell = f"""
   <div class="app-shell engine-app-shell">
     {render_shell_sidebar(
         sidebar_query,
-        holdings_path,
+        client_holdings_path,
         current_username=current_user.username if current_user is not None else "",
         current_role=current_user.role if current_user is not None else "",
         auth_enabled=is_auth_enabled(auth_config),
@@ -1103,6 +1110,7 @@ def _privacy_safe_holdings_context(holdings_path: str) -> list[dict[str, str]]:
 def _render_native_portfolio_manager(
     *,
     holdings_path: str,
+    client_holdings_path: str,
     stock_code: str,
     provider_name: str,
     edit_code: str,
@@ -1118,7 +1126,7 @@ def _render_native_portfolio_manager(
             item,
             stock_code=stock_code,
             provider_name=provider_name,
-            holdings_path=holdings_path,
+            holdings_path=client_holdings_path,
             readonly=readonly,
         )
         for item in holdings
@@ -1136,7 +1144,7 @@ def _render_native_portfolio_manager(
             editing,
             stock_code=stock_code,
             provider_name=provider_name,
-            holdings_path=holdings_path,
+            holdings_path=client_holdings_path,
         )
     )
     mode = "只读" if readonly else "可编辑"
@@ -1167,14 +1175,14 @@ def _render_native_holding_row(
 ) -> str:
     actions = _render_open_stock_form(holding.code, provider_name, holdings_path)
     if not readonly:
-        edit_query = urlencode(
-            {
-                "code": stock_code,
-                "provider": provider_name,
-                "holdings": holdings_path,
-                "edit": holding.code,
-            }
-        )
+        edit_params = {
+            "code": stock_code,
+            "provider": provider_name,
+            "edit": holding.code,
+        }
+        if holdings_path:
+            edit_params["holdings"] = holdings_path
+        edit_query = urlencode(edit_params)
         actions += f'<a class="ghost-button" href="/?{edit_query}#portfolio">编辑</a>'
         actions += _render_delete_holding_form(
             holding.code,
@@ -1210,20 +1218,22 @@ def _render_native_holding_editor(
     title = f"编辑 {holding.name}" if holding else "新增持仓"
     cancel = ""
     if holding:
-        query = urlencode(
-            {
-                "code": stock_code,
-                "provider": provider_name,
-                "holdings": holdings_path,
-            }
-        )
+        cancel_params = {"code": stock_code, "provider": provider_name}
+        if holdings_path:
+            cancel_params["holdings"] = holdings_path
+        query = urlencode(cancel_params)
         cancel = f'<a class="ghost-button" href="/?{query}#portfolio">取消编辑</a>'
+    holdings_input = (
+        f'<input type="hidden" name="holdings_path" value="{escape(holdings_path, quote=True)}" />'
+        if holdings_path
+        else ""
+    )
     return f"""
       <form class="inline-form native-holding-form" method="post" action="/holdings">
         <input type="hidden" name="portfolio_action" value="upsert" />
         <input type="hidden" name="page_code" value="{escape(stock_code, quote=True)}" />
         <input type="hidden" name="provider" value="{escape(provider_name, quote=True)}" />
-        <input type="hidden" name="holdings_path" value="{escape(holdings_path, quote=True)}" />
+        {holdings_input}
         <div class="editor-toolbar"><strong>{escape(title)}</strong>{cancel}</div>
         <div class="portfolio-form-grid" style="margin-top:12px">
           <label class="field-stack">股票代码<input name="holding_code"
@@ -2222,12 +2232,17 @@ def _render_delete_holding_form(
     provider_name: str,
     holdings_path: str,
 ) -> str:
+    holdings_input = (
+        f'<input type="hidden" name="holdings_path" value="{escape(holdings_path)}" />'
+        if holdings_path
+        else ""
+    )
     return f"""
       <form class="inline-form" method="post" action="/holdings" style="display:inline-flex" onsubmit="return window.confirm('确认删除这条持仓记录？')">
         <input type="hidden" name="portfolio_action" value="delete" />
         <input type="hidden" name="page_code" value="{escape(stock_code)}" />
         <input type="hidden" name="provider" value="{escape(provider_name)}" />
-        <input type="hidden" name="holdings_path" value="{escape(holdings_path)}" />
+        {holdings_input}
         <input type="hidden" name="holding_code" value="{escape(holding_code)}" />
         <button class="danger-button" type="submit">删除</button>
       </form>"""
@@ -6614,12 +6629,19 @@ def _render_auth_settings_panel(
     status = "已开启" if enabled else "未开启"
     registration_status = "已开放" if should_allow_registration(config) else "未开放"
     username = "已配置" if enabled else "未配置"
-    db_path = str(config.db_path) if enabled else "未启用"
     current_username = (
         current_user.username if current_user is not None else ("未登录" if enabled else "未启用")
     )
     current_role = current_user.role if current_user is not None else ("未登录" if enabled else "本地")
     portfolio_mode = "按账号独立" if enabled else "本地单人文件"
+    ledger_status = (
+        "当前账号专属账本"
+        if current_user is not None
+        else "登录后使用当前账号专属账本"
+        if enabled
+        else "本地账本已启用"
+    )
+    db_status = "账号库已启用" if enabled else "账号库未启用"
     shared_scope = "行情 / 板块 / 选股 / 日报 / 消息配置" if enabled else "本机配置"
     logout_form = (
         """
@@ -6650,12 +6672,12 @@ def _render_auth_settings_panel(
         <div class="summary-grid">
           <div class="summary-card"><span>当前账号</span><strong>{escape(current_username)}</strong><p class="kpi-foot">登录后自动使用自己的持仓账本。</p></div>
           <div class="summary-card"><span>账号角色</span><strong>角色：{escape(current_role)}</strong><p class="kpi-foot">owner 可维护全局配置；member 只管理自己的持仓。</p></div>
-          <div class="summary-card"><span>持仓隔离</span><strong>{escape(portfolio_mode)}</strong><p class="kpi-foot">当前账本：{escape(holdings_path)}</p></div>
+          <div class="summary-card"><span>持仓隔离</span><strong>{escape(portfolio_mode)}</strong><p class="kpi-foot">{escape(ledger_status)}</p></div>
           <div class="summary-card"><span>共享能力</span><strong>全站一致</strong><p class="kpi-foot">{escape(shared_scope)}</p></div>
           <div class="summary-card"><span>开放注册</span><strong>{escape(registration_status)}</strong><p class="kpi-foot">开放后新账号注册即获得访问权限。</p></div>
           <div class="summary-card"><span>登录保护</span><strong>{escape(status)}</strong></div>
           <div class="summary-card"><span>管理员账号</span><strong>{escape(username)}</strong></div>
-          <div class="summary-card"><span>账号库</span><strong>{escape(db_path)}</strong><p class="kpi-foot">只显示路径，不显示密码或会话密钥。</p></div>
+          <div class="summary-card"><span>账号库</span><strong>{escape(db_status)}</strong><p class="kpi-foot">账号数据仅由服务端管理。</p></div>
         </div>
         {password_form}
         <div class="portfolio-action-bar" style="margin-top:12px">{logout_form}</div>
@@ -11657,13 +11679,10 @@ def _stock_cost_position_note(
 
 
 def _stock_chart_url(stock_code: str, provider_name: str, holdings_path: str) -> str:
-    query = urlencode(
-        {
-            "code": stock_code,
-            "provider": provider_name,
-            "holdings": holdings_path,
-        }
-    )
+    params = {"code": stock_code, "provider": provider_name}
+    if holdings_path:
+        params["holdings"] = holdings_path
+    query = urlencode(params)
     return f"/?{query}#stock"
 
 
@@ -13465,7 +13484,10 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
         raise RuntimeError("published snapshot changed during local research")
 
     def local_source_fields() -> dict[str, str]:
-        fields = {"source_pipeline_completed_at": _latest_pipeline_marker()}
+        fields = {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
+            "source_pipeline_completed_at": _latest_pipeline_marker(),
+        }
         if local_snapshot_version:
             fields["source_snapshot_version"] = local_snapshot_version
         return fields
@@ -13619,6 +13641,8 @@ def _latest_pipeline_marker() -> str:
 
 
 def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> bool:
+    if payload.get("research_contract_version") != RESEARCH_CONTRACT_VERSION:
+        return False
     required_sections = {
         "market": {"market-pulse", "market-breadth", "market-themes", "market-movers"},
         "opportunity": {"opportunity-candidates"},
@@ -14042,12 +14066,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = _parse_research_workspace_payload(self.rfile.read(length))
-            payload["holdings_path"] = _effective_holdings_path(user)
-            result = _research_workspace_response(payload)
         except ValueError as exc:
             self._send_json(
                 400,
                 {"ok": False, "status": "invalid_request", "message": str(exc)},
+            )
+            return
+        try:
+            payload["holdings_path"] = _effective_holdings_path(user)
+            result = _research_workspace_response(payload)
+        except json.JSONDecodeError:
+            self._send_json(
+                502,
+                {
+                    "ok": False,
+                    "status": "unavailable",
+                    "message": "研究服务暂时不可用，请稍后重试。",
+                },
+            )
+            return
+        except ValueError as exc:
+            missing_stock = re.fullmatch(
+                r"opportunity snapshot missing stock \S+",
+                str(exc),
+            )
+            self._send_json(
+                400,
+                {
+                    "ok": False,
+                    "status": (
+                        "stock_not_in_snapshot" if missing_stock else "invalid_request"
+                    ),
+                    "message": (
+                        "当前股票数据尚未进入研究快照，请先刷新数据或选择其他股票。"
+                        if missing_stock
+                        else "研究请求无效，请检查研究对象后重试。"
+                    ),
+                },
             )
             return
         except IwencaiConfigurationError:
@@ -14373,7 +14428,7 @@ class Handler(BaseHTTPRequestHandler):
             _settings_redirect_url(
                 code="",
                 provider_name=WEB_DATA_PROVIDER,
-                holdings_path=_effective_holdings_path(user),
+                holdings_path="",
                 notice=notice,
                 notice_level=level,
             ),
@@ -14414,7 +14469,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Location",
             _account_redirect_url(
-                holdings_path=_effective_holdings_path(user),
+                holdings_path="",
                 notice=notice,
                 notice_level=level,
             ),
@@ -14448,7 +14503,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header(
             "Location",
             _account_redirect_url(
-                holdings_path=holdings_path,
+                holdings_path="",
                 notice=notice,
                 notice_level="success" if ok else "error",
             ),
@@ -14482,7 +14537,7 @@ class Handler(BaseHTTPRequestHandler):
             _portfolio_redirect_url(
                 code=code,
                 provider_name=provider_name,
-                holdings_path=holdings_path,
+                holdings_path="" if user is not None else holdings_path,
                 notice=notice,
                 notice_level=level,
             ),
@@ -14509,7 +14564,7 @@ class Handler(BaseHTTPRequestHandler):
             _settings_redirect_url(
                 code=code,
                 provider_name=saved_provider,
-                holdings_path=holdings_path,
+                holdings_path="" if user is not None else holdings_path,
                 notice=notice,
                 notice_level=level,
             ),
@@ -14553,7 +14608,7 @@ class Handler(BaseHTTPRequestHandler):
             _settings_redirect_url(
                 code=code,
                 provider_name=provider_name,
-                holdings_path=holdings_path,
+                holdings_path="" if user is not None else holdings_path,
                 notice=notice,
                 notice_level=level,
             ),
@@ -14600,7 +14655,7 @@ class Handler(BaseHTTPRequestHandler):
             _settings_redirect_url(
                 code=code,
                 provider_name=provider_name,
-                holdings_path=holdings_path,
+                holdings_path="" if user is not None else holdings_path,
                 notice=notice,
                 notice_level=level,
             ),
@@ -14779,15 +14834,15 @@ def _portfolio_redirect_url(
     notice: str,
     notice_level: str,
 ) -> str:
-    query = urlencode(
-        {
-            "code": code,
-            "provider": provider_name,
-            "holdings": holdings_path,
-            "notice": notice,
-            "notice_level": notice_level,
-        }
-    )
+    params = {
+        "code": code,
+        "provider": provider_name,
+        "notice": notice,
+        "notice_level": notice_level,
+    }
+    if holdings_path:
+        params["holdings"] = holdings_path
+    query = urlencode(params)
     return f"/?{query}#module-portfolio"
 
 
@@ -14799,15 +14854,15 @@ def _settings_redirect_url(
     notice: str,
     notice_level: str,
 ) -> str:
-    query = urlencode(
-        {
-            "code": code,
-            "provider": provider_name,
-            "holdings": holdings_path,
-            "settings_notice": notice,
-            "settings_notice_level": notice_level,
-        }
-    )
+    params = {
+        "code": code,
+        "provider": provider_name,
+        "settings_notice": notice,
+        "settings_notice_level": notice_level,
+    }
+    if holdings_path:
+        params["holdings"] = holdings_path
+    query = urlencode(params)
     return f"/?{query}#module-status"
 
 
@@ -14817,14 +14872,14 @@ def _account_redirect_url(
     notice: str,
     notice_level: str,
 ) -> str:
-    query = urlencode(
-        {
-            "provider": WEB_DATA_PROVIDER,
-            "holdings": holdings_path,
-            "settings_notice": notice,
-            "settings_notice_level": notice_level,
-        }
-    )
+    params = {
+        "provider": WEB_DATA_PROVIDER,
+        "settings_notice": notice,
+        "settings_notice_level": notice_level,
+    }
+    if holdings_path:
+        params["holdings"] = holdings_path
+    query = urlencode(params)
     return f"/?{query}#module-account"
 
 

@@ -8,16 +8,19 @@ from threading import Barrier
 
 import pytest
 
+import stock_ts.research_snapshots as snapshot_module
 from stock_ts.research_delivery import deliver_research
 from stock_ts.research_engine import ResearchContext, ResearchWorkspaceResult
 from stock_ts.research_snapshots import ResearchSnapshotStore
 
 TZ = timezone(timedelta(hours=8))
 NOW = datetime(2026, 7, 15, 8, 0, tzinfo=TZ)
+RESEARCH_CONTRACT_VERSION = getattr(snapshot_module, "RESEARCH_CONTRACT_VERSION", None)
 
 
 def _payload(*, generated_at: str = "2026-07-15T07:20:00+08:00") -> dict[str, object]:
     return {
+        "research_contract_version": RESEARCH_CONTRACT_VERSION,
         "ok": True,
         "status": "complete",
         "module": "market",
@@ -74,6 +77,79 @@ def test_snapshot_store_writes_latest_and_date_archive_atomically(tmp_path) -> N
     assert json.loads((tmp_path / "market/latest.json").read_text()) == payload
     assert json.loads((tmp_path / "market/2026-07-15.json").read_text()) == payload
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_research_contract_version_is_unique_and_current() -> None:
+    assert RESEARCH_CONTRACT_VERSION == "2026-07-17.multi-lens.v1"
+
+
+@pytest.mark.parametrize("version", [None, "2026-07-16.legacy.v1"])
+def test_snapshot_store_rejects_missing_or_old_contract_on_save(
+    tmp_path,
+    version: str | None,
+) -> None:
+    payload = _payload()
+    if version is None:
+        payload.pop("research_contract_version")
+    else:
+        payload["research_contract_version"] = version
+
+    with pytest.raises(ValueError, match="协议版本"):
+        ResearchSnapshotStore(tmp_path, clock=lambda: NOW).save("market", payload)
+
+    assert not (tmp_path / "market/latest.json").exists()
+
+
+@pytest.mark.parametrize("version", [None, "2026-07-16.legacy.v1"])
+def test_incompatible_snapshot_is_history_only_when_stale_is_allowed(
+    tmp_path,
+    version: str | None,
+) -> None:
+    payload = _payload()
+    if version is None:
+        payload.pop("research_contract_version")
+    else:
+        payload["research_contract_version"] = version
+    path = tmp_path / "market/latest.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    store = ResearchSnapshotStore(tmp_path, clock=lambda: NOW)
+
+    assert store.load("market") is None
+    historical = store.load("market", allow_stale=True)
+    assert historical is not None
+    assert historical.stale is True
+    assert historical.payload["verdict"] == "趋势已更新"
+
+
+def test_incompatible_snapshot_delivery_clears_old_actions_and_candidates(tmp_path) -> None:
+    payload = _payload() | {
+        "research_contract_version": "2026-07-16.legacy.v1",
+        "decision_label": "可以执行",
+        "action": "按旧条件买入",
+        "findings": [{"title": "旧候选"}],
+        "module_items": [{"label": "观察分", "value": "88"}],
+        "module_sections": [{"key": "market-legacy", "items": [{"score": 88}]}],
+    }
+    path = tmp_path / "market/latest.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    delivered = deliver_research(
+        ExplodingService(),
+        ResearchSnapshotStore(tmp_path, clock=lambda: NOW),
+        "market",
+        ResearchContext(),
+        refresh=True,
+    )
+
+    assert delivered["delivery"] == "stale_snapshot"
+    assert delivered["stale"] is True
+    assert delivered["decision_label"] == "历史参考"
+    assert delivered["action"] == "历史数据仅供复盘，不作为今天的操作依据。"
+    assert delivered["findings"] == []
+    assert delivered["module_items"] == []
+    assert delivered["module_sections"] == []
 
 
 def test_snapshot_freshness_prefers_fact_as_of_over_generated_at(tmp_path) -> None:

@@ -1,5 +1,7 @@
 import re
 
+from bs4 import BeautifulSoup
+
 from stock_ts.announcements import AnnouncementReport
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.web import render_page
@@ -197,35 +199,59 @@ def test_design_guide_shell_removes_old_global_project_blocks() -> None:
 
 def test_four_modules_keep_module_owned_actions() -> None:
     html = _render_sample_page()
+    soup = BeautifulSoup(html, "html.parser")
 
-    for text in [
-        'class="stock-form" method="get"',
-        "组合风控结论",
-        "分析内容",
-        "研究候选",
-        'href="/?code=',
-    ]:
-        assert text in html
+    for module in ("market", "portfolio", "stock", "opportunity"):
+        workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
+        assert workspace is not None
+        assert workspace.select_one("button[data-engine-run]") is not None
+    assert soup.select_one('[data-engine-workspace="portfolio"] [data-native-portfolio-manager]')
+    stock = soup.select_one('[data-engine-workspace="stock"]')
+    assert stock.select_one("[data-engine-stock-switcher]")
+    assert stock.select_one("[data-stock-deep-research]")
 
 
 def test_market_page_owns_market_decision_flow() -> None:
     html = _render_sample_page()
-    market_start = html.index('id="market"')
-    portfolio_start = html.index('id="portfolio"')
-    market_html = html[market_start:portfolio_start]
+    soup = BeautifulSoup(html, "html.parser")
+    market = soup.select_one('[data-engine-workspace="market"]')
 
-    for text in ["每日大盘", "股票涨跌统计", "上涨/下跌", "强势板块Top5", "弱势板块Top5"]:
-        assert text in market_html
-    assert 'data-jump="opportunity"' not in market_html
+    assert market is not None
+    assert (
+        market.select_one('[data-engine-question]').get_text(strip=True)
+        == "今天市场发生了什么？"
+    )
+    assert market.select_one("[data-engine-judgment]")
+    assert market.select_one("[data-engine-sections]")
+    assert market.select_one("button[data-engine-run]")
+    for contract in (
+        "section.key === 'market-pulse'",
+        "section.key === 'market-breadth'",
+        "section.key === 'market-movers'",
+        "renderEngineMarketPulseSection",
+        "renderEngineMarketMoverSection",
+    ):
+        assert contract in html
 
 
 def test_opportunity_page_combines_theme_sentiment_and_candidates() -> None:
     html = _render_sample_page()
-    opportunity_start = html.index('id="opportunity"')
-    opportunity_html = html[opportunity_start:]
+    soup = BeautifulSoup(html, "html.parser")
+    opportunity = soup.select_one('[data-engine-workspace="opportunity"]')
 
-    for text in ["板块与市场支持证据", "研究候选", "支持证据", "最大反证"]:
-        assert text in opportunity_html
+    assert opportunity is not None
+    assert opportunity.select_one('[data-engine-question]').get_text(strip=True) == (
+        "今天值得继续研究哪些股票？"
+    )
+    assert opportunity.select_one("[data-engine-sections]")
+    assert opportunity.select_one("button[data-engine-run]")
+    for contract in (
+        "section.key === 'opportunity-candidates'",
+        "renderEngineOpportunityList",
+        "/?theme=${encodeURIComponent",
+        "candidate_source=opportunity",
+    ):
+        assert contract in html
 
 
 def test_dense_pages_use_compact_readable_layout_rules() -> None:

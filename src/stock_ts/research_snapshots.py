@@ -11,6 +11,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 GLOBAL_SNAPSHOT_MODULES = {"market", "opportunity"}
+RESEARCH_CONTRACT_VERSION = "2026-07-17.multi-lens.v1"
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class ResearchSnapshotStore:
 
     def save(self, module: str, payload: Mapping[str, Any]) -> None:
         normalized = self._validate_module(module)
+        if payload.get("research_contract_version") != RESEARCH_CONTRACT_VERSION:
+            raise ValueError("研究快照协议版本不兼容。")
         generated = _payload_datetime(payload) or self.clock()
         directory = self.root / normalized
         directory.mkdir(parents=True, exist_ok=True)
@@ -61,6 +64,11 @@ class ResearchSnapshotStore:
             return None
         if not isinstance(payload, dict):
             return None
+        compatible = (
+            payload.get("research_contract_version") == RESEARCH_CONTRACT_VERSION
+        )
+        if not compatible and not allow_stale:
+            return None
         freshness_at = _payload_freshness_datetime(payload)
         if freshness_at is None:
             return None
@@ -70,13 +78,13 @@ class ResearchSnapshotStore:
             workday_gap = _workday_gap(freshness_at.date(), current_date)
             age_hours = float(workday_gap * 24)
             allowed_workdays = max(1, math.ceil(max_age_hours / 24))
-            stale = workday_gap > allowed_workdays
+            stale = not compatible or workday_gap > allowed_workdays
         else:
             age_hours = max(
                 (now - freshness_at.astimezone(now.tzinfo)).total_seconds() / 3600,
                 0,
             )
-            stale = age_hours > max_age_hours
+            stale = not compatible or age_hours > max_age_hours
         if stale and not allow_stale:
             return None
         return SnapshotRead(payload=payload, age_hours=age_hours, stale=stale)

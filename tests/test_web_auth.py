@@ -275,6 +275,61 @@ def test_authenticated_workbench_has_account_menu_and_logout(monkeypatch, tmp_pa
     assert 'data-workspace="account"' in html
 
 
+def test_authenticated_native_page_keeps_server_paths_out_of_html(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    auth_db = tmp_path / "private-auth" / "users.sqlite3"
+    holdings_path = tmp_path / "user-data" / "7" / "holdings.csv"
+    holdings_path.parent.mkdir(parents=True)
+    holdings_path.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心仓\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(auth_db))
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    user = AuthUser(id=7, username="member@example.com", role="member")
+
+    html = render_page(
+        stock_code="600519",
+        holdings_path=str(holdings_path),
+        current_user=user,
+    )
+
+    assert "贵州茅台" in html
+    assert "当前账号专属账本" in html
+    assert "账号库已启用" in html
+    assert str(holdings_path) not in html
+    assert str(auth_db) not in html
+    assert 'name="holdings_path"' not in html
+    assert 'name="holdings"' not in html
+
+
+def test_local_native_page_never_serializes_absolute_holdings_path(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    holdings_path = tmp_path / "local-private" / "holdings.csv"
+    holdings_path.parent.mkdir(parents=True)
+    holdings_path.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心仓\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+
+    html = render_page(stock_code="600519", holdings_path=str(holdings_path))
+
+    assert "贵州茅台" in html
+    assert str(holdings_path) not in html
+    assert 'name="holdings_path"' not in html
+    assert 'name="holdings"' not in html
+
+
 def test_account_page_has_personal_morning_email_settings(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
     monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
@@ -510,6 +565,7 @@ def test_authenticated_users_get_isolated_holdings_files(monkeypatch, tmp_path) 
         except urllib.error.HTTPError as exc:
             assert exc.code == 303
             assert "attacker.csv" not in urllib.parse.unquote(exc.headers["Location"])
+            assert "holdings.csv" not in urllib.parse.unquote(exc.headers["Location"])
         else:  # pragma: no cover - defensive
             raise AssertionError("expected holdings redirect")
 

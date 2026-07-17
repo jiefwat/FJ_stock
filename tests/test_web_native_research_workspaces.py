@@ -11,6 +11,8 @@ from stock_ts.iwencai import SKILLS
 from stock_ts.stock_deep_research import StockDeepResearchService
 from stock_ts.web import render_page
 from stock_ts.webapp.engine_workspace import engine_app_script, render_engine_workspace
+from stock_ts.webapp.shell import app_script as shell_app_script
+from stock_ts.webapp.shell import render_document
 from stock_ts.webapp.styles import CSS
 
 
@@ -89,6 +91,83 @@ global.document = {
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def _run_document_head_scenario(*, search: str, fragment: str) -> dict[str, object]:
+    if shutil.which("node") is None:
+        pytest.skip("node is required for executable deep-link tests")
+    soup = BeautifulSoup(render_document("<main></main>"), "html.parser")
+    source = soup.select_one("head script").get_text()
+    scenario = f"""
+global.window = {{
+  location: {{pathname: '/', search: {json.dumps(search)}, hash: {json.dumps(fragment)}}}
+}};
+global.history = {{
+  calls: [],
+  replaceState: (_state, _title, url) => {{
+    history.calls.push(url);
+    window.location.hash = String(url).includes('#')
+      ? '#' + String(url).split('#', 2)[1]
+      : '';
+  }}
+}};
+{source}
+console.log(JSON.stringify({{
+  initial: window.__stockTsInitialHash,
+  hash: window.location.hash,
+  historyCalls: history.calls
+}}));
+"""
+    completed = subprocess.run(
+        ["node"],
+        input=scenario,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [("?code=600519", "#stock"), ("?theme=机器人", "#opportunity")],
+)
+def test_query_only_deep_link_selects_its_native_workspace(
+    search: str,
+    expected: str,
+) -> None:
+    result = _run_document_head_scenario(search=search, fragment="")
+
+    assert result["initial"] == expected
+    assert result["historyCalls"] == []
+
+
+@pytest.mark.parametrize("fragment", ["#stock", "#opportunity"])
+def test_document_bootstrap_preserves_explicit_workspace_fragment(fragment: str) -> None:
+    result = _run_document_head_scenario(
+        search="?code=600519&source_theme=白酒&candidate_source=opportunity",
+        fragment=fragment,
+    )
+
+    assert result["initial"] == fragment
+    assert result["hash"] == fragment
+    assert result["historyCalls"] == []
+
+
+def test_canonical_navigation_explicitly_preserves_query_context() -> None:
+    shell_script = shell_app_script()
+    engine_script = engine_app_script()
+
+    assert "function shellCanonicalUrl" in shell_script
+    assert "window.location.pathname" in shell_script
+    assert "window.location.search" in shell_script
+    assert "function engineCanonicalUrl" in engine_script
+    assert "window.location.pathname" in engine_script
+    assert "window.location.search" in engine_script
+    canonical_return = "return `${window.location.pathname}${window.location.search}${hash}`;"
+    assert canonical_return in shell_script
+    assert canonical_return in engine_script
 
 
 def test_root_page_renders_four_lazy_workspaces_without_local_provider_calls() -> None:
@@ -760,6 +839,36 @@ def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
     assert "replaceChildren" in script
     for forbidden in ("问财", "iWencai", "同花顺", "Skill", "外部证据"):
         assert forbidden not in script
+
+
+def test_engine_workspace_error_copy_ignores_arbitrary_server_messages() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+console.log(JSON.stringify({
+  missing: engineWorkspaceErrorMessage({
+    status: 'stock_not_in_snapshot',
+    message: 'opportunity snapshot missing stock 600519'
+  }),
+  invalid: engineWorkspaceErrorMessage({
+    status: 'invalid_request',
+    message: 'secret /Users/service/private/holdings.csv'
+  }),
+  unavailable: engineWorkspaceErrorMessage({
+    status: 'unavailable',
+    message: 'gateway /srv/private/upstream.json'
+  })
+}));
+"""
+    )
+
+    assert result == {
+        "missing": "当前股票数据尚未进入研究快照，请先刷新数据或选择其他股票。",
+        "invalid": "研究请求无效，请检查研究对象后重试。",
+        "unavailable": "研究服务暂时不可用，请稍后重试。",
+    }
+    serialized = json.dumps(result, ensure_ascii=False)
+    for forbidden in ("opportunity snapshot missing", "secret", "/Users/", "gateway", "/srv/"):
+        assert forbidden.casefold() not in serialized.casefold()
 
 
 def test_engine_script_coordinates_navigation_and_shortcuts() -> None:
