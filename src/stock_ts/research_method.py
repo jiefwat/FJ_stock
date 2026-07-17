@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -418,6 +419,52 @@ def _dimension_status(
     return "unknown"
 
 
+def _fact_direction(label: str, value: str) -> int:
+    combined = f"{label} {value}"
+    negative_terms = (
+        "预亏",
+        "下修",
+        "下调",
+        "净流出",
+        "减持",
+        "下降",
+        "恶化",
+        "亏损",
+        "承压",
+    )
+    if any(term in combined for term in negative_terms):
+        return -1
+
+    numbers = [
+        float(number)
+        for number in re.findall(r"(?<![\d.])[-+]?\d+(?:\.\d+)?", value.replace(",", ""))
+    ]
+    if any(number < 0 for number in numbers):
+        return -1
+
+    positive_terms = ("预增", "上调", "净流入", "增持", "改善", "修复")
+    if any(term in combined for term in positive_terms):
+        return 1
+    directional_labels = ("增长", "涨跌", "变动", "净流", "收益")
+    if numbers and any(term in label for term in directional_labels):
+        if any(number > 0 for number in numbers):
+            return 1
+    return 0
+
+
+def _evidence_direction(
+    summary: str,
+    facts: Iterable[tuple[str, str]],
+) -> int:
+    directions = [_fact_direction(label, value) for label, value in facts]
+    summary_direction = _fact_direction("", summary)
+    if -1 in directions or summary_direction == -1:
+        return -1
+    if 1 in directions or summary_direction == 1:
+        return 1
+    return 0
+
+
 def _stock_result_context(result: Any | None) -> dict[str, Any]:
     context: dict[str, Any] = {
         "verdict": "",
@@ -438,7 +485,7 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
         action=str(payload.get("action") or ""),
         risk=str(payload.get("primary_risk") or ""),
     )
-    evidence: list[tuple[str, str]] = []
+    evidence: list[tuple[str, str, int]] = []
     seen: set[str] = set()
 
     def add_evidence(
@@ -446,10 +493,13 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
         summary: str,
         facts: Iterable[dict[str, object]],
     ) -> None:
-        fact_text = "；".join(
-            f"{fact.get('label')}：{fact.get('value')}"
+        fact_pairs = tuple(
+            (str(fact.get("label")), str(fact.get("value")))
             for fact in facts
             if fact.get("label") and fact.get("value")
+        )
+        fact_text = "；".join(
+            f"{label}：{value}" for label, value in fact_pairs
         )
         body = summary.strip()
         if fact_text and fact_text not in body:
@@ -457,7 +507,9 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
         text = f"{section}：{body}" if section and body else body
         if text and text not in seen:
             seen.add(text)
-            evidence.append((section, text))
+            evidence.append(
+                (section, text, _evidence_direction(summary, fact_pairs))
+            )
 
     for finding in payload.get("findings", []):
         add_evidence(
@@ -480,22 +532,20 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
             item.get("facts", []),
         )
 
-    evidence_texts = [text for _, text in evidence]
-    positive_terms = ("增长", "改善", "预增", "增持", "流入", "上涨", "修复")
-    negative_terms = ("下降", "恶化", "预亏", "减持", "流出", "下跌", "亏损", "承压")
+    evidence_texts = [text for _, text, _direction in evidence]
     context["evidence"] = evidence_texts
     context["support"] = next(
-        (text for text in evidence_texts if any(term in text for term in positive_terms)),
+        (text for _section, text, direction in evidence if direction == 1),
         "",
     )
     context["counter"] = next(
-        (text for text in evidence_texts if any(term in text for term in negative_terms)),
+        (text for _section, text, direction in evidence if direction == -1),
         context["risk"],
     )
     context["expectation"] = next(
         (
             text
-            for section, text in evidence
+            for section, text, _direction in evidence
             if any(term in section for term in ("机构预期", "研报"))
         ),
         "",
@@ -503,7 +553,7 @@ def _stock_result_context(result: Any | None) -> dict[str, Any]:
     context["price"] = next(
         (
             text
-            for section, text in evidence
+            for section, text, _direction in evidence
             if any(term in section for term in ("行情", "价格", "资金"))
         ),
         "",

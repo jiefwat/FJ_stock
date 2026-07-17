@@ -26,6 +26,9 @@ class CompleteStockClient:
         rating = "减持" if self.negative else "增持"
         event_type = "预亏" if self.negative else "预增"
         price_change = "-4.5%" if self.negative else "2.5%"
+        revision_key = "盈利预测下修" if self.negative else "盈利预测上调"
+        revision_value = "-20%" if self.negative else "12%"
+        flow_key = "主力资金净流出" if self.negative else "主力资金净流入"
         rows = {
             "finance": {
                 "营业收入[2025]": 5_100_000_000,
@@ -33,13 +36,18 @@ class CompleteStockClient:
                 "归母净利润同比增长率[2025]": growth,
             },
             "business": {"主营产品": "核心产品", "竞争对手": "主要同行"},
-            "consensus": {"预测净利润[2027]": 320_000_000, "机构评级": rating},
+            "consensus": {
+                "预测净利润[2027]": 320_000_000,
+                "机构评级": rating,
+                revision_key: revision_value,
+            },
             "event": {"业绩预告类型": event_type, "公告日期": "20260714"},
             "market": {
                 "收盘价": 18.6,
                 "涨跌幅[20260714]": price_change,
                 "成交量": 86_000_000,
                 "交易日期": "20260714",
+                flow_key: 20_000_000,
             },
             "industry": {"行业名称": "金属制品", "行业排名": 8, "行业市盈率": 24.6},
             "announcement": {"公告标题": "季度经营数据公告", "公告日期": "20260714"},
@@ -168,10 +176,29 @@ def test_external_stock_outputs_change_with_opposite_public_facts() -> None:
     ]
     positive_text = json.dumps(positive_outputs, ensure_ascii=False)
     negative_text = json.dumps(negative_outputs, ensure_ascii=False)
+    positive_by_name = {item["name"]: item for item in positive_outputs}
+    negative_by_name = {item["name"]: item for item in negative_outputs}
+    positive_support = json.dumps(positive_by_name["最强支持"], ensure_ascii=False)
+    negative_support = json.dumps(negative_by_name["最强支持"], ensure_ascii=False)
+    negative_counter = json.dumps(negative_by_name["最大反证"], ensure_ascii=False)
 
     assert positive_outputs != negative_outputs
     assert "18%" in positive_text or "预增" in positive_text
     assert "-25%" in negative_text or "预亏" in negative_text
+    assert any(term in positive_support for term in ("18%", "预增", "上调", "净流入"))
+    assert all(
+        term not in negative_support for term in ("-25%", "预亏", "下修", "净流出")
+    )
+    assert any(term in negative_counter for term in ("-25%", "预亏", "下修", "净流出"))
+    support_facts = {
+        (fact["label"], fact["value"])
+        for fact in negative_by_name["最强支持"]["facts"]
+    }
+    counter_facts = {
+        (fact["label"], fact["value"])
+        for fact in negative_by_name["最大反证"]["facts"]
+    }
+    assert support_facts.isdisjoint(counter_facts)
 
 
 def test_local_stock_outputs_anchor_actual_result_judgment_and_evidence() -> None:
