@@ -37,23 +37,24 @@ CAPABILITY_GROUPS = {
 }
 
 MAX_CACHE_ENTRIES = 128
-_PERSONAL_CONTEXT_PATTERN = re.compile(
-    r"我的.{0,12}(?:持有|持股|股数|仓位|持仓|成本|均价|盈亏|买入|建仓)|"
-    r"本人.{0,8}(?:持有|持股|股数|仓位|持仓|成本|均价|盈亏|买入|建仓)|"
-    r"我(?:现在|目前|当前|现)?持有|"
-    r"我.{0,4}(?:仓位|持仓|成本|均价|盈亏|买入|建仓)|"
-    r"账户|账号|持仓|仓位|浮盈|浮亏|组合列表"
+_QUESTION_PREFIX_PATTERN = re.compile(r"^(?:我想问|我想了解|我想知道|请问)[\s,，:：]*")
+_PERSONAL_OWNERSHIP_PATTERN = re.compile(
+    r"(?:我|我的|本人|个人).*"
+    r"(?:持股|持有|有[^，。！？!?]{0,16}股|仓位|盈亏|成本价|买入价|持仓)"
 )
+_ACCOUNT_CONTEXT_PATTERN = re.compile(r"账户|账号|组合列表")
 _PUBLIC_SUBJECT_PATTERN = re.compile(
     r"公司|企业|大股东|控股股东|实际控制人|实控人|前十大股东|机构|基金|"
     r"董监高|员工持股|产品|原材料|经营"
 )
 _SUBJECTLESS_PRIVATE_PATTERN = re.compile(
-    r"持股(?:的)?(?:成本|数量|均价)|(?:当前|累计)(?:总)?盈亏|"
-    r"成本价|买入价|买入成本|建仓(?:价|成本)"
+    r"持股(?:的)?(?:(?:平均)?成本|数量|均价)|"
+    r"(?:当前|累计)(?:的)?(?:总)?盈亏|"
+    r"持仓|仓位|浮盈|浮亏|成本价|买入价|买入成本|建仓(?:价|成本)"
 )
 _ENGLISH_PRIVATE_PATTERN = re.compile(
     r"\b(?:holdings|account|cookie|portfolio|pnl)\b|"
+    r"\bi\s+(?:hold|own|have|bought)\b.*\bshares?\b|"
     r"\bposition\s+size\b|\bentry\s+price\b|"
     r"\bmy\s+(?:(?:average\s+)?cost|p\s*&\s*l|shares?|weight|position)\b",
     re.IGNORECASE,
@@ -390,10 +391,12 @@ def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
 
 
 def _contains_private_context(question: str) -> bool:
-    normalized = question.casefold()
+    normalized = _QUESTION_PREFIX_PATTERN.sub("", question.casefold(), count=1)
     compact = re.sub(r"\s+", "", normalized)
-    if _PERSONAL_CONTEXT_PATTERN.search(compact) or _ENGLISH_PRIVATE_PATTERN.search(
-        normalized
+    if (
+        _PERSONAL_OWNERSHIP_PATTERN.search(compact)
+        or _ACCOUNT_CONTEXT_PATTERN.search(compact)
+        or _ENGLISH_PRIVATE_PATTERN.search(normalized)
     ):
         return True
     if _PUBLIC_SUBJECT_PATTERN.search(compact):

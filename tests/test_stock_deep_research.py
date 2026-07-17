@@ -211,6 +211,18 @@ def test_custom_question_routes_to_one_capability_without_private_context() -> N
         "当前总盈亏20%",
         "累计总盈亏20%",
         "我的公司持仓",
+        "个人持股100股",
+        "个人持有100股",
+        "我在公司有100股",
+        "本人在公司有100股",
+        "当前的盈亏20%",
+        "当前的总盈亏20%",
+        "持股的平均成本",
+        "持股平均成本",
+        "I hold 100 shares",
+        "I own 100 shares",
+        "I have 100 shares",
+        "I bought 100 shares",
     ],
 )
 def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
@@ -237,6 +249,10 @@ def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
         "机构持股均价",
         "公司产品成本价变化",
         "公司当前盈亏情况",
+        "我想问大股东持股数量",
+        "我想了解大股东持股数量",
+        "我想知道大股东持股数量",
+        "请问大股东持股数量",
     ],
 )
 def test_custom_question_allows_company_cost_and_shareholding_research(
