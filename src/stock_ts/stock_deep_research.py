@@ -37,26 +37,41 @@ CAPABILITY_GROUPS = {
 }
 
 MAX_CACHE_ENTRIES = 128
-_QUESTION_PREFIX_PATTERN = re.compile(r"^(?:我想问|我想了解|我想知道|请问)[\s,，:：]*")
-_PERSONAL_OWNERSHIP_PATTERN = re.compile(
-    r"(?:我|我的|本人|个人).*"
-    r"(?:持股|持有|有[^，。！？!?]{0,16}股|仓位|盈亏|成本价|买入价|持仓)"
+_ACCOUNT_POSSESSIVE_PATTERN = re.compile(
+    r"(?:我的|本人的|个人的)[^，。！？!?]{0,16}"
+    r"(?:账户|持仓|仓位|买入价|盈亏|持股|股数|成本价|成本|均价)"
 )
 _ACCOUNT_CONTEXT_PATTERN = re.compile(r"账户|账号|组合列表")
-_PUBLIC_SUBJECT_PATTERN = re.compile(
-    r"公司|企业|大股东|控股股东|实际控制人|实控人|前十大股东|机构|基金|"
-    r"董监高|员工持股|产品|原材料|经营"
+_PERSONAL_OWNERSHIP_PATTERN = re.compile(
+    r"(?:我|本人|个人)[^，。！？!?]*(?:持有|持股|有)"
+    r"[^，。！？!?]{0,16}(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:股|手)"
+)
+_STRONG_PUBLIC_SUBJECT_PATTERN = re.compile(
+    r"大股东|控股股东|实际控制人|实控人|前十大股东|机构|基金|董监高|员工持股"
+)
+_GENERIC_PUBLIC_RESEARCH_PATTERN = re.compile(
+    r"(?:公司|企业|产品|原材料|经营)[^，。！？!?]{0,24}(?:成本|盈亏)"
 )
 _SUBJECTLESS_PRIVATE_PATTERN = re.compile(
     r"持股(?:的)?(?:(?:平均)?成本|数量|均价)|"
     r"(?:当前|累计)(?:的)?(?:总)?盈亏|"
     r"持仓|仓位|浮盈|浮亏|成本价|买入价|买入成本|建仓(?:价|成本)"
 )
-_ENGLISH_PRIVATE_PATTERN = re.compile(
-    r"\b(?:holdings|account|cookie|portfolio|pnl)\b|"
-    r"\bi\s+(?:hold|own|have|bought)\b.*\bshares?\b|"
-    r"\bposition\s+size\b|\bentry\s+price\b|"
-    r"\bmy\s+(?:(?:average\s+)?cost|p\s*&\s*l|shares?|weight|position)\b",
+_ENGLISH_ACCOUNT_POSSESSIVE_PATTERN = re.compile(
+    r"\bmy\s+(?:stake|position|holdings|shares|(?:average\s+)?cost|pnl|p\s*&\s*l)\b|"
+    r"\baccount\s+(?:weight|cost|position|holdings|pnl)\b|\bcookie\b",
+    re.IGNORECASE,
+)
+_ENGLISH_PERSONAL_OWNERSHIP_PATTERN = re.compile(
+    r"\bi\s+(?:hold|own|bought|have)\s+\d[\d,.]*\s+shares?\b",
+    re.IGNORECASE,
+)
+_ENGLISH_STRONG_PUBLIC_SUBJECT_PATTERN = re.compile(
+    r"\b(?:institutional|major\s+shareholder|controlling\s+shareholder)\b",
+    re.IGNORECASE,
+)
+_ENGLISH_SUBJECTLESS_PRIVATE_PATTERN = re.compile(
+    r"\bposition\s+size\b|\bentry\s+price\b",
     re.IGNORECASE,
 )
 _SENSITIVE_PUBLIC_FACT = re.compile(
@@ -391,17 +406,28 @@ def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
 
 
 def _contains_private_context(question: str) -> bool:
-    normalized = _QUESTION_PREFIX_PATTERN.sub("", question.casefold(), count=1)
+    normalized = question.casefold()
     compact = re.sub(r"\s+", "", normalized)
     if (
-        _PERSONAL_OWNERSHIP_PATTERN.search(compact)
+        _ACCOUNT_POSSESSIVE_PATTERN.search(compact)
         or _ACCOUNT_CONTEXT_PATTERN.search(compact)
-        or _ENGLISH_PRIVATE_PATTERN.search(normalized)
+        or _ENGLISH_ACCOUNT_POSSESSIVE_PATTERN.search(normalized)
     ):
         return True
-    if _PUBLIC_SUBJECT_PATTERN.search(compact):
+    if _PERSONAL_OWNERSHIP_PATTERN.search(
+        compact
+    ) or _ENGLISH_PERSONAL_OWNERSHIP_PATTERN.search(normalized):
+        return True
+    if _STRONG_PUBLIC_SUBJECT_PATTERN.search(
+        compact
+    ) or _ENGLISH_STRONG_PUBLIC_SUBJECT_PATTERN.search(normalized):
         return False
-    return bool(_SUBJECTLESS_PRIVATE_PATTERN.search(compact))
+    if _GENERIC_PUBLIC_RESEARCH_PATTERN.search(compact):
+        return False
+    return bool(
+        _SUBJECTLESS_PRIVATE_PATTERN.search(compact)
+        or _ENGLISH_SUBJECTLESS_PRIVATE_PATTERN.search(normalized)
+    )
 
 
 def _safe_public_fact_text(value: object, *, fallback: str, limit: int) -> str:

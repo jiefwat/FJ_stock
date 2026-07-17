@@ -223,6 +223,7 @@ def test_custom_question_routes_to_one_capability_without_private_context() -> N
         "I own 100 shares",
         "I have 100 shares",
         "I bought 100 shares",
+        "my stake is 30%",
     ],
 )
 def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
@@ -253,6 +254,12 @@ def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
         "我想了解大股东持股数量",
         "我想知道大股东持股数量",
         "请问大股东持股数量",
+        "我想请问大股东持股数量",
+        "我想研究控股股东持股比例",
+        "我想看看机构持股均价",
+        "我有个问题：前十大股东持股变化",
+        "I have a question about institutional shares",
+        "I want to know the major shareholder holdings",
     ],
 )
 def test_custom_question_allows_company_cost_and_shareholding_research(
