@@ -4,8 +4,13 @@ import json
 
 import pytest
 
-from stock_ts.iwencai import SKILLS
-from stock_ts.stock_deep_research import StockDeepResearchService
+from stock_ts.iwencai import (
+    SKILLS,
+    IwencaiConfigurationError,
+    IwencaiError,
+    IwencaiGatewayError,
+)
+from stock_ts.stock_deep_research import DeepResearchFact, StockDeepResearchService
 
 
 def _row_for(capability: str) -> dict[str, object]:
@@ -47,6 +52,14 @@ class FakeClient:
             "trace_id": "secret-trace",
             "provider": "internal-provider",
         }
+
+
+class AlwaysFailingClient:
+    def __init__(self, error_type: type[IwencaiError]) -> None:
+        self.error_type = error_type
+
+    def query(self, _skill: object, _query: str) -> dict[str, object]:
+        raise self.error_type("gateway trace secret /private/path")
 
 
 def test_all_focus_returns_six_supplier_neutral_product_groups() -> None:
@@ -93,6 +106,45 @@ def test_all_focus_returns_six_supplier_neutral_product_groups() -> None:
         for _capability, query in client.calls
         for forbidden in ("持仓", "成本", "权重", "账号", "Cookie")
     )
+
+
+def test_public_facts_remove_sensitive_supplier_content_from_labels_and_values() -> None:
+    class LeakyFactClient:
+        def query(self, _skill: object, _query: str) -> dict[str, object]:
+            return {
+                "datas": [
+                    {
+                        "营业收入[2025]": (
+                            "问财 同花顺 iWencai skill id trace gateway secret /private/path"
+                        )
+                    }
+                ]
+            }
+
+    payload = StockDeepResearchService(client_factory=LeakyFactClient).research(
+        code="600519",
+        name="贵州茅台",
+        focus="finance",
+    ).to_public_dict()
+    sensitive_label = DeepResearchFact(
+        label="iWencai skill_id trace gateway",
+        value="正常事实",
+    ).to_public_dict()
+    serialized = json.dumps({"payload": payload, "label": sensitive_label}, ensure_ascii=False)
+
+    for forbidden in (
+        "问财",
+        "同花顺",
+        "iwencai",
+        "skill id",
+        "skill_id",
+        "trace",
+        "gateway",
+        "secret",
+        "/private/path",
+    ):
+        assert forbidden.casefold() not in serialized.casefold()
+    assert "安全处理" in serialized
 
 
 def test_focus_allowlist_runs_only_the_requested_group() -> None:
@@ -190,7 +242,7 @@ def test_input_validation_uses_product_language(kwargs: dict[str, object], messa
         StockDeepResearchService(client_factory=FakeClient).research(**kwargs)
 
 
-def test_total_upstream_failure_does_not_expose_raw_exception() -> None:
+def test_total_generic_failure_raises_sanitized_unavailable_error() -> None:
     client = FakeClient(failures={
         "basicinfo",
         "business",
@@ -204,14 +256,30 @@ def test_total_upstream_failure_does_not_expose_raw_exception() -> None:
         "announcement",
         "news",
     })
-    payload = StockDeepResearchService(client_factory=lambda: client).research(
-        code="600519",
-        name="贵州茅台",
-    ).to_public_dict()
+    with pytest.raises(IwencaiError, match="暂时不可用") as caught:
+        StockDeepResearchService(client_factory=lambda: client).research(
+            code="600519",
+            name="贵州茅台",
+        )
 
-    assert payload["ok"] is False
-    assert payload["status"] == "unavailable"
-    assert "稍后" in payload["recovery"]
-    serialized = json.dumps(payload, ensure_ascii=False)
     for forbidden in ("gateway", "trace_id", "secret", "RuntimeError"):
-        assert forbidden not in serialized
+        assert forbidden not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    [IwencaiConfigurationError, IwencaiGatewayError],
+)
+def test_zero_success_preserves_stable_upstream_error_type(
+    error_type: type[IwencaiError],
+) -> None:
+    client = AlwaysFailingClient(error_type)
+
+    with pytest.raises(error_type) as caught:
+        StockDeepResearchService(client_factory=lambda: client).research(
+            code="600519",
+            name="贵州茅台",
+        )
+
+    for forbidden in ("gateway", "trace", "secret", "/private/path"):
+        assert forbidden not in str(caught.value).casefold()

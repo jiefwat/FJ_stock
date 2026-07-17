@@ -11,6 +11,12 @@ import pytest
 
 import stock_ts.web as web_module
 from stock_ts.auth import SessionManager, UserStore
+from stock_ts.iwencai import (
+    SKILLS,
+    IwencaiConfigurationError,
+    IwencaiError,
+    IwencaiGatewayError,
+)
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import (
     ResearchContext,
@@ -18,6 +24,7 @@ from stock_ts.research_engine import (
     ResearchWorkspaceResult,
 )
 from stock_ts.research_snapshots import ResearchSnapshotStore
+from stock_ts.stock_deep_research import StockDeepResearchService
 from stock_ts.web import (
     Handler,
     ResearchRateLimiter,
@@ -810,6 +817,93 @@ def test_stock_deep_endpoint_enforces_media_size_and_rate_limits(
             _deep_request(server, b'{"code":"600519"}', cookie=cookie)
         assert limited.value.code == 429
         assert _error_json(limited.value)["status"] == "rate_limited"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_status"),
+    [
+        (IwencaiConfigurationError, 503),
+        (IwencaiGatewayError, 502),
+    ],
+)
+def test_stock_deep_endpoint_maps_real_service_zero_success_errors(
+    monkeypatch,
+    tmp_path,
+    error_type: type[IwencaiError],
+    expected_status: int,
+) -> None:
+    class FailingClient:
+        def query(self, _skill: object, _query: str) -> dict[str, object]:
+            raise error_type("gateway trace secret /private/path")
+
+    monkeypatch.setattr(
+        web_module,
+        "STOCK_DEEP_RESEARCH_SERVICE",
+        StockDeepResearchService(client_factory=FailingClient),
+    )
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _deep_request(
+                server,
+                json.dumps(
+                    {"code": "600519", "name": "贵州茅台", "focus": "all"},
+                    ensure_ascii=False,
+                ).encode(),
+                cookie=_authenticated_cookie(tmp_path),
+            )
+
+        assert caught.value.code == expected_status
+        serialized = json.dumps(_error_json(caught.value), ensure_ascii=False)
+        for forbidden in ("gateway", "trace", "secret", "/private/path", "问财", "同花顺"):
+            assert forbidden.casefold() not in serialized.casefold()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stock_deep_endpoint_keeps_real_service_partial_success_neutral(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    rows = {
+        "basicinfo": {"公司名称": "贵州茅台股份有限公司"},
+        "business": {"主营产品": "白酒"},
+    }
+
+    class PartialClient:
+        def query(self, skill: object, _query: str) -> dict[str, object]:
+            capability = next(key for key, value in SKILLS.items() if value == skill)
+            if capability == "management":
+                raise IwencaiGatewayError("gateway trace secret /private/path")
+            return {"datas": [rows[capability]]}
+
+    monkeypatch.setattr(
+        web_module,
+        "STOCK_DEEP_RESEARCH_SERVICE",
+        StockDeepResearchService(client_factory=PartialClient),
+    )
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with _deep_request(
+            server,
+            json.dumps(
+                {"code": "600519", "name": "贵州茅台", "focus": "company"},
+                ensure_ascii=False,
+            ).encode(),
+            cookie=_authenticated_cookie(tmp_path),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert body["status"] == "partial"
+        assert body["coverage"] == {"ready": 1, "total": 3}
+        serialized = json.dumps(body, ensure_ascii=False)
+        for forbidden in ("gateway", "trace", "secret", "/private/path", "问财", "同花顺"):
+            assert forbidden.casefold() not in serialized.casefold()
     finally:
         server.shutdown()
         server.server_close()

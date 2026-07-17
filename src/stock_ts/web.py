@@ -13800,7 +13800,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/research/stock/deep":
             user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
-            if is_auth_enabled(config) and user is None:
+            if user is None:
                 self._send_json(
                     401,
                     {

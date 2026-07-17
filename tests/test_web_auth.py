@@ -164,6 +164,34 @@ def test_stock_deep_research_api_returns_json_401_for_anonymous_user(
         server.server_close()
 
 
+def test_stock_deep_research_api_still_requires_login_when_auth_is_disabled(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+    monkeypatch.setenv("STOCK_TS_PUBLIC_READONLY", "0")
+    monkeypatch.setenv("STOCK_TS_IWENCAI_ALLOW_ANONYMOUS", "1")
+    monkeypatch.setenv("STOCK_TS_AUTH_DB_PATH", str(tmp_path / "users.sqlite3"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/api/research/stock/deep",
+        data=b'{"code":"600519"}',
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.build_opener(_NoRedirect).open(request, timeout=5)
+
+        assert caught.value.code == 401
+        assert json.loads(caught.value.read().decode())["status"] == "login_required"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_handler_login_sets_http_only_session_cookie(monkeypatch, tmp_path) -> None:
     server = _serve_once(monkeypatch, tmp_path)
     opener = urllib.request.build_opener(_NoRedirect)

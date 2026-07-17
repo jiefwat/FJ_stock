@@ -10,6 +10,9 @@ from typing import Any, Callable
 
 from .iwencai import (
     SKILLS,
+    IwencaiConfigurationError,
+    IwencaiError,
+    IwencaiGatewayError,
     IwencaiSkillClient,
     build_module_research_query,
     route_stock_research_skill,
@@ -34,6 +37,11 @@ CAPABILITY_GROUPS = {
 
 _PRIVATE_TERMS = ("持仓", "持股", "成本", "权重", "账号", "账户", "备注", "组合列表")
 _PRIVATE_WORDS = ("holdings", "shares", "cost", "weight", "account", "cookie", "portfolio")
+_SENSITIVE_PUBLIC_FACT = re.compile(
+    r"问财|同花顺|iwencai|skill[\s_-]*id|trace|gateway|provider|api[\s_-]*key|"
+    r"authorization|secret",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -42,7 +50,14 @@ class DeepResearchFact:
     value: str
 
     def to_public_dict(self) -> dict[str, str]:
-        return {"label": self.label, "value": self.value}
+        return {
+            "label": _safe_public_fact_text(self.label, fallback="研究事实", limit=80),
+            "value": _safe_public_fact_text(
+                self.value,
+                fallback="内容已做安全处理",
+                limit=500,
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -100,6 +115,7 @@ class _CapabilityResult:
     capability: str
     facts: tuple[DeepResearchFact, ...] = ()
     succeeded: bool = False
+    error: Exception | None = None
 
 
 class StockDeepResearchService:
@@ -149,13 +165,13 @@ class StockDeepResearchService:
         requests = _requests_for(code=code, name=name, focus=focus, question=question)
         client = self.client_factory()
         results = _execute_requests(client, requests)
-        groups = _build_groups(results, focus=focus, question=question)
         ready = sum(result.succeeded for result in results)
+        _raise_if_zero_success(results, ready=ready)
+        groups = _build_groups(results, focus=focus, question=question)
         total = len(results)
-        ok = ready > 0
-        status = "complete" if total and ready == total else "partial" if ok else "unavailable"
+        status = "complete" if ready == total else "partial"
         result = StockDeepResearchResult(
-            ok=ok,
+            ok=True,
             status=status,
             code=code,
             name=name,
@@ -165,9 +181,9 @@ class StockDeepResearchService:
             coverage_total=total,
             cached=False,
             as_of=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
-            recovery="" if ok else "研究数据暂时不可用，请稍后重试。",
+            recovery="",
         )
-        if ok and self.cache_ttl > 0:
+        if self.cache_ttl > 0:
             with self._cache_lock:
                 self._cache[cache_key] = (self.clock() + self.cache_ttl, result)
         return result
@@ -235,9 +251,24 @@ def _execute_requests(
             capability = requests[index][0]
             try:
                 indexed[index] = future.result()
-            except Exception:
-                indexed[index] = _CapabilityResult(capability=capability)
+            except Exception as exc:
+                indexed[index] = _CapabilityResult(capability=capability, error=exc)
     return tuple(indexed[index] for index in range(len(requests)))
+
+
+def _raise_if_zero_success(
+    results: tuple[_CapabilityResult, ...],
+    *,
+    ready: int,
+) -> None:
+    if ready:
+        return
+    errors = tuple(result.error for result in results if result.error is not None)
+    if any(isinstance(error, IwencaiConfigurationError) for error in errors):
+        raise IwencaiConfigurationError("深度研究服务尚未配置。")
+    if any(isinstance(error, IwencaiGatewayError) for error in errors):
+        raise IwencaiGatewayError("深度研究服务暂时不可用，请稍后重试。")
+    raise IwencaiError("深度研究服务暂时不可用，请稍后重试。")
 
 
 def _execute_request(client: Any, capability: str, query: str) -> _CapabilityResult:
@@ -322,6 +353,11 @@ def _contains_private_context(question: str) -> bool:
     return any(term in normalized for term in _PRIVATE_TERMS) or any(
         re.search(rf"\b{re.escape(word)}\b", normalized) for word in _PRIVATE_WORDS
     )
+
+
+def _safe_public_fact_text(value: object, *, fallback: str, limit: int) -> str:
+    cleaned = _clean_input(value, limit)
+    return fallback if _SENSITIVE_PUBLIC_FACT.search(cleaned) else cleaned
 
 
 def _clean_input(value: object, limit: int | None = None) -> str:
