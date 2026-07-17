@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -35,8 +36,15 @@ CAPABILITY_GROUPS = {
     for capability in capabilities
 }
 
-_PRIVATE_TERMS = ("持仓", "持股", "成本", "权重", "账号", "账户", "备注", "组合列表")
-_PRIVATE_WORDS = ("holdings", "shares", "cost", "weight", "account", "cookie", "portfolio")
+MAX_CACHE_ENTRIES = 128
+_PRIVATE_TERMS = ("持仓", "仓位", "买入价", "浮盈", "浮亏", "账号", "账户", "组合列表")
+_PRIVATE_QUESTION_PATTERN = re.compile(
+    r"我的.{0,8}(?:持股|股数|成本|权重|盈亏|买入)|"
+    r"\b(?:holdings|account|cookie|portfolio|pnl)\b|"
+    r"\bposition\s+size\b|\bentry\s+price\b|"
+    r"\bmy\s+(?:(?:average\s+)?cost|p\s*&\s*l|shares?|weight|position)\b",
+    re.IGNORECASE,
+)
 _SENSITIVE_PUBLIC_FACT = re.compile(
     r"问财|同花顺|iwencai|skill[\s_-]*id|trace|gateway|provider|api[\s_-]*key|"
     r"authorization|secret",
@@ -129,9 +137,9 @@ class StockDeepResearchService:
         self.client_factory = client_factory
         self.cache_ttl = max(cache_ttl, 0)
         self.clock = clock
-        self._cache: dict[
+        self._cache: OrderedDict[
             tuple[str, str, str, str], tuple[float, StockDeepResearchResult]
-        ] = {}
+        ] = OrderedDict()
         self._cache_lock = Lock()
 
     def research(
@@ -184,8 +192,7 @@ class StockDeepResearchService:
             recovery="",
         )
         if self.cache_ttl > 0:
-            with self._cache_lock:
-                self._cache[cache_key] = (self.clock() + self.cache_ttl, result)
+            self._store_cached(cache_key, result)
         return result
 
     def _cached(
@@ -193,14 +200,35 @@ class StockDeepResearchService:
         cache_key: tuple[str, str, str, str],
     ) -> StockDeepResearchResult | None:
         with self._cache_lock:
+            self._prune_expired_locked(self.clock())
             cached = self._cache.get(cache_key)
             if cached is None:
                 return None
-            expires_at, result = cached
-            if expires_at <= self.clock():
-                self._cache.pop(cache_key, None)
-                return None
+            _expires_at, result = cached
+            self._cache.move_to_end(cache_key)
             return replace(result, cached=True)
+
+    def _store_cached(
+        self,
+        cache_key: tuple[str, str, str, str],
+        result: StockDeepResearchResult,
+    ) -> None:
+        with self._cache_lock:
+            now = self.clock()
+            self._prune_expired_locked(now)
+            self._cache[cache_key] = (now + self.cache_ttl, result)
+            self._cache.move_to_end(cache_key)
+            while len(self._cache) > MAX_CACHE_ENTRIES:
+                self._cache.popitem(last=False)
+
+    def _prune_expired_locked(self, now: float) -> None:
+        expired = [
+            key
+            for key, (expires_at, _result) in self._cache.items()
+            if expires_at <= now
+        ]
+        for key in expired:
+            self._cache.pop(key, None)
 
 
 def _requests_for(
@@ -350,8 +378,8 @@ def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
 
 def _contains_private_context(question: str) -> bool:
     normalized = question.casefold()
-    return any(term in normalized for term in _PRIVATE_TERMS) or any(
-        re.search(rf"\b{re.escape(word)}\b", normalized) for word in _PRIVATE_WORDS
+    return any(term in normalized for term in _PRIVATE_TERMS) or bool(
+        _PRIVATE_QUESTION_PATTERN.search(normalized)
     )
 
 

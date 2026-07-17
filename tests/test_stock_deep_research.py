@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+import stock_ts.stock_deep_research as deep_research_module
 from stock_ts.iwencai import (
     SKILLS,
     IwencaiConfigurationError,
@@ -179,15 +180,43 @@ def test_custom_question_routes_to_one_capability_without_private_context() -> N
 
 @pytest.mark.parametrize(
     "question",
-    ["我的持股数量是多少", "show my holdings cost", "check account weight"],
+    [
+        "我的持股数量是多少",
+        "show my holdings cost",
+        "check account weight",
+        "我的仓位30%",
+        "我的买入价1500",
+        "当前浮亏20%",
+        "浮盈",
+        "持仓成本",
+        "position size",
+        "entry price",
+        "my average cost",
+        "my PnL",
+    ],
 )
 def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
+    client = FakeClient()
     with pytest.raises(ValueError, match="账户|持仓"):
-        StockDeepResearchService(client_factory=FakeClient).research(
+        StockDeepResearchService(client_factory=lambda: client).research(
             code="600519",
             name="贵州茅台",
             question=question,
         )
+    assert client.calls == []
+
+
+def test_custom_question_allows_company_operating_cost_research() -> None:
+    client = FakeClient()
+
+    result = StockDeepResearchService(client_factory=lambda: client).research(
+        code="600519",
+        name="贵州茅台",
+        question="原材料成本承压吗",
+    )
+
+    assert result.ok is True
+    assert len(client.calls) == 1
 
 
 def test_partial_success_preserves_available_facts_and_recovery_copy() -> None:
@@ -227,6 +256,41 @@ def test_cache_ttl_and_refresh_control_live_calls() -> None:
     assert len(client.calls) == call_count * 3
     assert refreshed.cached is False
     assert expired.cached is False
+
+
+def test_cache_is_bounded_and_evicts_the_least_recently_used_key() -> None:
+    client = FakeClient()
+    service = StockDeepResearchService(client_factory=lambda: client)
+
+    for index in range(128):
+        service.research(
+            code="600519",
+            name="测试公司",
+            question=f"营业收入趋势 {index}",
+        )
+    service.research(code="600519", name="测试公司", question="营业收入趋势 0")
+    service.research(code="600519", name="测试公司", question="营业收入趋势 128")
+
+    assert deep_research_module.MAX_CACHE_ENTRIES == 128
+    assert len(service._cache) == deep_research_module.MAX_CACHE_ENTRIES
+    assert ("600519", "测试公司", "all", "营业收入趋势 0") in service._cache
+    assert ("600519", "测试公司", "all", "营业收入趋势 1") not in service._cache
+
+
+def test_new_cache_key_prunes_all_expired_entries() -> None:
+    now = [1000.0]
+    client = FakeClient()
+    service = StockDeepResearchService(
+        client_factory=lambda: client,
+        clock=lambda: now[0],
+    )
+    for code in ("000001", "000002", "000003"):
+        service.research(code=code, name="测试公司", focus="finance")
+
+    now[0] += 301
+    service.research(code="000004", name="测试公司", focus="finance")
+
+    assert list(service._cache) == [("000004", "测试公司", "finance", "")]
 
 
 @pytest.mark.parametrize(
