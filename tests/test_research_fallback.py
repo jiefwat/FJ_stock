@@ -353,6 +353,7 @@ def test_local_portfolio_fallback_shows_all_positions_and_theme_sections(tmp_pat
     assert {section["key"] for section in payload["module_sections"]} == {
         "portfolio-themes",
         "portfolio-divergence",
+        "professional-method",
     }
     assert len(payload["findings"]) <= 3
     for item in payload["module_items"]:

@@ -11,6 +11,7 @@ from typing import Any
 
 from .iwencai import SKILLS, IwencaiSkillClient
 from .research_evidence import normalize_capability_rows, raw_rows
+from .research_method import attach_method_section
 
 WORKSPACE_CAPABILITIES = {
     "market": (
@@ -285,6 +286,7 @@ class ResearchWorkspaceResult:
     module_items: tuple[ResearchModuleItem, ...] = ()
     decision_label: str = "待确认"
     module_sections: tuple[ResearchModuleSection, ...] = ()
+    research_contract_version: str = ""
 
     def to_public_dict(self) -> dict[str, object]:
         identities = tuple(
@@ -319,6 +321,7 @@ class ResearchWorkspaceResult:
             "module_items": [item.to_public_dict() for item in self.module_items],
             "decision_label": _public_free_text(self.decision_label, 120),
             "module_sections": [item.to_public_dict() for item in self.module_sections],
+            "research_contract_version": self.research_contract_version,
         }
 
 
@@ -686,24 +689,28 @@ def _build_workspace_result(
     else:
         decision_label = "待确认"
     subject_count = _subject_count(module, outcomes, module_items)
-    return ResearchWorkspaceResult(
-        ok=bool(successful),
-        status=status,
-        module=module,
-        generated_at=now.isoformat(timespec="seconds"),
-        verdict=verdict,
-        action=action,
-        primary_risk=_primary_risk(module, front_successful, copy["risk"]),
-        findings=findings,
-        details=details,
-        missing_sections=missing_sections,
-        subject_count=subject_count,
-        coverage_ready=len(successful),
-        coverage_total=len(outcomes),
-        as_of=now.isoformat(timespec="seconds"),
-        module_items=module_items,
-        decision_label=decision_label,
-        module_sections=module_sections,
+    return attach_method_section(
+        ResearchWorkspaceResult(
+            ok=bool(successful),
+            status=status,
+            module=module,
+            generated_at=now.isoformat(timespec="seconds"),
+            verdict=verdict,
+            action=action,
+            primary_risk=_primary_risk(module, front_successful, copy["risk"]),
+            findings=findings,
+            details=details,
+            missing_sections=missing_sections,
+            subject_count=subject_count,
+            coverage_ready=len(successful),
+            coverage_total=len(outcomes),
+            as_of=now.isoformat(timespec="seconds"),
+            module_items=module_items,
+            decision_label=decision_label,
+            module_sections=module_sections,
+        ),
+        ready_keys=(item.request.capability for item in successful),
+        missing_keys=(item.request.capability for item in failed),
     )
 
 

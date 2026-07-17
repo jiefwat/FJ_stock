@@ -27,6 +27,7 @@ from .research_engine import (
     ResearchModuleSection,
     ResearchWorkspaceResult,
 )
+from .research_method import attach_method_section
 from .workflows import (
     build_candidate_report,
     build_market_report,
@@ -47,15 +48,17 @@ def build_local_research(
 ) -> ResearchWorkspaceResult:
     if module == "stock":
         try:
-            return _build_stock_research(context, provider)
+            return attach_method_section(_build_stock_research(context, provider))
         except Exception:
             if opportunity_snapshot is not None:
-                return _build_snapshot_stock_research(context, opportunity_snapshot)
+                return attach_method_section(
+                    _build_snapshot_stock_research(context, opportunity_snapshot)
+                )
             raise
     market = build_market_report(provider)
     sectors = build_sector_report(provider, market=market)
     if module == "market":
-        return _build_market_research(provider, market, sectors)
+        return attach_method_section(_build_market_research(provider, market, sectors))
     if module == "portfolio":
         portfolio = build_portfolio_report(
             provider,
@@ -63,7 +66,9 @@ def build_local_research(
             market=market,
             allow_empty=True,
         )
-        return _build_portfolio_research(portfolio, provider=provider)
+        return attach_method_section(
+            _build_portfolio_research(portfolio, provider=provider)
+        )
     if module == "opportunity":
         try:
             candidate_universe = provider.fetch_candidate_universe()
@@ -76,13 +81,15 @@ def build_local_research(
             candidate_universe=candidate_universe,
             limit=10,
         )
-        return _build_opportunity_research(
-            market,
-            sectors,
-            candidates,
-            candidate_universe=candidate_universe,
-            selected_theme=context.sector,
-            market_trade_date=_safe_market_trade_date(provider) or market.trade_date,
+        return attach_method_section(
+            _build_opportunity_research(
+                market,
+                sectors,
+                candidates,
+                candidate_universe=candidate_universe,
+                selected_theme=context.sector,
+                market_trade_date=_safe_market_trade_date(provider) or market.trade_date,
+            )
         )
     raise ValueError(f"unsupported local research module: {module}")
 

@@ -962,6 +962,7 @@ def test_market_builds_theme_breadth_and_hot_stock_sections() -> None:
         "market-themes",
         "market-breadth",
         "market-hot",
+        "professional-method",
     ]
     assert payload["decision_label"] == "修复中"
 
