@@ -7,6 +7,8 @@ import subprocess
 import pytest
 from bs4 import BeautifulSoup
 
+from stock_ts.iwencai import SKILLS
+from stock_ts.stock_deep_research import StockDeepResearchService
 from stock_ts.web import render_page
 from stock_ts.webapp.engine_workspace import engine_app_script, render_engine_workspace
 from stock_ts.webapp.styles import CSS
@@ -459,6 +461,7 @@ def test_stock_deep_research_ledger_sits_between_switcher_and_judgment() -> None
     assert form.select_one('input[name="question"]')
     assert form.select_one('button[type="submit"]')
     assert ledger.select_one("details[data-stock-deep-evidence]")
+    assert ledger.select_one("time[data-stock-deep-as-of]")
 
     for module in ("market", "portfolio", "opportunity"):
         other = BeautifulSoup(
@@ -617,6 +620,105 @@ function deepStates(root) {
     assert set(result["all"].values()) == {"error"}
     assert result["singleLive"] == "深度研究暂时不可用，请稍后重试。"
     assert result["allLive"] == "深度研究暂时不可用，请稍后重试。"
+
+
+def test_stock_deep_research_renders_real_partial_evidence_contract() -> None:
+    class PartialEventClient:
+        def query(self, skill: object, _query: str) -> dict[str, object]:
+            capability = next(key for key, value in SKILLS.items() if value == skill)
+            if capability == "news":
+                raise RuntimeError("gateway trace secret upstream failure")
+            rows = {
+                "event": {
+                    "业绩预告类型": "预亏",
+                    "公告日期": "20260716",
+                },
+                "announcement": {
+                    "title": "经营数据公告",
+                    "summary": "生产经营保持稳定",
+                    "publish_date": "20260716",
+                },
+            }
+            return {"datas": [rows[capability]]}
+
+    payload = StockDeepResearchService(client_factory=PartialEventClient).research(
+        code="600519",
+        name="贵州茅台",
+        focus="event",
+    ).to_public_dict()
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    result = _run_engine_dom_scenario(
+        f"""
+function makeContractGroup(key) {{
+  const status = new FakeNode('strong');
+  const body = new FakeNode('div');
+  body.hidden = true;
+  return {{
+    dataset: {{stockDeepGroup: key}},
+    className: 'stock-deep-research-group state-idle',
+    body,
+    querySelector: (selector) => selector === '[data-stock-deep-group-status]'
+      ? status
+      : selector === '[data-stock-deep-group-body]'
+        ? body
+        : null
+  }};
+}}
+const contractGroups = Object.fromEntries(
+  stockDeepGroupKeys.map((key) => [key, makeContractGroup(key)])
+);
+const contractLive = new FakeNode('p');
+const contractRun = new FakeNode('button');
+const contractEvidence = new FakeNode('div');
+const contractSummary = new FakeNode('summary');
+const contractAsOf = new FakeNode('time');
+const contractDisclosure = {{
+  querySelector: (selector) => selector === 'summary' ? contractSummary : null
+}};
+const contractRoot = {{
+  dataset: {{state: 'idle'}},
+  querySelectorAll: (selector) => selector === '[data-stock-deep-group]'
+    ? Object.values(contractGroups)
+    : selector === 'button, input'
+      ? [contractRun]
+      : [],
+  querySelector: (selector) => {{
+    const match = selector.match(/^\\[data-stock-deep-group="([^"]+)"\\]$/);
+    if (match) return contractGroups[match[1]] || null;
+    if (selector === '[data-stock-deep-live]') return contractLive;
+    if (selector === '[data-stock-deep-run]') return contractRun;
+    if (selector === '[data-stock-deep-evidence-body]') return contractEvidence;
+    if (selector === '[data-stock-deep-evidence]') return contractDisclosure;
+    if (selector === '[data-stock-deep-as-of]') return contractAsOf;
+    return null;
+  }}
+}};
+const contractPayload = {payload_json};
+renderStockDeepResearch(contractRoot, contractPayload, []);
+console.log(JSON.stringify({{
+  summary: contractGroups.event.body.textContent,
+  evidence: contractEvidence.textContent,
+  asOf: contractAsOf.textContent,
+  status: contractPayload.status,
+  serialized: JSON.stringify(contractPayload)
+}}));
+"""
+    )
+
+    assert result["status"] == "partial"
+    for label in ("支持证据", "冲突证据", "数据缺口"):
+        assert label in result["summary"]
+        assert label in result["evidence"]
+    for evidence in ("经营数据公告", "预亏", "新闻动态"):
+        assert evidence in result["summary"]
+        assert evidence in result["evidence"]
+    assert result["asOf"].startswith("研究日期 ")
+    assert "研究日期 " in result["evidence"]
+    for forbidden in ("gateway", "trace", "secret"):
+        assert forbidden.casefold() not in result["serialized"].casefold()
+    visible = result["summary"] + result["evidence"] + result["asOf"]
+    for forbidden in ("gateway", "trace", "secret", "event", "news"):
+        assert forbidden.casefold() not in visible.casefold()
 
 
 def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:

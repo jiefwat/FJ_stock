@@ -36,6 +36,20 @@ CAPABILITY_GROUPS = {
     for capability in capabilities
 }
 
+CAPABILITY_GAP_LABELS = {
+    "basicinfo": "公司基础信息",
+    "business": "经营与竞争",
+    "management": "股东与治理",
+    "finance": "财务与估值",
+    "industry": "行业与同行",
+    "consensus": "机构一致预期",
+    "report": "研究报告",
+    "market": "资金与技术",
+    "event": "业绩与重大事件",
+    "announcement": "公司公告",
+    "news": "新闻动态",
+}
+
 MAX_CACHE_ENTRIES = 128
 _ACCOUNT_POSSESSIVE_PATTERN = re.compile(
     r"(?:我的|本人的|个人的)[^，。！？!?]{0,16}"
@@ -87,6 +101,13 @@ _SENSITIVE_PUBLIC_FACT = re.compile(
     r"authorization|secret",
     re.IGNORECASE,
 )
+_NEGATIVE_NUMBER = re.compile(r"(?<![\d])[-−]\s*(?:\d+(?:\.\d+)?|\.\d+)")
+_EXPLICIT_NEGATIVE_FACT = re.compile(
+    r"预亏|亏损|下修|净流出|恶化|明显(?:下降|下滑)|"
+    r"(?:同比|环比|业绩|营收|营业收入|利润|净利润|现金流|评级|预期)"
+    r"[^，。；;]{0,12}(?:下降|下滑|下调|减少|转差)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -111,6 +132,9 @@ class DeepResearchGroup:
     title: str
     status: str
     facts: tuple[DeepResearchFact, ...] = ()
+    support: tuple[DeepResearchFact, ...] = ()
+    conflicts: tuple[DeepResearchFact, ...] = ()
+    gaps: tuple[str, ...] = ()
     recovery: str = ""
 
     def to_public_dict(self) -> dict[str, object]:
@@ -119,6 +143,12 @@ class DeepResearchGroup:
             "title": self.title,
             "status": self.status,
             "facts": [fact.to_public_dict() for fact in self.facts],
+            "support": [fact.to_public_dict() for fact in self.support],
+            "conflicts": [fact.to_public_dict() for fact in self.conflicts],
+            "gaps": [
+                _safe_public_fact_text(gap, fallback="研究数据", limit=40)
+                for gap in self.gaps
+            ],
             "recovery": self.recovery,
         }
 
@@ -375,6 +405,13 @@ def _build_groups(
         facts = _dedupe_facts(
             fact for result in group_results if result.succeeded for fact in result.facts
         )
+        conflicts = tuple(fact for fact in facts if _is_explicit_conflict(fact))
+        support = tuple(fact for fact in facts if not _is_explicit_conflict(fact))
+        gaps = tuple(
+            CAPABILITY_GAP_LABELS[result.capability]
+            for result in group_results
+            if not result.succeeded
+        )
         status = (
             "ready"
             if group_results and succeeded == len(group_results)
@@ -395,6 +432,9 @@ def _build_groups(
                 title=title,
                 status=status,
                 facts=facts,
+                support=support,
+                conflicts=conflicts,
+                gaps=gaps,
                 recovery=recovery,
             )
         )
@@ -411,6 +451,12 @@ def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
         seen.add(key)
         result.append(fact)
     return tuple(result)
+
+
+def _is_explicit_conflict(fact: DeepResearchFact) -> bool:
+    if _NEGATIVE_NUMBER.search(fact.value):
+        return True
+    return bool(_EXPLICIT_NEGATIVE_FACT.search(f"{fact.label} {fact.value}"))
 
 
 def _contains_private_context(question: str) -> bool:

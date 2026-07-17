@@ -7607,6 +7607,7 @@ summary:focus-visible {
   letter-spacing:-.02em;
 }
 .stock-deep-research-head p,
+.stock-deep-research-date,
 .stock-deep-research-live { margin:0; color:var(--muted); font-size:12px; line-height:1.45; }
 .stock-deep-research-run {
   flex:0 0 auto;

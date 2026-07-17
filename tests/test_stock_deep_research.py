@@ -39,8 +39,14 @@ def _row_for(capability: str) -> dict[str, object]:
 
 
 class FakeClient:
-    def __init__(self, *, failures: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failures: set[str] | None = None,
+        rows: dict[str, dict[str, object]] | None = None,
+    ) -> None:
         self.failures = failures or set()
+        self.rows = rows or {}
         self.calls: list[tuple[str, str]] = []
 
     def query(self, skill: object, query: str) -> dict[str, object]:
@@ -49,7 +55,7 @@ class FakeClient:
         if capability in self.failures:
             raise RuntimeError("gateway trace_id secret failure")
         return {
-            "datas": [_row_for(capability)],
+            "datas": [self.rows.get(capability, _row_for(capability))],
             "trace_id": "secret-trace",
             "provider": "internal-provider",
         }
@@ -298,6 +304,94 @@ def test_partial_success_preserves_available_facts_and_recovery_copy() -> None:
     assert payload["coverage"] == {"ready": 9, "total": 11}
     assert any(group["status"] == "partial" for group in payload["groups"])
     assert all("gateway" not in group["recovery"].lower() for group in payload["groups"])
+
+
+def test_public_evidence_contract_separates_support_from_explicit_conflicts() -> None:
+    client = FakeClient(
+        rows={
+            "finance": {
+                "营业收入同比[2025]": "8%",
+                "归母净利润同比[2025]": "-10%",
+            }
+        }
+    )
+    payload = StockDeepResearchService(client_factory=lambda: client).research(
+        code="600519",
+        name="贵州茅台",
+        focus="finance",
+    ).to_public_dict()
+    group = payload["groups"][0]
+
+    assert group["support"] == [
+        {"label": "营业收入同比[2025]", "value": "8%"},
+    ]
+    assert group["conflicts"] == [
+        {"label": "归母净利润同比[2025]", "value": "-10%"},
+    ]
+    assert group["gaps"] == []
+
+
+@pytest.mark.parametrize(
+    ("focus", "capability", "row", "expected"),
+    [
+        ("event", "event", {"业绩预告类型": "预亏"}, "预亏"),
+        ("consensus", "consensus", {"机构评级": "下修"}, "下修"),
+        ("market", "market", {"主力资金流向": "净流出 2 亿元"}, "净流出"),
+        ("finance", "finance", {"营业收入同比[2025]": "明显下降"}, "明显下降"),
+    ],
+)
+def test_explicit_negative_language_is_published_only_as_conflict(
+    focus: str,
+    capability: str,
+    row: dict[str, object],
+    expected: str,
+) -> None:
+    client = FakeClient(rows={capability: row})
+    payload = StockDeepResearchService(client_factory=lambda: client).research(
+        code="600519",
+        name="贵州茅台",
+        focus=focus,
+    ).to_public_dict()
+    group = payload["groups"][0]
+
+    assert any(expected in fact["value"] for fact in group["conflicts"])
+    assert all(expected not in fact["value"] for fact in group["support"])
+
+
+def test_neutral_dates_and_company_facts_are_not_forced_into_conflicts() -> None:
+    client = FakeClient(
+        rows={
+            "basicinfo": {
+                "公司类型": "国有企业",
+                "成立日期": "19991120",
+            }
+        }
+    )
+    payload = StockDeepResearchService(client_factory=lambda: client).research(
+        code="600519",
+        name="贵州茅台",
+        focus="company",
+    ).to_public_dict()
+    company = payload["groups"][0]
+
+    assert {fact["label"] for fact in company["support"]} >= {"公司类型", "成立日期"}
+    assert company["conflicts"] == []
+
+
+def test_partial_group_exposes_only_product_gap_labels() -> None:
+    client = FakeClient(failures={"report", "news"})
+    payload = StockDeepResearchService(client_factory=lambda: client).research(
+        code="600519",
+        name="贵州茅台",
+        focus="all",
+    ).to_public_dict()
+    groups = {group["key"]: group for group in payload["groups"]}
+
+    assert groups["consensus"]["gaps"] == ["研究报告"]
+    assert groups["event"]["gaps"] == ["新闻动态"]
+    serialized = json.dumps(groups, ensure_ascii=False)
+    for forbidden in ("report", "news", "gateway", "trace", "secret"):
+        assert forbidden.casefold() not in serialized.casefold()
 
 
 def test_cache_ttl_and_refresh_control_live_calls() -> None:

@@ -190,6 +190,8 @@ def _render_stock_deep_research() -> str:
             <span>六镜头证据账</span>
             <strong>深度研究补强</strong>
             <p>主动补齐外部事实，不改写当前主结论。</p>
+            <time class="stock-deep-research-date" data-stock-deep-as-of>
+              研究日期待补</time>
           </div>
           <button type="button" class="stock-deep-research-run"
             data-stock-deep-run data-stock-deep-focus="all">运行深度研究</button>
@@ -425,14 +427,25 @@ def engine_app_script() -> str:
       }
       const runButton = root.querySelector('[data-stock-deep-run]');
       if (runButton) runButton.textContent = payload.cached ? '查看最新深度研究' : '更新深度研究';
+      const researchDate = `研究日期 ${formatEngineEvidenceTime(payload.as_of)}`;
+      const asOf = root.querySelector('[data-stock-deep-as-of]');
+      if (asOf) asOf.textContent = researchDate;
 
       const evidence = root.querySelector('[data-stock-deep-evidence-body]');
       if (!evidence) return;
       evidence.replaceChildren();
+      evidence.append(engineNode('time', 'stock-deep-research-date', researchDate));
       groups.forEach((group) => {
         const section = engineNode('section', 'stock-deep-research-evidence-group');
         section.append(engineNode('strong', '', group.title || '研究镜头'));
         appendStockDeepList(section, '新增事实', Array.isArray(group.facts) ? group.facts : [], 20);
+        appendStockDeepList(
+          section, '支持证据', stockDeepValues(group, ['support', 'supports']), 20
+        );
+        appendStockDeepList(
+          section, '冲突证据', stockDeepValues(group, ['conflicts', 'counter']), 20
+        );
+        appendStockDeepList(section, '数据缺口', stockDeepValues(group, ['gaps', 'unknowns']), 20);
         if (group.recovery) {
           section.append(engineNode('p', 'stock-deep-research-recovery', group.recovery));
         }
