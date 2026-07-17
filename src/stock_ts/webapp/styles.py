@@ -6907,7 +6907,7 @@ body {
   --amber: #9a6825;
   --red: var(--up);
   --shadow: 0 20px 48px rgba(13,32,41,.09);
-  --display: "Avenir Next", "IBM Plex Sans", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "PingFang SC", sans-serif;
+  --display: "Avenir Next Condensed", "DIN Alternate", "Avenir Next", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "PingFang SC", sans-serif;
   --body: "IBM Plex Sans", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "PingFang SC", sans-serif;
   --number: "IBM Plex Mono", "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
   --mono: var(--number);
@@ -7226,6 +7226,8 @@ summary:focus-visible {
 }
 
 .engine-judgment {
+  position:relative;
+  grid-template-columns:minmax(0,1.4fr) minmax(340px,.6fr);
   border:1px solid #bcc2bf;
   border-radius: 4px;
   background:var(--surface-1);
@@ -7240,12 +7242,14 @@ summary:focus-visible {
   background:linear-gradient(90deg, var(--copper), #d5a26e 42%, var(--navy-2));
 }
 .engine-signal-band { height:3px; background:#e3e5e1; }
-.engine-verdict { gap:11px; padding:24px 26px; }
+.engine-verdict { gap:12px; padding:30px 34px 32px; }
 .engine-verdict h3 {
-  max-width:19em;
+  max-width:32em;
   color:var(--ink);
-  font:700 clamp(25px,3vw,43px)/1.18 var(--display);
-  letter-spacing:-.045em;
+  font:650 clamp(24px,2.1vw,34px)/1.28 var(--display);
+  letter-spacing:-.03em;
+  text-wrap:pretty;
+  overflow-wrap:anywhere;
 }
 .engine-verdict p { max-width:68ch; color:var(--ink-soft); font-size:12px; }
 .engine-decision-label {
@@ -7314,13 +7318,32 @@ summary:focus-visible {
   background:var(--amber);
   box-shadow:none;
 }
+.engine-action-risk { background:#f7f6f2; }
 .engine-action,
-.engine-risk { padding:22px 24px; background:#fbfbf8; }
+.engine-risk {
+  align-content:center;
+  gap:11px;
+  padding:26px 28px;
+  background:rgba(255,255,255,.58);
+}
 .engine-action { border-bottom-color:var(--line); }
-.engine-action { box-shadow:inset 3px 0 0 var(--copper); }
-.engine-risk { box-shadow:inset 3px 0 0 var(--amber); }
+.engine-action {
+  box-shadow:inset 3px 0 0 var(--copper);
+  background:linear-gradient(90deg, rgba(167,101,50,.055), rgba(255,255,255,.64) 34%);
+}
+.engine-risk {
+  box-shadow:inset 3px 0 0 var(--amber);
+  background:linear-gradient(90deg, rgba(154,104,37,.06), rgba(255,255,255,.64) 34%);
+}
 .engine-action strong,
-.engine-risk strong { color:var(--ink); font-size:13px; line-height:1.5; }
+.engine-risk strong {
+  max-width:36ch;
+  color:var(--ink);
+  font-size:15px;
+  font-weight:650;
+  line-height:1.62;
+  text-wrap:pretty;
+}
 
 .engine-sections { gap:12px; }
 .engine-research-section,

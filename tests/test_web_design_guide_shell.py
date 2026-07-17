@@ -54,7 +54,7 @@ def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibili
 ) -> None:
     for token in [
         "StockTS editorial research terminal skin",
-        '--display: "Avenir Next", "IBM Plex Sans"',
+        '--display: "Avenir Next Condensed", "DIN Alternate"',
         '--body: "IBM Plex Sans", "HarmonyOS Sans SC"',
         '--number: "IBM Plex Mono", "SFMono-Regular"',
         "font-variant-numeric: tabular-nums",
@@ -73,13 +73,32 @@ def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibili
     assert "linear-gradient(90deg, var(--copper)" in editorial_skin
 
 
+def test_primary_judgment_uses_measured_desktop_typography_and_balanced_actions() -> None:
+    editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
+    compact = "".join(editorial_skin.split())
+
+    assert '--display:"AvenirNextCondensed","DINAlternate"' in compact
+    assert (
+        ".engine-judgment{position:relative;"
+        "grid-template-columns:minmax(0,1.4fr)minmax(340px,.6fr)"
+        in compact
+    )
+    assert ".engine-verdict{gap:12px;padding:30px34px32px" in compact
+    assert "max-width:32em" in compact
+    assert "font:650clamp(24px,2.1vw,34px)/1.28var(--display)" in compact
+    assert "text-wrap:pretty" in compact
+    assert ".engine-action-risk{background:#f7f6f2" in compact
+    assert ".engine-actionstrong,.engine-riskstrong" in compact
+    assert "font-size:15px" in compact
+
+
 def test_engine_first_screen_has_compact_neutral_research_status_contract() -> None:
     editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
-    compact_skin = editorial_skin.replace(" ", "")
+    compact_skin = "".join(editorial_skin.split())
 
     assert ".engine-headerh2" in compact_skin
     assert "font:700clamp(28px,3vw,32px)" in compact_skin
-    assert ".engine-verdict{gap:11px;padding:24px" in compact_skin
+    assert ".engine-verdict{gap:12px;padding:30px34px32px" in compact_skin
     assert ".engine-session-line" in editorial_skin
     assert "grid-template-columns:repeat(4,minmax(0,1fr))" in compact_skin
     for selector in (
@@ -102,8 +121,8 @@ def test_engine_first_screen_has_compact_neutral_research_status_contract() -> N
         assert "#b64a3c" not in rule
         assert "#9a4036" not in rule
 
-    assert ".engine-action { box-shadow:inset 3px 0 0 var(--copper); }" in editorial_skin
-    assert ".engine-risk { box-shadow:inset 3px 0 0 var(--amber); }" in editorial_skin
+    assert ".engine-action{box-shadow:inset3px00var(--copper)" in compact_skin
+    assert ".engine-risk{box-shadow:inset3px00var(--amber)" in compact_skin
 
     neutral_research_rules = {
         ".engine-theme-card.state-ready": "var(--navy-2)",
