@@ -147,6 +147,37 @@ def test_engine_first_screen_has_compact_neutral_research_status_contract() -> N
     assert "@media(prefers-reduced-motion:reduce)" in compact_skin
 
 
+def test_stock_deep_research_ledger_has_scoped_responsive_accessible_css() -> None:
+    editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
+    compact = editorial_skin.replace(" ", "")
+
+    for selector in (
+        ".stock-deep-research{",
+        ".stock-deep-research-ledger{",
+        ".stock-deep-research-group{",
+        ".stock-deep-research-focus{",
+        ".stock-deep-research-question{",
+        ".stock-deep-research-evidence{",
+        ".stock-deep-researchbutton:focus-visible",
+        ".stock-deep-researchinput:focus-visible",
+        ".stock-deep-researchbutton:disabled",
+        '.stock-deep-research[data-state="loading"]',
+    ):
+        assert selector in compact
+
+    assert "grid-template-columns:repeat(6,minmax(0,1fr))" in compact
+    responsive = compact.split("@media(max-width:1100px)", 1)[1]
+    assert ".stock-deep-research-ledger{grid-template-columns:repeat(2,minmax(0,1fr))" in responsive
+    assert "max-width:100%" in compact
+    assert "overflow:hidden" in compact
+    assert "font-size:12px" in compact
+    assert "#0d2029" in editorial_skin
+    assert "#a76532" in editorial_skin
+    reduced = compact.split("@media(prefers-reduced-motion:reduce)", 1)[-1]
+    assert ".stock-deep-research" in reduced
+    assert ".stock-deep-research-hero" not in editorial_skin
+
+
 def test_design_guide_shell_removes_old_global_project_blocks() -> None:
     html = _render_sample_page()
 

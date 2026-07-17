@@ -50,6 +50,7 @@ def render_engine_workspace(
     )
     disabled = "" if available else " disabled"
     stock_switcher = _render_stock_switcher(context or {}) if module == "stock" else ""
+    stock_deep_research = _render_stock_deep_research() if module == "stock" else ""
     context_banner = _render_context_banner(module, context or {})
     return f"""
     <section class="module engine-module" id="module-{escape(module)}"
@@ -78,6 +79,7 @@ def render_engine_workspace(
       <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
       {context_banner}
       {stock_switcher}
+      {stock_deep_research}
       <section class="engine-judgment state-idle" data-engine-judgment>
         <div class="engine-signal-band" aria-hidden="true"><i></i></div>
         <div class="engine-verdict" data-engine-verdict-block>
@@ -155,6 +157,64 @@ def _render_stock_switcher(context: dict[str, object]) -> str:
           <button type="submit">分析这只股票</button>
         </form>
         <a href="#opportunity">进入全市场筛选</a>
+      </section>"""
+
+
+def _render_stock_deep_research() -> str:
+    groups = (
+        ("company", "公司与经营"),
+        ("finance", "财务与估值"),
+        ("industry", "行业与同行"),
+        ("consensus", "机构与预期"),
+        ("market", "资金与技术"),
+        ("event", "公告与事件"),
+    )
+    ledger = "".join(
+        f"""
+        <article class="stock-deep-research-group state-idle"
+          data-stock-deep-group="{key}">
+          <span>{label}</span>
+          <strong data-stock-deep-group-status>等待研究</strong>
+          <div data-stock-deep-group-body hidden></div>
+        </article>"""
+        for key, label in groups
+    )
+    focus = "".join(
+        f'''<button type="button" data-stock-deep-focus="{key}">{label}</button>'''
+        for key, label in groups
+    )
+    return f"""
+      <section class="stock-deep-research" data-stock-deep-research data-state="idle">
+        <header class="stock-deep-research-head">
+          <div>
+            <span>六镜头证据账</span>
+            <strong>深度研究补强</strong>
+            <p>主动补齐外部事实，不改写当前主结论。</p>
+          </div>
+          <button type="button" class="stock-deep-research-run"
+            data-stock-deep-run data-stock-deep-focus="all">运行深度研究</button>
+        </header>
+        <p class="stock-deep-research-live" data-stock-deep-live
+          aria-live="polite">等待研究</p>
+        <div class="stock-deep-research-ledger" aria-label="六个研究镜头">
+          {ledger}
+        </div>
+        <nav class="stock-deep-research-focus" aria-label="专项研究范围">
+          {focus}
+        </nav>
+        <form class="stock-deep-research-question" data-stock-deep-question-form>
+          <label for="stock-deep-research-question">专项追问</label>
+          <input id="stock-deep-research-question" name="question" type="text"
+            maxlength="200" autocomplete="off"
+            placeholder="例如：过去四个季度现金流为什么变差" />
+          <button type="submit">提交追问</button>
+        </form>
+        <details class="stock-deep-research-evidence" data-stock-deep-evidence>
+          <summary>查看深度证据</summary>
+          <div data-stock-deep-evidence-body>
+            <p>运行后按研究镜头归档完整事实。</p>
+          </div>
+        </details>
       </section>"""
 
 
@@ -252,6 +312,186 @@ def engine_app_script() -> str:
       if (className) node.className = className;
       if (value !== undefined && value !== null) node.textContent = String(value);
       return node;
+    }
+
+    const stockDeepStateLabels = {
+      idle: '等待研究',
+      loading: '研究中',
+      complete: '已确认',
+      partial: '待补数据',
+      cached: '已确认',
+      error: '请求失败'
+    };
+
+    function setStockDeepResearchState(root, state, focus = 'all') {
+      root.dataset.state = state;
+      const live = root.querySelector('[data-stock-deep-live]');
+      const loading = state === 'loading';
+      root.querySelectorAll('button, input').forEach((control) => {
+        control.disabled = loading;
+      });
+      if (live) live.textContent = stockDeepStateLabels[state] || stockDeepStateLabels.error;
+      root.querySelectorAll('[data-stock-deep-group]').forEach((group) => {
+        if (focus !== 'all' && group.dataset.stockDeepGroup !== focus) return;
+        if (loading) {
+          group.className = 'stock-deep-research-group state-loading';
+          const status = group.querySelector('[data-stock-deep-group-status]');
+          if (status) status.textContent = stockDeepStateLabels.loading;
+        }
+      });
+    }
+
+    function stockDeepValues(group, keys) {
+      for (const key of keys) {
+        if (Array.isArray(group[key])) return group[key];
+      }
+      return [];
+    }
+
+    function appendStockDeepList(root, label, values, limit = 2) {
+      if (!values.length) return;
+      const section = engineNode('section', 'stock-deep-research-fact-set');
+      section.append(engineNode('strong', '', label));
+      const list = engineNode('ul', '');
+      values.slice(0, limit).forEach((item) => {
+        const value = item && typeof item === 'object'
+          ? [item.label, item.value].filter(Boolean).join('：')
+          : String(item || '');
+        if (value) list.append(engineNode('li', '', value));
+      });
+      section.append(list);
+      root.append(section);
+    }
+
+    function renderStockDeepGroup(root, group) {
+      const key = String(group.key || '');
+      const card = root.querySelector(`[data-stock-deep-group="${key}"]`);
+      if (!card) return;
+      const state = group.status === 'ready'
+        ? 'complete'
+        : group.status === 'partial'
+          ? 'partial'
+          : 'error';
+      card.className = `stock-deep-research-group state-${state}`;
+      const status = card.querySelector('[data-stock-deep-group-status]');
+      if (status) status.textContent = stockDeepStateLabels[state];
+      const body = card.querySelector('[data-stock-deep-group-body]');
+      if (!body) return;
+      body.replaceChildren();
+      const facts = Array.isArray(group.facts) ? group.facts : [];
+      appendStockDeepList(body, '新增事实', facts, 3);
+      appendStockDeepList(body, '支持证据', stockDeepValues(group, ['support', 'supports']), 2);
+      appendStockDeepList(body, '冲突证据', stockDeepValues(group, ['conflicts', 'counter']), 2);
+      appendStockDeepList(body, '数据缺口', stockDeepValues(group, ['gaps', 'unknowns']), 2);
+      if (group.recovery) {
+        body.append(engineNode('p', 'stock-deep-research-recovery', group.recovery));
+      }
+      body.hidden = body.children.length === 0;
+    }
+
+    function renderStockDeepResearch(root, payload) {
+      const groups = Array.isArray(payload.groups) ? payload.groups : [];
+      groups.forEach((group) => renderStockDeepGroup(root, group));
+      const resultState = payload.cached
+        ? 'cached'
+        : payload.status === 'complete'
+          ? 'complete'
+          : 'partial';
+      setStockDeepResearchState(root, resultState);
+      const live = root.querySelector('[data-stock-deep-live]');
+      if (live) {
+        live.textContent = payload.cached
+          ? '已使用 5 分钟内缓存'
+          : resultState === 'complete'
+            ? '六个研究镜头已确认'
+            : '部分镜头已确认，其余可稍后补充';
+      }
+      const runButton = root.querySelector('[data-stock-deep-run]');
+      if (runButton) runButton.textContent = payload.cached ? '查看最新深度研究' : '更新深度研究';
+
+      const evidence = root.querySelector('[data-stock-deep-evidence-body]');
+      if (!evidence) return;
+      evidence.replaceChildren();
+      groups.forEach((group) => {
+        const section = engineNode('section', 'stock-deep-research-evidence-group');
+        section.append(engineNode('strong', '', group.title || '研究镜头'));
+        appendStockDeepList(section, '新增事实', Array.isArray(group.facts) ? group.facts : [], 20);
+        if (group.recovery) {
+          section.append(engineNode('p', 'stock-deep-research-recovery', group.recovery));
+        }
+        evidence.append(section);
+      });
+      if (!groups.length) {
+        evidence.append(engineNode('p', '', '本次没有可展示的深度证据。'));
+      }
+      const disclosure = root.querySelector('[data-stock-deep-evidence]');
+      const summary = disclosure && disclosure.querySelector('summary');
+      if (summary) summary.textContent = '查看深度证据';
+    }
+
+    async function runStockDeepResearch(root, options) {
+      if (!root || root.dataset.state === 'loading') return;
+      const workspace = root.closest('[data-engine-workspace]');
+      const context = workspace ? engineContext(workspace) : {};
+      const code = String(context.code || '').trim();
+      const name = String(context.name || '').trim();
+      const focus = String(options.focus || 'all');
+      const question = String(options.question || '').trim();
+      const refresh = Boolean(options.refresh);
+      const live = root.querySelector('[data-stock-deep-live]');
+      if (!code && !name) {
+        if (live) live.textContent = '请先选择一只股票。';
+        return;
+      }
+      if (options.requireQuestion && !question) {
+        if (live) live.textContent = '请输入具体研究问题。';
+        return;
+      }
+      setStockDeepResearchState(root, 'loading', focus);
+      const requestPayload = {code, name, focus, question, refresh};
+      try {
+        const response = await fetch('/api/research/stock/deep', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(requestPayload)
+        });
+        if (!response.ok) throw new Error('stock-deep-unavailable');
+        renderStockDeepResearch(root, await response.json());
+      } catch (_error) {
+        setStockDeepResearchState(root, 'error', focus);
+        if (live) live.textContent = '深度研究暂时不可用，请稍后重试。';
+      } finally {
+        root.querySelectorAll('button, input').forEach((control) => {
+          control.disabled = false;
+        });
+      }
+    }
+
+    function bootstrapStockDeepResearch(root) {
+      if (!root || root.dataset.stockDeepBound === 'true') return;
+      root.dataset.stockDeepBound = 'true';
+      root.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-stock-deep-focus]');
+        if (!button || !root.contains(button)) return;
+        const focus = button.dataset.stockDeepFocus || 'all';
+        const refresh = button.hasAttribute('data-stock-deep-run')
+          && root.dataset.state !== 'idle';
+        void runStockDeepResearch(root, {focus, question: '', refresh});
+      });
+      const questionForm = root.querySelector('[data-stock-deep-question-form]');
+      if (questionForm) {
+        questionForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          const input = questionForm.querySelector('[name="question"]');
+          void runStockDeepResearch(root, {
+            focus: 'all',
+            question: input ? input.value : '',
+            refresh: false,
+            requireQuestion: true
+          });
+        });
+      }
     }
 
     function formatEngineEvidenceTime(value) {
@@ -1146,6 +1386,9 @@ def engine_app_script() -> str:
     }
 
     function bootstrapEngineWorkspaces() {
+      document.querySelectorAll('[data-stock-deep-research]').forEach((root) => {
+        bootstrapStockDeepResearch(root);
+      });
       document.querySelectorAll(
         '.nav-item[data-workspace], [data-engine-mobile-nav][data-workspace]'
       ).forEach((item) => {

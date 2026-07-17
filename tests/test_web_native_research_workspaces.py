@@ -415,6 +415,100 @@ def test_native_stock_workspace_has_switcher_and_full_market_entry() -> None:
     assert switcher.select_one('a[href="#opportunity"]')
 
 
+def test_stock_deep_research_ledger_sits_between_switcher_and_judgment() -> None:
+    html = render_engine_workspace(
+        "stock",
+        status="configured",
+        context={"code": "600519", "name": "贵州茅台"},
+    )
+    stock = BeautifulSoup(html, "html.parser").select_one('[data-engine-workspace="stock"]')
+    assert stock is not None
+    switcher = stock.select_one("[data-engine-stock-switcher]")
+    ledger = stock.select_one("[data-stock-deep-research]")
+    judgment = stock.select_one("[data-engine-judgment]")
+
+    assert switcher is not None
+    assert ledger is not None
+    assert judgment is not None
+    assert switcher.find_next_sibling() == ledger
+    assert ledger.find_next_sibling() == judgment
+    assert ledger["data-state"] == "idle"
+    assert "深度研究补强" in ledger.get_text(" ", strip=True)
+    assert "运行深度研究" in ledger.get_text(" ", strip=True)
+    assert ledger.select_one('[aria-live="polite"]')
+
+    expected_groups = {
+        "company": "公司与经营",
+        "finance": "财务与估值",
+        "industry": "行业与同行",
+        "consensus": "机构与预期",
+        "market": "资金与技术",
+        "event": "公告与事件",
+    }
+    groups = ledger.select("[data-stock-deep-group]")
+    assert {group["data-stock-deep-group"] for group in groups} == set(expected_groups)
+    for group in groups:
+        assert expected_groups[group["data-stock-deep-group"]] in group.get_text(" ", strip=True)
+        assert "等待研究" in group.get_text(" ", strip=True)
+
+    chips = ledger.select("button[data-stock-deep-focus]:not([data-stock-deep-run])")
+    assert {chip["data-stock-deep-focus"] for chip in chips} == set(expected_groups)
+    assert ledger.select_one('button[data-stock-deep-run][data-stock-deep-focus="all"]')
+    form = ledger.select_one("form[data-stock-deep-question-form]")
+    assert form is not None
+    assert form.select_one('input[name="question"]')
+    assert form.select_one('button[type="submit"]')
+    assert ledger.select_one("details[data-stock-deep-evidence]")
+
+    for module in ("market", "portfolio", "opportunity"):
+        other = BeautifulSoup(
+            render_engine_workspace(module, status="configured"),
+            "html.parser",
+        )
+        assert other.select_one("[data-stock-deep-research]") is None
+
+
+def test_stock_deep_research_script_is_explicit_safe_and_supplier_neutral() -> None:
+    script = engine_app_script()
+
+    for fragment in (
+        "fetch('/api/research/stock/deep'",
+        "credentials: 'same-origin'",
+        "const requestPayload = {code, name, focus, question, refresh};",
+        "JSON.stringify(requestPayload)",
+        "function renderStockDeepResearch",
+        "function setStockDeepResearchState",
+        "loading: '研究中'",
+        "complete: '已确认'",
+        "partial: '待补数据'",
+        "error: '请求失败'",
+        "已使用 5 分钟内缓存",
+        "深度研究暂时不可用，请稍后重试。",
+        "新增事实",
+        "支持证据",
+        "冲突证据",
+        "数据缺口",
+        "查看深度证据",
+    ):
+        assert fragment in script
+
+    assert "root.addEventListener('click'" in script
+    assert "event.target.closest('[data-stock-deep-focus]')" in script
+    assert "questionForm.addEventListener('submit'" in script
+    assert script.count("void runStockDeepResearch(root,") == 2
+    bootstrap = script.split("function bootstrapEngineWorkspaces()", 1)[1].split(
+        "if (document.readyState === 'loading')",
+        1,
+    )[0]
+    assert "runStockDeepResearch(" not in bootstrap
+    assert ".innerHTML" not in script
+    assert "insertAdjacentHTML" not in script
+    assert "engineNode(" in script
+    assert "replaceChildren" in script
+    for forbidden in ("问财", "同花顺", "iWencai", "skill_id", "trace_id", "gateway"):
+        assert forbidden.casefold() not in script.casefold()
+
+
 def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
     script = engine_app_script()
 
