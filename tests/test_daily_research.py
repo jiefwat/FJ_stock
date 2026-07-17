@@ -7,6 +7,7 @@ from pathlib import Path
 import scripts.run_daily_research as daily_research_module
 from scripts.run_daily_research import run_daily_research
 from stock_ts.prediction_feedback import PredictionStore
+from stock_ts.research_contract import RESEARCH_CONTRACT_VERSION
 from stock_ts.research_engine import (
     ResearchFact,
     ResearchModuleItem,
@@ -41,8 +42,10 @@ def test_daily_research_writes_market_opportunity_and_status(tmp_path) -> None:
     )
 
     assert result.ok is True
-    assert (tmp_path / "market/latest.json").exists()
-    assert (tmp_path / "opportunity/latest.json").exists()
+    market = json.loads((tmp_path / "market/latest.json").read_text())
+    opportunity = json.loads((tmp_path / "opportunity/latest.json").read_text())
+    assert market["research_contract_version"] == RESEARCH_CONTRACT_VERSION
+    assert opportunity["research_contract_version"] == RESEARCH_CONTRACT_VERSION
     status = json.loads((tmp_path / "daily.status.json").read_text())
     assert status["status"] == "complete"
     assert status["modules"] == {

@@ -17,6 +17,7 @@ from stock_ts.prediction_feedback import (
     build_feedback_section,
 )
 from stock_ts.providers.tdx_snapshot_provider import TdxSnapshotProvider
+from stock_ts.research_contract import RESEARCH_CONTRACT_VERSION
 from stock_ts.research_engine import ResearchContext, ResearchWorkspaceService
 from stock_ts.research_fallback import build_local_research
 from stock_ts.research_fusion import fuse_research_results
@@ -128,6 +129,10 @@ def run_daily_research(
             payload["source_market_trade_date"] = str(
                 market.get("trade_date") if isinstance(market, dict) else ""
             )
+            payload_version = str(payload.get("research_contract_version") or "")
+            if payload_version and payload_version != RESEARCH_CONTRACT_VERSION:
+                raise ValueError("研究快照协议版本不兼容。")
+            payload["research_contract_version"] = RESEARCH_CONTRACT_VERSION
             if module == "opportunity":
                 try:
                     prediction_count = _record_opportunity_predictions(
