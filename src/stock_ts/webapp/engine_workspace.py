@@ -325,6 +325,7 @@ def engine_app_script() -> str:
       error: '请求失败'
     };
     const stockDeepGroupKeys = ['company', 'finance', 'industry', 'consensus', 'market', 'event'];
+    const stockDeepDirectionPlaceholder = '未自动判定；请与上方主结论核对';
 
     function stockDeepAffectedGroups(focus, question) {
       if (String(question || '').trim()) return [];
@@ -366,10 +367,15 @@ def engine_app_script() -> str:
       return [];
     }
 
-    function appendStockDeepList(root, label, values, limit = 2) {
-      if (!values.length) return;
+    function appendStockDeepList(root, label, values, limit = 2, emptyText = '') {
+      if (!values.length && !emptyText) return;
       const section = engineNode('section', 'stock-deep-research-fact-set');
       section.append(engineNode('strong', '', label));
+      if (!values.length) {
+        section.append(engineNode('p', 'stock-deep-research-neutral', emptyText));
+        root.append(section);
+        return;
+      }
       const list = engineNode('ul', '');
       values.slice(0, limit).forEach((item) => {
         const value = item && typeof item === 'object'
@@ -398,8 +404,20 @@ def engine_app_script() -> str:
       body.replaceChildren();
       const facts = Array.isArray(group.facts) ? group.facts : [];
       appendStockDeepList(body, '新增事实', facts, 3);
-      appendStockDeepList(body, '支持证据', stockDeepValues(group, ['support', 'supports']), 2);
-      appendStockDeepList(body, '冲突证据', stockDeepValues(group, ['conflicts', 'counter']), 2);
+      appendStockDeepList(
+        body,
+        '支持证据',
+        stockDeepValues(group, ['support', 'supports']),
+        2,
+        stockDeepDirectionPlaceholder
+      );
+      appendStockDeepList(
+        body,
+        '冲突证据',
+        stockDeepValues(group, ['conflicts', 'counter']),
+        2,
+        stockDeepDirectionPlaceholder
+      );
       appendStockDeepList(body, '数据缺口', stockDeepValues(group, ['gaps', 'unknowns']), 2);
       if (group.recovery) {
         body.append(engineNode('p', 'stock-deep-research-recovery', group.recovery));
@@ -440,10 +458,18 @@ def engine_app_script() -> str:
         section.append(engineNode('strong', '', group.title || '研究镜头'));
         appendStockDeepList(section, '新增事实', Array.isArray(group.facts) ? group.facts : [], 20);
         appendStockDeepList(
-          section, '支持证据', stockDeepValues(group, ['support', 'supports']), 20
+          section,
+          '支持证据',
+          stockDeepValues(group, ['support', 'supports']),
+          20,
+          stockDeepDirectionPlaceholder
         );
         appendStockDeepList(
-          section, '冲突证据', stockDeepValues(group, ['conflicts', 'counter']), 20
+          section,
+          '冲突证据',
+          stockDeepValues(group, ['conflicts', 'counter']),
+          20,
+          stockDeepDirectionPlaceholder
         );
         appendStockDeepList(section, '数据缺口', stockDeepValues(group, ['gaps', 'unknowns']), 20);
         if (group.recovery) {

@@ -101,13 +101,6 @@ _SENSITIVE_PUBLIC_FACT = re.compile(
     r"authorization|secret",
     re.IGNORECASE,
 )
-_NEGATIVE_NUMBER = re.compile(r"(?<![\d])[-−]\s*(?:\d+(?:\.\d+)?|\.\d+)")
-_EXPLICIT_NEGATIVE_FACT = re.compile(
-    r"预亏|亏损|下修|净流出|恶化|明显(?:下降|下滑)|"
-    r"(?:同比|环比|业绩|营收|营业收入|利润|净利润|现金流|评级|预期)"
-    r"[^，。；;]{0,12}(?:下降|下滑|下调|减少|转差)",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True)
@@ -405,8 +398,6 @@ def _build_groups(
         facts = _dedupe_facts(
             fact for result in group_results if result.succeeded for fact in result.facts
         )
-        conflicts = tuple(fact for fact in facts if _is_explicit_conflict(fact))
-        support = tuple(fact for fact in facts if not _is_explicit_conflict(fact))
         gaps = tuple(
             CAPABILITY_GAP_LABELS[result.capability]
             for result in group_results
@@ -432,8 +423,6 @@ def _build_groups(
                 title=title,
                 status=status,
                 facts=facts,
-                support=support,
-                conflicts=conflicts,
                 gaps=gaps,
                 recovery=recovery,
             )
@@ -451,12 +440,6 @@ def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
         seen.add(key)
         result.append(fact)
     return tuple(result)
-
-
-def _is_explicit_conflict(fact: DeepResearchFact) -> bool:
-    if _NEGATIVE_NUMBER.search(fact.value):
-        return True
-    return bool(_EXPLICIT_NEGATIVE_FACT.search(f"{fact.label} {fact.value}"))
 
 
 def _contains_private_context(question: str) -> bool:

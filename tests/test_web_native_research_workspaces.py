@@ -511,6 +511,11 @@ def test_stock_deep_research_script_is_explicit_safe_and_supplier_neutral() -> N
     for forbidden in ("问财", "同花顺", "iWencai", "skill_id", "trace_id", "gateway"):
         assert forbidden.casefold() not in script.casefold()
 
+    assert ".stock-deep-research-neutral" in CSS
+    neutral_rule = CSS.split(".stock-deep-research-neutral", 1)[1].split("}", 1)[0]
+    assert "margin:0" in neutral_rule.replace(" ", "")
+    assert "color:var(--muted)" in neutral_rule.replace(" ", "")
+
 
 def test_stock_deep_research_state_machine_settles_question_and_failure_groups() -> None:
     result = _run_engine_dom_scenario(
@@ -695,9 +700,24 @@ const contractRoot = {{
 }};
 const contractPayload = {payload_json};
 renderStockDeepResearch(contractRoot, contractPayload, []);
+function evidenceBlock(root, label) {{
+  const section = root.children.find(
+    (child) => child.children[0] && child.children[0].textContent === label
+  );
+  return section ? section.textContent : '';
+}}
+const fullGroup = contractEvidence.children.find(
+  (child) => child.className === 'stock-deep-research-evidence-group'
+);
 console.log(JSON.stringify({{
   summary: contractGroups.event.body.textContent,
   evidence: contractEvidence.textContent,
+  summaryFacts: evidenceBlock(contractGroups.event.body, '新增事实'),
+  summarySupport: evidenceBlock(contractGroups.event.body, '支持证据'),
+  summaryConflicts: evidenceBlock(contractGroups.event.body, '冲突证据'),
+  fullFacts: evidenceBlock(fullGroup, '新增事实'),
+  fullSupport: evidenceBlock(fullGroup, '支持证据'),
+  fullConflicts: evidenceBlock(fullGroup, '冲突证据'),
   asOf: contractAsOf.textContent,
   status: contractPayload.status,
   serialized: JSON.stringify(contractPayload)
@@ -712,6 +732,15 @@ console.log(JSON.stringify({{
     for evidence in ("经营数据公告", "预亏", "新闻动态"):
         assert evidence in result["summary"]
         assert evidence in result["evidence"]
+    placeholder = "未自动判定；请与上方主结论核对"
+    assert "预亏" in result["summaryFacts"]
+    assert "预亏" in result["fullFacts"]
+    assert result["summarySupport"] == f"支持证据{placeholder}"
+    assert result["summaryConflicts"] == f"冲突证据{placeholder}"
+    assert result["fullSupport"] == f"支持证据{placeholder}"
+    assert result["fullConflicts"] == f"冲突证据{placeholder}"
+    assert "预亏" not in result["summaryConflicts"]
+    assert "预亏" not in result["fullConflicts"]
     assert result["asOf"].startswith("研究日期 ")
     assert "研究日期 " in result["evidence"]
     for forbidden in ("gateway", "trace", "secret"):

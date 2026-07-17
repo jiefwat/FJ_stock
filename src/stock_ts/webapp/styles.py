@@ -7653,6 +7653,7 @@ summary:focus-visible {
 .stock-deep-research-recovery { color:var(--ink-soft); font-size:12px; line-height:1.4; }
 .stock-deep-research-fact-set ul { display:grid; gap:3px; margin:0; padding-left:16px; }
 .stock-deep-research-fact-set li { color:var(--muted); font-size:12px; line-height:1.4; }
+.stock-deep-research-neutral { margin:0; color:var(--muted); font-size:12px; line-height:1.4; }
 .stock-deep-research-group [data-stock-deep-group-body],
 .stock-deep-research-fact-set li { overflow-wrap:anywhere; }
 .stock-deep-research-focus { display:flex; flex-wrap:wrap; gap:6px; }
