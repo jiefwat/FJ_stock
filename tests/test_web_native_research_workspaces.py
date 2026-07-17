@@ -509,6 +509,116 @@ def test_stock_deep_research_script_is_explicit_safe_and_supplier_neutral() -> N
         assert forbidden.casefold() not in script.casefold()
 
 
+def test_stock_deep_research_state_machine_settles_question_and_failure_groups() -> None:
+    result = _run_engine_dom_scenario(
+        r"""
+const deepKeys = ['company', 'finance', 'industry', 'consensus', 'market', 'event'];
+function makeDeepGroup(key, initial = 'idle') {
+  const status = new FakeNode('strong');
+  status.textContent = initial === 'complete' ? '已确认' : '等待研究';
+  const body = new FakeNode('div');
+  body.hidden = true;
+  return {
+    dataset: {stockDeepGroup: key},
+    className: `stock-deep-research-group state-${initial}`,
+    querySelector: (selector) => selector === '[data-stock-deep-group-status]'
+      ? status
+      : selector === '[data-stock-deep-group-body]'
+        ? body
+        : null
+  };
+}
+function makeDeepRoot(initial = {}) {
+  const groups = Object.fromEntries(
+    deepKeys.map((key) => [key, makeDeepGroup(key, initial[key] || 'idle')])
+  );
+  const live = new FakeNode('p');
+  const runButton = new FakeNode('button');
+  const evidence = new FakeNode('div');
+  const summary = new FakeNode('summary');
+  const disclosure = {querySelector: (selector) => selector === 'summary' ? summary : null};
+  const controls = [runButton, new FakeNode('input')];
+  return {
+    dataset: {state: 'idle'},
+    groups,
+    live,
+    closest: () => ({dataset: {engineContext: '{"code":"600519","name":"贵州茅台"}'}}),
+    querySelectorAll: (selector) => selector === '[data-stock-deep-group]'
+      ? Object.values(groups)
+      : selector === 'button, input'
+        ? controls
+        : [],
+    querySelector: (selector) => {
+      const match = selector.match(/^\[data-stock-deep-group="([^"]+)"\]$/);
+      if (match) return groups[match[1]] || null;
+      if (selector === '[data-stock-deep-live]') return live;
+      if (selector === '[data-stock-deep-run]') return runButton;
+      if (selector === '[data-stock-deep-evidence-body]') return evidence;
+      if (selector === '[data-stock-deep-evidence]') return disclosure;
+      return null;
+    }
+  };
+}
+function deepStates(root) {
+  return Object.fromEntries(
+    deepKeys.map((key) => [key, root.groups[key].className.split('state-')[1]])
+  );
+}
+(async () => {
+  const questionRoot = makeDeepRoot({market: 'complete'});
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      status: 'partial', cached: false,
+      groups: [{key: 'company', title: '公司与经营', status: 'ready', facts: []}]
+    })
+  });
+  await runStockDeepResearch(questionRoot, {
+    focus: 'all', question: '股东户数如何变化', refresh: false, requireQuestion: true
+  });
+
+  const singleRoot = makeDeepRoot();
+  global.fetch = async () => ({ok: false, json: async () => ({})});
+  await runStockDeepResearch(singleRoot, {
+    focus: 'finance', question: '', refresh: false
+  });
+
+  const allRoot = makeDeepRoot();
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => { throw new Error('invalid-json'); }
+  });
+  await runStockDeepResearch(allRoot, {
+    focus: 'all', question: '', refresh: false
+  });
+  console.log(JSON.stringify({
+    question: deepStates(questionRoot),
+    questionRoot: questionRoot.dataset.state,
+    single: deepStates(singleRoot),
+    singleLive: singleRoot.live.textContent,
+    all: deepStates(allRoot),
+    allLive: allRoot.live.textContent
+  }));
+})();
+"""
+    )
+
+    assert result["question"] == {
+        "company": "complete",
+        "finance": "idle",
+        "industry": "idle",
+        "consensus": "idle",
+        "market": "complete",
+        "event": "idle",
+    }
+    assert result["questionRoot"] == "partial"
+    assert result["single"]["finance"] == "error"
+    assert all(state != "loading" for state in result["single"].values())
+    assert set(result["all"].values()) == {"error"}
+    assert result["singleLive"] == "深度研究暂时不可用，请稍后重试。"
+    assert result["allLive"] == "深度研究暂时不可用，请稍后重试。"
+
+
 def test_engine_script_uses_product_endpoint_and_text_only_rendering() -> None:
     script = engine_app_script()
 

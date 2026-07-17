@@ -322,8 +322,15 @@ def engine_app_script() -> str:
       cached: '已确认',
       error: '请求失败'
     };
+    const stockDeepGroupKeys = ['company', 'finance', 'industry', 'consensus', 'market', 'event'];
 
-    function setStockDeepResearchState(root, state, focus = 'all') {
+    function stockDeepAffectedGroups(focus, question) {
+      if (String(question || '').trim()) return [];
+      if (focus === 'all') return [...stockDeepGroupKeys];
+      return stockDeepGroupKeys.includes(focus) ? [focus] : [];
+    }
+
+    function setStockDeepResearchState(root, state, affectedGroups = []) {
       root.dataset.state = state;
       const live = root.querySelector('[data-stock-deep-live]');
       const loading = state === 'loading';
@@ -332,12 +339,21 @@ def engine_app_script() -> str:
       });
       if (live) live.textContent = stockDeepStateLabels[state] || stockDeepStateLabels.error;
       root.querySelectorAll('[data-stock-deep-group]').forEach((group) => {
-        if (focus !== 'all' && group.dataset.stockDeepGroup !== focus) return;
-        if (loading) {
+        if (loading && affectedGroups.includes(group.dataset.stockDeepGroup)) {
           group.className = 'stock-deep-research-group state-loading';
           const status = group.querySelector('[data-stock-deep-group-status]');
           if (status) status.textContent = stockDeepStateLabels.loading;
         }
+      });
+    }
+
+    function settleStockDeepGroups(root, affectedGroups, state) {
+      affectedGroups.forEach((key) => {
+        const group = root.querySelector(`[data-stock-deep-group="${key}"]`);
+        if (!group || !group.className.includes('state-loading')) return;
+        group.className = `stock-deep-research-group state-${state}`;
+        const status = group.querySelector('[data-stock-deep-group-status]');
+        if (status) status.textContent = state === 'error' ? '请求失败，可重试' : '等待研究';
       });
     }
 
@@ -389,9 +405,10 @@ def engine_app_script() -> str:
       body.hidden = body.children.length === 0;
     }
 
-    function renderStockDeepResearch(root, payload) {
+    function renderStockDeepResearch(root, payload, affectedGroups = []) {
       const groups = Array.isArray(payload.groups) ? payload.groups : [];
       groups.forEach((group) => renderStockDeepGroup(root, group));
+      settleStockDeepGroups(root, affectedGroups, 'idle');
       const resultState = payload.cached
         ? 'cached'
         : payload.status === 'complete'
@@ -447,7 +464,8 @@ def engine_app_script() -> str:
         if (live) live.textContent = '请输入具体研究问题。';
         return;
       }
-      setStockDeepResearchState(root, 'loading', focus);
+      const affectedGroups = stockDeepAffectedGroups(focus, question);
+      setStockDeepResearchState(root, 'loading', affectedGroups);
       const requestPayload = {code, name, focus, question, refresh};
       try {
         const response = await fetch('/api/research/stock/deep', {
@@ -457,9 +475,10 @@ def engine_app_script() -> str:
           body: JSON.stringify(requestPayload)
         });
         if (!response.ok) throw new Error('stock-deep-unavailable');
-        renderStockDeepResearch(root, await response.json());
+        renderStockDeepResearch(root, await response.json(), affectedGroups);
       } catch (_error) {
-        setStockDeepResearchState(root, 'error', focus);
+        settleStockDeepGroups(root, affectedGroups, 'error');
+        setStockDeepResearchState(root, 'error');
         if (live) live.textContent = '深度研究暂时不可用，请稍后重试。';
       } finally {
         root.querySelectorAll('button, input').forEach((control) => {
