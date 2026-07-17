@@ -52,6 +52,7 @@ class IwencaiSkill:
 
 
 SKILLS = {
+    "basicinfo": IwencaiSkill("hithink-basicinfo-query", "公司身份"),
     "finance": IwencaiSkill("hithink-finance-query", "财务质量"),
     "consensus": IwencaiSkill("hithink-insresearch-query", "机构预期"),
     "industry": IwencaiSkill("hithink-industry-query", "行业位置"),
@@ -86,6 +87,7 @@ SKILLS = {
 }
 
 ROUTING_RULES = (
+    ("basicinfo", ("公司身份", "公司属性", "成立", "上市日期", "经营边界")),
     ("announcement", ("公告", "年报", "季报", "招股书")),
     ("report", ("研报", "目标价", "研究报告")),
     ("news", ("新闻", "消息", "舆情", "媒体")),

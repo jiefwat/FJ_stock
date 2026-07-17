@@ -3,6 +3,68 @@ from __future__ import annotations
 from stock_ts.research_evidence import normalize_capability_rows
 
 
+def test_basicinfo_keeps_company_identity_and_operating_boundary() -> None:
+    rows = normalize_capability_rows(
+        "basicinfo",
+        {
+            "datas": [
+                {
+                    "股票代码": "603278",
+                    "公司名称": "大业股份有限公司",
+                    "公司类型": "民营企业",
+                    "成立日期": "20031113",
+                    "上市日期": "20201110",
+                    "主营范围": "橡胶骨架材料研发、生产与销售",
+                    "实际控制人": "公开披露控制人",
+                    "trace_id": "secret-trace",
+                    "gateway": "internal-gateway",
+                }
+            ]
+        },
+    )
+
+    facts = {fact.label: fact.value for fact in rows[0]}
+    assert facts["公司名称"] == "大业股份有限公司"
+    assert facts["公司类型"] == "民营企业"
+    assert facts["成立日期"] == "2003-11-13"
+    assert facts["上市日期"] == "2020-11-10"
+    assert facts["主营范围"] == "橡胶骨架材料研发、生产与销售"
+    assert facts["实际控制人"] == "公开披露控制人"
+    assert "股票代码" not in facts
+    assert "trace_id" not in facts
+    assert "gateway" not in facts
+
+
+def test_management_keeps_shareholder_pledge_and_controller_changes() -> None:
+    rows = normalize_capability_rows(
+        "management",
+        {
+            "datas": [
+                {
+                    "股东户数[2026Q2]": 32100,
+                    "股东户数较上期变化": "-8.5%",
+                    "控股股东": "公开披露股东",
+                    "实际控制人变更": "未变更",
+                    "质押比例": "12.4%",
+                    "质押比例变化": "下降1.2个百分点",
+                    "总股本": 520_000_000,
+                    "provider": "internal-provider",
+                }
+            ]
+        },
+    )
+
+    facts = {fact.label: fact.value for fact in rows[0]}
+    assert facts["股东户数[2026Q2]"] == "32100"
+    assert facts["股东户数较上期变化"] == "-8.5%"
+    assert facts["控股股东"] == "公开披露股东"
+    assert facts["实际控制人变更"] == "未变更"
+    assert facts["质押比例"] == "12.4%"
+    assert facts["质押比例变化"] == "下降1.2个百分点"
+    assert facts["总股本"] == "5.20 亿"
+    assert "provider" not in facts
+
+
 def test_finance_skips_identity_and_keeps_financial_periods() -> None:
     raw = {
         "datas": [
@@ -183,6 +245,30 @@ def test_news_prioritizes_content_before_date_and_url() -> None:
     assert [fact.label for fact in rows[0]][:2] == ["标题", "摘要"]
     assert rows[0][2].label == "发布日期"
     assert rows[0][2].value == "2026-07-14"
+
+
+def test_dated_news_keeps_public_content_and_drops_internal_metadata() -> None:
+    rows = normalize_capability_rows(
+        "news",
+        {
+            "datas": [
+                {
+                    "title": "公司订单出现关键变化",
+                    "summary": "新订单增长，但兑现节奏仍需核查。",
+                    "publish_date": "20260716",
+                    "trace_id": "secret-trace",
+                    "provider": "internal-provider",
+                }
+            ]
+        },
+    )
+
+    facts = {fact.label: fact.value for fact in rows[0]}
+    assert facts == {
+        "标题": "公司订单出现关键变化",
+        "摘要": "新订单增长，但兑现节奏仍需核查。",
+        "发布日期": "2026-07-16",
+    }
 
 
 def test_english_announcement_fields_count_as_evidence() -> None:

@@ -90,6 +90,7 @@ def test_default_transport_passes_trusted_ssl_context(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("question", "skill_id"),
     [
+        ("公司属性、成立时间和上市日期", "hithink-basicinfo-query"),
         ("未来两年盈利预期和券商评级如何", "hithink-insresearch-query"),
         ("现金流和净利润质量怎么样", "hithink-finance-query"),
         ("行业估值处于什么位置", "hithink-industry-query"),
@@ -111,6 +112,12 @@ def test_unknown_question_defaults_to_finance_research() -> None:
 
     assert skill.skill_id == "hithink-finance-query"
     assert skill.label == "财务质量"
+
+
+def test_official_stock_identity_and_governance_skills_are_registered() -> None:
+    assert iwencai.SKILLS["basicinfo"].skill_id == "hithink-basicinfo-query"
+    assert iwencai.SKILLS["management"].skill_id == "hithink-management-query"
+    assert iwencai.SKILLS["news"].skill_id == "news-search"
 
 
 def test_config_summary_never_exposes_api_key() -> None:

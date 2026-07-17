@@ -271,7 +271,21 @@ def default_capability_result(capability: str) -> dict[str, object]:
         "consensus": {"预测净利润[2027]": 320_000_000, "机构评级": "增持"},
         "market": {"收盘价": 18.6, "成交量": 86_000_000, "交易日期": "20260714"},
         "finance": {"营业收入[2025]": 5_100_000_000, "归母净利润[2025]": 162_000_000},
+        "basicinfo": {
+            "公司名称": "大业股份有限公司",
+            "公司类型": "民营企业",
+            "成立日期": "20031113",
+            "上市日期": "20201110",
+            "主营范围": "橡胶骨架材料研发、生产与销售",
+            "实际控制人": "公开披露控制人",
+        },
         "business": {"主营产品": "核心产品", "竞争对手": "主要同行"},
+        "management": {
+            "股东户数[2026Q2]": 32100,
+            "股东户数较上期变化": "-8.5%",
+            "实际控制人变更": "未变更",
+            "质押比例": "12.4%",
+        },
         "astock_selector": {
             "股票代码": "603278",
             "股票简称": "大业股份",
@@ -355,14 +369,17 @@ def test_each_workspace_has_a_fixed_capability_bundle() -> None:
         "industry",
     )
     assert workspace_capabilities("stock") == (
+        "basicinfo",
         "finance",
         "business",
         "consensus",
         "event",
         "market",
         "industry",
+        "management",
         "announcement",
         "report",
+        "news",
     )
     assert workspace_capabilities("opportunity") == (
         "sector_selector",
@@ -432,21 +449,45 @@ def test_portfolio_builds_four_capabilities_for_all_twenty_holdings() -> None:
     assert "持仓20" not in " ".join(item.query for item in requests)
 
 
-def test_stock_research_uses_eight_dimensions() -> None:
+def test_stock_research_uses_eleven_dimensions() -> None:
     requests = build_workspace_queries(
         "stock", ResearchContext(code="603278", name="大业股份")
     )
 
     assert [request.capability for request in requests] == [
+        "basicinfo",
         "finance",
         "business",
         "consensus",
         "event",
         "market",
         "industry",
+        "management",
         "announcement",
         "report",
+        "news",
     ]
+
+
+def test_stock_queries_request_professional_time_and_comparison_context() -> None:
+    requests = build_workspace_queries(
+        "stock", ResearchContext(code="603278", name="大业股份")
+    )
+    queries = {request.capability: request.query for request in requests}
+
+    assert all(term in queries["basicinfo"] for term in ("公司身份", "公司属性", "经营边界"))
+    assert all(term in queries["finance"] for term in ("三年", "近四季度", "现金流", "利润匹配"))
+    assert all(term in queries["industry"] for term in ("同行业可比公司", "分位"))
+    assert all(
+        term in queries["consensus"]
+        for term in ("近三个月", "盈利预测修正", "评级变化", "机构分歧")
+    )
+    assert all(term in queries["market"] for term in ("5日", "20日", "60日", "量能", "资金"))
+    assert all(
+        term in queries["management"] for term in ("股东户数", "质押比例", "实控人变化")
+    )
+    for capability in ("announcement", "news", "report"):
+        assert all(term in queries[capability] for term in ("日期", "关键变化", "可核查"))
 
 
 def test_opportunity_keeps_ten_candidate_module_items() -> None:

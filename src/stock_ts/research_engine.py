@@ -24,19 +24,23 @@ WORKSPACE_CAPABILITIES = {
     ),
     "portfolio": ("event", "consensus", "market", "industry"),
     "stock": (
+        "basicinfo",
         "finance",
         "business",
         "consensus",
         "event",
         "market",
         "industry",
+        "management",
         "announcement",
         "report",
+        "news",
     ),
     "opportunity": ("sector_selector", "astock_selector", "event", "news"),
 }
 
 CAPABILITY_LABELS = {
+    "basicinfo": "公司身份",
     "index": "指数状态",
     "macro": "宏观环境",
     "sector_selector": "行业方向",
@@ -47,6 +51,7 @@ CAPABILITY_LABELS = {
     "market": "行情资金",
     "finance": "财务质量",
     "business": "经营结构",
+    "management": "股东治理",
     "astock_selector": "候选筛选",
     "breadth": "涨跌分布",
     "hot_stock": "热门股票",
@@ -55,6 +60,7 @@ CAPABILITY_LABELS = {
 }
 
 FINDING_TITLES = {
+    "basicinfo": "公司身份",
     "index": "指数状态",
     "macro": "宏观变量",
     "sector_selector": "主线强度",
@@ -65,6 +71,7 @@ FINDING_TITLES = {
     "market": "价格与成交",
     "finance": "财务方向",
     "business": "经营与竞争",
+    "management": "股东治理",
     "astock_selector": "候选线索",
     "breadth": "涨跌分布",
     "hot_stock": "热门股票",
@@ -81,7 +88,15 @@ FRONT_PRIORITY = {
         "hot_stock": 4,
         "macro": 5,
     },
-    "stock": {"event": 0, "finance": 1, "consensus": 2, "business": 3},
+    "stock": {
+        "event": 0,
+        "finance": 1,
+        "consensus": 2,
+        "business": 3,
+        "management": 4,
+        "news": 5,
+        "basicinfo": 6,
+    },
     "opportunity": {
         "sector_selector": 0,
         "astock_selector": 1,
@@ -503,14 +518,28 @@ def _prompt_for(module: str, capability: str) -> str:
         ("portfolio", "consensus"): "机构盈利预期、评级及其上调或下修变化",
         ("portfolio", "market"): "近期价格、成交量和资金异动",
         ("portfolio", "industry"): "所属行业、概念主题、行业排名和同行公司",
-        ("stock", "finance"): "收入、利润、现金流、ROE和负债质量变化",
+        ("stock", "basicinfo"): (
+            "公司身份、公司属性、成立上市时间、主营范围、实控人与经营边界"
+        ),
+        ("stock", "finance"): (
+            "近三年和近四季度收入、利润、现金流、ROE与负债趋势，"
+            "比较现金流和利润匹配情况"
+        ),
         ("stock", "business"): "主营结构、竞争位置、客户供应链与经营变化",
-        ("stock", "consensus"): "未来两年盈利预期、评级和预期变化",
+        ("stock", "consensus"): (
+            "近三个月盈利预测修正、评级变化、目标价变化与机构分歧"
+        ),
         ("stock", "event"): "近期业绩、解禁、质押、监管和事件风险",
-        ("stock", "market"): "近期价格、成交量、成交额、换手率和资金变化",
-        ("stock", "industry"): "行业位置、行业排名、同行估值和竞争参照",
-        ("stock", "announcement"): "近期公告中需要重点核查的事项",
-        ("stock", "report"): "近期研报观点、盈利预测、评级和主要分歧",
+        ("stock", "market"): "5日、20日、60日价格、量能、换手与资金结构变化",
+        ("stock", "industry"): (
+            "行业位置、行业排名、同行业可比公司、估值与盈利分位"
+        ),
+        ("stock", "management"): (
+            "股东户数及变化、质押比例及变化、控股股东和实控人变化"
+        ),
+        ("stock", "announcement"): "公告日期、关键变化和可核查事项",
+        ("stock", "report"): "研报日期、关键变化和可核查事项、盈利预测与机构分歧",
+        ("stock", "news"): "新闻日期、关键变化和可核查事项、潜在催化与风险",
         ("opportunity", "sector_selector"): "筛选强度、成交和持续性靠前的行业方向",
         ("opportunity", "astock_selector"): "筛选盈利改善、成交活跃且风险可核查的股票",
         ("opportunity", "event"): "近期可核查的业绩、公告和事件催化",
@@ -552,10 +581,12 @@ def _clean_text(value: str, limit: int) -> str:
 def _execute_capability(client: Any, request: CapabilityRequest) -> _CapabilityOutcome:
     raw = client.query(SKILLS[request.capability], request.query)
     row_limits = {
+        "basicinfo": 1,
         "breadth": 1,
         "hot_stock": 10,
         "astock_selector": 10,
         "sector_selector": 5,
+        "management": 3,
         "news": 5,
         "announcement": 5,
         "report": 5,
@@ -1802,10 +1833,14 @@ def _finding_summary(
     capability: str,
     row: tuple[ResearchFact, ...],
 ) -> str:
+    if capability == "basicinfo":
+        return _basicinfo_summary(row)
     if capability == "finance":
         return _finance_summary(row)
     if capability == "business":
         return _business_summary(row)
+    if capability == "management":
+        return _management_summary(row)
     if capability == "consensus":
         return _consensus_summary(row)
     if capability == "event":
@@ -1829,6 +1864,20 @@ def _finding_summary(
     if capability == "report":
         return _document_summary(row)
     return "；".join(f"{fact.label}：{fact.value}" for fact in row[:2])
+
+
+def _basicinfo_summary(row: tuple[ResearchFact, ...]) -> str:
+    name = _fact_matching(row, ("公司名称", "企业名称"))
+    company_type = _fact_matching(row, ("公司类型", "企业类型", "公司属性"))
+    listed = _fact_matching(row, ("上市日期", "上市时间"))
+    boundary = _fact_matching(row, ("主营范围", "经营范围", "业务范围"))
+    parts = [
+        f"公司为{name.value}" if name else "",
+        f"属性为{company_type.value}" if company_type else "",
+        f"上市于{listed.value}" if listed else "",
+        f"经营边界为{boundary.value}" if boundary else "",
+    ]
+    return "；".join(part for part in parts if part) or _compact_facts(row)
 
 
 def _finance_summary(row: tuple[ResearchFact, ...]) -> str:
@@ -1885,6 +1934,18 @@ def _business_summary(row: tuple[ResearchFact, ...]) -> str:
     if product:
         return f"主营围绕{product.value}，竞争位置仍需补充验证"
     return _compact_facts(row)
+
+
+def _management_summary(row: tuple[ResearchFact, ...]) -> str:
+    household = _fact_matching(row, ("股东户数",))
+    controller = _fact_matching(row, ("实际控制人", "实控人", "控股股东"))
+    pledge = _fact_matching(row, ("质押比例", "质押率"))
+    parts = [
+        f"股东户数{household.value}" if household else "",
+        f"控制权信息为{controller.value}" if controller else "",
+        f"质押比例{pledge.value}" if pledge else "",
+    ]
+    return "；".join(part for part in parts if part) or _compact_facts(row)
 
 
 def _consensus_summary(row: tuple[ResearchFact, ...]) -> str:
