@@ -42,6 +42,10 @@ _ACCOUNT_POSSESSIVE_PATTERN = re.compile(
     r"(?:账户|持仓|仓位|买入价|盈亏|持股|股数|成本价|成本|均价)"
 )
 _ACCOUNT_CONTEXT_PATTERN = re.compile(r"账户|账号|组合列表")
+_DIRECT_PERSONAL_OWNERSHIP_PATTERN = re.compile(
+    r"(?:我|本人|个人)(?:(?:现在|目前|当前|现)|在[^，。！？!?]{0,12}(?:公司|企业))?"
+    r"(?:持有|持股)"
+)
 _PERSONAL_OWNERSHIP_PATTERN = re.compile(
     r"(?:我|本人|个人)[^，。！？!?]*(?:持有|持股|有)"
     r"[^，。！？!?]{0,16}(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:股|手)"
@@ -64,6 +68,10 @@ _ENGLISH_ACCOUNT_POSSESSIVE_PATTERN = re.compile(
 )
 _ENGLISH_PERSONAL_OWNERSHIP_PATTERN = re.compile(
     r"\bi\s+(?:hold|own|bought|have)\s+\d[\d,.]*\s+shares?\b",
+    re.IGNORECASE,
+)
+_ENGLISH_DIRECT_PERSONAL_OWNERSHIP_PATTERN = re.compile(
+    r"\bi\s+(?:currently\s+)?(?:own|hold)\s+shares?\b",
     re.IGNORECASE,
 )
 _ENGLISH_STRONG_PUBLIC_SUBJECT_PATTERN = re.compile(
@@ -414,9 +422,12 @@ def _contains_private_context(question: str) -> bool:
         or _ENGLISH_ACCOUNT_POSSESSIVE_PATTERN.search(normalized)
     ):
         return True
-    if _PERSONAL_OWNERSHIP_PATTERN.search(
-        compact
-    ) or _ENGLISH_PERSONAL_OWNERSHIP_PATTERN.search(normalized):
+    if (
+        _DIRECT_PERSONAL_OWNERSHIP_PATTERN.search(compact)
+        or _PERSONAL_OWNERSHIP_PATTERN.search(compact)
+        or _ENGLISH_DIRECT_PERSONAL_OWNERSHIP_PATTERN.search(normalized)
+        or _ENGLISH_PERSONAL_OWNERSHIP_PATTERN.search(normalized)
+    ):
         return True
     if _STRONG_PUBLIC_SUBJECT_PATTERN.search(
         compact
