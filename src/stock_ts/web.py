@@ -94,6 +94,7 @@ from .research_fusion import fuse_research_results
 from .research_playbook import DecisionDashboard
 from .research_snapshots import ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
+from .stock_deep_research import DEEP_RESEARCH_GROUPS, StockDeepResearchService
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
 from .trade_plan import TradePlan, build_trade_plan
 from .webapp import (
@@ -152,6 +153,7 @@ class ResearchRateLimiter:
 
 IWENCAI_RESEARCH_RATE_LIMITER = ResearchRateLimiter()
 RESEARCH_WORKSPACE_SERVICE = ResearchWorkspaceService()
+STOCK_DEEP_RESEARCH_SERVICE = StockDeepResearchService()
 
 
 CSS = """
@@ -13268,6 +13270,35 @@ def _parse_research_workspace_payload(payload: bytes) -> dict[str, object]:
     return {"module": module, "context": context, "refresh": refresh}
 
 
+def _parse_stock_deep_research_payload(payload: bytes) -> dict[str, object]:
+    try:
+        parsed = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("请求体必须是有效 JSON。") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("请求体必须是 JSON 对象。")
+    allowed_fields = {"code", "name", "focus", "question", "refresh"}
+    if set(parsed) - allowed_fields:
+        raise ValueError("请求字段不受支持。")
+
+    refresh = parsed.get("refresh", False)
+    if not isinstance(refresh, bool):
+        raise ValueError("refresh 必须是布尔值。")
+    focus = _clean_iwencai_text(parsed.get("focus"), 32).lower() or "all"
+    if focus != "all" and focus not in DEEP_RESEARCH_GROUPS:
+        raise ValueError("研究范围不支持，请选择六个业务组之一。")
+    question = _clean_iwencai_text(parsed.get("question"), 500)
+    if len(question) > 200:
+        raise ValueError("研究问题不能超过 200 个字符。")
+    return {
+        "code": _clean_iwencai_text(parsed.get("code"), 32),
+        "name": _clean_iwencai_text(parsed.get("name"), 64),
+        "focus": focus,
+        "question": question,
+        "refresh": refresh,
+    }
+
+
 def _parse_prediction_feedback_payload(payload: bytes) -> dict[str, str]:
     try:
         parsed = json.loads(payload.decode("utf-8"))
@@ -13767,6 +13798,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._handle_prediction_feedback_post(user)
             return
+        if parsed.path == "/api/research/stock/deep":
+            user = user_from_cookie_header(self.headers.get("Cookie", ""), config=config)
+            if is_auth_enabled(config) and user is None:
+                self._send_json(
+                    401,
+                    {
+                        "ok": False,
+                        "status": "login_required",
+                        "message": "请先登录后运行深度研究。",
+                    },
+                )
+                return
+            self._handle_stock_deep_research_post(user)
+            return
         if parsed.path == "/api/research/workspace":
             if not is_auth_enabled(config) and (
                 _is_public_readonly() or not _allow_anonymous_iwencai()
@@ -13872,6 +13917,87 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_dispatch_daily_post(form)
             return
         self._handle_holdings_post(form)
+
+    def _handle_stock_deep_research_post(self, user: AuthUser | None) -> None:
+        client_key = (
+            f"user:{user.id}"
+            if user is not None
+            else _research_client_key(self.headers, self.client_address)
+        )
+        if not IWENCAI_RESEARCH_RATE_LIMITER.allow(client_key):
+            self._send_json(
+                429,
+                {
+                    "ok": False,
+                    "status": "rate_limited",
+                    "message": "请求过于频繁，请稍后再试。",
+                },
+            )
+            return
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json(
+                415,
+                {"ok": False, "status": "invalid_request", "message": "仅接受 JSON 请求。"},
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": "请求长度无效。"},
+            )
+            return
+        if length > MAX_IWENCAI_REQUEST_BYTES:
+            self._send_json(
+                413,
+                {"ok": False, "status": "too_large", "message": "研究请求超过 16 KiB。"},
+            )
+            return
+        try:
+            payload = _parse_stock_deep_research_payload(self.rfile.read(length))
+        except ValueError as exc:
+            self._send_json(
+                400,
+                {"ok": False, "status": "invalid_request", "message": str(exc)},
+            )
+            return
+        try:
+            result = STOCK_DEEP_RESEARCH_SERVICE.research(**payload)
+        except ValueError:
+            self._send_json(
+                400,
+                {
+                    "ok": False,
+                    "status": "invalid_request",
+                    "message": "研究请求无效，请检查股票和研究范围。",
+                },
+            )
+            return
+        except IwencaiConfigurationError:
+            self._send_json(
+                503,
+                {
+                    "ok": False,
+                    "status": "missing_config",
+                    "message": "深度研究服务尚未配置。",
+                },
+            )
+            return
+        except Exception:
+            self._send_json(
+                502,
+                {
+                    "ok": False,
+                    "status": "unavailable",
+                    "message": "深度研究服务暂时不可用，请稍后重试。",
+                },
+            )
+            return
+        self._send_json(200, result.to_public_dict())
 
     def _handle_research_workspace_post(self) -> None:
         config = AuthConfig.from_env()

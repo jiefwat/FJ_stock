@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 import stock_ts.web as web_module
+from stock_ts.auth import SessionManager, UserStore
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.research_engine import (
     ResearchContext,
@@ -22,6 +23,7 @@ from stock_ts.web import (
     ResearchRateLimiter,
     _parse_prediction_feedback_payload,
     _parse_research_workspace_payload,
+    _parse_stock_deep_research_payload,
 )
 
 
@@ -62,6 +64,37 @@ def _request(
         headers={"Content-Type": content_type},
     )
     return urllib.request.build_opener(NoRedirect).open(request, timeout=5)
+
+
+def _deep_request(
+    server: ThreadingHTTPServer,
+    payload: bytes,
+    *,
+    content_type: str = "application/json",
+    cookie: str = "",
+):
+    headers = {"Content-Type": content_type}
+    if cookie:
+        headers["Cookie"] = cookie
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/api/research/stock/deep",
+        data=payload,
+        method="POST",
+        headers=headers,
+    )
+    return urllib.request.build_opener(NoRedirect).open(request, timeout=5)
+
+
+def _authenticated_cookie(tmp_path) -> str:
+    user = UserStore(tmp_path / "users.sqlite3").bootstrap_admin(
+        "owner@example.com",
+        "secret-password",
+    )
+    token = SessionManager("session-secret").issue_session(
+        user_id=user.id,
+        username=user.username,
+    )
+    return f"stock_ts_session={token}"
 
 
 def _error_json(exc: urllib.error.HTTPError) -> dict[str, object]:
@@ -626,6 +659,193 @@ def test_workspace_endpoint_rejects_wrong_content_type_and_large_body(
         with pytest.raises(urllib.error.HTTPError) as too_large:
             _request(server, b"{" + b"x" * (16 * 1024) + b"}")
         assert too_large.value.code == 413
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_parse_stock_deep_research_payload_has_a_strict_public_contract() -> None:
+    parsed = _parse_stock_deep_research_payload(
+        json.dumps(
+            {
+                "code": "600519",
+                "name": "贵州茅台",
+                "focus": "finance",
+                "question": "过去四个季度现金流如何",
+                "refresh": True,
+            },
+            ensure_ascii=False,
+        ).encode()
+    )
+
+    assert parsed == {
+        "code": "600519",
+        "name": "贵州茅台",
+        "focus": "finance",
+        "question": "过去四个季度现金流如何",
+        "refresh": True,
+    }
+
+    for private_field in ("holdings", "cost", "weight", "account", "skill_id", "gateway"):
+        with pytest.raises(ValueError, match="请求字段"):
+            _parse_stock_deep_research_payload(
+                json.dumps(
+                    {"code": "600519", private_field: "browser-controlled"},
+                    ensure_ascii=False,
+                ).encode()
+            )
+
+    with pytest.raises(ValueError, match="研究范围"):
+        _parse_stock_deep_research_payload(b'{"code":"600519","focus":"unknown"}')
+
+
+def test_stock_deep_endpoint_returns_neutral_partial_result_without_private_context(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class PartialResult:
+        def to_public_dict(self) -> dict[str, object]:
+            return {
+                "ok": True,
+                "status": "partial",
+                "code": "600519",
+                "name": "贵州茅台",
+                "focus": "all",
+                "groups": [
+                    {
+                        "key": "finance",
+                        "title": "财务与估值",
+                        "status": "partial",
+                        "facts": [],
+                        "recovery": "部分事实待补，请稍后重试。",
+                    }
+                ],
+                "coverage": {"ready": 9, "total": 11},
+                "cached": False,
+                "as_of": "2026-07-17T10:00:00+08:00",
+                "recovery": "",
+            }
+
+    class FakeService:
+        def research(self, **kwargs):
+            captured.update(kwargs)
+            return PartialResult()
+
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", FakeService())
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with _deep_request(
+            server,
+            json.dumps(
+                {
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "focus": "all",
+                    "question": "",
+                    "refresh": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
+            cookie=_authenticated_cookie(tmp_path),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert response.headers["Cache-Control"] == "no-store"
+        assert captured == {
+            "code": "600519",
+            "name": "贵州茅台",
+            "focus": "all",
+            "question": "",
+            "refresh": False,
+        }
+        serialized = json.dumps(body, ensure_ascii=False)
+        for forbidden in (
+            "问财",
+            "同花顺",
+            "skill_id",
+            "trace",
+            "gateway",
+            "api_key",
+            "持仓",
+            "成本",
+            "权重",
+            "账号",
+            "Cookie",
+        ):
+            assert forbidden.casefold() not in serialized.casefold()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stock_deep_endpoint_enforces_media_size_and_rate_limits(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    cookie = _authenticated_cookie(tmp_path)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as wrong_type:
+            _deep_request(
+                server,
+                b"code=600519",
+                content_type="application/x-www-form-urlencoded",
+                cookie=cookie,
+            )
+        assert wrong_type.value.code == 415
+
+        with pytest.raises(urllib.error.HTTPError) as too_large:
+            _deep_request(server, b"{" + b"x" * (16 * 1024) + b"}", cookie=cookie)
+        assert too_large.value.code == 413
+
+        monkeypatch.setattr(
+            web_module,
+            "IWENCAI_RESEARCH_RATE_LIMITER",
+            ResearchRateLimiter(limit=0, window_seconds=60),
+        )
+        with pytest.raises(urllib.error.HTTPError) as limited:
+            _deep_request(server, b'{"code":"600519"}', cookie=cookie)
+        assert limited.value.code == 429
+        assert _error_json(limited.value)["status"] == "rate_limited"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (ValueError("secret/path/to/private"), 400),
+        (RuntimeError("gateway trace secret"), 502),
+    ],
+)
+def test_stock_deep_endpoint_sanitizes_service_errors(
+    monkeypatch,
+    tmp_path,
+    error: Exception,
+    expected_status: int,
+) -> None:
+    class FailingService:
+        def research(self, **_kwargs):
+            raise error
+
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", FailingService())
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _deep_request(
+                server,
+                b'{"code":"600519","focus":"all"}',
+                cookie=_authenticated_cookie(tmp_path),
+            )
+
+        assert caught.value.code == expected_status
+        serialized = json.dumps(_error_json(caught.value), ensure_ascii=False)
+        for forbidden in ("secret", "path", "gateway", "trace", "RuntimeError"):
+            assert forbidden.casefold() not in serialized.casefold()
     finally:
         server.shutdown()
         server.server_close()

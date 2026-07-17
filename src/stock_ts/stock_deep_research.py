@@ -1,0 +1,331 @@
+from __future__ import annotations
+
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
+from threading import Lock
+from typing import Any, Callable
+
+from .iwencai import (
+    SKILLS,
+    IwencaiSkillClient,
+    build_module_research_query,
+    route_stock_research_skill,
+)
+from .research_engine import ResearchContext, build_workspace_queries
+from .research_evidence import normalize_capability_rows
+
+DEEP_RESEARCH_GROUPS = {
+    "company": ("公司与经营", ("basicinfo", "business", "management")),
+    "finance": ("财务与估值", ("finance",)),
+    "industry": ("行业与同行", ("industry",)),
+    "consensus": ("机构与预期", ("consensus", "report")),
+    "market": ("资金与技术", ("market",)),
+    "event": ("公告与事件", ("event", "announcement", "news")),
+}
+
+CAPABILITY_GROUPS = {
+    capability: group
+    for group, (_title, capabilities) in DEEP_RESEARCH_GROUPS.items()
+    for capability in capabilities
+}
+
+_PRIVATE_TERMS = ("持仓", "持股", "成本", "权重", "账号", "账户", "备注", "组合列表")
+_PRIVATE_WORDS = ("holdings", "shares", "cost", "weight", "account", "cookie", "portfolio")
+
+
+@dataclass(frozen=True)
+class DeepResearchFact:
+    label: str
+    value: str
+
+    def to_public_dict(self) -> dict[str, str]:
+        return {"label": self.label, "value": self.value}
+
+
+@dataclass(frozen=True)
+class DeepResearchGroup:
+    key: str
+    title: str
+    status: str
+    facts: tuple[DeepResearchFact, ...] = ()
+    recovery: str = ""
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "title": self.title,
+            "status": self.status,
+            "facts": [fact.to_public_dict() for fact in self.facts],
+            "recovery": self.recovery,
+        }
+
+
+@dataclass(frozen=True)
+class StockDeepResearchResult:
+    ok: bool
+    status: str
+    code: str
+    name: str
+    focus: str
+    groups: tuple[DeepResearchGroup, ...]
+    coverage_ready: int
+    coverage_total: int
+    cached: bool
+    as_of: str
+    recovery: str = ""
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "status": self.status,
+            "code": self.code,
+            "name": self.name,
+            "focus": self.focus,
+            "groups": [group.to_public_dict() for group in self.groups],
+            "coverage": {
+                "ready": self.coverage_ready,
+                "total": self.coverage_total,
+            },
+            "cached": self.cached,
+            "as_of": self.as_of,
+            "recovery": self.recovery,
+        }
+
+
+@dataclass(frozen=True)
+class _CapabilityResult:
+    capability: str
+    facts: tuple[DeepResearchFact, ...] = ()
+    succeeded: bool = False
+
+
+class StockDeepResearchService:
+    def __init__(
+        self,
+        *,
+        client_factory: Callable[[], Any] = IwencaiSkillClient,
+        cache_ttl: float = 300,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.client_factory = client_factory
+        self.cache_ttl = max(cache_ttl, 0)
+        self.clock = clock
+        self._cache: dict[
+            tuple[str, str, str, str], tuple[float, StockDeepResearchResult]
+        ] = {}
+        self._cache_lock = Lock()
+
+    def research(
+        self,
+        *,
+        code: str,
+        name: str,
+        focus: str = "all",
+        question: str = "",
+        refresh: bool = False,
+    ) -> StockDeepResearchResult:
+        code = _clean_input(code, 32)
+        name = _clean_input(name, 64)
+        focus = _clean_input(focus, 32).lower() or "all"
+        question = _clean_input(question)
+        if not code and not name:
+            raise ValueError("请输入股票代码或名称。")
+        if focus != "all" and focus not in DEEP_RESEARCH_GROUPS:
+            raise ValueError("研究范围不支持，请选择六个业务组之一。")
+        if len(question) > 200:
+            raise ValueError("研究问题不能超过 200 个字符。")
+        if _contains_private_context(question):
+            raise ValueError("研究问题不能包含账户或持仓信息。")
+
+        cache_key = (code, name, focus, question)
+        if not refresh:
+            cached = self._cached(cache_key)
+            if cached is not None:
+                return cached
+
+        requests = _requests_for(code=code, name=name, focus=focus, question=question)
+        client = self.client_factory()
+        results = _execute_requests(client, requests)
+        groups = _build_groups(results, focus=focus, question=question)
+        ready = sum(result.succeeded for result in results)
+        total = len(results)
+        ok = ready > 0
+        status = "complete" if total and ready == total else "partial" if ok else "unavailable"
+        result = StockDeepResearchResult(
+            ok=ok,
+            status=status,
+            code=code,
+            name=name,
+            focus=focus,
+            groups=groups,
+            coverage_ready=ready,
+            coverage_total=total,
+            cached=False,
+            as_of=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+            recovery="" if ok else "研究数据暂时不可用，请稍后重试。",
+        )
+        if ok and self.cache_ttl > 0:
+            with self._cache_lock:
+                self._cache[cache_key] = (self.clock() + self.cache_ttl, result)
+        return result
+
+    def _cached(
+        self,
+        cache_key: tuple[str, str, str, str],
+    ) -> StockDeepResearchResult | None:
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            if cached is None:
+                return None
+            expires_at, result = cached
+            if expires_at <= self.clock():
+                self._cache.pop(cache_key, None)
+                return None
+            return replace(result, cached=True)
+
+
+def _requests_for(
+    *,
+    code: str,
+    name: str,
+    focus: str,
+    question: str,
+) -> tuple[tuple[str, str], ...]:
+    if question:
+        skill = route_stock_research_skill(question)
+        capability = next(key for key, value in SKILLS.items() if value == skill)
+        query = build_module_research_query(
+            "stock",
+            question,
+            code=code,
+            name=name,
+        )
+        return ((capability, query),)
+
+    request_by_capability = {
+        request.capability: request.query
+        for request in build_workspace_queries(
+            "stock",
+            ResearchContext(code=code, name=name),
+        )
+    }
+    capabilities = (
+        tuple(CAPABILITY_GROUPS)
+        if focus == "all"
+        else DEEP_RESEARCH_GROUPS[focus][1]
+    )
+    return tuple((capability, request_by_capability[capability]) for capability in capabilities)
+
+
+def _execute_requests(
+    client: Any,
+    requests: tuple[tuple[str, str], ...],
+) -> tuple[_CapabilityResult, ...]:
+    indexed: dict[int, _CapabilityResult] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(requests))) as executor:
+        futures = {
+            executor.submit(_execute_request, client, capability, query): index
+            for index, (capability, query) in enumerate(requests)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            capability = requests[index][0]
+            try:
+                indexed[index] = future.result()
+            except Exception:
+                indexed[index] = _CapabilityResult(capability=capability)
+    return tuple(indexed[index] for index in range(len(requests)))
+
+
+def _execute_request(client: Any, capability: str, query: str) -> _CapabilityResult:
+    raw = client.query(SKILLS[capability], query)
+    rows = normalize_capability_rows(capability, raw, max_rows=3)
+    facts = _dedupe_facts(
+        DeepResearchFact(label=fact.label, value=fact.value)
+        for row in rows
+        for fact in row
+    )
+    return _CapabilityResult(
+        capability=capability,
+        facts=facts,
+        succeeded=bool(rows),
+    )
+
+
+def _build_groups(
+    results: tuple[_CapabilityResult, ...],
+    *,
+    focus: str,
+    question: str,
+) -> tuple[DeepResearchGroup, ...]:
+    requested = {result.capability for result in results}
+    group_keys = (
+        tuple(DEEP_RESEARCH_GROUPS)
+        if focus == "all" and not question
+        else tuple(
+            group
+            for group in DEEP_RESEARCH_GROUPS
+            if requested & set(DEEP_RESEARCH_GROUPS[group][1])
+        )
+    )
+    groups = []
+    for key in group_keys:
+        title, capabilities = DEEP_RESEARCH_GROUPS[key]
+        group_results = [result for result in results if result.capability in capabilities]
+        succeeded = sum(result.succeeded for result in group_results)
+        facts = _dedupe_facts(
+            fact for result in group_results if result.succeeded for fact in result.facts
+        )
+        status = (
+            "ready"
+            if group_results and succeeded == len(group_results)
+            else "partial"
+            if succeeded
+            else "unavailable"
+        )
+        recovery = (
+            ""
+            if status == "ready"
+            else "部分事实待补，请稍后重试。"
+            if status == "partial"
+            else "该组数据暂未返回，请稍后重试。"
+        )
+        groups.append(
+            DeepResearchGroup(
+                key=key,
+                title=title,
+                status=status,
+                facts=facts,
+                recovery=recovery,
+            )
+        )
+    return tuple(groups)
+
+
+def _dedupe_facts(facts: Any) -> tuple[DeepResearchFact, ...]:
+    result = []
+    seen: set[tuple[str, str]] = set()
+    for fact in facts:
+        key = (fact.label, fact.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(fact)
+    return tuple(result)
+
+
+def _contains_private_context(question: str) -> bool:
+    normalized = question.casefold()
+    return any(term in normalized for term in _PRIVATE_TERMS) or any(
+        re.search(rf"\b{re.escape(word)}\b", normalized) for word in _PRIVATE_WORDS
+    )
+
+
+def _clean_input(value: object, limit: int | None = None) -> str:
+    text = str(value or "")
+    cleaned = "".join(character if character.isprintable() else " " for character in text)
+    normalized = " ".join(cleaned.split())
+    return normalized if limit is None else normalized[:limit]

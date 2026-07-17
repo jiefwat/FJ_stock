@@ -7,6 +7,8 @@ import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import pytest
+
 import stock_ts.web as web_module
 from stock_ts.auth import AuthConfig, AuthUser, SessionManager, UserStore
 from stock_ts.portfolio import load_holdings_csv
@@ -135,6 +137,28 @@ def test_http_handler_redirects_workbench_to_login_when_auth_enabled(monkeypatch
             assert exc.headers["Location"].startswith("/login?next=%2F")
         else:  # pragma: no cover - defensive
             raise AssertionError("expected redirect")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stock_deep_research_api_returns_json_401_for_anonymous_user(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    server = _serve_once(monkeypatch, tmp_path)
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/api/research/stock/deep",
+        data=b'{"code":"600519"}',
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.build_opener(_NoRedirect).open(request, timeout=5)
+
+        assert caught.value.code == 401
+        assert json.loads(caught.value.read().decode())["status"] == "login_required"
     finally:
         server.shutdown()
         server.server_close()
