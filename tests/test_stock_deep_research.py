@@ -203,6 +203,14 @@ def test_custom_question_routes_to_one_capability_without_private_context() -> N
         "当前盈亏20%",
         "持仓均价1500元",
         "买入成本1500元",
+        "持股的成本",
+        "持股的数量",
+        "持股均价",
+        "我现在持有100股",
+        "本人现持有100股",
+        "当前总盈亏20%",
+        "累计总盈亏20%",
+        "我的公司持仓",
     ],
 )
 def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
@@ -218,7 +226,18 @@ def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
 
 @pytest.mark.parametrize(
     "question",
-    ["原材料成本", "经营成本", "成本承压缓解", "大股东持股比例"],
+    [
+        "原材料成本",
+        "经营成本",
+        "成本承压缓解",
+        "大股东持股比例",
+        "大股东持股数量",
+        "控股股东持股数量变化",
+        "前十大股东持股",
+        "机构持股均价",
+        "公司产品成本价变化",
+        "公司当前盈亏情况",
+    ],
 )
 def test_custom_question_allows_company_cost_and_shareholding_research(
     question: str,
