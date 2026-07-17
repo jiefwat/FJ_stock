@@ -1023,9 +1023,11 @@ def _render_native_research_page(
 ) -> str:
     auth_config = AuthConfig.from_env()
     auth_enabled = is_auth_enabled(auth_config)
+    absolute_holdings_path = Path(holdings_path).is_absolute()
+    local_absolute_holdings = not auth_enabled and absolute_holdings_path
     client_holdings_path = (
         holdings_path
-        if not auth_enabled and not Path(holdings_path).is_absolute()
+        if not auth_enabled and not absolute_holdings_path
         else ""
     )
     selected_stock = _default_stock_query(stock_code, holdings_path)
@@ -1044,6 +1046,7 @@ def _render_native_research_page(
         stock_code=selected_stock,
         provider_name=provider_name,
         edit_code=edit_code,
+        force_readonly=local_absolute_holdings,
     )
     portfolio_workspace = render_engine_workspace(
         "portfolio",
@@ -1115,13 +1118,14 @@ def _render_native_portfolio_manager(
     stock_code: str,
     provider_name: str,
     edit_code: str,
+    force_readonly: bool = False,
 ) -> str:
     try:
         holdings = load_holdings_csv(holdings_path, allow_empty=True)
     except Exception:
         holdings = []
     editing = next((item for item in holdings if item.code == edit_code), None)
-    readonly = _is_public_readonly()
+    readonly = _is_public_readonly() or force_readonly
     rows = "".join(
         _render_native_holding_row(
             item,
@@ -1133,21 +1137,26 @@ def _render_native_portfolio_manager(
         for item in holdings
     )
     if not rows:
+        empty_hint = (
+            "当前账本暂无持仓记录；只读模式下无法在此新增。"
+            if readonly
+            else "用下方表单录入股票、数量和成本，保存后自动生成逐股结论。"
+        )
         rows = (
             '<tr><td colspan="4"><div class="empty-state"><strong>还没有持仓</strong>'
-            '<p>用下方表单录入股票、数量和成本，保存后自动生成逐股结论。</p>'
-            "</div></td></tr>"
+            f"<p>{empty_hint}</p></div></td></tr>"
         )
-    editor = (
-        '<p class="module-desc">当前为只读模式，持仓写入已关闭。</p>'
-        if readonly
-        else _render_native_holding_editor(
+    if force_readonly:
+        editor = '<p class="module-desc">绝对路径账本仅查看；如需编辑请改用项目内相对路径。</p>'
+    elif readonly:
+        editor = '<p class="module-desc">当前为只读模式，持仓写入已关闭。</p>'
+    else:
+        editor = _render_native_holding_editor(
             editing,
             stock_code=stock_code,
             provider_name=provider_name,
             holdings_path=client_holdings_path,
         )
-    )
     mode = "只读" if readonly else "可编辑"
     return f"""
       <section class="engine-native-tools" data-native-portfolio-manager>

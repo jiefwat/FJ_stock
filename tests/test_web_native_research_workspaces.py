@@ -7,6 +7,7 @@ import subprocess
 import pytest
 from bs4 import BeautifulSoup
 
+from stock_ts.auth import AuthUser
 from stock_ts.iwencai import SKILLS
 from stock_ts.stock_deep_research import StockDeepResearchService
 from stock_ts.web import render_page
@@ -455,13 +456,18 @@ def test_portfolio_page_context_keeps_twenty_names_and_codes_only(tmp_path) -> N
     assert "备注" not in serialized
 
 
-def test_native_portfolio_restores_authenticated_ledger_controls_and_stock_links(tmp_path) -> None:
+def test_native_portfolio_makes_unauthenticated_absolute_ledger_readonly(
+    monkeypatch,
+    tmp_path,
+) -> None:
     holdings = tmp_path / "holdings.csv"
     holdings.write_text(
         "code,name,shares,cost_price,sector,note\n"
         "600519,贵州茅台,100,1500,白酒,核心仓\n",
         encoding="utf-8",
     )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+    monkeypatch.delenv("STOCK_TS_PUBLIC_READONLY", raising=False)
 
     soup = BeautifulSoup(
         render_page(
@@ -475,6 +481,115 @@ def test_native_portfolio_restores_authenticated_ledger_controls_and_stock_links
     assert portfolio is not None
     manager = portfolio.select_one("[data-native-portfolio-manager]")
     assert manager is not None
+    assert "贵州茅台" in manager.get_text()
+    assert "绝对路径账本仅查看；如需编辑请改用项目内相对路径。" in manager.get_text()
+    assert manager.select_one('form[action="/holdings"]') is None
+    assert manager.select_one('input[name="portfolio_action"][value="delete"]') is None
+    assert manager.select_one('a[href*="edit="]') is None
+    assert manager.select_one('button[type="submit"]') is None
+    assert str(holdings) not in str(soup)
+
+
+def test_native_portfolio_absolute_readonly_empty_state_does_not_offer_form(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+    monkeypatch.delenv("STOCK_TS_PUBLIC_READONLY", raising=False)
+
+    soup = BeautifulSoup(
+        render_page(stock_code="600519", holdings_path=str(holdings)),
+        "html.parser",
+    )
+    manager = soup.select_one("[data-native-portfolio-manager]")
+    assert manager is not None
+    assert "当前账本暂无持仓记录；只读模式下无法在此新增。" in manager.get_text()
+    assert "用下方表单录入" not in manager.get_text()
+
+
+def test_native_portfolio_keeps_unauthenticated_relative_ledger_editable(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    holdings_path = "data/portfolio/holdings.csv"
+    holdings = tmp_path / holdings_path
+    holdings.parent.mkdir(parents=True)
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心仓\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+    monkeypatch.delenv("STOCK_TS_PUBLIC_READONLY", raising=False)
+
+    soup = BeautifulSoup(
+        render_page(
+            stock_code="600519",
+            holdings_path=holdings_path,
+            edit_code="600519",
+        ),
+        "html.parser",
+    )
+    manager = soup.select_one("[data-native-portfolio-manager]")
+    assert manager is not None
+    editor_selector = (
+        'form[action="/holdings"] input[name="portfolio_action"][value="upsert"]'
+    )
+    assert len(manager.select(editor_selector)) == 1
+    assert manager.select_one('form[action="/holdings"] input[name="holdings_path"]')[
+        "value"
+    ] == holdings_path
+    assert manager.select_one(
+        'form[action="/holdings"] input[name="portfolio_action"][value="delete"]'
+    )
+    assert manager.select_one(
+        'a[href*="edit=600519"][href*="holdings=data%2Fportfolio%2Fholdings.csv"]'
+    )
+    assert manager.select_one(
+        'a[href*="code=600519"][href*="holdings=data%2Fportfolio%2Fholdings.csv"][href$="#stock"]'
+    )
+
+
+def test_native_portfolio_restores_authenticated_ledger_controls_and_stock_links(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    holdings = tmp_path / "holdings.csv"
+    holdings.write_text(
+        "code,name,shares,cost_price,sector,note\n"
+        "600519,贵州茅台,100,1500,白酒,核心仓\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "1")
+    monkeypatch.setenv("STOCK_TS_ADMIN_USERNAME", "owner@example.com")
+    monkeypatch.setenv("STOCK_TS_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("STOCK_TS_SESSION_SECRET", "session-secret")
+    monkeypatch.delenv("STOCK_TS_PUBLIC_READONLY", raising=False)
+    user = AuthUser(id=7, username="member@example.com", role="member")
+
+    soup = BeautifulSoup(
+        render_page(
+            stock_code="600519",
+            holdings_path=str(holdings),
+            edit_code="600519",
+            current_user=user,
+        ),
+        "html.parser",
+    )
+    portfolio = soup.select_one('[data-engine-workspace="portfolio"]')
+    assert portfolio is not None
+    manager = portfolio.select_one("[data-native-portfolio-manager]")
+    assert manager is not None
+    editor_selector = (
+        'form[action="/holdings"] input[name="portfolio_action"][value="upsert"]'
+    )
+    assert len(manager.select(editor_selector)) == 1
     assert manager.select_one('form[action="/holdings"] input[name="holding_shares"]')
     assert manager.select_one('form[action="/holdings"] input[name="holding_cost_price"]')
     assert manager.select_one(
@@ -482,6 +597,7 @@ def test_native_portfolio_restores_authenticated_ledger_controls_and_stock_links
     )
     assert manager.select_one('a[href*="code=600519"][href$="#stock"]')
     assert manager.select_one('input[name="holding_code"]')["value"] == "600519"
+    assert str(holdings) not in str(soup)
 
 
 def test_native_stock_workspace_has_switcher_and_full_market_entry() -> None:
