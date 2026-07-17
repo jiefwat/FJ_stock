@@ -411,6 +411,140 @@ def test_workspace_open_uses_local_facts_without_waiting_for_remote(
     assert response["verdict"]
 
 
+def _write_opportunity_snapshot(
+    snapshot_dir,
+    *,
+    version: str | None,
+    generated_at: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "ok": True,
+        "status": "complete",
+        "module": "opportunity",
+        "generated_at": generated_at,
+        "verdict": "旧机会快照判断",
+        "action": "沿用旧候选动作",
+        "primary_risk": "旧风险",
+        "findings": [{"title": "旧候选600519"}],
+        "module_items": [{"label": "旧候选600519", "summary": "旧动作"}],
+        "module_sections": [
+            {
+                "key": "opportunity-candidates",
+                "items": [
+                    {
+                        "label": "旧候选600519",
+                        "summary": "旧动作",
+                        "facts": [
+                            {"label": label, "value": "旧值"}
+                            for label in (
+                                "阶段判断",
+                                "持续性评分",
+                                "5日表现",
+                                "10日表现",
+                                "20日表现",
+                                "入选原因",
+                                "确认条件",
+                                "失效条件",
+                            )
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    if version is not None:
+        payload["research_contract_version"] = version
+    path = snapshot_dir / "opportunity/latest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("version", "age_days"),
+    [
+        (None, 0),
+        ("2026-07-16.legacy.v1", 0),
+        (RESEARCH_CONTRACT_VERSION, 2),
+    ],
+)
+def test_stock_local_fallback_rejects_incompatible_or_stale_opportunity_snapshot(
+    monkeypatch,
+    tmp_path,
+    version: str | None,
+    age_days: int,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    generated_at = (
+        datetime.now(timezone(timedelta(hours=8))) - timedelta(days=age_days)
+    ).isoformat(timespec="seconds")
+    _write_opportunity_snapshot(
+        snapshot_dir,
+        version=version,
+        generated_at=generated_at,
+    )
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+    original_build = web_module.build_local_research
+    captured: list[dict[str, object] | None] = []
+
+    def capturing_build(module, context, **kwargs):
+        captured.append(kwargs.get("opportunity_snapshot"))
+        return original_build(module, context, **kwargs)
+
+    monkeypatch.setattr(web_module, "build_local_research", capturing_build)
+
+    response = web_module._research_workspace_response(
+        {
+            "module": "stock",
+            "context": ResearchContext(code="600519", name="贵州茅台"),
+            "refresh": True,
+        }
+    )
+
+    assert captured == [None]
+    serialized = json.dumps(response, ensure_ascii=False)
+    assert "旧机会快照判断" not in serialized
+    assert "沿用旧候选动作" not in serialized
+    assert "旧候选600519" not in serialized
+
+
+def test_stock_local_fallback_accepts_only_fresh_compatible_opportunity_snapshot(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    expected = _write_opportunity_snapshot(
+        snapshot_dir,
+        version=RESEARCH_CONTRACT_VERSION,
+        generated_at=datetime.now(timezone(timedelta(hours=8))).isoformat(
+            timespec="seconds"
+        ),
+    )
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    monkeypatch.setattr(web_module, "create_provider", lambda _name: SampleDataProvider())
+    original_build = web_module.build_local_research
+    captured: list[dict[str, object] | None] = []
+
+    def capturing_build(module, context, **kwargs):
+        captured.append(kwargs.get("opportunity_snapshot"))
+        return original_build(module, context, **kwargs)
+
+    monkeypatch.setattr(web_module, "build_local_research", capturing_build)
+
+    web_module._research_workspace_response(
+        {
+            "module": "stock",
+            "context": ResearchContext(code="600519", name="贵州茅台"),
+            "refresh": True,
+        }
+    )
+
+    assert captured == [expected]
+
+
 def test_workspace_local_fallback_retries_when_snapshot_version_changes(
     monkeypatch,
     tmp_path,

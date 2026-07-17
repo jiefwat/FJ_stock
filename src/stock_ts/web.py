@@ -83,6 +83,7 @@ from .research.market_regime import assess_market_regime
 from .research.opportunity_dossier import build_opportunity_dossier
 from .research.portfolio_dossier import build_portfolio_dossier
 from .research.stock_dossier import build_professional_stock_dossier
+from .research_contract import RESEARCH_CONTRACT_VERSION
 from .research_delivery import with_research_delivery
 from .research_engine import (
     ResearchContext,
@@ -92,7 +93,7 @@ from .research_engine import (
 from .research_fallback import build_local_research
 from .research_fusion import fuse_research_results
 from .research_playbook import DecisionDashboard
-from .research_snapshots import RESEARCH_CONTRACT_VERSION, ResearchSnapshotStore
+from .research_snapshots import ResearchSnapshotStore
 from .sector_labels import BOARD_LABELS, localize_sector_name
 from .stock_deep_research import DEEP_RESEARCH_GROUPS, StockDeepResearchService
 from .symbols import ResolvedSymbol, resolve_stock_query, sector_for_code
@@ -13467,7 +13468,12 @@ def _research_workspace_response(payload: dict[str, object]) -> dict[str, object
             opportunity_snapshot = None
             if local_module == "stock":
                 snapshot = store.load("opportunity", allow_stale=True)
-                opportunity_snapshot = snapshot.payload if snapshot is not None else None
+                if (
+                    snapshot is not None
+                    and not snapshot.stale
+                    and _snapshot_supports_workspace("opportunity", snapshot.payload)
+                ):
+                    opportunity_snapshot = snapshot.payload
             result = build_local_research(
                 local_module,
                 local_context,

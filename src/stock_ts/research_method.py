@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
-RESEARCH_CONTRACT_VERSION = "2026-07-17.multi-lens.v1"
+from .research_contract import RESEARCH_CONTRACT_VERSION
 
 _EVIDENCE_ALIASES = {
     "财务质量": ("finance",),

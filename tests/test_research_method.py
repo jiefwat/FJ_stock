@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from stock_ts.iwencai import SKILLS
 from stock_ts.providers.sample import SampleDataProvider
@@ -14,6 +15,25 @@ from stock_ts.research_method import (
     build_method_section,
     method_for,
 )
+
+
+def test_research_contract_version_has_one_shared_source_definition() -> None:
+    package_root = Path(__file__).parents[1] / "src/stock_ts"
+    contract_path = package_root / "research_contract.py"
+
+    assert contract_path.exists()
+    expected_import = "from .research_contract import RESEARCH_CONTRACT_VERSION"
+    assert expected_import in (package_root / "research_method.py").read_text(encoding="utf-8")
+    assert expected_import in (package_root / "research_snapshots.py").read_text(
+        encoding="utf-8"
+    )
+    version_literal = "2026-07-17.multi-lens.v1"
+    literal_owners = [
+        str(path.relative_to(package_root))
+        for path in package_root.rglob("*.py")
+        if version_literal in path.read_text(encoding="utf-8")
+    ]
+    assert literal_owners == ["research_contract.py"]
 
 
 class CompleteStockClient:

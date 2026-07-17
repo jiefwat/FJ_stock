@@ -10,8 +10,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+from .research_contract import RESEARCH_CONTRACT_VERSION
+
 GLOBAL_SNAPSHOT_MODULES = {"market", "opportunity"}
-RESEARCH_CONTRACT_VERSION = "2026-07-17.multi-lens.v1"
 
 
 @dataclass(frozen=True)

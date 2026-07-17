@@ -3,12 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .research_contract import RESEARCH_CONTRACT_VERSION
 from .research_engine import ResearchContext, ResearchWorkspaceResult
-from .research_snapshots import (
-    GLOBAL_SNAPSHOT_MODULES,
-    RESEARCH_CONTRACT_VERSION,
-    ResearchSnapshotStore,
-)
+from .research_snapshots import GLOBAL_SNAPSHOT_MODULES, ResearchSnapshotStore
 
 Fallback = Callable[[str, ResearchContext], ResearchWorkspaceResult]
 
