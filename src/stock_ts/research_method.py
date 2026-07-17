@@ -15,6 +15,8 @@ class ResearchMethodDimension:
     analysis_task: str
     comparison_basis: str
     recovery: str
+    required_all: tuple[str, ...] = ()
+    required_any: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,9 @@ def _dimension(
     analysis_task: str,
     comparison_basis: str,
     recovery: str,
+    *,
+    required_all: tuple[str, ...] = (),
+    required_any: tuple[str, ...] = (),
 ) -> ResearchMethodDimension:
     return ResearchMethodDimension(
         key=key,
@@ -40,6 +45,8 @@ def _dimension(
         analysis_task=analysis_task,
         comparison_basis=comparison_basis,
         recovery=recovery,
+        required_all=required_all,
+        required_any=required_any,
     )
 
 
@@ -263,7 +270,7 @@ RESEARCH_METHODS = {
                 "多周期行情、资金和波动",
             ),
             _dimension(
-                "event",
+                "catalyst",
                 "公告与催化",
                 ("event", "announcement", "news", "report"),
                 "识别催化、负面事件和复核日期。",
@@ -292,6 +299,7 @@ RESEARCH_METHODS = {
                 "验证启动时间、强度和多日持续性。",
                 "1/5/20日主题相对强度",
                 "主题历史和启动日期",
+                required_all=("sector_selector",),
             ),
             _dimension(
                 "breadth_gate",
@@ -332,6 +340,8 @@ RESEARCH_METHODS = {
                 "排除盈利和经营质量不达标的股票。",
                 "候选同行和财务底线",
                 "候选财务与经营事实",
+                required_all=("astock_selector",),
+                required_any=("finance", "business"),
             ),
             _dimension(
                 "expectation_gate",
@@ -356,6 +366,8 @@ RESEARCH_METHODS = {
                 "验证趋势、量能和回撤边界。",
                 "5/10/20日及最大回撤",
                 "候选多周期行情",
+                required_all=("astock_selector",),
+                required_any=("market", "opportunity-candidates"),
             ),
             _dimension(
                 "risk_gate",
@@ -364,6 +376,8 @@ RESEARCH_METHODS = {
                 "排除事件、基本面和高位回撤风险。",
                 "最大反证与失效条件",
                 "风险事件和回撤数据",
+                required_all=("astock_selector",),
+                required_any=("event", "news"),
             ),
         ),
         required_outputs=("主题门", "公司门", "价格门", "风险门", "T+1/T+3/T+5条件"),
@@ -378,6 +392,32 @@ def method_for(module: str) -> ResearchMethod:
         raise ValueError("不支持的研究模块。") from exc
 
 
+def _dimension_status(
+    dimension: ResearchMethodDimension,
+    ready: set[str],
+    missing: set[str],
+) -> str:
+    if dimension.required_all or dimension.required_any:
+        required_all = set(dimension.required_all)
+        required_any = set(dimension.required_any)
+        all_ready = required_all <= ready
+        any_ready = not required_any or bool(required_any & ready)
+        if all_ready and any_ready:
+            return "ready"
+        if (required_all | required_any) & ready:
+            return "partial"
+        return "unknown"
+
+    evidence = set(dimension.evidence_keys)
+    matched_ready = evidence & ready
+    matched_missing = evidence & missing
+    if matched_ready and matched_missing:
+        return "partial"
+    if matched_ready:
+        return "ready"
+    return "unknown"
+
+
 def build_method_section(
     module: str,
     *,
@@ -390,21 +430,19 @@ def build_method_section(
     ready = {str(item) for item in ready_keys}
     missing = {str(item) for item in missing_keys}
     items = []
+    dimension_statuses: dict[str, str] = {}
     ready_count = 0
     for dimension in method.dimensions:
-        evidence = set(dimension.evidence_keys)
-        matched_ready = evidence & ready
-        matched_missing = evidence & missing
-        if matched_ready and matched_missing:
-            status = "partial"
-            label = "部分证据"
-        elif matched_ready:
-            status = "ready"
-            label = "已确认"
+        status = _dimension_status(dimension, ready, missing)
+        dimension_statuses[dimension.key] = status
+        label = {
+            "ready": "已确认",
+            "partial": "部分证据",
+            "unknown": "待补数据",
+        }[status]
+        if status == "ready":
             ready_count += 1
-        else:
-            status = "unknown"
-            label = "待补数据"
+        recovery = "" if status == "ready" else dimension.recovery
         risk = (
             "继续寻找反证，不能只按这一维度行动。"
             if status == "ready"
@@ -413,17 +451,97 @@ def build_method_section(
         items.append(
             ResearchModuleItem(
                 kind="method_dimension",
+                key=dimension.key,
                 name=dimension.title,
                 label=label,
                 summary=dimension.analysis_task,
                 risk=risk,
                 status=status,
+                score={"ready": 1.0, "partial": 0.5}.get(status),
+                recovery=recovery,
                 facts=(
                     ResearchFact(label="证据状态", value=label),
                     ResearchFact(label="比较基准", value=dimension.comparison_basis),
                     ResearchFact(label="分析任务", value=dimension.analysis_task),
                 ),
             )
+        )
+    if module == "stock":
+        ready_titles = [
+            dimension.title
+            for dimension in method.dimensions
+            if dimension_statuses[dimension.key] == "ready"
+        ]
+        gap_titles = [
+            dimension.title
+            for dimension in method.dimensions
+            if dimension_statuses[dimension.key] != "ready"
+        ]
+        ready_text = "、".join(ready_titles) or "无已确认维度"
+        gap_text = "、".join(gap_titles) or "后续事实变化"
+        evidence_status = "partial" if ready_titles else "unknown"
+        expectation_status = (
+            "partial"
+            if dimension_statuses.get("expectation_gap") in {"ready", "partial"}
+            else "unknown"
+        )
+        output_specs = (
+            (
+                "research_hypothesis",
+                "研究假设",
+                f"已获得{ready_text}证据；当前只能建立待验证假设，不能据此判断方向。",
+                evidence_status,
+                f"补齐{gap_text}后形成可证伪假设。",
+            ),
+            (
+                "strongest_support",
+                "最强支持",
+                f"可复核证据覆盖{ready_text}；这只代表数据可用，尚未证明方向性支持。",
+                evidence_status,
+                "从已确认事实中提取与研究假设直接相关的支持证据。",
+            ),
+            (
+                "counter_evidence",
+                "最大反证",
+                f"当前能力状态未确认结构化反证；需优先核对{gap_text}。",
+                "unknown",
+                "核对负面事实、预期下修、治理风险和价格失效信号。",
+            ),
+            (
+                "expectation_gap",
+                "预期差",
+                "已有相关事实时仍需比较市场预期与实际变化；缺失时不推断预期差。",
+                expectation_status,
+                "补齐盈利预测修正、同行比较和事件后的实际变化。",
+            ),
+            (
+                "confirmation_condition",
+                "确认条件",
+                f"确认前必须补齐或复核{gap_text}，并验证事实、预期与价格是否同向。",
+                evidence_status,
+                "定义下一次可观察、带日期且可复核的确认条件。",
+            ),
+            (
+                "invalidation_condition",
+                "失效条件",
+                "当前没有可量化的失效阈值，不能把一般风险提示当作退出条件。",
+                "unknown",
+                "根据最大反证、事件变化和价格结构定义明确失效条件。",
+            ),
+        )
+        items.extend(
+            ResearchModuleItem(
+                kind="method_output",
+                key=key,
+                name=name,
+                label="待验证" if status == "partial" else "待补数据",
+                summary=summary,
+                risk=recovery,
+                status=status,
+                score=None,
+                recovery=recovery,
+            )
+            for key, name, summary, status, recovery in output_specs
         )
     return ResearchModuleSection(
         key="professional-method",

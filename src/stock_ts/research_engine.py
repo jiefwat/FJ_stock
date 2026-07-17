@@ -204,12 +204,15 @@ class ResearchDetail:
 @dataclass(frozen=True)
 class ResearchModuleItem:
     kind: str
+    key: str = ""
     code: str = ""
     name: str = ""
     label: str = ""
     summary: str = ""
     risk: str = ""
     status: str = "ready"
+    score: float | None = None
+    recovery: str = ""
     facts: tuple[ResearchFact, ...] = ()
 
     def to_public_dict(self) -> dict[str, object]:
@@ -234,7 +237,7 @@ class ResearchModuleItem:
         if self.kind in classification_name_kinds and not public_name:
             public_name = "主题待确认"
         identities = (self.name,) if self.kind not in classification_name_kinds else ()
-        return {
+        payload = {
             "kind": self.kind,
             "code": _public_identity_text(self.code, 64),
             "name": public_name,
@@ -244,6 +247,13 @@ class ResearchModuleItem:
             "status": self.status,
             "facts": _public_fact_dicts(self.facts),
         }
+        if self.kind in {"method_dimension", "method_output"}:
+            payload.update(
+                key=self.key,
+                score=self.score,
+                recovery=_public_free_text(self.recovery, 500),
+            )
+        return payload
 
 
 @dataclass(frozen=True)
