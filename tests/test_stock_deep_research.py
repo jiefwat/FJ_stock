@@ -193,6 +193,16 @@ def test_custom_question_routes_to_one_capability_without_private_context() -> N
         "entry price",
         "my average cost",
         "my PnL",
+        "持股成本1500元",
+        "持股数量100股",
+        "累计盈亏20%",
+        "成本价1500元",
+        "我持有100股",
+        "本人持有100股",
+        "账户盈亏20%",
+        "当前盈亏20%",
+        "持仓均价1500元",
+        "买入成本1500元",
     ],
 )
 def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
@@ -206,13 +216,19 @@ def test_custom_question_rejects_private_portfolio_terms(question: str) -> None:
     assert client.calls == []
 
 
-def test_custom_question_allows_company_operating_cost_research() -> None:
+@pytest.mark.parametrize(
+    "question",
+    ["原材料成本", "经营成本", "成本承压缓解", "大股东持股比例"],
+)
+def test_custom_question_allows_company_cost_and_shareholding_research(
+    question: str,
+) -> None:
     client = FakeClient()
 
     result = StockDeepResearchService(client_factory=lambda: client).research(
         code="600519",
         name="贵州茅台",
-        question="原材料成本承压吗",
+        question=question,
     )
 
     assert result.ok is True

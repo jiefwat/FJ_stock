@@ -39,6 +39,8 @@ CAPABILITY_GROUPS = {
 MAX_CACHE_ENTRIES = 128
 _PRIVATE_TERMS = ("持仓", "仓位", "买入价", "浮盈", "浮亏", "账号", "账户", "组合列表")
 _PRIVATE_QUESTION_PATTERN = re.compile(
+    r"持股(?:成本|数量)|(?:累计|当前|账户)盈亏|成本价|买入成本|"
+    r"(?:我|本人)(?:当前|目前)?持有|"
     r"我的.{0,8}(?:持股|股数|成本|权重|盈亏|买入)|"
     r"\b(?:holdings|account|cookie|portfolio|pnl)\b|"
     r"\bposition\s+size\b|\bentry\s+price\b|"
