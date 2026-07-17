@@ -51,9 +51,14 @@ CAPABILITY_GAP_LABELS = {
 }
 
 MAX_CACHE_ENTRIES = 128
+_STOCK_CODE_PATTERN = re.compile(r"\d{6}(?:\.(?:SH|SZ|BJ))?", re.IGNORECASE)
+_STOCK_NAME_PATTERN = re.compile(r"[\u4e00-\u9fffA-Za-z0-9*]{1,20}")
+_STOCK_NAME_SENTENCE_PATTERN = re.compile(
+    r"请|帮我|分析|怎么|如何|为什么|这只股票|现在怎么办|[，。！？!?]"
+)
 _ACCOUNT_POSSESSIVE_PATTERN = re.compile(
     r"(?:我的|本人的|个人的)[^，。！？!?]{0,16}"
-    r"(?:账户|持仓|仓位|买入价|盈亏|持股|股数|成本价|成本|均价)"
+    r"(?:账户|持仓|仓位|买入价|买价|成交价|购入价|盈亏|持股|股数|成本价|成本|均价)"
 )
 _ACCOUNT_CONTEXT_PATTERN = re.compile(r"账户|账号|组合列表")
 _DIRECT_PERSONAL_OWNERSHIP_PATTERN = re.compile(
@@ -63,6 +68,38 @@ _DIRECT_PERSONAL_OWNERSHIP_PATTERN = re.compile(
 _PERSONAL_OWNERSHIP_PATTERN = re.compile(
     r"(?:我|本人|个人)[^，。！？!?]*(?:持有|持股|有)"
     r"[^，。！？!?]{0,16}(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:股|手)"
+)
+_EXPLICIT_PERSONAL_STATE_PATTERN = re.compile(
+    r"(?:我|本人|个人)(?:的)?(?:当前|目前|现在)?(?:的)?"
+    r"(?:持仓|仓位|浮盈|浮亏|成本|均价|盈亏)"
+)
+_COMPLETED_PERSONAL_TRADE_PATTERN = re.compile(
+    r"(?:我|本人)(?:(?!机构|公司|企业|大股东)[^，。！？!?]){0,24}"
+    r"(?:买了|买入了|购入(?:了)?|建仓(?:了)?)[^，。！？!?]{0,24}"
+)
+_COMPLETED_TRADE_PATTERN = re.compile(r"买了|买入了|购入(?:了)?|建仓(?:了)?")
+_TRADE_NUMBER_PATTERN = re.compile(
+    r"(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:万|千|百)?(?:元|股|手)"
+)
+_TRADE_PRICE_PATTERN = re.compile(
+    r"(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:万|千|百)?元"
+)
+_TRADE_COST_PATTERN = re.compile(
+    r"(?:成本|买价|成交价|购入价)[：:为是]?"
+    r"(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)"
+)
+_TRADE_SHARE_PATTERN = re.compile(
+    r"(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:万|千|百)?(?:股|手)"
+)
+_PUBLIC_BUY_RESEARCH_PATTERN = re.compile(
+    r"(?:我)?(?:想问|想研究|想了解|请问)[^，。！？!?]{0,24}"
+    r"买入[^，。！？!?]{0,16}(?:条件|以下的公司)"
+)
+_PUBLIC_COMPANY_TRADE_PATTERN = re.compile(
+    r"(?:^|[，。！？!?；;])(?:请问)?(?:该|这家)?(?:公司|企业)"
+    r"[^，。！？!?；;]{0,16}"
+    r"(?:买入(?:了)?|购入(?:了)?|回购)[^，。！？!?；;]{0,16}"
+    r"(?:\d[\d,.]*|[一二三四五六七八九十百千万两]+)(?:万|千|百)?(?:股|手)"
 )
 _STRONG_PUBLIC_SUBJECT_PATTERN = re.compile(
     r"大股东|控股股东|实际控制人|实控人|前十大股东|机构|基金|董监高|员工持股"
@@ -82,6 +119,10 @@ _ENGLISH_ACCOUNT_POSSESSIVE_PATTERN = re.compile(
 )
 _ENGLISH_PERSONAL_OWNERSHIP_PATTERN = re.compile(
     r"\bi\s+(?:hold|own|bought|have)\s+\d[\d,.]*\s+shares?\b",
+    re.IGNORECASE,
+)
+_ENGLISH_COMPLETED_TRADE_PATTERN = re.compile(
+    r"\bbought\s+\d[\d,.]*\s+shares?\b",
     re.IGNORECASE,
 )
 _ENGLISH_DIRECT_PERSONAL_OWNERSHIP_PATTERN = re.compile(
@@ -198,7 +239,7 @@ class StockDeepResearchService:
         self.cache_ttl = max(cache_ttl, 0)
         self.clock = clock
         self._cache: OrderedDict[
-            tuple[str, str, str, str], tuple[float, StockDeepResearchResult]
+            tuple[str, str, str, str, str], tuple[float, StockDeepResearchResult]
         ] = OrderedDict()
         self._cache_lock = Lock()
 
@@ -210,13 +251,31 @@ class StockDeepResearchService:
         focus: str = "all",
         question: str = "",
         refresh: bool = False,
+        cache_scope: str = "",
     ) -> StockDeepResearchResult:
         code = _clean_input(code, 32)
         name = _clean_input(name, 64)
         focus = _clean_input(focus, 32).lower() or "all"
         question = _clean_input(question)
+        cache_scope = _clean_input(cache_scope, 128)
         if not code and not name:
             raise ValueError("请输入股票代码或名称。")
+        if _contains_private_context(code) or _contains_private_context(name):
+            raise ValueError("股票代码或名称不能包含账户或持仓信息。")
+        if (
+            code == name
+            and re.search(r"[\u4e00-\u9fff]", name)
+            and _STOCK_NAME_PATTERN.fullmatch(name)
+            and not _STOCK_NAME_SENTENCE_PATTERN.search(name)
+        ):
+            code = ""
+        if code and not _STOCK_CODE_PATTERN.fullmatch(code):
+            raise ValueError("股票代码格式无效。")
+        if name and (
+            not _STOCK_NAME_PATTERN.fullmatch(name)
+            or _STOCK_NAME_SENTENCE_PATTERN.search(name)
+        ):
+            raise ValueError("股票名称格式无效。")
         if focus != "all" and focus not in DEEP_RESEARCH_GROUPS:
             raise ValueError("研究范围不支持，请选择六个业务组之一。")
         if len(question) > 200:
@@ -224,7 +283,7 @@ class StockDeepResearchService:
         if _contains_private_context(question):
             raise ValueError("研究问题不能包含账户或持仓信息。")
 
-        cache_key = (code, name, focus, question)
+        cache_key = (cache_scope, code, name, focus, question)
         if not refresh:
             cached = self._cached(cache_key)
             if cached is not None:
@@ -257,7 +316,7 @@ class StockDeepResearchService:
 
     def _cached(
         self,
-        cache_key: tuple[str, str, str, str],
+        cache_key: tuple[str, str, str, str, str],
     ) -> StockDeepResearchResult | None:
         with self._cache_lock:
             self._prune_expired_locked(self.clock())
@@ -270,7 +329,7 @@ class StockDeepResearchService:
 
     def _store_cached(
         self,
-        cache_key: tuple[str, str, str, str],
+        cache_key: tuple[str, str, str, str, str],
         result: StockDeepResearchResult,
     ) -> None:
         with self._cache_lock:
@@ -454,13 +513,35 @@ def _contains_private_context(question: str) -> bool:
     if (
         _DIRECT_PERSONAL_OWNERSHIP_PATTERN.search(compact)
         or _PERSONAL_OWNERSHIP_PATTERN.search(compact)
+        or _EXPLICIT_PERSONAL_STATE_PATTERN.search(compact)
         or _ENGLISH_DIRECT_PERSONAL_OWNERSHIP_PATTERN.search(normalized)
         or _ENGLISH_PERSONAL_OWNERSHIP_PATTERN.search(normalized)
     ):
         return True
+    if (
+        _COMPLETED_PERSONAL_TRADE_PATTERN.search(compact)
+        and _TRADE_NUMBER_PATTERN.search(compact)
+    ):
+        return True
+    if _ENGLISH_COMPLETED_TRADE_PATTERN.search(normalized):
+        return True
+    if (
+        (_TRADE_PRICE_PATTERN.search(compact) or _TRADE_COST_PATTERN.search(compact))
+        and _TRADE_SHARE_PATTERN.search(compact)
+    ):
+        return True
+    if _PUBLIC_COMPANY_TRADE_PATTERN.search(compact):
+        return False
     if _STRONG_PUBLIC_SUBJECT_PATTERN.search(
         compact
     ) or _ENGLISH_STRONG_PUBLIC_SUBJECT_PATTERN.search(normalized):
+        return False
+    if (
+        _COMPLETED_TRADE_PATTERN.search(compact)
+        and _TRADE_NUMBER_PATTERN.search(compact)
+    ):
+        return True
+    if _PUBLIC_BUY_RESEARCH_PATTERN.search(compact):
         return False
     if _GENERIC_PUBLIC_RESEARCH_PATTERN.search(compact):
         return False

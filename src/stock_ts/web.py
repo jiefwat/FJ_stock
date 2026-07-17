@@ -14005,6 +14005,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         try:
+            if user is not None:
+                payload["cache_scope"] = client_key
             result = STOCK_DEEP_RESEARCH_SERVICE.research(**payload)
         except ValueError:
             self._send_json(

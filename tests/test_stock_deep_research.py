@@ -434,8 +434,8 @@ def test_cache_is_bounded_and_evicts_the_least_recently_used_key() -> None:
 
     assert deep_research_module.MAX_CACHE_ENTRIES == 128
     assert len(service._cache) == deep_research_module.MAX_CACHE_ENTRIES
-    assert ("600519", "测试公司", "all", "营业收入趋势 0") in service._cache
-    assert ("600519", "测试公司", "all", "营业收入趋势 1") not in service._cache
+    assert ("", "600519", "测试公司", "all", "营业收入趋势 0") in service._cache
+    assert ("", "600519", "测试公司", "all", "营业收入趋势 1") not in service._cache
 
 
 def test_new_cache_key_prunes_all_expired_entries() -> None:
@@ -451,7 +451,7 @@ def test_new_cache_key_prunes_all_expired_entries() -> None:
     now[0] += 301
     service.research(code="000004", name="测试公司", focus="finance")
 
-    assert list(service._cache) == [("000004", "测试公司", "finance", "")]
+    assert list(service._cache) == [("", "000004", "测试公司", "finance", "")]
 
 
 @pytest.mark.parametrize(

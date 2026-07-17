@@ -104,6 +104,14 @@ def _authenticated_cookie(tmp_path) -> str:
     return f"stock_ts_session={token}"
 
 
+def _cookie_for_user(user) -> str:  # noqa: ANN001
+    token = SessionManager("session-secret").issue_session(
+        user_id=user.id,
+        username=user.username,
+    )
+    return f"stock_ts_session={token}"
+
+
 def _error_json(exc: urllib.error.HTTPError) -> dict[str, object]:
     return json.loads(exc.read().decode("utf-8"))
 
@@ -913,7 +921,15 @@ def test_parse_stock_deep_research_payload_has_a_strict_public_contract() -> Non
         "refresh": True,
     }
 
-    for private_field in ("holdings", "cost", "weight", "account", "skill_id", "gateway"):
+    for private_field in (
+        "holdings",
+        "cost",
+        "weight",
+        "account",
+        "skill_id",
+        "gateway",
+        "cache_scope",
+    ):
         with pytest.raises(ValueError, match="请求字段"):
             _parse_stock_deep_research_payload(
                 json.dumps(
@@ -924,6 +940,360 @@ def test_parse_stock_deep_research_payload_has_a_strict_public_contract() -> Non
 
     with pytest.raises(ValueError, match="研究范围"):
         _parse_stock_deep_research_payload(b'{"code":"600519","focus":"unknown"}')
+
+
+def _capturing_deep_service():
+    factory_calls: list[object] = []
+    queries: list[str] = []
+
+    class CapturingClient:
+        def query(self, skill: object, query: str) -> dict[str, object]:
+            queries.append(query)
+            capability = next(key for key, value in SKILLS.items() if value == skill)
+            rows = {
+                "basicinfo": {"公司名称": "贵州茅台股份有限公司"},
+                "business": {"主营产品": "白酒"},
+                "management": {"股东户数": 120000},
+                "finance": {"营业收入[2025]": 180_000_000_000},
+                "industry": {"行业名称": "白酒"},
+                "consensus": {"机构评级": "增持"},
+                "report": {"title": "盈利质量稳定", "publish_date": "20260716"},
+                "market": {"收盘价": 1480.0, "交易日期": "20260716"},
+                "event": {"业绩预告类型": "预增"},
+                "announcement": {"公告标题": "经营数据公告", "公告日期": "20260716"},
+                "news": {"新闻标题": "渠道库存改善", "新闻日期": "20260716"},
+            }
+            return {"datas": [rows[capability]]}
+
+    def factory() -> CapturingClient:
+        client = CapturingClient()
+        factory_calls.append(client)
+        return client
+
+    return StockDeepResearchService(client_factory=factory), factory_calls, queries
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "我1500元买了100股，现在怎么办",
+        "帮我分析，我买了100手",
+        "我的买价是1500",
+        "本人120元购入2手",
+        "我建仓100股",
+        "我的成交价",
+        "我的购入价",
+        "1500元买了100股",
+        "建仓100股",
+        "我想问1500元买入了100股的止损条件",
+        "请问1500元买入了100股的卖出条件",
+        "1500元买入100股，后面怎么看",
+        "bought 100 shares at $10, what now",
+        "我想问我持有100股的买入条件",
+        "我想问本人持有100股后的买入条件",
+        "1500元100股怎么办",
+        "1500元，100股，后面怎么处理",
+        "成本1500，100股怎么办",
+        "我在公司买入了100股",
+        "公司买入了100万股，1500元100股怎么办",
+        "机构买入100万股，1500元100股怎么办",
+        "1500元100股",
+        "成本1500，100股",
+        "买价1500，100股",
+        "机构买入100万股，我当前浮亏10%",
+        "公司回购100万股，我持仓100股",
+    ],
+)
+def test_stock_deep_api_rejects_personal_trade_ownership_before_client_factory(
+    monkeypatch,
+    tmp_path,
+    question: str,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _deep_request(
+                server,
+                json.dumps(
+                    {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "focus": "all",
+                        "question": question,
+                        "refresh": False,
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+                cookie=_authenticated_cookie(tmp_path),
+            )
+
+        assert caught.value.code == 400
+        assert factory_calls == []
+        assert queries == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "机构买入100万股",
+        "公司回购100万股",
+        "我想问买入条件",
+        "买入条件是什么",
+        "我想问100元买入条件",
+        "我想研究买入100元以下的公司",
+        "公司买入了100万股",
+        "请问公司买入了100万股意味着什么",
+        "该公司买入了100万股意味着什么",
+        "机构持仓100万股",
+    ],
+)
+def test_stock_deep_api_allows_public_trade_research(
+    monkeypatch,
+    tmp_path,
+    question: str,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with _deep_request(
+            server,
+            json.dumps(
+                {
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "focus": "all",
+                    "question": question,
+                    "refresh": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
+            cookie=_authenticated_cookie(tmp_path),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert body["ok"] is True
+        assert len(factory_calls) == 1
+        assert len(queries) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("code", "我1500元买了100股"),
+        ("name", "我1500元买了100股"),
+        ("name", "1500元买了100股"),
+    ],
+)
+def test_stock_deep_api_rejects_private_identity_before_client_factory(
+    monkeypatch,
+    tmp_path,
+    field: str,
+    value: str,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    payload = {
+        "code": "600519",
+        "name": "贵州茅台",
+        "focus": "finance",
+        "question": "",
+        "refresh": False,
+    }
+    payload[field] = value
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _deep_request(
+                server,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                cookie=_authenticated_cookie(tmp_path),
+            )
+
+        assert caught.value.code == 400
+        assert factory_calls == []
+        assert queries == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("code", "ABC"),
+        ("code", "600519.X"),
+        ("name", "请帮我分析这只股票"),
+        ("name", "贵州 茅台"),
+    ],
+)
+def test_stock_deep_api_rejects_invalid_stock_identity_before_client_factory(
+    monkeypatch,
+    tmp_path,
+    field: str,
+    value: str,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    payload = {
+        "code": "600519",
+        "name": "贵州茅台",
+        "focus": "finance",
+        "question": "",
+        "refresh": False,
+    }
+    payload[field] = value
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _deep_request(
+                server,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                cookie=_authenticated_cookie(tmp_path),
+            )
+
+        assert caught.value.code == 400
+        assert factory_calls == []
+        assert queries == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("code", "name"),
+    [
+        ("600519", "贵州茅台"),
+        ("600519.SH", "贵州茅台"),
+        ("000001.SZ", "平安银行"),
+        ("430047.BJ", "诺思兰德"),
+        ("600519", "*ST示例"),
+    ],
+)
+def test_stock_deep_api_allows_valid_stock_identity(
+    monkeypatch,
+    tmp_path,
+    code: str,
+    name: str,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with _deep_request(
+            server,
+            json.dumps(
+                {
+                    "code": code,
+                    "name": name,
+                    "focus": "finance",
+                    "question": "",
+                    "refresh": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
+            cookie=_authenticated_cookie(tmp_path),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert body["code"] == code
+        assert body["name"] == name
+        assert len(factory_calls) == 1
+        assert queries
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stock_deep_api_treats_duplicated_chinese_name_as_name_only_query(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    try:
+        with _deep_request(
+            server,
+            json.dumps(
+                {
+                    "code": "招商银行",
+                    "name": "招商银行",
+                    "focus": "finance",
+                    "question": "",
+                    "refresh": False,
+                },
+                ensure_ascii=False,
+            ).encode(),
+            cookie=_authenticated_cookie(tmp_path),
+        ) as response:
+            body = json.loads(response.read().decode())
+
+        assert response.status == 200
+        assert body["code"] == ""
+        assert body["name"] == "招商银行"
+        assert len(factory_calls) == 1
+        assert len(queries) == 1
+        assert queries[0].count("招商银行") == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stock_deep_api_cache_is_isolated_by_authenticated_user(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    service, factory_calls, queries = _capturing_deep_service()
+    monkeypatch.setattr(web_module, "STOCK_DEEP_RESEARCH_SERVICE", service)
+    users = UserStore(tmp_path / "users.sqlite3")
+    owner = users.bootstrap_admin("owner@example.com", "secret-password")
+    member = users.register_user("member@example.com", "member-password")
+    payload = json.dumps(
+        {
+            "code": "600519",
+            "name": "贵州茅台",
+            "focus": "finance",
+            "question": "",
+            "refresh": False,
+        },
+        ensure_ascii=False,
+    ).encode()
+    server = _serve(monkeypatch, tmp_path, auth_enabled=True)
+    bodies = []
+    try:
+        for user in (owner, member, owner):
+            with _deep_request(
+                server,
+                payload,
+                cookie=_cookie_for_user(user),
+            ) as response:
+                bodies.append(json.loads(response.read().decode()))
+
+        assert len(factory_calls) == 2
+        assert len(queries) == 2
+        assert bodies[0]["cached"] is False
+        assert bodies[1]["cached"] is False
+        assert bodies[2]["cached"] is True
+        serialized = json.dumps(bodies, ensure_ascii=False)
+        assert "cache_scope" not in serialized
+        assert "user:" not in serialized
+        assert "account" not in serialized.casefold()
+        assert all("user:" not in query for query in queries)
+        assert all("example.com" not in query for query in queries)
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_stock_deep_endpoint_returns_neutral_partial_result_without_private_context(
@@ -987,6 +1357,7 @@ def test_stock_deep_endpoint_returns_neutral_partial_result_without_private_cont
             "focus": "all",
             "question": "",
             "refresh": False,
+            "cache_scope": "user:1",
         }
         serialized = json.dumps(body, ensure_ascii=False)
         for forbidden in (
