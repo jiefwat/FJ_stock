@@ -73,6 +73,35 @@ def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibili
     assert "linear-gradient(90deg, var(--copper)" in editorial_skin
 
 
+def test_modern_decision_cockpit_prioritizes_readability_and_stock_judgment() -> None:
+    modern_skin = CSS.split("StockTS modern decision cockpit skin", 1)[-1]
+    assert modern_skin != CSS
+    compact = "".join(modern_skin.split())
+
+    root_rule = modern_skin.split(":root", 1)[1].split("}", 1)[0]
+    assert '"Avenir Next"' in root_rule
+    assert '"HarmonyOS Sans SC"' in root_rule
+    assert "Condensed" not in root_rule
+
+    body_rule = modern_skin.split("body {", 1)[1].split("}", 1)[0]
+    assert "repeating-linear-gradient" not in body_rule
+    assert "linear-gradient(90deg" not in body_rule
+    assert "radial-gradient" in body_rule
+
+    assert "--app-bg:#f2f5f6" in compact
+    assert ".engine-app-shell{grid-template-columns:204pxminmax(0,1fr)" in compact
+    assert ".engine-judgment{border-radius:14px" in compact
+    assert ".engine-session-line{border:1pxsolidvar(--line);border-radius:12px" in compact
+    assert ".engine-module[data-engine-workspace=stock]{display:flex" in compact
+    assert ".engine-module[data-engine-workspace=stock]>.engine-judgment{order:5" in compact
+    assert ".engine-module[data-engine-workspace=stock]>.stock-deep-research{order:9" in compact
+    assert compact.index(">.engine-judgment{order:5") < compact.index(
+        ">.stock-deep-research{order:9"
+    )
+    assert "@media(max-width:760px)" in compact
+    assert "@media(max-width:640px)" in compact
+
+
 def test_native_shell_renders_persistent_research_session_bar() -> None:
     html = _render_sample_page()
     soup = BeautifulSoup(html, "html.parser")

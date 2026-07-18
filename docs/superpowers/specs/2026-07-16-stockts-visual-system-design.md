@@ -1,49 +1,74 @@
-# StockTS Visual System Design
+# StockTS Modern Decision Cockpit Design
 
 ## Goal
 
-Keep the current native research workspaces and all data behavior intact while making the product feel like a modern institutional research terminal instead of a layered dashboard template.
+Keep every native research workspace, route, interaction, API contract, scheduled snapshot, and analysis result intact while making StockTS feel like a modern desktop investment product rather than an HTML research report.
 
-## Direction
+## Product Thesis
 
-- Editorial research desk: ink, warm paper, graphite, restrained copper, and China-market red/green.
-- Dense but legible: compact navigation and tables, stronger whitespace around conclusions, and tabular numerals for all market data.
-- Clear hierarchy: judgment is the primary surface; action, risk, evidence, and detail become progressively quieter.
-- Low ornament: 4-8px structural corners, thin rules, almost no decorative gradients, and shadows reserved for the primary decision surface.
-- Local-first typography: Avenir Next / IBM Plex Sans for editorial headings, HarmonyOS Sans SC / MiSans / Source Han Sans SC for Chinese text, and IBM Plex Mono for data.
+The first screen must answer three questions in order: what is the judgment, what should the user do, and what could invalidate it. Research tools and supporting evidence follow the decision instead of competing with it.
 
-## Desktop App Frame
+## Visual Direction
 
-- Treat the product as a running research application, not a document: the sidebar and a 58px research-session bar remain fixed while only the active workspace scrolls.
-- The session bar always answers four questions without duplicating analysis content: current module, research target, delivery state, and evidence time.
-- Keep module navigation in the left rail, module-owned actions inside each workspace, and expose one session-level `刷新当前判断` control that delegates to the active module action.
-- Scope each `.workspace-pane` to the available viewport. Switching modules replaces the active workspace in place and resets only that workspace scroll position.
-- Use one thin copper status scale on the session bar as the visual signature. Avoid more gradients, floating cards, oversized hero typography, or decorative dashboard chrome.
-- Keep the existing hash routes, forms, API payloads, research results, keyboard shortcuts, mobile dock, and provider-neutral language unchanged.
+- Modern decision cockpit: cool mist background, white decision surfaces, deep ocean navigation, restrained copper emphasis, and China-market red/green only where direction is explicit.
+- Normal-width Chinese typography: `Avenir Next`, `HarmonyOS Sans SC`, `MiSans`, and `PingFang SC` for headings and body copy. Monospace is limited to prices, percentages, codes, dates, and compact status data.
+- Soft structure: 12-14px primary card corners, subtle borders, controlled shadows, and no global grid texture.
+- Decision-first hierarchy: one strong judgment surface, smaller action and risk surfaces, quiet evidence sections, and compact controls.
+- Desktop application frame: fixed navigation and session bar, independently scrolling active workspace, and no page-level overflow at desktop widths.
 
-## Scope
+## App Frame
 
-- Restyle the native app shell, sidebar, navigation, workspace header, decision spine, research sections, lists, tables, buttons, disclosures, and mobile dock.
-- Preserve every existing route, form, data attribute, interaction, workspace module, loading state, and API contract.
-- Do not add external font or asset dependencies.
-- Do not expose provider branding or infrastructure identifiers.
+- Use a 204px deep-ocean sidebar with reduced visual weight, quieter account/search cards, and a rounded active navigation item.
+- Keep the research-session bar fixed at 56px and limit it to current module, research target, data status, evidence time, and refresh.
+- Keep workspace content centered at a maximum width of 1420px with 24-44px desktop gutters.
+- Use subtle atmospheric background gradients only; do not use repeating grid or ruled-paper textures.
+- Preserve the existing hash routes, keyboard shortcuts, module switch behavior, forms, and mobile dock.
+
+## Stock First-Screen Order
+
+The stock workspace presents content in this visual order without changing its data or interaction contracts:
+
+1. Stock title and service state.
+2. Compact research context.
+3. Stock switcher and market-screening entry.
+4. Core judgment.
+5. Today action and maximum risk within the judgment surface.
+6. Judgment shortcuts and key findings.
+7. Six-lens deep research as a secondary evidence tool.
+8. Full lists, supplemental analysis, evidence disclosure, and manual refresh.
+
+The deep-research tool remains fully functional but no longer occupies the first decision viewport.
+
+## Component Language
+
+- Primary surfaces use 14px corners; compact controls use 9-11px corners.
+- Buttons use a consistent 40px control height, sentence-case labels, visible focus, and a single deep-ocean primary treatment.
+- Inputs use a quiet white surface with a clear focus ring and no heavy inset styling.
+- Tables and long lists remain dense, but row separation comes from spacing and weak rules rather than boxed cells.
+- Hover motion is limited to a 1px lift on actionable cards and is disabled under reduced motion.
+- Empty, stale, partial, and unavailable states retain their current wording and behavior.
 
 ## Responsive Contract
 
-- Desktop: 214px research navigation, a fixed research-session bar, and an independently scrolling content canvas up to 1420px.
-- Tablet: keep the decision hierarchy while allowing grids to collapse naturally.
-- Mobile: return to document scrolling, retain the current top controls and bottom module dock, use one-column evidence cards, preserve 44px touch targets, and prevent horizontal overflow.
+- 1440x900 and 1680x1050 are the primary design targets.
+- Desktop keeps the sidebar and session bar visible while only the active workspace scrolls.
+- Tablet collapses dense grids without hiding actions or evidence status.
+- At 390x844, document scrolling returns, the mobile dock remains usable, controls retain 44px touch targets, and no horizontal overflow is introduced.
 
-## Accessibility Contract
+## Accessibility And Privacy
 
-- Visible keyboard focus using the copper accent.
-- Red/green never carry meaning without text or labels.
-- Tabular numerals improve scanning and comparison.
-- All reveal motion is disabled under `prefers-reduced-motion`.
+- Keyboard focus uses a visible copper ring.
+- Red and green never carry meaning without text or labels.
+- Tabular numerals remain enabled for market data.
+- No external fonts, CDN assets, provider logos, capability IDs, traces, gateway names, or credentials are exposed.
 
 ## Acceptance
 
-- Visual-contract tests assert the font stacks, numeric typography, restrained geometry, decision spine, desktop app viewport, session bar, 1420px content width, mobile scroll reset, and reduced-motion support.
-- Existing workspace HTML and research/API tests remain unchanged.
-- At 1440x900 and 1680x1050, the sidebar and session bar remain visible while the active pane scrolls without page-level overflow.
-- Desktop and mobile screenshots show no clipped navigation, overflowing tables, hidden primary actions, or sticky elements covering content.
+- A final `StockTS modern decision cockpit skin` layer is the visual authority.
+- The final layer uses normal-width heading and body font stacks and excludes condensed display fonts.
+- The final body background has no repeating grid texture.
+- Primary cards use at least 12px radii with restrained shadows and weak borders.
+- In the stock workspace, `.engine-judgment` is ordered before `.stock-deep-research`.
+- The fixed desktop app frame, 1420px content boundary, active-workspace scrolling, and 390px mobile document-scrolling contract remain intact.
+- Existing module HTML, API, snapshot, research, and routing tests remain unchanged and pass.
+- Browser verification at 1440x900, 1680x1050, and 390x844 shows no clipped navigation, hidden primary action, sticky overlap, or horizontal overflow.
