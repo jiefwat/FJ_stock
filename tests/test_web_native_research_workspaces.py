@@ -179,9 +179,10 @@ def test_root_page_renders_four_lazy_workspaces_without_local_provider_calls() -
     )
 
     assert html.count('data-engine-workspace="') == 4
-    assert "一句话结论" in html
-    assert "今天怎么做" in html
-    assert "最需要防什么" in html
+    assert "今日事实结论" in html
+    assert "组合处理结论" in html
+    assert "当前投资论点" in html
+    assert "未来情景判断" in html
     assert "刷新今天的判断" in html
 
 
@@ -220,16 +221,14 @@ def test_each_primary_workspace_has_one_judgment_band_and_three_finding_slots() 
         assert "open" not in details.attrs
 
 
-def test_each_workspace_exposes_two_result_shortcuts() -> None:
+def test_each_workspace_removes_redundant_result_shortcuts() -> None:
     soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
 
     for module in ("market", "portfolio", "stock", "opportunity"):
         workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
         assert workspace is not None
-        assert [node["data-engine-jump"] for node in workspace.select("[data-engine-jump]")] == [
-            "findings",
-            "evidence",
-        ]
+        assert workspace.select("[data-engine-jump]") == []
+        assert workspace.select_one("[data-engine-target='evidence']")
         for target in ("findings", "evidence"):
             assert workspace.select_one(f'[data-engine-target="{target}"]') is not None
 
@@ -250,14 +249,15 @@ def test_each_workspace_states_its_question_type_horizon_and_session_facts() -> 
         soup = BeautifulSoup(render_engine_workspace(module, status="configured"), "html.parser")
         workspace = soup.select_one(f'[data-engine-workspace="{module}"]')
         assert workspace is not None
+        assert workspace["data-engine-horizon"] == horizon
         assert workspace.select_one("[data-engine-question]").get_text(strip=True) == question
         session = workspace.select_one(".engine-session-line")
         assert session is not None
         assert [item.get_text(" ", strip=True) for item in session.select("div")] == [
             f"结论类型 {statement_type}",
             f"适用周期 {horizon}",
-            "数据时点 等待本次研究",
-            "证据覆盖 等待本次研究",
+            "数据时点 尚未生成",
+            "证据覆盖 已确认维度 0/4",
         ]
         assert session.select_one("[data-engine-session-as-of]") is not None
         assert session.select_one("[data-engine-session-coverage]") is not None
@@ -267,17 +267,18 @@ def test_first_screen_uses_plain_language_decision_actions() -> None:
     html = render_engine_workspace("market", status="configured")
 
     for label in (
-        "一句话结论",
-        "今天怎么做",
-        "最需要防什么",
-        "为什么这样判断",
+        "市场事实账",
+        "今日事实结论",
+        "事实对应动作",
+        "哪些事实会改变判断",
+        "关键市场事实",
         "查看数据和依据",
         "刷新今天的判断",
     ):
         assert label in html
     assert "先看风险" not in html
     assert "当前判断" not in html
-    assert "现在怎么做" not in html
+    assert "今天怎么做" not in html
     assert "最大风险" not in html
 
 
@@ -286,10 +287,31 @@ def test_engine_result_updates_session_fact_time_and_coverage_from_payload() -> 
 
     assert "payload.as_of" in script
     assert "payload.coverage" in script
+    assert "Math.max(1, Number(payload.coverage?.total" in script
+    assert "data-workspace-command-horizon" in script
+    assert "engineInvalidation(payload)" in script
     assert "[data-engine-session-as-of]" in script
     assert "[data-engine-session-coverage]" in script
     assert "时间待补" in script
     assert "已确认 ${ready}/${total} 个维度" in script
+
+
+def test_workspace_does_not_relabel_general_risk_as_an_invalidation_condition() -> None:
+    html = render_engine_workspace(
+        "market",
+        status="ready",
+        initial_payload={
+            "verdict": "震荡",
+            "action": "等待结构确认。",
+            "primary_risk": "成交缩量。",
+            "coverage": {"ready": 1, "total": 4},
+        },
+    )
+    soup = BeautifulSoup(html, "html.parser")
+
+    assert soup.select_one("[data-engine-risk]").get_text(strip=True) == (
+        "尚未形成可执行的作废条件，当前结论仅供研究，不执行。"
+    )
 
 
 def test_evidence_time_formatter_keeps_date_only_values_free_of_fake_times() -> None:
@@ -322,19 +344,11 @@ def test_generated_and_session_times_share_the_evidence_time_formatter() -> None
     assert "sessionAsOf.textContent = formatEngineEvidenceTime(payload.as_of)" in script
 
 
-def test_native_page_has_four_item_mobile_research_dock() -> None:
+def test_native_page_is_desktop_only_without_mobile_research_dock() -> None:
     soup = BeautifulSoup(render_page(stock_code="600519"), "html.parser")
 
-    docks = soup.select("[data-engine-mobile-dock]")
-    assert len(docks) == 1
-    buttons = docks[0].select("[data-engine-mobile-nav][data-workspace]")
-    assert [button["data-workspace"] for button in buttons] == [
-        "market",
-        "portfolio",
-        "stock",
-        "opportunity",
-    ]
-    assert all(button["data-engine-nav-state"] == "idle" for button in buttons)
+    assert soup.select_one("[data-engine-mobile-dock]") is None
+    assert "data-engine-mobile-nav" not in engine_app_script()
 
 
 def test_only_primary_desktop_navigation_exposes_research_state() -> None:
@@ -612,7 +626,7 @@ def test_native_stock_workspace_has_switcher_and_full_market_entry() -> None:
     assert switcher.select_one('a[href="#opportunity"]')
 
 
-def test_stock_deep_research_ledger_sits_between_switcher_and_judgment() -> None:
+def test_stock_deep_research_ledger_follows_primary_decision_as_closed_disclosure() -> None:
     html = render_engine_workspace(
         "stock",
         status="configured",
@@ -622,15 +636,17 @@ def test_stock_deep_research_ledger_sits_between_switcher_and_judgment() -> None
     assert stock is not None
     switcher = stock.select_one("[data-engine-stock-switcher]")
     ledger = stock.select_one("[data-stock-deep-research]")
-    judgment = stock.select_one("[data-engine-judgment]")
+    decision_board = stock.select_one(":scope > .engine-decision-board")
 
     assert switcher is not None
     assert ledger is not None
-    assert judgment is not None
-    assert switcher.find_next_sibling() == ledger
-    assert ledger.find_next_sibling() == judgment
+    assert decision_board is not None
+    assert switcher.find_next_sibling() == decision_board
+    assert decision_board.find_next_sibling("details") == ledger
+    assert ledger.name == "details"
+    assert "open" not in ledger.attrs
     assert ledger["data-state"] == "idle"
-    assert "深度研究补强" in ledger.get_text(" ", strip=True)
+    assert "深度验证" in ledger.get_text(" ", strip=True)
     assert "运行深度研究" in ledger.get_text(" ", strip=True)
     assert ledger.select_one('[aria-live="polite"]')
 
@@ -1006,25 +1022,17 @@ def test_engine_script_coordinates_navigation_and_shortcuts() -> None:
         assert fragment in script
 
 
-def test_engine_workspace_uses_full_parent_width_on_mobile() -> None:
-    engine_css = CSS.split(".engine-module,", 1)[1].split("}", 1)[0]
+def test_engine_workspace_declares_a_desktop_minimum_width() -> None:
+    modern = CSS.split("StockTS modern decision cockpit skin", 1)[-1]
 
-    assert "width:100%" in engine_css.replace(" ", "")
+    assert "min-width:1180px" in modern.replace(" ", "")
 
 
-def test_mobile_research_dock_is_fixed_safe_and_touchable() -> None:
-    compact_css = CSS.replace(" ", "")
-    mobile_sidebar_selector = ".engine-app-shell .sidebar .nav-item[data-engine-nav-state]"
-    assert mobile_sidebar_selector in CSS
-    mobile_sidebar_rule = CSS.split(
-        mobile_sidebar_selector, 1
-    )[1].split("}", 1)[0]
+def test_desktop_research_navigation_keeps_all_stateful_modules_visible() -> None:
+    modern = CSS.split("StockTS modern decision cockpit skin", 1)[-1]
 
-    assert ".engine-mobile-dock" in CSS
-    assert "env(safe-area-inset-bottom)" in CSS
-    assert "position:fixed" in compact_css
-    assert "min-height:44px" in compact_css
-    assert "display:none" in mobile_sidebar_rule.replace(" ", "")
+    assert ".engine-mobile-dock" not in modern
+    assert "safe-area-inset-bottom" not in modern
     for state in ("idle", "loading", "complete", "partial", "unavailable"):
         assert f'[data-engine-nav-state="{state}"]' in CSS
 
@@ -1254,14 +1262,12 @@ def test_finding_cards_have_rank_and_evidence_role() -> None:
     assert "获取失败" in script
 
 
-def test_workspace_places_decision_and_sections_before_findings() -> None:
+def test_workspace_places_findings_inside_decision_before_supporting_sections() -> None:
     html = render_engine_workspace("market", status="configured")
 
     assert html.index("data-engine-decision-label") < html.index("data-engine-verdict>")
-    assert html.index("data-engine-verdict>") < html.index("data-engine-sections")
-    assert html.index("data-engine-sections") < html.index(
-        'data-engine-target="findings"'
-    )
+    assert html.index("data-engine-verdict>") < html.index('data-engine-target="findings"')
+    assert html.index('data-engine-target="findings"') < html.index("data-engine-sections")
     assert "判断指数、宏观、主线与风险是否同向" not in html
 
 
@@ -1439,51 +1445,25 @@ console.log(JSON.stringify({
     assert ".engine-theme-strip:focus-visible" in CSS
 
 
-def test_390px_workspace_is_single_column_and_clips_page_overflow() -> None:
-    compact_css = CSS.replace(" ", "")
-    mobile_css = compact_css.rsplit("@media(max-width:640px)", 1)[1]
-    root_rule = mobile_css.split(".engine-workspace-root", 1)[1].split("}", 1)[0]
-    sections_rule = mobile_css.split(".engine-section-grid", 1)[1].split("}", 1)[0]
+def test_market_lens_final_layer_has_no_phone_breakpoint_contract() -> None:
+    modern = "".join(CSS.split("StockTS modern decision cockpit skin", 1)[-1].split())
 
-    assert "max-width:100%" in root_rule
-    assert "min-width:0" in root_rule
-    assert "overflow-x:clip" in root_rule or "overflow-x:hidden" in root_rule
-    assert "grid-template-columns:minmax(0,1fr)" in sections_rule
+    assert "@media(max-width:760px)" not in modern
+    assert "@media(max-width:640px)" not in modern
 
 
-def test_390px_first_screen_uses_compact_chrome_without_clipping_content() -> None:
-    compact_css = CSS.replace(" ", "")
-    mobile_css = compact_css.rsplit("@media(max-width:640px)", 1)[1]
-    sidebar_rule = mobile_css.split(".engine-app-shell.sidebar", 1)[1].split("}", 1)[0]
-    judgment_rule = mobile_css.split(".engine-judgment", 1)[1].split("}", 1)[0]
-    action_rule = mobile_css.split(".engine-action-risk", 1)[1].split("}", 1)[0]
-    verdict_rule = mobile_css.split(".engine-verdict", 1)[1].split("}", 1)[0]
+def test_four_workspaces_use_distinct_first_screen_decision_semantics() -> None:
+    expected = {
+        "market": ("fact-ledger", "市场事实账", "今日事实结论", "关键市场事实"),
+        "portfolio": ("treatment-queue", "风险处置队列", "组合处理结论", "风险与处置依据"),
+        "stock": ("thesis", "论点与证伪", "当前投资论点", "支持与反证"),
+        "opportunity": ("forecast", "条件预测", "未来情景判断", "入选与反证"),
+    }
 
-    assert "padding:8px10px6px" in sidebar_rule
-    assert "grid-template-columns:minmax(0,1fr)" in judgment_rule
-    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in action_rule
-    assert "padding:12px" in verdict_rule
-    assert "height:" not in judgment_rule
-    assert "max-height:" not in judgment_rule
-
-
-def test_390px_keeps_ios_input_and_key_research_labels_readable() -> None:
-    compact_css = "".join(CSS.split())
-    mobile_css = compact_css.rsplit("@media(max-width:640px)", 1)[1]
-    input_rule = mobile_css.split(
-        ".engine-app-shell.quick-stock-searchinput{", 1
-    )[1].split("}", 1)[0]
-    delivery_rule = mobile_css.split(
-        ".engine-metatime,.engine-delivery", 1
-    )[1].split("}", 1)[0]
-    judgment_labels = mobile_css.split(
-        ".engine-verdict>span,.engine-actionspan,.engine-riskspan", 1
-    )[1].split("}", 1)[0]
-    decision_label = mobile_css.split(
-        ".engine-decision-label{", 1
-    )[1].split("}", 1)[0]
-
-    assert "font-size:16px" in input_rule
-    assert "font-size:10px" in delivery_rule
-    assert "font-size:10px" in judgment_labels
-    assert "font-size:10px" in decision_label
+    for module, labels in expected.items():
+        soup = BeautifulSoup(render_engine_workspace(module, status="configured"), "html.parser")
+        board = soup.select_one("[data-engine-board-kind]")
+        assert board is not None
+        assert board["data-engine-board-kind"] == labels[0]
+        assert all(label in board.get_text(" ", strip=True) for label in labels[1:])
+        assert soup.select_one(".engine-action-rail") is None

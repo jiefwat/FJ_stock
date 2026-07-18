@@ -30,6 +30,145 @@ MODULE_META = {
 }
 
 CORE_MODULES = ("market", "portfolio", "stock", "opportunity")
+DECISION_BOARD_META = {
+    "market": (
+        "fact-ledger",
+        "市场事实账",
+        "只陈述已发生事实",
+        "今日事实结论",
+        "关键市场事实",
+        "事实对应动作",
+        "哪些事实会改变判断",
+    ),
+    "portfolio": (
+        "treatment-queue",
+        "风险处置队列",
+        "按处理优先级排序",
+        "组合处理结论",
+        "风险与处置依据",
+        "先处理什么",
+        "什么触发重排",
+    ),
+    "stock": (
+        "thesis",
+        "论点与证伪",
+        "支持与反证同时成立",
+        "当前投资论点",
+        "支持与反证",
+        "现在怎么做",
+        "论点何时失效",
+    ),
+    "opportunity": (
+        "forecast",
+        "条件预测",
+        "未来候选必须等待触发",
+        "未来情景判断",
+        "入选与反证",
+        "触发后怎么做",
+        "什么情况淘汰",
+    ),
+}
+
+
+def _payload_invalidation(payload: dict[str, object]) -> str:
+    direct_keys = ("invalidation", "invalidation_condition", "invalidate_condition")
+    fact_terms = ("失效条件", "作废条件", "淘汰条件", "退出条件", "论点失效")
+    child_keys = ("facts", "findings", "details", "module_items", "module_sections", "items")
+
+    def visit(node: object) -> str:
+        if isinstance(node, list):
+            return next((value for item in node if (value := visit(item))), "")
+        if not isinstance(node, dict):
+            return ""
+        for key in direct_keys:
+            value = str(node.get(key) or "").strip()
+            if value:
+                return value
+        label = str(node.get("label") or "").strip()
+        value = str(node.get("value") or "").strip()
+        if value and any(term in label for term in fact_terms):
+            return value
+        risk = str(node.get("risk") or "").strip()
+        for marker in ("失效条件：", "淘汰条件：", "作废条件：", "失效："):
+            if marker in risk:
+                return risk.split(marker, 1)[1].split("；", 1)[0].strip()
+        return next((value for key in child_keys if (value := visit(node.get(key)))), "")
+
+    invalidation = visit(payload)
+    if invalidation:
+        return invalidation
+    delivery = str(payload.get("delivery") or "")
+    if delivery == "stale_snapshot" or bool(payload.get("stale")):
+        return "最新数据恢复并完成重评前，旧结论全部作废。"
+    if delivery == "unavailable":
+        return "证据恢复并重新分析前，当前判断不可执行。"
+    return "尚未形成可执行的作废条件，当前结论仅供研究，不执行。"
+
+
+def _initial_workspace_view(payload: dict[str, object] | None) -> dict[str, object]:
+    if not payload:
+        return {
+            "prerendered": False,
+            "decision_label": "待确认",
+            "verdict": "等待生成判断",
+            "action": "页面打开后会生成今天的判断。",
+            "risk": "证据生成并形成可验证条件前，该判断不可执行。",
+            "as_of": "尚未生成",
+            "coverage": "已确认维度 0/4",
+            "coverage_pct": 0,
+            "findings": '<div class="engine-empty">生成后显示最重要的三条事实。</div>',
+            "delivery": "等待数据",
+            "live": "等待分析",
+        }
+
+    coverage = payload.get("coverage") if isinstance(payload.get("coverage"), dict) else {}
+    ready = int(coverage.get("ready") or 0)
+    total = int(coverage.get("total") or 0) or 4
+    coverage_pct = min(100, max(0, round(ready / total * 100)))
+    findings = payload.get("findings") if isinstance(payload.get("findings"), list) else []
+    finding_html = []
+    for index, item in enumerate(findings[:3], start=1):
+        if not isinstance(item, dict):
+            continue
+        evidence_target = escape(str(item.get("target") or "研究证据"))
+        finding_html.append(
+            '<article class="engine-finding-card">'
+            '<div class="engine-finding-meta">'
+            f'<span class="engine-finding-rank">{index:02d}</span>'
+            f'<span class="engine-evidence-tag">{evidence_target}</span>'
+            "</div>"
+            f'<strong>{escape(str(item.get("title") or "关键变化"))}</strong>'
+            f'<p>{escape(str(item.get("summary") or "证据已返回。"))}</p>'
+            "</article>"
+        )
+    if not finding_html:
+        finding_html.append('<div class="engine-empty">本次没有足够的关键事实。</div>')
+    delivery_labels = {
+        "live": "实时研究",
+        "snapshot": "当日快照",
+        "stale_snapshot": "历史参考",
+        "local_fallback": "本地证据",
+        "unavailable": "数据缺失",
+    }
+    return {
+        "prerendered": True,
+        "decision_label": escape(str(payload.get("decision_label") or "待确认")),
+        "verdict": escape(str(payload.get("verdict") or "本次证据不足，判断暂停。")),
+        "action": escape(str(payload.get("action") or "稍后重新分析。")),
+        "risk": escape(_payload_invalidation(payload)),
+        "as_of": escape(str(payload.get("as_of") or payload.get("generated_at") or "尚未生成")),
+        "coverage": f"已确认维度 {ready}/{total}",
+        "coverage_pct": coverage_pct,
+        "findings": "".join(finding_html),
+        "delivery": escape(
+            str(
+                payload.get("data_label")
+                or delivery_labels.get(str(payload.get("delivery") or ""))
+                or "综合证据"
+            )
+        ),
+        "live": "判断已载入",
+    }
 
 
 def render_engine_workspace(
@@ -43,6 +182,15 @@ def render_engine_workspace(
     if module not in MODULE_META:
         raise ValueError("不支持的研究模块。")
     title, label, question, statement_type, horizon = MODULE_META[module]
+    (
+        board_kind,
+        board_title,
+        board_note,
+        verdict_caption,
+        findings_title,
+        action_caption,
+        invalidation_caption,
+    ) = DECISION_BOARD_META[module]
     status_label, status_class, available = _service_status(status)
     context_json = json.dumps(
         context or {},
@@ -54,10 +202,14 @@ def render_engine_workspace(
     stock_deep_research = _render_stock_deep_research() if module == "stock" else ""
     context_banner = _render_context_banner(module, context or {})
     bootstrap_payload = _render_bootstrap_payload(initial_payload)
+    initial = _initial_workspace_view(initial_payload)
+    prerendered = "true" if initial["prerendered"] else "false"
     return f"""
     <section class="module engine-module" id="module-{escape(module)}"
       data-engine-workspace="{escape(module)}"
       data-engine-context="{escape(context_json, quote=True)}"
+      data-engine-horizon="{escape(horizon, quote=True)}"
+      data-engine-prerendered="{prerendered}"
       data-engine-available="{'true' if available else 'false'}">
       {bootstrap_payload}
       <header class="engine-header">
@@ -69,58 +221,60 @@ def render_engine_workspace(
         <div class="engine-meta">
           <strong class="engine-service-state state-{status_class}" data-engine-service-state>
             {escape(status_label)}</strong>
-          <span class="engine-delivery" data-engine-delivery>等待数据</span>
-          <time data-engine-generated>尚未生成</time>
+          <span class="engine-delivery" data-engine-delivery>{initial['delivery']}</span>
+          <time data-engine-generated>{initial['as_of']}</time>
         </div>
       </header>
       <section class="engine-session-line" aria-label="本次研究口径">
         <div><span>结论类型</span><strong>{escape(statement_type)}</strong></div>
         <div><span>适用周期</span><strong>{escape(horizon)}</strong></div>
-        <div><span>数据时点</span><strong data-engine-session-as-of>等待本次研究</strong></div>
-        <div><span>证据覆盖</span><strong data-engine-session-coverage>等待本次研究</strong></div>
+        <div><span>数据时点</span>
+          <strong data-engine-session-as-of>{initial['as_of']}</strong></div>
+        <div><span>证据覆盖</span>
+          <strong data-engine-session-coverage>{initial['coverage']}</strong></div>
       </section>
       <p class="engine-fallback-reason" data-engine-fallback-reason hidden></p>
       {context_banner}
       {stock_switcher}
-      {stock_deep_research}
+      <section class="engine-decision-board" data-engine-board-kind="{board_kind}">
       <section class="engine-judgment state-idle" data-engine-judgment>
-        <div class="engine-signal-band" aria-hidden="true"><i></i></div>
+        <div class="engine-signal-band" data-engine-evidence-scale role="img"
+          aria-label="证据覆盖 {initial['coverage']}">
+          <i style="width:{initial['coverage_pct']}%"></i></div>
         <div class="engine-verdict" data-engine-verdict-block>
+          <div class="engine-board-mode">
+            <strong>{board_title}</strong><small>{board_note}</small>
+          </div>
           <strong class="engine-decision-label state-idle" data-engine-decision-label>
-            待确认</strong>
-          <span>一句话结论</span>
-          <h3 data-engine-verdict>等待生成判断</h3>
+            {initial['decision_label']}</strong>
+          <span>{verdict_caption}</span>
+          <h3 data-engine-verdict>{initial['verdict']}</h3>
         </div>
+        <section class="engine-findings-block" aria-label="关键发现"
+          data-engine-target="findings" tabindex="-1">
+          <div class="engine-section-heading">
+            <h3>{findings_title}</h3>
+            <div class="engine-section-meta">
+              <span class="engine-coverage" data-engine-coverage>{initial['coverage']}</span>
+              <small>支持 · 反证 · 证伪</small>
+            </div>
+          </div>
+          <div class="engine-findings" data-engine-findings>{initial['findings']}</div>
+        </section>
         <div class="engine-action-risk">
           <article class="engine-action">
-            <span>今天怎么做</span>
-            <strong data-engine-action>页面打开后会生成今天的判断。</strong>
+            <span>{action_caption}</span>
+            <strong data-engine-action>{initial['action']}</strong>
           </article>
           <article class="engine-risk">
-            <span>最需要防什么</span>
-            <strong data-engine-risk>本次判断生成前，不沿用上次结论。</strong>
+            <span>{invalidation_caption}</span>
+            <strong data-engine-risk>{initial['risk']}</strong>
           </article>
         </div>
+      </section>
       </section>
       <section class="engine-sections" data-engine-sections aria-label="主题与分化" hidden>
         <div class="engine-section-grid" data-engine-section-grid></div>
-      </section>
-      <nav class="engine-action-rail" aria-label="结果直达">
-        <button type="button" data-engine-jump="findings">为什么这样判断</button>
-        <button type="button" data-engine-jump="evidence">查看数据和依据</button>
-      </nav>
-      <section class="engine-findings-block" aria-label="关键发现"
-        data-engine-target="findings" tabindex="-1">
-        <div class="engine-section-heading">
-          <h3>为什么这样判断</h3>
-          <div class="engine-section-meta">
-            <span class="engine-coverage" data-engine-coverage>已确认维度 0/4</span>
-            <small>最多三条</small>
-          </div>
-        </div>
-        <div class="engine-findings" data-engine-findings>
-          <div class="engine-empty">生成后显示最重要的三条事实。</div>
-        </div>
       </section>
       <section class="engine-module-items" data-engine-module-items hidden>
         <div class="engine-section-heading">
@@ -130,6 +284,7 @@ def render_engine_workspace(
         <div class="engine-module-item-grid" data-engine-module-item-grid></div>
       </section>
       {supplemental_html}
+      {stock_deep_research}
       <div class="engine-actions">
         <details class="engine-disclosure" data-engine-disclosure
           data-engine-target="evidence" tabindex="-1">
@@ -142,7 +297,7 @@ def render_engine_workspace(
           刷新今天的判断</button>
       </div>
       <p class="engine-live-state" data-engine-live-state aria-live="polite">
-        {escape(status_label)}</p>
+        {initial['live'] if initial['prerendered'] else escape(status_label)}</p>
     </section>"""
 
 
@@ -204,7 +359,12 @@ def _render_stock_deep_research() -> str:
         for key, label in groups
     )
     return f"""
-      <section class="stock-deep-research" data-stock-deep-research data-state="idle">
+      <details class="stock-deep-research" data-stock-deep-research data-state="idle">
+        <summary class="stock-deep-research-summary">
+          <span>深度验证</span>
+          <strong>按需展开公司、财务、行业、预期、资金与事件证据</strong>
+        </summary>
+        <div class="stock-deep-research-body">
         <header class="stock-deep-research-head">
           <div>
             <span>六镜头证据账</span>
@@ -237,7 +397,8 @@ def _render_stock_deep_research() -> str:
             <p>运行后按研究镜头归档完整事实。</p>
           </div>
         </details>
-      </section>"""
+        </div>
+      </details>"""
 
 
 def _render_context_banner(module: str, context: dict[str, object]) -> str:
@@ -258,26 +419,6 @@ def _render_context_banner(module: str, context: dict[str, object]) -> str:
         <a href="/?{escape(urlencode({'theme': theme}), quote=True)}#opportunity">返回主题研究</a>
       </aside>"""
     return ""
-
-
-def render_engine_mobile_dock() -> str:
-    buttons = []
-    for index, module in enumerate(CORE_MODULES, start=1):
-        label = MODULE_META[module][0]
-        buttons.append(
-            f'''<button type="button" data-engine-mobile-nav data-workspace="{module}"
-              data-engine-nav-label="{label}"
-              data-engine-nav-state="idle" aria-label="{label}，未分析">
-              <span class="engine-mobile-dock-index" aria-hidden="true">0{index}</span>
-              <strong>{label}</strong>
-              <i class="engine-nav-state-dot" aria-hidden="true"></i>
-              <span class="sr-only" data-engine-nav-status>未分析</span>
-            </button>'''
-        )
-    return f'''
-    <nav class="engine-mobile-dock" data-engine-mobile-dock aria-label="核心研究模块">
-      {"".join(buttons)}
-    </nav>'''
 
 
 def render_research_service_status(status: str) -> str:
@@ -631,6 +772,44 @@ def engine_app_script() -> str:
       return '系统视图';
     }
 
+    function engineInvalidation(payload) {
+      const directKeys = ['invalidation', 'invalidation_condition', 'invalidate_condition'];
+      const factTerms = ['失效条件', '作废条件', '淘汰条件', '退出条件', '论点失效'];
+      const childKeys = [
+        'facts', 'findings', 'details', 'module_items', 'module_sections', 'items'
+      ];
+      const stack = [payload];
+      while (stack.length) {
+        const node = stack.shift();
+        if (Array.isArray(node)) {
+          stack.unshift(...node);
+          continue;
+        }
+        if (!node || typeof node !== 'object') continue;
+        for (const key of directKeys) {
+          const value = String(node[key] || '').trim();
+          if (value) return value;
+        }
+        const label = String(node.label || '').trim();
+        const value = String(node.value || '').trim();
+        if (value && factTerms.some((term) => label.includes(term))) return value;
+        const risk = String(node.risk || '').trim();
+        for (const marker of ['失效条件：', '淘汰条件：', '作废条件：', '失效：']) {
+          if (risk.includes(marker)) return risk.split(marker, 2)[1].split('；', 1)[0].trim();
+        }
+        childKeys.forEach((key) => {
+          if (node[key]) stack.push(node[key]);
+        });
+      }
+      if (payload.delivery === 'stale_snapshot' || payload.stale) {
+        return '最新数据恢复并完成重评前，旧结论全部作废。';
+      }
+      if (payload.delivery === 'unavailable') {
+        return '证据恢复并重新分析前，当前判断不可执行。';
+      }
+      return '尚未形成可执行的作废条件，当前结论仅供研究，不执行。';
+    }
+
     function syncEngineCommandBar(module, workspace) {
       if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
         return;
@@ -639,6 +818,7 @@ def engine_app_script() -> str:
       const target = document.querySelector('[data-workspace-command-target]');
       const delivery = document.querySelector('[data-workspace-command-delivery]');
       const evidenceTime = document.querySelector('[data-workspace-command-time]');
+      const horizon = document.querySelector('[data-workspace-command-horizon]');
       const refresh = document.querySelector('[data-workspace-command-refresh]');
       if (label) label.textContent = engineWorkspaceLabels[module] || '研究工作台';
       if (target) target.textContent = engineWorkspaceTarget(workspace);
@@ -649,6 +829,9 @@ def engine_app_script() -> str:
       if (evidenceTime) {
         const value = workspace && workspace.querySelector('[data-engine-generated]');
         evidenceTime.textContent = value ? value.textContent.trim() : '无需生成';
+      }
+      if (horizon) {
+        horizon.textContent = workspace?.dataset.engineHorizon || '当前会话';
       }
       if (refresh) {
         const loading = workspace && workspace.dataset.engineLoading === 'true';
@@ -1373,6 +1556,7 @@ def engine_app_script() -> str:
       const live = workspace.querySelector('[data-engine-live-state]');
       const details = Array.isArray(payload.details) ? payload.details : [];
       const coverage = workspace.querySelector('[data-engine-coverage]');
+      const evidenceScale = workspace.querySelector('[data-engine-evidence-scale]');
       const delivery = workspace.querySelector('[data-engine-delivery]');
       const fallbackReason = workspace.querySelector('[data-engine-fallback-reason]');
       if (decisionLabel) {
@@ -1384,7 +1568,7 @@ def engine_app_script() -> str:
       }
       if (verdict) verdict.textContent = payload.verdict || '本次证据不足，判断暂停。';
       if (action) action.textContent = payload.action || '稍后重新分析。';
-      if (risk) risk.textContent = payload.primary_risk || '缺少足够证据。';
+      if (risk) risk.textContent = engineInvalidation(payload);
       if (generated) {
         const evidenceTime = payload.as_of || payload.generated_at;
         generated.textContent = formatEngineEvidenceTime(evidenceTime);
@@ -1394,10 +1578,17 @@ def engine_app_script() -> str:
       }
       if (coverage) {
         const readyDetails = details.filter((detail) => detail.status === 'ready').length;
-        const ready = payload.coverage?.ready ?? readyDetails;
-        const total = payload.coverage?.total ?? (details.length || 4);
+        const total = Math.max(1, Number(payload.coverage?.total ?? (details.length || 4)) || 4);
+        const rawReady = Number(payload.coverage?.ready ?? readyDetails) || 0;
+        const ready = Math.max(0, Math.min(total, rawReady));
         coverage.textContent = `已确认维度 ${ready}/${total}`;
         coverage.classList.toggle('is-complete', ready > 0 && ready === total);
+        if (evidenceScale) {
+          const percentage = Math.max(0, Math.min(100, Math.round((ready / total) * 100)));
+          evidenceScale.setAttribute('aria-label', `证据覆盖 已确认维度 ${ready}/${total}`);
+          const fill = evidenceScale.querySelector('i');
+          if (fill) fill.style.width = `${percentage}%`;
+        }
         if (sessionCoverage) {
           sessionCoverage.textContent = `已确认 ${ready}/${total} 个维度`;
         }
@@ -1537,9 +1728,7 @@ def engine_app_script() -> str:
       document.querySelectorAll('.workspace-pane').forEach((pane) => {
         pane.classList.toggle('active', pane.dataset.workspace === normalized);
       });
-      document.querySelectorAll(
-        '.nav-item[data-workspace], [data-engine-mobile-nav][data-workspace]'
-      ).forEach((item) => {
+      document.querySelectorAll('.nav-item[data-workspace]').forEach((item) => {
         const active = item.dataset.workspace === normalized;
         item.classList.toggle('active', active);
         if (active) item.setAttribute('aria-current', 'page');
@@ -1564,9 +1753,7 @@ def engine_app_script() -> str:
       document.querySelectorAll('[data-stock-deep-research]').forEach((root) => {
         bootstrapStockDeepResearch(root);
       });
-      document.querySelectorAll(
-        '.nav-item[data-workspace], [data-engine-mobile-nav][data-workspace]'
-      ).forEach((item) => {
+      document.querySelectorAll('.nav-item[data-workspace]').forEach((item) => {
         item.addEventListener('click', (event) => {
           event.preventDefault();
           activateEngineWorkspace(item.dataset.workspace || 'market');

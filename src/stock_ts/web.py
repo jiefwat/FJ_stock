@@ -105,7 +105,6 @@ from .webapp import (
     build_workspace_sections,
     engine_app_script,
     render_document,
-    render_engine_mobile_dock,
     render_engine_workspace,
     render_market_workspace,
     render_opportunity_workspace,
@@ -1105,9 +1104,8 @@ def _render_native_research_page(
         auth_enabled=is_auth_enabled(auth_config),
     )}
     <main class="workspace engine-workspace-root">
-      {build_workspace_sections(section_map)}
+      {build_workspace_sections(section_map, holdings_path=client_holdings_path)}
     </main>
-    {render_engine_mobile_dock()}
   </div>
   {engine_app_script()}
 """

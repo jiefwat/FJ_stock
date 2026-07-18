@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup
 from stock_ts.announcements import AnnouncementReport
 from stock_ts.providers.sample import SampleDataProvider
 from stock_ts.web import render_page
+from stock_ts.webapp.engine_workspace import render_engine_workspace
+from stock_ts.webapp.shell import render_sidebar
 from stock_ts.webapp.styles import CSS
 
 
@@ -89,17 +91,109 @@ def test_modern_decision_cockpit_prioritizes_readability_and_stock_judgment() ->
     assert "radial-gradient" in body_rule
 
     assert "--app-bg:#f2f5f6" in compact
-    assert ".engine-app-shell{grid-template-columns:204pxminmax(0,1fr)" in compact
-    assert ".engine-judgment{border-radius:14px" in compact
-    assert ".engine-session-line{border:1pxsolidvar(--line);border-radius:12px" in compact
-    assert ".engine-module[data-engine-workspace=stock]{display:flex" in compact
-    assert ".engine-module[data-engine-workspace=stock]>.engine-judgment{order:5" in compact
-    assert ".engine-module[data-engine-workspace=stock]>.stock-deep-research{order:9" in compact
-    assert compact.index(">.engine-judgment{order:5") < compact.index(
-        ">.stock-deep-research{order:9"
+    assert ".engine-app-shell{grid-template-columns:184pxminmax(0,1fr)" in compact
+    assert ".engine-decision-board{" in compact
+    assert ".engine-judgment{grid-template-columns:minmax(0,8fr)minmax(300px,4fr)" in compact
+    assert ".engine-header,.engine-session-line{display:none" in compact
+    assert ".stock-deep-research-summary{" in compact
+    assert "[data-engine-workspace=stock]>.engine-judgment{order" not in compact
+    assert "@media(max-width:760px)" not in compact
+    assert "@media(max-width:640px)" not in compact
+
+
+def test_market_lens_uses_command_search_and_real_decision_board_dom() -> None:
+    soup = BeautifulSoup(_render_sample_page(), "html.parser")
+
+    command = soup.select_one("[data-workspace-command-bar]")
+    assert command is not None
+    assert command.select_one("form.workspace-command-search.quick-stock-search")
+
+    sidebar = BeautifulSoup(
+        render_sidebar(
+            current_username="研究员",
+            current_role="member",
+            auth_enabled=True,
+        ),
+        "html.parser",
+    ).select_one(".sidebar")
+    assert sidebar is not None
+    direct_classes = [node.get("class", []) for node in sidebar.find_all(recursive=False)]
+    assert direct_classes.index(["nav-group"]) < direct_classes.index(["sidebar-account-card"])
+
+    stock = soup.select_one('[data-engine-workspace="stock"]')
+    assert stock is not None
+    decision_board = stock.select_one(":scope > .engine-decision-board")
+    assert decision_board is not None
+    judgment = decision_board.select_one(":scope > [data-engine-judgment]")
+    assert judgment is not None
+    assert judgment.select_one(":scope > .engine-findings-block[data-engine-target='findings']")
+
+    deep_research = stock.select_one(":scope > details[data-stock-deep-research]")
+    assert deep_research is not None
+    assert "open" not in deep_research.attrs
+    direct_children = [node for node in stock.find_all(recursive=False) if node.name != "script"]
+    assert direct_children.index(decision_board) < direct_children.index(deep_research)
+
+
+def test_validated_bootstrap_core_is_server_rendered_before_hydration() -> None:
+    html = render_engine_workspace(
+        "market",
+        status="ready",
+        initial_payload={
+            "status": "complete",
+            "decision_label": "事实确认",
+            "verdict": "市场快照已准备好。",
+            "action": "先看市场结构，不外推个股收益。",
+            "primary_risk": "成交额不足会削弱扩散。",
+            "as_of": "2026-07-18T09:00:00+08:00",
+            "coverage": {"ready": 6, "total": 8},
+            "findings": [
+                {
+                    "title": "上涨家数",
+                    "summary": "上涨家数高于下跌家数。",
+                    "facts": [{"label": "失效条件", "value": "上涨家数转为显著少于下跌家数。"}],
+                },
+                {"title": "成交状态", "summary": "成交额仍需继续确认。"},
+            ],
+        },
     )
-    assert "@media(max-width:760px)" in compact
-    assert "@media(max-width:640px)" in compact
+    soup = BeautifulSoup(html, "html.parser")
+
+    workspace = soup.select_one('[data-engine-workspace="market"]')
+    assert workspace is not None
+    assert workspace["data-engine-prerendered"] == "true"
+    verdict = workspace.select_one("[data-engine-verdict]")
+    assert verdict is not None
+    assert verdict.get_text(strip=True) == "市场快照已准备好。"
+    assert workspace.select_one("[data-engine-action]").get_text(strip=True) == (
+        "先看市场结构，不外推个股收益。"
+    )
+    assert workspace.select_one("[data-engine-risk]").get_text(strip=True) == (
+        "上涨家数转为显著少于下跌家数。"
+    )
+    assert "等待生成判断" not in workspace.get_text(" ", strip=True)
+    finding_text = [
+        node.get_text(" ", strip=True)
+        for node in workspace.select("[data-engine-findings] > *")
+    ]
+    assert finding_text == [
+        "01 研究证据 上涨家数 上涨家数高于下跌家数。",
+        "02 研究证据 成交状态 成交额仍需继续确认。",
+    ]
+
+
+def test_market_lens_final_skin_has_structural_not_cosmetic_change() -> None:
+    modern_skin = CSS.split("StockTS modern decision cockpit skin", 1)[-1]
+    compact = "".join(modern_skin.split())
+
+    assert ".engine-app-shell{grid-template-columns:184pxminmax(0,1fr)" in compact
+    assert "grid-template-rows:60pxminmax(0,1fr)" in compact
+    assert ".workspace-command-search{" in compact
+    assert ".engine-decision-board{" in compact
+    assert ".engine-judgment{grid-template-columns:minmax(0,8fr)minmax(300px,4fr)" in compact
+    assert ".engine-judgment>.engine-findings-block{" in compact
+    assert ".engine-signal-band{background:" in compact
+    assert "[data-engine-workspace=stock]>.engine-judgment{order" not in compact
 
 
 def test_native_shell_renders_persistent_research_session_bar() -> None:
@@ -112,6 +206,12 @@ def test_native_shell_renders_persistent_research_session_bar() -> None:
     assert bar.select_one("[data-workspace-command-target]")
     assert bar.select_one("[data-workspace-command-delivery]")
     assert bar.select_one("[data-workspace-command-time]")
+    assert bar.select_one("[data-workspace-command-horizon]")
+    command_search = bar.select_one("form.workspace-command-search")
+    assert command_search is not None
+    assert command_search.select_one('input[name="holdings"]')["value"] == (
+        "data/portfolio/holdings.csv"
+    )
     refresh = bar.select_one("button[data-workspace-command-refresh]")
     assert refresh is not None
     assert refresh.get_text(strip=True) == "刷新当前判断"
@@ -156,12 +256,8 @@ def test_desktop_app_frame_scopes_scrolling_to_active_workspace() -> None:
     assert "body{overflow:hidden" in desktop
     assert ".engine-app-shell{height:100vh;overflow:hidden" in desktop
 
-    mobile = compact.split("@media(max-width:760px)", 1)[1]
-    assert "body{overflow:auto" in mobile
-    assert (
-        ".engine-app-shell.workspace{height:auto;min-height:0;"
-        "display:block;overflow:visible"
-    ) in mobile
+    modern = "".join(CSS.split("StockTS modern decision cockpit skin", 1)[-1].split())
+    assert "min-width:1180px" in modern
 
 
 def test_primary_judgment_uses_measured_desktop_typography_and_balanced_actions() -> None:

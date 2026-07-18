@@ -44,11 +44,6 @@ def render_sidebar(
             f'{escape(meta.label)}<span>{escape(meta.badge)}</span>{status}</a>'
         )
     nav = "".join(nav_items)
-    holdings_input = (
-        f'<input type="hidden" name="holdings" value="{escape(holdings_path)}" />'
-        if holdings_path
-        else ""
-    )
     account_html = render_account_card(
         current_username=current_username,
         current_role=current_role,
@@ -57,14 +52,8 @@ def render_sidebar(
     return f"""
     <aside class="sidebar">
       <div class="brand-mark"><div class="logo">{PUBLIC_SITE_LOGO}</div><div><div class="brand-title">{PUBLIC_SITE_NAME}</div><div class="brand-subtitle">{PUBLIC_SITE_DOMAIN} · {PUBLIC_SITE_TAGLINE}</div></div></div>
-      {account_html}
-      <form class="quick-stock-search" method="get" action="/#stock" aria-label="快速分析个股" data-remember-stock-form>
-        <input name="code" value="{escape(stock_code)}" placeholder="代码 / 名称" autocomplete="off" data-stock-query />
-        <input type="hidden" name="provider" value="{WEB_DATA_PROVIDER}" />
-        {holdings_input}
-        <button type="submit">分析个股</button>
-      </form>
       <nav class="nav-group">{nav}</nav>
+      {account_html}
     </aside>"""
 
 
@@ -112,23 +101,41 @@ def render_topbar(title_note: str) -> str:
     return title_note
 
 
-def render_workspace_command_bar() -> str:
-    return """
+def render_workspace_command_bar(holdings_path: str = "") -> str:
+    holdings_input = (
+        f'<input type="hidden" name="holdings" value="{escape(holdings_path)}" />'
+        if holdings_path
+        else ""
+    )
+    return f"""
     <header class="workspace-command-bar" data-workspace-command-bar>
       <div class="workspace-command-identity">
-        <span>研究会话</span>
+        <span>当前模块</span>
         <strong id="current-module-label">每日大盘</strong>
       </div>
+      <form class="workspace-command-search quick-stock-search" method="get"
+        action="/#stock" aria-label="全局证券搜索" data-remember-stock-form>
+        <input name="code" placeholder="搜索股票代码或名称" autocomplete="off"
+          data-stock-query />
+        <input type="hidden" name="provider" value="tdx-snapshot" />
+        {holdings_input}
+        <button type="submit">分析</button>
+      </form>
       <div class="workspace-command-metrics" aria-label="当前研究状态">
         <div><span>研究对象</span><strong data-workspace-command-target>A股全市场</strong></div>
         <div><span>数据状态</span><strong data-workspace-command-delivery>等待数据</strong></div>
         <div><span>证据时点</span><strong data-workspace-command-time>尚未生成</strong></div>
+        <div><span>适用周期</span><strong data-workspace-command-horizon>当前交易日</strong></div>
       </div>
       <button type="button" data-workspace-command-refresh disabled>刷新当前判断</button>
     </header>"""
 
 
-def render_workspace_shell(workspace_sections: dict[str, str]) -> str:
+def render_workspace_shell(
+    workspace_sections: dict[str, str],
+    *,
+    holdings_path: str = "",
+) -> str:
     panes = []
     for meta in WORKSPACES:
         active = " active" if meta.key == "home" else ""
@@ -151,7 +158,12 @@ def render_workspace_shell(workspace_sections: dict[str, str]) -> str:
 <div class="workspace-shell">{workspace_sections[meta.key]}</div>
 </section>'''
         )
-    return render_workspace_command_bar() + '<div class="workspace-stage">' + "".join(panes) + "</div>"
+    return (
+        render_workspace_command_bar(holdings_path)
+        + '<div class="workspace-stage">'
+        + "".join(panes)
+        + "</div>"
+    )
 
 
 def app_script() -> str:

@@ -6,7 +6,6 @@ from .composition import (
 )
 from .engine_workspace import (
     engine_app_script,
-    render_engine_mobile_dock,
     render_engine_workspace,
     render_research_service_status,
 )
@@ -36,7 +35,6 @@ __all__ = [
     "module_to_workspace",
     "render_app_toolbar",
     "render_document",
-    "render_engine_mobile_dock",
     "render_engine_workspace",
     "render_market_workspace",
     "render_opportunity_workspace",
