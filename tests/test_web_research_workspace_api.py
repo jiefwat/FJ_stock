@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 
 import pytest
+from bs4 import BeautifulSoup
 
 import stock_ts.web as web_module
 from stock_ts.auth import SessionManager, UserStore
@@ -32,6 +33,7 @@ from stock_ts.web import (
     _parse_research_workspace_payload,
     _parse_stock_deep_research_payload,
 )
+from stock_ts.webapp.engine_workspace import engine_app_script
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -335,6 +337,106 @@ def test_workspace_response_prefers_fresh_global_snapshot(monkeypatch, tmp_path)
 
     assert response["verdict"] == "快照判断"
     assert response["delivery"] == "snapshot"
+
+
+def test_native_page_embeds_latest_market_snapshot_for_instant_open(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    monkeypatch.setenv("STOCK_TS_AUTH_ENABLED", "0")
+    monkeypatch.setenv("STOCK_TS_PUBLIC_READONLY", "0")
+    monkeypatch.setenv("STOCK_TS_IWENCAI_ALLOW_ANONYMOUS", "1")
+    monkeypatch.delenv("IWENCAI_API_KEY", raising=False)
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\ncompleted_at=2026-07-18T09:31:38+08:00\n"
+        "snapshot_version=published-v1\n",
+        encoding="utf-8",
+    )
+    ResearchSnapshotStore(snapshot_dir).save(
+        "market",
+        {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
+            "source_snapshot_version": "published-v1",
+            "source_pipeline_completed_at": "2026-07-18T09:31:38+08:00",
+            "ok": True,
+            "status": "complete",
+            "module": "market",
+            "generated_at": "2026-07-18T09:31:50+08:00",
+            "verdict": "定时快照已经准备好",
+            "action": "打开页面直接查看。",
+            "primary_risk": "等待下一次定时更新。",
+            "findings": [],
+            "details": [],
+            "missing_sections": [],
+            "module_items": [],
+            "module_sections": [
+                {"key": "market-pulse", "items": []},
+                {"key": "market-breadth", "items": []},
+                {"key": "market-themes", "items": []},
+                {"key": "market-movers", "items": []},
+            ],
+        },
+    )
+
+    soup = BeautifulSoup(web_module.render_page(stock_code="600519"), "html.parser")
+    bootstrap = soup.select_one(
+        '#market [data-engine-workspace="market"] script[data-engine-bootstrap-payload]'
+    )
+
+    assert bootstrap is not None
+    payload = json.loads(bootstrap.get_text())
+    assert payload["verdict"] == "定时快照已经准备好"
+    assert payload["delivery"] == "snapshot"
+
+
+def test_engine_bootstrap_uses_embedded_result_without_open_request() -> None:
+    script = engine_app_script()
+
+    assert "function hydrateEngineBootstrap" in script
+    assert "const hydrated = hydrateEngineBootstrap(workspace);" in script
+    assert "if (!hydrated) runEngineWorkspace(workspace, false);" in script
+
+
+def test_native_page_does_not_preload_previous_pipeline_snapshot(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    snapshot_dir = tmp_path / "research"
+    report_dir = tmp_path / "daily"
+    report_dir.mkdir()
+    monkeypatch.setenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", str(snapshot_dir))
+    monkeypatch.setenv("STOCK_TS_DAILY_REPORT_DIR", str(report_dir))
+    (report_dir / "pipeline.status").write_text(
+        "status=ok\nsnapshot_version=published-v2\n",
+        encoding="utf-8",
+    )
+    ResearchSnapshotStore(snapshot_dir).save(
+        "market",
+        {
+            "research_contract_version": RESEARCH_CONTRACT_VERSION,
+            "source_snapshot_version": "published-v1",
+            "ok": True,
+            "status": "complete",
+            "module": "market",
+            "generated_at": datetime.now(timezone(timedelta(hours=8))).isoformat(),
+            "verdict": "上一轮判断",
+            "action": "不能直出",
+            "primary_risk": "数据版本已经变化",
+            "module_sections": [
+                {"key": "market-pulse", "items": []},
+                {"key": "market-breadth", "items": []},
+                {"key": "market-themes", "items": []},
+                {"key": "market-movers", "items": []},
+            ],
+        },
+    )
+
+    assert web_module._load_initial_research_snapshot("market") is None
 
 
 def test_workspace_response_rejects_snapshot_older_than_latest_pipeline(
@@ -716,6 +818,32 @@ def test_snapshot_workspace_gate_rejects_incompatible_contract_version() -> None
     }
 
     assert web_module._snapshot_supports_workspace("market", payload) is False
+
+
+def test_snapshot_gate_accepts_fact_only_market_movers_from_daily_job() -> None:
+    payload = {
+        "research_contract_version": RESEARCH_CONTRACT_VERSION,
+        "module_sections": [
+            {"key": "market-pulse", "items": []},
+            {"key": "market-breadth", "items": []},
+            {"key": "market-themes", "items": []},
+            {
+                "key": "market-movers",
+                "items": [
+                    {
+                        "label": "机器人",
+                        "facts": [
+                            {"label": "涨跌幅", "value": "+4.2%"},
+                            {"label": "异动原因", "value": "板块内多股同步走强"},
+                            {"label": "风险", "value": "单日上涨不代表趋势形成"},
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+
+    assert web_module._snapshot_supports_workspace("market", payload) is True
 
 
 def test_workspace_response_uses_local_stock_evidence_when_service_is_unconfigured(

@@ -38,6 +38,7 @@ def render_engine_workspace(
     status: str,
     context: dict[str, object] | None = None,
     supplemental_html: str = "",
+    initial_payload: dict[str, object] | None = None,
 ) -> str:
     if module not in MODULE_META:
         raise ValueError("不支持的研究模块。")
@@ -52,11 +53,13 @@ def render_engine_workspace(
     stock_switcher = _render_stock_switcher(context or {}) if module == "stock" else ""
     stock_deep_research = _render_stock_deep_research() if module == "stock" else ""
     context_banner = _render_context_banner(module, context or {})
+    bootstrap_payload = _render_bootstrap_payload(initial_payload)
     return f"""
     <section class="module engine-module" id="module-{escape(module)}"
       data-engine-workspace="{escape(module)}"
       data-engine-context="{escape(context_json, quote=True)}"
       data-engine-available="{'true' if available else 'false'}">
+      {bootstrap_payload}
       <header class="engine-header">
         <div>
           <span>{escape(label)}</span>
@@ -141,6 +144,23 @@ def render_engine_workspace(
       <p class="engine-live-state" data-engine-live-state aria-live="polite">
         {escape(status_label)}</p>
     </section>"""
+
+
+def _render_bootstrap_payload(payload: dict[str, object] | None) -> str:
+    if payload is None:
+        return ""
+    serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    serialized = (
+        serialized.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+    return (
+        '<script type="application/json" data-engine-bootstrap-payload>'
+        f"{serialized}</script>"
+    )
 
 
 def _render_stock_switcher(context: dict[str, object]) -> str:
@@ -641,6 +661,26 @@ def engine_app_script() -> str:
 
     function engineKey(workspace) {
       return `${workspace.dataset.engineWorkspace}:${workspace.dataset.engineContext || '{}'}`;
+    }
+
+    function readEngineBootstrapPayload(workspace) {
+      if (!workspace) return null;
+      const node = workspace.querySelector('script[data-engine-bootstrap-payload]');
+      if (!node) return null;
+      try {
+        const payload = JSON.parse(node.textContent || '');
+        return payload && typeof payload === 'object' ? payload : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    function hydrateEngineBootstrap(workspace) {
+      const payload = readEngineBootstrapPayload(workspace);
+      if (!payload) return false;
+      engineCache.set(engineKey(workspace), payload);
+      renderEngineResult(workspace, payload);
+      return true;
     }
 
     function setEngineLoading(workspace, loading) {
@@ -1514,7 +1554,8 @@ def engine_app_script() -> str:
       syncEngineCommandBar(normalized, workspace);
       if (workspace && workspace.dataset.engineLoaded !== 'true') {
         workspace.dataset.engineLoaded = 'true';
-        runEngineWorkspace(workspace, false);
+        const hydrated = hydrateEngineBootstrap(workspace);
+        if (!hydrated) runEngineWorkspace(workspace, false);
       }
       window.scrollTo({top: 0, left: 0, behavior: 'auto'});
     }

@@ -1040,6 +1040,16 @@ def _render_native_research_page(
         sidebar_query = selected_stock
     holdings_context = _privacy_safe_holdings_context(holdings_path)
     service_status = _iwencai_research_ui_status()
+    market_initial = (
+        _load_initial_research_snapshot("market")
+        if service_status != "requires_login"
+        else None
+    )
+    opportunity_initial = (
+        _load_initial_research_snapshot("opportunity")
+        if service_status != "requires_login" and not selected_theme
+        else None
+    )
     portfolio_manager = _render_native_portfolio_manager(
         holdings_path=holdings_path,
         client_holdings_path=client_holdings_path,
@@ -1057,7 +1067,11 @@ def _render_native_research_page(
     if portfolio_notice is not None:
         portfolio_workspace = _render_portfolio_notice(portfolio_notice) + portfolio_workspace
     section_map = {
-        "market": render_engine_workspace("market", status=service_status),
+        "market": render_engine_workspace(
+            "market",
+            status=service_status,
+            initial_payload=market_initial,
+        ),
         "portfolio": portfolio_workspace,
         "stock": render_engine_workspace(
             "stock",
@@ -1072,6 +1086,7 @@ def _render_native_research_page(
             "opportunity",
             status=service_status,
             context={"sector": selected_theme} if selected_theme else {},
+            initial_payload=opportunity_initial,
         ),
         "data-center": render_research_service_status(service_status),
         "account": _render_native_account_module(
@@ -1097,6 +1112,20 @@ def _render_native_research_page(
   {engine_app_script()}
 """
     return render_document(shell)
+
+
+def _load_initial_research_snapshot(module: str) -> dict[str, object] | None:
+    store = ResearchSnapshotStore(
+        os.getenv("STOCK_TS_RESEARCH_SNAPSHOT_DIR", "reports/research")
+    )
+    snapshot = store.load(module)
+    if snapshot is None:
+        return None
+    if not _snapshot_supports_workspace(module, snapshot.payload):
+        return None
+    if not _research_snapshot_covers_latest_pipeline(snapshot.payload):
+        return None
+    return with_research_delivery(snapshot.payload, "snapshot", stale=False)
 
 
 def _privacy_safe_holdings_context(holdings_path: str) -> list[dict[str, str]]:
@@ -13675,7 +13704,7 @@ def _snapshot_supports_workspace(module: str, payload: dict[str, object]) -> boo
     if not required_sections <= set(sections):
         return False
     facts_required = {
-        "market-movers": {"涨跌幅", "异动原因", "确认条件", "失效条件"},
+        "market-movers": {"涨跌幅", "异动原因", "风险"},
         "opportunity-candidates": {
             "阶段判断",
             "持续性评分",
