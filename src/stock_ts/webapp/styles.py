@@ -7097,21 +7097,136 @@ summary:focus-visible {
 
 .engine-app-shell .workspace {
   min-width:0;
-  padding:24px clamp(22px,3.2vw,54px) 48px;
-  overflow:clip;
+  padding:0;
+  overflow:hidden;
 }
 
-.engine-app-shell .workspace-shell,
-.engine-workspace-root {
+.engine-app-shell .workspace-shell {
   width:100%;
-  max-width: 1580px;
+  max-width:1420px;
   margin-inline:auto;
 }
 
 .engine-workspace-root {
+  width:100%;
+  max-width:none;
+  margin:0;
   padding:0;
   background:none;
   animation:editorial-workspace-in .36s ease-out both;
+}
+
+.workspace-command-bar {
+  position:relative;
+  z-index:35;
+  display:grid;
+  grid-template-columns:minmax(190px,.7fr) minmax(430px,1.6fr) auto;
+  align-items:center;
+  gap:22px;
+  min-width:0;
+  min-height:58px;
+  padding:0 20px;
+  border-bottom:1px solid var(--line-strong);
+  background:rgba(247,246,242,.96);
+  box-shadow:0 8px 22px rgba(13,32,41,.055);
+}
+.workspace-command-bar::after {
+  content:"";
+  position:absolute;
+  inset:auto 0 -1px;
+  height:2px;
+  background:linear-gradient(90deg,var(--copper) 0 18%,#d5a26e 18% 25%,transparent 25%);
+  pointer-events:none;
+}
+.workspace-command-identity {
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  min-width:0;
+}
+.workspace-command-identity span,
+.workspace-command-metrics span {
+  color:var(--muted);
+  font:700 8px/1 var(--number);
+  letter-spacing:.11em;
+  text-transform:uppercase;
+}
+.workspace-command-identity strong {
+  overflow:hidden;
+  color:var(--ink);
+  font:700 17px/1 var(--display);
+  letter-spacing:-.025em;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.workspace-command-metrics {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  min-width:0;
+  border-inline:1px solid var(--line);
+}
+.workspace-command-metrics > div {
+  display:grid;
+  gap:4px;
+  min-width:0;
+  padding:0 14px;
+  border-right:1px solid var(--line);
+}
+.workspace-command-metrics > div:last-child { border-right:0; }
+.workspace-command-metrics strong {
+  overflow:hidden;
+  color:var(--ink-soft);
+  font:650 11px/1.25 var(--number);
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.workspace-command-bar button {
+  min-height:32px;
+  padding:7px 12px;
+  border:1px solid var(--navy);
+  border-radius:3px;
+  color:#fff;
+  background:var(--navy);
+  font-size:11px;
+  font-weight:700;
+}
+.workspace-command-bar button:hover:not(:disabled) { background:#193943; }
+.workspace-command-bar button:disabled {
+  border-color:#c7cbc8;
+  color:#8a9698;
+  background:#e7e8e4;
+  cursor:not-allowed;
+}
+.workspace-stage { min-height:0; overflow:hidden; min-width:0; }
+.workspace-pane > .workspace-shell {
+  width:100%;
+  max-width:1420px;
+  margin-inline:auto;
+}
+
+@media (min-width: 761px) {
+  html,
+  body { height:100%; }
+  body { overflow:hidden; }
+  .engine-app-shell { height:100vh; overflow:hidden; }
+  .engine-app-shell .workspace {
+    height:100vh;
+    display:grid;
+    grid-template-rows:58px minmax(0,1fr);
+    overflow:hidden;
+  }
+  .workspace-stage { height:100%; }
+  .workspace-pane { height:100%; }
+  .workspace-pane.active {
+    display:block;
+    height:100%;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding:20px clamp(22px,3.2vw,54px) 48px;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+    scroll-padding-top:20px;
+  }
 }
 
 @keyframes editorial-workspace-in {
@@ -7502,10 +7617,28 @@ summary:focus-visible {
 }
 
 @media (max-width: 760px) {
+  body { overflow:auto; }
   .engine-app-shell { display:block; }
   .essence-action-risk,
   .stock-core-facts { grid-template-columns:1fr; }
-  .engine-app-shell .workspace { padding:14px 14px calc(106px + env(safe-area-inset-bottom)); }
+  .engine-app-shell .workspace {
+    height:auto;
+    min-height:0;
+    display:block;
+    overflow:visible;
+    padding:0;
+  }
+  .workspace-command-bar {
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:12px;
+    min-height:52px;
+    padding:0 14px;
+  }
+  .workspace-command-metrics { display:none; }
+  .workspace-stage,
+  .workspace-pane,
+  .workspace-pane.active { height:auto; overflow:visible; }
+  .workspace-pane.active { padding:14px 14px calc(106px + env(safe-area-inset-bottom)); }
   .engine-workspace-root { animation-duration:.22s; }
   .engine-page-intro { margin-bottom:14px; }
   .engine-header h2 { font-size:28px; }
@@ -7550,7 +7683,9 @@ summary:focus-visible {
     border-bottom-color:#d18a51;
     background:rgba(255,255,255,.05);
   }
-  .engine-app-shell .workspace { padding:10px 10px calc(100px + env(safe-area-inset-bottom)); }
+  .engine-app-shell .workspace { padding:0; }
+  .workspace-command-bar { padding-inline:10px; }
+  .workspace-pane.active { padding:10px 10px calc(100px + env(safe-area-inset-bottom)); }
   .engine-workspace-root {
     max-width:100%;
     min-width:0;

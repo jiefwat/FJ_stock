@@ -282,6 +282,14 @@ def engine_app_script() -> str:
   <script>
     const engineCache = new Map();
     const engineKeyboardModules = ['market', 'portfolio', 'stock', 'opportunity'];
+    const engineWorkspaceLabels = {
+      market: '每日大盘',
+      portfolio: '我的持仓',
+      stock: '个股分析',
+      opportunity: '热点机会',
+      'data-center': '数据中台',
+      account: '账户管理'
+    };
     const engineStateLabels = {
       idle: '未分析',
       loading: '分析中',
@@ -584,6 +592,53 @@ def engine_app_script() -> str:
       }
     }
 
+    function engineWorkspaceTarget(workspace) {
+      if (!workspace) return '系统视图';
+      const module = workspace.dataset.engineWorkspace || '';
+      const context = engineContext(workspace);
+      if (module === 'stock') {
+        const name = String(context.name || '').trim();
+        const code = String(context.code || '').trim();
+        return [name, code].filter((value, index, values) => (
+          value && values.indexOf(value) === index
+        )).join(' · ') || '待选择标的';
+      }
+      if (module === 'portfolio') return '当前持仓组合';
+      if (module === 'opportunity') {
+        return String(context.sector || '').trim() || '全市场候选池';
+      }
+      if (module === 'market') return 'A股全市场';
+      return '系统视图';
+    }
+
+    function syncEngineCommandBar(module, workspace) {
+      if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+        return;
+      }
+      const label = document.querySelector('#current-module-label');
+      const target = document.querySelector('[data-workspace-command-target]');
+      const delivery = document.querySelector('[data-workspace-command-delivery]');
+      const evidenceTime = document.querySelector('[data-workspace-command-time]');
+      const refresh = document.querySelector('[data-workspace-command-refresh]');
+      if (label) label.textContent = engineWorkspaceLabels[module] || '研究工作台';
+      if (target) target.textContent = engineWorkspaceTarget(workspace);
+      if (delivery) {
+        const value = workspace && workspace.querySelector('[data-engine-delivery]');
+        delivery.textContent = value ? value.textContent.trim() : '系统信息';
+      }
+      if (evidenceTime) {
+        const value = workspace && workspace.querySelector('[data-engine-generated]');
+        evidenceTime.textContent = value ? value.textContent.trim() : '无需生成';
+      }
+      if (refresh) {
+        const loading = workspace && workspace.dataset.engineLoading === 'true';
+        refresh.disabled = !workspace
+          || workspace.dataset.engineAvailable !== 'true'
+          || Boolean(loading);
+        refresh.textContent = loading ? '正在刷新' : '刷新当前判断';
+      }
+    }
+
     function engineKey(workspace) {
       return `${workspace.dataset.engineWorkspace}:${workspace.dataset.engineContext || '{}'}`;
     }
@@ -596,6 +651,7 @@ def engine_app_script() -> str:
         button.disabled = loading || workspace.dataset.engineAvailable !== 'true';
         button.textContent = loading ? '正在刷新' : '刷新今天的判断';
       }
+      workspace.dataset.engineLoading = loading ? 'true' : 'false';
       if (judgment) judgment.classList.toggle('is-loading', loading);
       if (live && loading) {
         live.textContent = workspace.dataset.engineWorkspace === 'portfolio'
@@ -603,6 +659,7 @@ def engine_app_script() -> str:
           : '正在生成判断…';
       }
       if (loading) setEngineNavigationState(workspace.dataset.engineWorkspace, 'loading');
+      syncEngineCommandBar(workspace.dataset.engineWorkspace, workspace);
     }
 
     function renderEngineFinding(item, index = 0) {
@@ -1319,6 +1376,7 @@ def engine_app_script() -> str:
         delivery.classList.toggle('is-stale', Boolean(payload.stale));
       }
       workspace.dataset.engineDelivery = payload.delivery || 'live';
+      syncEngineCommandBar(workspace.dataset.engineWorkspace, workspace);
       if (fallbackReason) {
         fallbackReason.textContent = payload.fallback_reason || '';
         fallbackReason.hidden = !fallbackReason.textContent;
@@ -1453,6 +1511,7 @@ def engine_app_script() -> str:
       const workspace = document.querySelector(
         `.workspace-pane[data-workspace="${normalized}"] [data-engine-workspace]`
       );
+      syncEngineCommandBar(normalized, workspace);
       if (workspace && workspace.dataset.engineLoaded !== 'true') {
         workspace.dataset.engineLoaded = 'true';
         runEngineWorkspace(workspace, false);
@@ -1478,6 +1537,15 @@ def engine_app_script() -> str:
           runEngineWorkspace(workspace, true);
         });
       });
+      const commandRefresh = document.querySelector('[data-workspace-command-refresh]');
+      if (commandRefresh) {
+        commandRefresh.addEventListener('click', () => {
+          const active = document.querySelector(
+            '.workspace-pane.active [data-engine-workspace]'
+          );
+          if (active) runEngineWorkspace(active, true);
+        });
+      }
       document.querySelectorAll('[data-engine-jump]').forEach((button) => {
         button.addEventListener('click', () => {
           const workspace = button.closest('[data-engine-workspace]');

@@ -112,6 +112,22 @@ def render_topbar(title_note: str) -> str:
     return title_note
 
 
+def render_workspace_command_bar() -> str:
+    return """
+    <header class="workspace-command-bar" data-workspace-command-bar>
+      <div class="workspace-command-identity">
+        <span>研究会话</span>
+        <strong id="current-module-label">每日大盘</strong>
+      </div>
+      <div class="workspace-command-metrics" aria-label="当前研究状态">
+        <div><span>研究对象</span><strong data-workspace-command-target>A股全市场</strong></div>
+        <div><span>数据状态</span><strong data-workspace-command-delivery>等待数据</strong></div>
+        <div><span>证据时点</span><strong data-workspace-command-time>尚未生成</strong></div>
+      </div>
+      <button type="button" data-workspace-command-refresh disabled>刷新当前判断</button>
+    </header>"""
+
+
 def render_workspace_shell(workspace_sections: dict[str, str]) -> str:
     panes = []
     for meta in WORKSPACES:
@@ -135,7 +151,7 @@ def render_workspace_shell(workspace_sections: dict[str, str]) -> str:
 <div class="workspace-shell">{workspace_sections[meta.key]}</div>
 </section>'''
         )
-    return "".join(panes)
+    return render_workspace_command_bar() + '<div class="workspace-stage">' + "".join(panes) + "</div>"
 
 
 def app_script() -> str:

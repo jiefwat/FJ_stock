@@ -73,6 +73,68 @@ def test_editorial_terminal_skin_has_explicit_typography_density_and_accessibili
     assert "linear-gradient(90deg, var(--copper)" in editorial_skin
 
 
+def test_native_shell_renders_persistent_research_session_bar() -> None:
+    html = _render_sample_page()
+    soup = BeautifulSoup(html, "html.parser")
+
+    bar = soup.select_one("header.workspace-command-bar[data-workspace-command-bar]")
+    assert bar is not None
+    assert bar.select_one("#current-module-label")
+    assert bar.select_one("[data-workspace-command-target]")
+    assert bar.select_one("[data-workspace-command-delivery]")
+    assert bar.select_one("[data-workspace-command-time]")
+    refresh = bar.select_one("button[data-workspace-command-refresh]")
+    assert refresh is not None
+    assert refresh.get_text(strip=True) == "刷新当前判断"
+
+    stage = soup.select_one(".workspace-stage")
+    assert stage is not None
+    assert len(stage.select(":scope > .workspace-pane")) == 6
+
+
+def test_research_session_bar_tracks_active_workspace_and_delegates_refresh() -> None:
+    html = _render_sample_page()
+
+    for contract in (
+        "function syncEngineCommandBar",
+        "function engineWorkspaceTarget",
+        "data-workspace-command-refresh",
+        "runEngineWorkspace(active, true)",
+        "syncEngineCommandBar(normalized, workspace)",
+        "syncEngineCommandBar(workspace.dataset.engineWorkspace, workspace)",
+    ):
+        assert contract in html
+
+
+def test_desktop_app_frame_scopes_scrolling_to_active_workspace() -> None:
+    editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
+    compact = "".join(editorial_skin.split())
+
+    for contract in (
+        ".workspace-command-bar{",
+        ".workspace-command-bar::after{",
+        "grid-template-rows:58pxminmax(0,1fr)",
+        ".workspace-stage{min-height:0;overflow:hidden",
+        ".workspace-pane.active{display:block;height:100%;overflow-y:auto",
+        "scrollbar-gutter:stable",
+        "max-width:1420px",
+    ):
+        assert contract in compact
+
+    desktop = compact.split("@media(min-width:761px)", 1)[1].split(
+        "@media(max-width:980px)", 1
+    )[0]
+    assert "body{overflow:hidden" in desktop
+    assert ".engine-app-shell{height:100vh;overflow:hidden" in desktop
+
+    mobile = compact.split("@media(max-width:760px)", 1)[1]
+    assert "body{overflow:auto" in mobile
+    assert (
+        ".engine-app-shell.workspace{height:auto;min-height:0;"
+        "display:block;overflow:visible"
+    ) in mobile
+
+
 def test_primary_judgment_uses_measured_desktop_typography_and_balanced_actions() -> None:
     editorial_skin = CSS.split("StockTS editorial research terminal skin", 1)[-1]
     compact = "".join(editorial_skin.split())
