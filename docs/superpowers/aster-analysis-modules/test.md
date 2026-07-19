@@ -25,3 +25,14 @@
 - 主服务、Signal Desk 和 Nginx 均为 `active`，主服务重启次数为 0，最近日志无 warning。
 
 公网浏览器自动化连接在最终检查时超时；公网 HTML、CSS、JavaScript 与四类 API 已通过外部 HTTPS 请求验证，真实浏览器交互使用相同构建在本地服务完成。
+
+## 生产数据新鲜度修复
+
+- 根因：Aster 读取部署时复制的静态快照，而每日任务只刷新上游运行时快照，两个路径没有持续同步。
+- 修复前：公网交易日为 `2026-07-10`，上游交易日为 `2026-07-17`；两份文件哈希不同。
+- 回归测试先失败：`deploy/link-live-snapshot.sh` 不存在，测试退出码为 127。
+- 回归测试修复后通过：模拟上游原子替换快照后，Aster 稳定路径无需重新部署即可读取新交易日。
+- 全量验证：`python3 -m pytest -q` 为 30 passed；Ruff、Python 编译、Shell 语法和 `git diff --check` 均通过。
+- 公网复验：`/api/snapshot` 返回交易日 `2026-07-17`、500 条候选；`/api/opportunities` 返回同一交易日的 8 条主题机会。
+- 单股复验：`/api/stocks/002487` 返回大金重工 `37.37`、日期 `2026-07-17`，不再返回旧快照价格 `46.21`。
+- 运行状态：主服务、Signal Desk、Nginx 均为 `active`，主服务 `NRestarts=0`，最近无 warning 日志。

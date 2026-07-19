@@ -72,3 +72,7 @@
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `8501` | 监听端口 |
 | `ASTER_SNAPSHOT_PATH` | `data/market_snapshot.json` | 快照路径 |
+
+生产部署保持 `ASTER_SNAPSHOT_PATH=/opt/aster-market/data/market_snapshot.json`，并使用
+`deploy/link-live-snapshot.sh` 将该稳定路径连接到持续刷新的上游快照。应用每次请求重新读取文件，
+因此上游完成原子替换后无需重启服务。

@@ -31,7 +31,9 @@ curl -fsS http://127.0.0.1:8501/api/stocks/300100
 - 发布目录统一使用 `/opt/aster-market`，禁止覆盖式修改其他应用目录。
 - 进程仅绑定回环地址，由既有公网代理转发；应用本身没有登录和会话。
 - 部署只替换 Aster 主服务，不修改反向代理、旁路服务、定时器或行情原文件。
-- 运行时行情复制到 `/opt/aster-market/data/market_snapshot.json`，原始文件保持不变。
+- 运行时行情通过 `deploy/link-live-snapshot.sh` 连接到
+  `/opt/aster-market/data/market_snapshot.json`；禁止复制一次后长期运行，否则页面会脱离每日刷新链路。
+- 连接脚本只建立只读符号链接，不修改行情原文件；可传入源路径和目标路径覆盖默认值。
 - 每次发布先验证测试、静态检查和本地 HTTP，再原子切换服务目录。
 
 ## 回滚
