@@ -1,0 +1,23 @@
+[Unit]
+Description=Aster Market public read-only application
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/aster-market/current
+Environment=PYTHONPATH=/opt/aster-market/current/src
+Environment=HOST=127.0.0.1
+Environment=PORT=8501
+Environment=ASTER_SNAPSHOT_PATH=/opt/aster-market/data/market_snapshot.json
+ExecStart=/usr/bin/python3 -m aster_market.web
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
