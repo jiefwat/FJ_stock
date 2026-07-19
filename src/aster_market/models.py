@@ -15,10 +15,10 @@ class IndexQuote:
 class SectorPulse:
     name: str
     pct_change: float
-    advancing_ratio: float
+    advancing_ratio: float | None
     amount_change: float
-    consecutive_days: int
-    high_divergence: bool
+    consecutive_days: int | None
+    high_divergence: bool | None
 
 
 @dataclass(frozen=True)

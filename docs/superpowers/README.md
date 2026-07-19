@@ -4,6 +4,10 @@
 
 ## 活跃需求
 
+- `aster-decision-chain/test.md`：今日研判链验证记录
+- `aster-decision-chain/review.md`：今日研判链审查记录
+- `specs/2026-07-19-aster-decision-chain-design.md`：连续研判主线冻结设计
+- `plans/2026-07-19-aster-decision-chain.md`：连续研判主线实施计划
 - `aster-analysis-modules/README.md`：四模块分析甲板
 - `aster-analysis-modules/TODO.md`：当前发布清单
 - `specs/2026-07-19-aster-analysis-modules-design.md`：四模块冻结设计

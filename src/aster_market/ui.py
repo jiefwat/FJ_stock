@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from .ui_modules import (
-    render_market_evidence,
     render_opportunity_deck,
     render_portfolio_deck,
     render_stock_deck,
@@ -59,18 +58,6 @@ def _tone(value: Any) -> str:
     return "positive" if _number(value) >= 0 else "negative"
 
 
-def _horizon_path(points: Any) -> str:
-    values = points if isinstance(points, list) else []
-    normalized = [max(12, min(106, int(_number(value)))) for value in values[:6]]
-    while len(normalized) < 6:
-        normalized.append(58)
-    x_positions = [20, 192, 364, 536, 708, 880]
-    return " ".join(
-        ("M" if index == 0 else "L") + f" {x} {normalized[index]}"
-        for index, x in enumerate(x_positions)
-    )
-
-
 def _render_indices(view: dict[str, Any]) -> str:
     indices = _dictionary_items(view.get("indices"))
     if not indices:
@@ -89,89 +76,139 @@ def _render_indices(view: dict[str, Any]) -> str:
     )
 
 
-def _render_sectors(view: dict[str, Any]) -> str:
-    sectors = _dictionary_items(view.get("sectors"))[:8]
-    if not sectors:
-        return '<p class="empty-line">当前快照没有可用主题强度数据。</p>'
+def _decision_brief(view: dict[str, Any]) -> dict[str, Any]:
+    brief = view.get("decision_brief")
+    return brief if isinstance(brief, dict) else {}
 
-    peak = max((_number(item.get("strength")) for item in sectors), default=1.0) or 1.0
+
+def _render_decision_chain(view: dict[str, Any]) -> str:
+    brief = _decision_brief(view)
+    mainline = brief.get("mainline", {})
+    mainline = mainline if isinstance(mainline, dict) else {}
+    chain = _dictionary_items(brief.get("chain"))
+    status = _safe(mainline.get("status", "none"))
+    steps = "".join(
+        f"""
+        <div class="decision-step" data-decision-step="{_safe(item.get('key', 'step'))}">
+          <span>{index:02d}</span>
+          <small>{_safe(item.get("label", "判断"))}</small>
+          <strong>{_safe(item.get("value", "待判断"))}</strong>
+        </div>
+        """
+        for index, item in enumerate(chain, start=1)
+    )
+    return f"""
+    <section class="decision-chain" data-decision-chain
+      data-decision-status="{status}" aria-label="今日研判链">
+      {steps}
+    </section>
+    """
+
+
+def _render_thesis_stage(view: dict[str, Any]) -> str:
+    brief = _decision_brief(view)
+    permission = brief.get("permission", {})
+    permission = permission if isinstance(permission, dict) else {}
+    mainline = brief.get("mainline", {})
+    mainline = mainline if isinstance(mainline, dict) else {}
+    analysis = view.get("market_analysis", {})
+    analysis = analysis if isinstance(analysis, dict) else {}
+    evidence = _dictionary_items(analysis.get("evidence"))[:4]
+    evidence_html = "".join(
+        f"""
+        <article>
+          <span>{_safe(item.get("label", "证据"))}</span>
+          <strong>{_safe(item.get("value", "—"))}{_safe(item.get("unit", ""))}</strong>
+          <em>{_safe(item.get("signal", "待判断"))}</em>
+        </article>
+        """
+        for item in evidence
+    )
+    return f"""
+    <section class="thesis-stage" id="market-overview" data-view-section="market">
+      <div class="thesis-copy">
+        <span class="thesis-eyebrow">今日结论</span>
+        <span class="permission-flag"
+          data-permission-tone="{_safe(permission.get('tone', 'selective'))}">
+          参与许可 · {_safe(permission.get("label", "等待判断"))}
+        </span>
+        <h1>{_safe(brief.get("headline", "等待市场结论"))}</h1>
+        <p class="thesis-summary">{_safe(brief.get("summary", "等待主线证据"))}</p>
+        <div class="thesis-mainline">
+          <span>{_safe(mainline.get("label", "未形成主线"))}</span>
+          <strong>{_safe(mainline.get("theme") or "暂无验证方向")}</strong>
+          <small>{_safe(mainline.get("reason", "等待证据"))}</small>
+        </div>
+        <div class="thesis-trigger">
+          <span>升级条件</span>
+          <strong>{_safe(brief.get("next_trigger", "等待下一份有效快照"))}</strong>
+        </div>
+      </div>
+      <div class="thesis-evidence">
+        <div class="thesis-evidence-grid">{evidence_html}</div>
+        <div class="thesis-risk">
+          <span>主要风险</span>
+          <strong>{_safe(analysis.get("primary_risk", "等待市场证据"))}</strong>
+        </div>
+      </div>
+    </section>
+    """
+
+
+def _render_mainline_ladder(view: dict[str, Any]) -> str:
+    opportunities = _dictionary_items(view.get("opportunities"))[:5]
+    brief = _decision_brief(view)
+    mainline = brief.get("mainline", {})
+    mainline = mainline if isinstance(mainline, dict) else {}
     rows = []
-    for index, item in enumerate(sectors):
-        width = max(14.0, min(100.0, _number(item.get("strength")) / peak * 100))
-        divergence = "分歧" if item.get("high_divergence") else "延续"
-        rows.append(
+    for index, item in enumerate(opportunities):
+        candidates = _dictionary_items(item.get("candidates"))[:3]
+        candidate_html = "".join(
             f"""
-            <div class="theme-band">
-              <div class="theme-rank">{index + 1:02d}</div>
-              <div class="theme-identity">
-                <strong>{_safe(item.get("name", "待分类"))}</strong>
-                <span>{_safe(divergence)} · 连续 {_safe(item.get("consecutive_days", 0))} 日</span>
-              </div>
-              <div class="theme-track" aria-hidden="true">
-                <i style="--theme-strength: {width:.2f}%"></i>
-              </div>
-              <span class="theme-breadth">
-                {_number(item.get("advancing_ratio")) * 100:.0f}% 上涨
-              </span>
-              <strong class="delta {_tone(item.get("pct_change"))}">
-                {_signed(item.get("pct_change"))}
-              </strong>
-            </div>
+            <button type="button" class="mainline-stock"
+              data-open-stock="{_safe(stock.get('code', ''))}">
+              <strong>{_safe(stock.get("name", stock.get("code", "—")))}</strong>
+              <span>{_safe(stock.get("code", "—"))} · {_signed(stock.get("pct_change"))}</span>
+            </button>
             """
-        )
-    return "".join(rows)
-
-
-def _render_candidates(view: dict[str, Any]) -> str:
-    candidates = _dictionary_items(view.get("candidates"))[:18]
-    if not candidates:
-        return '<p class="empty-line">当前快照没有候选股票。候选为空不会自动补入示例标的。</p>'
-
-    rows = []
-    for item in candidates:
-        candidate_delta = _signed(item.get("pct_change"))
-        candidate_tone = _tone(item.get("pct_change"))
-        haystack = " ".join(
-            str(item.get(key, "")) for key in ("code", "name", "sector", "reason", "risk")
-        ).lower()
+            for stock in candidates
+        ) or '<span class="mainline-empty">暂无映射股票</span>'
+        label = mainline.get("label", "观察方向") if index == 0 else "观察方向"
         rows.append(
             f"""
-            <article class="candidate-row" data-candidate-row
-              data-candidate-haystack="{_safe(haystack)}">
-              <div class="candidate-symbol">
-                <strong>{_safe(item.get("name", "未命名"))}</strong>
-                <span>{_safe(item.get("code", "—"))}</span>
+            <article class="mainline-row" data-mainline-rank="{index + 1}">
+              <div class="mainline-rank"><span>{index + 1:02d}</span><em>{_safe(label)}</em></div>
+              <div class="mainline-theme">
+                <strong>{_safe(item.get("theme", "待分类"))}</strong>
+                <span>{_safe(item.get("stage", "观察"))} ·
+                  强度 {_safe(item.get("strength", "—"))}</span>
               </div>
-              <div class="candidate-theme">{_safe(item.get("sector", "待分类"))}</div>
-              <div class="candidate-price">
-                <strong>{_number(item.get("latest_price")):,.2f}</strong>
-                <span class="delta {candidate_tone}">{candidate_delta}</span>
+              <div class="mainline-evidence">
+                <strong>{_number(item.get("advancing_ratio")) * 100:.0f}% 参与</strong>
+                <span>连续 {_safe(item.get("consecutive_days", 0))} 日 ·
+                  成交 {_signed(item.get("amount_change"))}</span>
               </div>
-              <p>{_safe(item.get("reason", "进入观察池"))}</p>
-              <div class="candidate-risk">{_safe(item.get("risk", "观察，不是买点"))}</div>
+              <div class="mainline-candidates">{candidate_html}</div>
+              <div class="mainline-invalid">
+                <span>失效条件</span>
+                <p>{_safe(item.get("invalidation", "等待证据"))}</p>
+              </div>
             </article>
             """
         )
-    return "".join(rows)
-
-
-def _render_news(view: dict[str, Any]) -> str:
-    news = _dictionary_items(view.get("news"))[:8]
-    if not news:
-        return '<p class="empty-line">当前快照没有市场事件。</p>'
-    return "".join(
-        f"""
-        <article class="event-row">
-          <time>{_safe(item.get("published_at", "时间未标注"))}</time>
-          <div>
-            <span>{_safe(item.get("source", "来源未标注"))}</span>
-            <h3>{_safe(item.get("title", "未命名事件"))}</h3>
-            <p>{_safe(item.get("summary", ""))}</p>
-          </div>
-        </article>
-        """
-        for item in news
-    )
+    body = "".join(rows) or '<p class="empty-line">当前快照没有主题证据，未形成主线。</p>'
+    return f"""
+    <section class="mainline-section" aria-label="主线梯队">
+      <div class="mainline-heading">
+        <h2>主线梯队</h2>
+      </div>
+      <div class="mainline-columns" aria-hidden="true">
+        <span>判断</span><span>方向 / 阶段</span><span>证据</span>
+        <span>领涨映射</span><span>失效条件</span>
+      </div>
+      <div class="mainline-ladder">{body}</div>
+    </section>
+    """
 
 
 def _render_unavailable(view: dict[str, Any]) -> str:
@@ -189,51 +226,11 @@ def _render_unavailable(view: dict[str, Any]) -> str:
 
 
 def _render_ready(view: dict[str, Any]) -> str:
-    path = _horizon_path(view.get("horizon_points"))
-    horizon_values = view.get("horizon_points")
-    risk_point = _number(horizon_values[3] if isinstance(horizon_values, list) else 58)
-    regime = _safe(view.get("regime", "待判断"))
-    risk_level = _safe(view.get("risk_level", "待判断"))
-    breadth = _number(view.get("breadth_ratio")) * 100
     return f"""
     <main>
+      {_render_decision_chain(view)}
       <section class="analysis-deck is-active" data-module-deck="market">
-      <section class="horizon-stage" id="market-overview" data-view-section="market">
-        <div class="market-statement">
-          <span class="status-kicker">MARKET CONDITION</span>
-          <h1>{regime}<small>市场状态</small></h1>
-          <p>上涨家数占比 {breadth:.1f}%，风险状态为“{risk_level}”。
-            先观察强度是否扩散，再决定是否继续跟踪候选。</p>
-          <div class="statement-status">
-            <span>风险</span><strong>{risk_level}</strong>
-          </div>
-        </div>
-        <div class="horizon-visual" data-market-horizon>
-          <div class="horizon-heading">
-            <div>
-              <span class="status-kicker">SIGNAL TOPOGRAPHY</span>
-              <h2>市场地平线</h2>
-            </div>
-            <p>广度 / 强度 / 风险的连续轨迹</p>
-          </div>
-          <svg viewBox="0 0 900 120" role="img" aria-label="市场广度、强度与风险轨迹">
-            <defs>
-              <linearGradient id="horizon-fill" x1="0" x2="1">
-                <stop offset="0" stop-color="#1346D8" stop-opacity="0.28"></stop>
-                <stop offset="0.7" stop-color="#16856B" stop-opacity="0.13"></stop>
-                <stop offset="1" stop-color="#FF5A36" stop-opacity="0.18"></stop>
-              </linearGradient>
-            </defs>
-            <path class="horizon-grid" d="M 20 88 H 880 M 20 58 H 880 M 20 28 H 880"></path>
-            <path class="horizon-area" d="{path} L 880 112 L 20 112 Z"></path>
-            <path class="horizon-line" d="{path}"></path>
-            <circle class="horizon-risk" cx="536" cy="{risk_point:.0f}" r="5"></circle>
-          </svg>
-          <div class="horizon-legend">
-            <span>广度</span><span>主题强度</span><span>风险扰动</span><span>收盘确认</span>
-          </div>
-        </div>
-      </section>
+      {_render_thesis_stage(view)}
 
       <section class="telemetry-ribbon" aria-label="主要指数与市场统计">
         <div class="index-ticks">{_render_indices(view)}</div>
@@ -245,51 +242,7 @@ def _render_ready(view: dict[str, Any]) -> str:
         </div>
       </section>
 
-      {render_market_evidence(view)}
-
-      <section class="terrain-layout" id="theme-field" data-view-section="themes">
-        <div class="section-heading">
-          <span class="status-kicker">STRENGTH FIELD</span>
-          <h2>强度落在哪里</h2>
-          <p>长度由涨幅、上涨占比、成交变化与连续性共同决定。</p>
-        </div>
-        <div class="theme-field">{_render_sectors(view)}</div>
-        <aside class="next-timeline" aria-label="下一步观察顺序">
-          <span class="status-kicker">NEXT READ</span>
-          <h2>下一步</h2>
-          <ol>
-            <li><time>开盘前</time><span>确认快照时间与来源</span></li>
-            <li><time>开盘后</time><span>观察广度是否继续扩散</span></li>
-            <li><time>盘中</time><span>核对第一主题是否保持强度</span></li>
-            <li><time>收盘前</time><span>复查跌停数与高分歧方向</span></li>
-          </ol>
-        </aside>
-      </section>
-
-      <section class="candidate-stream" id="candidate-stream" data-view-section="candidates">
-        <div class="section-heading stream-heading">
-          <div>
-            <span class="status-kicker">OBSERVATION STREAM</span>
-            <h2>值得继续看的股票</h2>
-          </div>
-          <p>候选来自只读快照；进入列表不代表买入建议。</p>
-        </div>
-        <div class="candidate-columns" aria-hidden="true">
-          <span>股票</span><span>主题</span><span>价格 / 变化</span>
-          <span>进入原因</span><span>风险</span>
-        </div>
-        <div data-candidate-list>{_render_candidates(view)}</div>
-        <p class="search-empty" data-search-empty hidden>没有匹配的候选股票。</p>
-      </section>
-
-      <section class="event-stream" id="event-stream" data-view-section="events">
-        <div class="section-heading">
-          <span class="status-kicker">EVENT TRACE</span>
-          <h2>今天发生了什么</h2>
-          <p>事件只保留时间、来源与摘要，用来解释市场，不代替行情信号。</p>
-        </div>
-        <div class="event-list">{_render_news(view)}</div>
-      </section>
+      {_render_mainline_ladder(view)}
       </section>
       {render_opportunity_deck(view)}
       {render_stock_deck()}
@@ -311,11 +264,11 @@ def render_app(view: dict[str, Any]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="color-scheme" content="light">
-  <title>Aster Market · A股市场地形</title>
-  <link rel="stylesheet" href="/assets/app.css?v=comfort-v4">
-  <link rel="stylesheet" href="/assets/modules.css?v=comfort-v4">
+  <title>Aster Market · A股今日研判</title>
+  <link rel="stylesheet" href="/assets/app.css?v=decision-v1">
+  <link rel="stylesheet" href="/assets/modules.css?v=decision-v1">
 </head>
-<body data-aster-app="market-horizon">
+<body data-aster-app="decision-chain">
   <header class="command-band">
     <a class="aster-brand" href="#market-overview" aria-label="Aster Market 首页">
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -331,13 +284,13 @@ def render_app(view: dict[str, Any]) -> str:
     </div>
     <nav class="view-switcher" aria-label="分析模块" data-keyboard-hint="1-4">
       <button class="is-active" type="button" data-module-switch="market"
-        data-shortcut="1" aria-keyshortcuts="1">大盘分析</button>
+        data-shortcut="1" aria-keyshortcuts="1" aria-label="今日研判，快捷键 1">今日研判</button>
       <button type="button" data-module-switch="opportunities"
-        data-shortcut="2" aria-keyshortcuts="2">市场机会</button>
+        data-shortcut="2" aria-keyshortcuts="2" aria-label="主线扫描，快捷键 2">主线扫描</button>
       <button type="button" data-module-switch="stock"
-        data-shortcut="3" aria-keyshortcuts="3">股票分析</button>
+        data-shortcut="3" aria-keyshortcuts="3" aria-label="个股验证，快捷键 3">个股验证</button>
       <button type="button" data-module-switch="portfolio"
-        data-shortcut="4" aria-keyshortcuts="4">我的持仓</button>
+        data-shortcut="4" aria-keyshortcuts="4" aria-label="持仓检查，快捷键 4">持仓检查</button>
     </nav>
     <div class="command-actions">
       <label class="candidate-search" for="candidate-search">
@@ -354,8 +307,8 @@ def render_app(view: dict[str, Any]) -> str:
     <p>Aster Market 只提供公开市场观察，不执行交易，也不构成投资建议。</p>
     <span>READ-ONLY / A-SHARE / DESKTOP</span>
   </footer>
-  <script src="/assets/app.js?v=comfort-v4" defer></script>
-  <script src="/assets/portfolio.js?v=comfort-v4" defer></script>
+  <script src="/assets/app.js?v=decision-v1" defer></script>
+  <script src="/assets/portfolio.js?v=decision-v1" defer></script>
 </body>
 </html>
 """

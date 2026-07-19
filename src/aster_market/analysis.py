@@ -9,9 +9,9 @@ def sector_score(sector: SectorPulse) -> float:
     divergence_penalty = 0.7 if sector.high_divergence else 0.0
     return (
         sector.pct_change
-        + sector.advancing_ratio * 2
+        + (sector.advancing_ratio or 0.0) * 2
         + sector.amount_change * 0.03
-        + sector.consecutive_days * 0.2
+        + (sector.consecutive_days or 0) * 0.2
         - divergence_penalty
     )
 
@@ -107,6 +107,12 @@ def build_market_analysis(snapshot: MarketSnapshot) -> dict[str, object]:
 
 
 def _opportunity_stage(sector: SectorPulse) -> str:
+    if (
+        sector.advancing_ratio is None
+        or sector.consecutive_days is None
+        or sector.high_divergence is None
+    ):
+        return "方向分歧"
     if sector.high_divergence:
         return "分歧"
     if sector.advancing_ratio >= 0.70 and sector.consecutive_days >= 2:
@@ -114,6 +120,27 @@ def _opportunity_stage(sector: SectorPulse) -> str:
     if sector.pct_change >= 5 or sector.amount_change >= 20:
         return "加速"
     return "观察"
+
+
+def _market_permission(snapshot: MarketSnapshot) -> dict[str, str]:
+    regime, risk_level, _ = _market_state(snapshot)
+    if regime == "扩张" and risk_level == "可控":
+        return {
+            "label": "主动跟踪",
+            "tone": "constructive",
+            "reason": "市场扩张且风险可控",
+        }
+    if regime == "收缩" or risk_level == "升高":
+        return {
+            "label": "防守等待",
+            "tone": "defensive",
+            "reason": f"市场{regime}且风险{risk_level}",
+        }
+    return {
+        "label": "结构确认",
+        "tone": "selective",
+        "reason": "市场轮动，等待强度扩散",
+    }
 
 
 def _candidate_summary(candidate: Candidate) -> dict[str, object]:
@@ -132,12 +159,16 @@ def build_opportunities(snapshot: MarketSnapshot) -> list[dict[str, object]]:
         "扩散": "上涨占比跌破 50% 或分歧升高",
         "加速": "成交变化转负或上涨占比跌破 50%",
         "分歧": "分歧持续扩大或上涨占比跌破 50%",
+        "方向分歧": "补齐参与度、连续性和分歧证据后重新判断",
+        "逆势异动": "市场广度未修复或跌停压力继续升高",
         "观察": "强度跌出前八或上涨占比跌破 50%",
     }
+    permission = _market_permission(snapshot)
     ordered = sorted(snapshot.sectors, key=sector_score, reverse=True)[:8]
     opportunities = []
     for sector in ordered:
-        stage = _opportunity_stage(sector)
+        raw_stage = _opportunity_stage(sector)
+        stage = "逆势异动" if permission["tone"] == "defensive" else raw_stage
         matching = sorted(
             (candidate for candidate in snapshot.candidates if candidate.sector == sector.name),
             key=lambda item: item.pct_change if item.pct_change is not None else float("-inf"),
@@ -149,13 +180,25 @@ def build_opportunities(snapshot: MarketSnapshot) -> list[dict[str, object]]:
                 "stage": stage,
                 "strength": round(sector_score(sector), 2),
                 "pct_change": round(sector.pct_change, 2),
-                "advancing_ratio": round(sector.advancing_ratio, 3),
+                "advancing_ratio": (
+                    round(sector.advancing_ratio, 3)
+                    if sector.advancing_ratio is not None
+                    else None
+                ),
                 "amount_change": round(sector.amount_change, 2),
                 "consecutive_days": sector.consecutive_days,
                 "evidence": [
-                    f"上涨参与度 {sector.advancing_ratio * 100:.0f}%",
+                    (
+                        f"上涨参与度 {sector.advancing_ratio * 100:.0f}%"
+                        if sector.advancing_ratio is not None
+                        else "上涨参与度 —"
+                    ),
                     f"成交变化 {sector.amount_change:+.1f}%",
-                    f"连续 {sector.consecutive_days} 日",
+                    (
+                        f"连续 {sector.consecutive_days} 日"
+                        if sector.consecutive_days is not None
+                        else "连续性 —"
+                    ),
                 ],
                 "candidates": [_candidate_summary(candidate) for candidate in matching],
                 "invalidation": invalidations[stage],
@@ -168,26 +211,7 @@ def build_decision_brief(snapshot: MarketSnapshot) -> dict[str, object]:
     market = build_market_analysis(snapshot)
     opportunities = build_opportunities(snapshot)
     regime = str(market["regime"])
-    risk_level = str(market["risk_level"])
-
-    if regime == "扩张" and risk_level == "可控":
-        permission = {
-            "label": "主动跟踪",
-            "tone": "constructive",
-            "reason": "市场扩张且风险可控",
-        }
-    elif regime == "收缩" or risk_level == "升高":
-        permission = {
-            "label": "防守等待",
-            "tone": "defensive",
-            "reason": f"市场{regime}且风险{risk_level}",
-        }
-    else:
-        permission = {
-            "label": "结构确认",
-            "tone": "selective",
-            "reason": "市场轮动，等待强度扩散",
-        }
+    permission = _market_permission(snapshot)
 
     top = opportunities[0] if opportunities else None
     if top is None:

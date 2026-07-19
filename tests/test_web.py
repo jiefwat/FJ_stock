@@ -68,7 +68,7 @@ def test_home_and_assets_are_served_without_login() -> None:
     html = body.decode("utf-8")
     assert status == 200
     assert headers["Cache-Control"] == "no-store"
-    assert 'data-aster-app="market-horizon"' in html
+    assert 'data-aster-app="decision-chain"' in html
     assert "login" not in html.lower()
     assert css_status == 200
     assert css_headers["Cache-Control"] == "public, max-age=300"
@@ -106,6 +106,20 @@ def test_analysis_routes_return_supplier_neutral_json() -> None:
     assert stocks["items"][0]["code"] == "300100"
     assert detail["code"] == "300100"
     assert "fund_flow_detail" not in detail
+
+
+def test_opportunities_route_applies_defensive_market_permission(tmp_path: Path) -> None:
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["market"].update({"advancing": 400, "declining": 4600, "limit_down": 80})
+    path = tmp_path / "contracting.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    with running_server(path) as base_url:
+        _, _, body = _get(f"{base_url}/api/opportunities")
+
+    items = json.loads(body)["items"]
+    assert items
+    assert {item["stage"] for item in items} == {"逆势异动"}
 
 
 def test_analysis_routes_enforce_query_and_not_found_contracts() -> None:

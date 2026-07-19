@@ -24,7 +24,9 @@ def test_build_view_derives_rotation_and_orders_strength() -> None:
     assert view["risk_level"] == "可控"
     assert view["breadth_ratio"] == 0.571
     assert view["sectors"][0]["name"] == "机器人"
-    assert len(view["horizon_points"]) == 6
+    assert "horizon_points" not in view
+    assert "candidates" not in view
+    assert "news" not in view
     assert view["market_analysis"]["evidence"][0]["key"] == "index_direction"
     assert view["opportunities"][0]["theme"] == "机器人"
 

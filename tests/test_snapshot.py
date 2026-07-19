@@ -54,3 +54,20 @@ def test_missing_market_values_are_not_invented_as_zero(tmp_path: Path) -> None:
     assert result.snapshot.northbound_net_inflow is None
     assert result.snapshot.candidates[0].pct_change is None
     assert [item.code for item in result.snapshot.candidates] == ["300100"]
+
+
+def test_missing_theme_confirmation_fields_remain_unavailable(tmp_path: Path) -> None:
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["sectors"][0].pop("advancing_ratio")
+    payload["sectors"][0].pop("consecutive_days")
+    payload["sectors"][0].pop("high_divergence")
+    path = tmp_path / "incomplete-theme.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    result = load_snapshot(path)
+
+    assert result.snapshot is not None
+    theme = result.snapshot.sectors[0]
+    assert theme.advancing_ratio is None
+    assert theme.consecutive_days is None
+    assert theme.high_divergence is None

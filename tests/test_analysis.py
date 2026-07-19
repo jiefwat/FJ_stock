@@ -113,3 +113,30 @@ def test_decision_brief_handles_empty_sectors() -> None:
 
     assert brief["mainline"]["status"] == "none"
     assert brief["mainline"]["theme"] is None
+
+
+def test_decision_brief_requires_complete_theme_evidence_for_confirmation() -> None:
+    snapshot = _snapshot()
+    incomplete_top = replace(snapshot.sectors[0], high_divergence=None)
+    expansion = replace(
+        snapshot,
+        advancing=3400,
+        declining=1600,
+        limit_down=6,
+        sectors=(incomplete_top, *snapshot.sectors[1:]),
+    )
+
+    brief = build_decision_brief(expansion)
+
+    assert brief["mainline"]["status"] == "divergent"
+    assert brief["mainline"]["label"] == "方向分歧"
+    assert brief["mainline"]["stage"] == "方向分歧"
+
+
+def test_opportunities_apply_defensive_permission_to_every_theme() -> None:
+    contraction = replace(_snapshot(), advancing=400, declining=4600, limit_down=80)
+
+    opportunities = build_opportunities(contraction)
+
+    assert opportunities
+    assert {item["stage"] for item in opportunities} == {"逆势异动"}

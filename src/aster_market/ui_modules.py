@@ -33,37 +33,6 @@ def _display(value: Any, suffix: str = "") -> str:
     return f"{_number(value):,.2f}{suffix}"
 
 
-def render_market_evidence(view: dict[str, Any]) -> str:
-    analysis = view.get("market_analysis", {})
-    analysis = analysis if isinstance(analysis, dict) else {}
-    evidence = _items(analysis.get("evidence"))
-    rows = "".join(
-        f"""
-        <article class="evidence-cell">
-          <span>{_safe(item.get("label", "证据"))}</span>
-          <strong>{_display(item.get("value"), _safe(item.get("unit", "")))}</strong>
-          <em>{_safe(item.get("signal", "待判断"))}</em>
-        </article>
-        """
-        for item in evidence
-    )
-    return f"""
-    <section class="market-evidence" aria-label="大盘四维证据">
-      <div class="evidence-intro">
-        <span class="status-kicker">FOUR SIGNALS</span>
-        <h2>大盘分析</h2>
-        <p>{_safe(analysis.get("conclusion", "等待市场证据"))}</p>
-      </div>
-      <div class="evidence-cells">{rows}</div>
-      <div class="evidence-check">
-        <span>主要风险</span>
-        <strong>{_safe(analysis.get("primary_risk", "待判断"))}</strong>
-        <p>{_safe(analysis.get("next_check", "等待下一份快照"))}</p>
-      </div>
-    </section>
-    """
-
-
 def render_opportunity_deck(view: dict[str, Any]) -> str:
     opportunities = _items(view.get("opportunities"))
     rows = []
@@ -103,15 +72,13 @@ def render_opportunity_deck(view: dict[str, Any]) -> str:
             </article>
             """
         )
-    lanes = "".join(rows) or '<p class="deck-empty">当前快照没有可用市场机会。</p>'
+    lanes = "".join(rows) or '<p class="deck-empty">当前快照没有可用主线方向。</p>'
     return f"""
     <section class="analysis-deck opportunity-deck" data-module-deck="opportunities" hidden>
       <header class="deck-heading" tabindex="-1" data-deck-heading>
         <div>
-          <span class="status-kicker">OPPORTUNITY CORRIDOR</span>
-          <h1>市场机会</h1>
+          <h1>主线扫描</h1>
         </div>
-        <p>按主题强度、参与度、成交变化和连续性排列。阶段是观察标签，不是买点。</p>
       </header>
       <div class="corridor-head" aria-hidden="true">
         <span>主题 / 阶段</span><span>强度</span><span>候选</span><span>失效条件</span>
@@ -126,10 +93,8 @@ def render_stock_deck() -> str:
     <section class="analysis-deck stock-deck" data-module-deck="stock" hidden>
       <header class="deck-heading" tabindex="-1" data-deck-heading>
         <div>
-          <span class="status-kicker">STOCK EVIDENCE</span>
-          <h1>股票分析</h1>
+          <h1>个股验证</h1>
         </div>
-        <p>搜索代码、名称或主题；所有结论来自当前快照，不生成目标价和买卖建议。</p>
       </header>
       <div class="stock-workspace">
         <aside class="stock-result-rail">
@@ -185,10 +150,8 @@ def render_portfolio_deck() -> str:
     <section class="analysis-deck portfolio-deck" data-module-deck="portfolio" hidden>
       <header class="deck-heading" tabindex="-1" data-deck-heading>
         <div>
-          <span class="status-kicker">LOCAL LEDGER</span>
-          <h1>我的持仓</h1>
+          <h1>持仓检查</h1>
         </div>
-        <p>持仓只保存在当前浏览器，不上传服务器、不写入日志，也不会出现在其他设备。</p>
       </header>
       <section class="portfolio-privacy">
         <strong>PRIVATE TO THIS BROWSER</strong>

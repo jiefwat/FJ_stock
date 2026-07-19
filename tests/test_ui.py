@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from aster_market.presenter import build_view
@@ -13,13 +14,12 @@ def _sample_view() -> dict[str, object]:
     return build_view(snapshot)
 
 
-def test_ui_uses_market_horizon_and_no_inherited_patterns() -> None:
+def test_ui_uses_decision_chain_and_no_inherited_patterns() -> None:
     html = render_app(_sample_view())
 
-    assert 'data-aster-app="market-horizon"' in html
-    assert "data-market-horizon" in html
-    assert "市场地平线" in html
-    assert "观察，不是买点" in html
+    assert 'data-aster-app="decision-chain"' in html
+    assert "data-decision-chain" in html
+    assert "不构成投资建议" in html
     assert "StockTS" not in html
     assert "desktop-sidebar" not in html
     assert 'name="viewport"' not in html
@@ -28,14 +28,9 @@ def test_ui_uses_market_horizon_and_no_inherited_patterns() -> None:
 
 def test_ui_escapes_external_content() -> None:
     view = _sample_view()
-    view["news"] = [
-        {
-            "published_at": "15:00",
-            "source": "<source>",
-            "title": "<script>alert(1)</script>",
-            "summary": "A & B",
-        }
-    ]
+    decision_brief = view["decision_brief"]
+    assert isinstance(decision_brief, dict)
+    decision_brief["summary"] = "<script>alert(1)</script> A & B"
 
     html = render_app(view)
 
@@ -52,7 +47,7 @@ def test_assets_enforce_desktop_visual_contract() -> None:
     assert "#1648d8" in css.lower()
     assert "@media (max-width" not in css
     assert "desktop-sidebar" not in css
-    assert "420ms" in css
+    assert "180ms" in css
     assert "location.reload()" in javascript
     assert "candidate-search" in javascript
 
@@ -67,13 +62,15 @@ def test_ui_explains_unavailable_data_without_fake_prices() -> None:
 
 def test_ui_marks_missing_candidate_change_as_unavailable() -> None:
     view = _sample_view()
-    candidates = view["candidates"]
+    opportunities = view["opportunities"]
+    assert isinstance(opportunities, list)
+    candidates = opportunities[0]["candidates"]
     assert isinstance(candidates, list)
     candidates[0]["pct_change"] = None
 
     html = render_app(view)
 
-    assert '<span class="delta unavailable">—</span>' in html
+    assert "300100 · —" in html
 
 
 def test_ui_contains_four_analysis_decks() -> None:
@@ -81,16 +78,16 @@ def test_ui_contains_four_analysis_decks() -> None:
 
     for module in ("market", "opportunities", "stock", "portfolio"):
         assert f'data-module-deck="{module}"' in html
-    assert "大盘分析" in html
-    assert "市场机会" in html
-    assert "股票分析" in html
-    assert "我的持仓" in html
-    assert "持仓只保存在当前浏览器" in html
+    assert "今日研判" in html
+    assert "主线扫描" in html
+    assert "个股验证" in html
+    assert "持仓检查" in html
+    assert "代码、成本和数量仅保存在 localStorage" in html
     assert "card-grid" not in html
-    assert "/assets/app.css?v=comfort-v4" in html
-    assert "/assets/modules.css?v=comfort-v4" in html
-    assert "/assets/app.js?v=comfort-v4" in html
-    assert "/assets/portfolio.js?v=comfort-v4" in html
+    assert "/assets/app.css?v=decision-v1" in html
+    assert "/assets/modules.css?v=decision-v1" in html
+    assert "/assets/app.js?v=decision-v1" in html
+    assert "/assets/portfolio.js?v=decision-v1" in html
 
 
 def test_module_assets_keep_the_desktop_only_contract() -> None:
@@ -130,11 +127,11 @@ def test_ui_exposes_comfort_workbench_contract() -> None:
     assert 'data-keyboard-hint="1-4"' in html
     assert "data-toast" in html
     assert "stock-loading-skeleton" in html
-    assert "comfort-v4" in html
+    assert "decision-v1" in html
     assert ".command-band" in css
     assert "min-height: 64px" in css
     assert ".deck-heading" in css
-    assert "min-height: 112px" in css
+    assert "min-height: 84px" in css
 
 
 def test_interaction_assets_include_smooth_workbench_controls() -> None:
@@ -156,3 +153,54 @@ def test_interaction_assets_include_smooth_workbench_controls() -> None:
     assert "completeQuotes" in portfolio_javascript
     assert "部分行情不可用，组合汇总暂不计算" in portfolio_javascript
     assert "scroll-behavior: smooth" not in app_css
+
+
+def test_ui_exposes_analyst_decision_chain() -> None:
+    html = render_app(_sample_view())
+    css = asset_text("app.css")
+
+    assert "data-decision-chain" in html
+    assert 'data-decision-status="candidate"' in html
+    assert "今日研判" in html
+    assert "主线扫描" in html
+    assert "个股验证" in html
+    assert "持仓检查" in html
+    assert "参与许可" in html
+    assert "主线梯队" in html
+    assert ".decision-chain" in css
+    assert ".thesis-stage" in css
+    assert "decision-v1" in html
+
+
+def test_ui_downgrades_strong_themes_in_contracting_market() -> None:
+    snapshot = load_snapshot(FIXTURE).snapshot
+    assert snapshot is not None
+    view = build_view(replace(snapshot, advancing=400, declining=4600, limit_down=80))
+
+    html = render_app(view)
+
+    assert 'data-decision-status="countertrend"' in html
+    assert "防守等待" in html
+    assert "逆势异动" in html
+    assert "尚未形成可确认主线" in html
+    assert "确认主线：机器人" not in html
+    assert 'data-opportunity-stage="扩散"' not in html
+    assert html.count('data-opportunity-stage="逆势异动"') == len(view["opportunities"])
+
+
+def test_ui_keeps_only_decision_essentials() -> None:
+    html = render_app(_sample_view())
+    css = asset_text("app.css") + asset_text("modules.css")
+
+    assert "thesis-evidence" in html
+    assert "升级条件" in html
+    assert "decision-followup" not in html
+    assert "data-market-horizon" not in html
+    assert "TODAY'S THESIS" not in html
+    assert "为什么这样判断" not in html
+    assert "什么时候升级判断" not in html
+    assert "影响判断的事件" not in html
+    assert "candidate-row" not in html
+    assert "event-row" not in html
+    assert "market-evidence" not in css
+    assert "horizon-draw" not in css

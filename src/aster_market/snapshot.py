@@ -52,6 +52,19 @@ def _integer(value: Any, default: int = 0) -> int:
         return default
 
 
+def _optional_integer(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_boolean(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
 def _text(value: Any, default: str = "") -> str:
     if not isinstance(value, str):
         return default
@@ -228,10 +241,10 @@ def _parse_snapshot(payload: dict[str, Any]) -> MarketSnapshot:
         SectorPulse(
             name=_text(item.get("name"), "未命名主题"),
             pct_change=_number(item.get("pct_chg", item.get("pct_change"))),
-            advancing_ratio=_number(item.get("advancing_ratio")),
+            advancing_ratio=_optional_number(item.get("advancing_ratio")),
             amount_change=_number(item.get("amount_change")),
-            consecutive_days=_integer(item.get("consecutive_days")),
-            high_divergence=bool(item.get("high_divergence", False)),
+            consecutive_days=_optional_integer(item.get("consecutive_days")),
+            high_divergence=_optional_boolean(item.get("high_divergence")),
         )
         for item in _items(payload.get("sectors"))
     )
