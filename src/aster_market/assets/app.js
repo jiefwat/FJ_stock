@@ -64,6 +64,7 @@
   };
 
   const formatNumber = (value, digits = 2) => {
+    if (value === null || value === undefined || value === "") return "—";
     const number = Number(value);
     return Number.isFinite(number)
       ? number.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits })
@@ -71,6 +72,7 @@
   };
 
   const formatSigned = (value, suffix = "%") => {
+    if (value === null || value === undefined || value === "") return "—";
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";
     return `${number >= 0 ? "+" : ""}${number.toFixed(2)}${suffix}`;

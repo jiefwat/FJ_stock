@@ -17,6 +17,7 @@
   };
 
   const formatMoney = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
     const number = Number(value);
     return Number.isFinite(number)
       ? `¥${number.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -24,6 +25,7 @@
   };
 
   const formatPercent = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";
     return `${number >= 0 ? "+" : ""}${number.toFixed(2)}%`;

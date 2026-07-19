@@ -16,9 +16,15 @@ ASTER_SNAPSHOT_PATH=data/market_snapshot.json make run
 ```bash
 curl -fsS http://127.0.0.1:8501/healthz
 curl -fsS http://127.0.0.1:8501/api/snapshot
+curl -fsS http://127.0.0.1:8501/api/analysis/market
+curl -fsS http://127.0.0.1:8501/api/opportunities
+curl -fsS 'http://127.0.0.1:8501/api/stocks?query=300100'
+curl -fsS http://127.0.0.1:8501/api/stocks/300100
 ```
 
 `/healthz` 只证明进程可响应；`/api/snapshot` 的 `status=ready` 才证明行情文件可解析。
+
+浏览器持仓不在服务器文件、日志或接口中。排查“我的持仓”时只检查当前浏览器，不要从服务器或旧项目恢复私人持仓。
 
 ## 部署约束
 

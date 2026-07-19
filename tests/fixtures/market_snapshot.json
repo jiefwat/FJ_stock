@@ -105,7 +105,14 @@
         "primary_source": "market.daily",
         "data_quality": "partial",
         "missing_fields": ["pb", "inside_dish_hand", "outer_disc_hand"]
-      }
+      },
+      "announcements": [
+        {
+          "date": "2026-07-18",
+          "source": "公司公告",
+          "title": "中芯国际披露运营数据"
+        }
+      ]
     }
   },
   "market_news": [

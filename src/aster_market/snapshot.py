@@ -114,6 +114,17 @@ def _merge_stock_items(
         for key in ("code", "name", "sector", "price_reliable", "bar_source"):
             if candidate.get(key) is not None:
                 base[key] = candidate[key]
+        for key in (
+            "pe_ttm",
+            "turnover_rate",
+            "valuation",
+            "fund_flow_detail",
+            "data_quality",
+            "news_items",
+            "announcements",
+        ):
+            if candidate.get(key) is not None and not base.get(key):
+                base[key] = candidate[key]
         candidate_bars = _items(candidate.get("bars"))
         base_bars = _items(base.get("bars"))
         if len(candidate_bars) > len(base_bars):
@@ -139,7 +150,11 @@ def _merge_stock_items(
                 sector=_text(item.get("sector"), "待分类"),
                 bars=bars,
                 valuation=ValuationSnapshot(
-                    pe_ttm=_optional_number(valuation.get("pe_ttm", item.get("pe_ttm"))),
+                    pe_ttm=_optional_number(
+                        valuation.get("pe_ttm")
+                        if valuation.get("pe_ttm") is not None
+                        else item.get("pe_ttm")
+                    ),
                     pb=_optional_number(valuation.get("pb")),
                     ps=_optional_number(valuation.get("ps")),
                     total_market_value=_optional_number(valuation.get("total_mv")),
@@ -160,7 +175,9 @@ def _merge_stock_items(
                 missing_fields=tuple(
                     _text(field) for field in missing_fields if isinstance(field, str)
                 ),
-                events=_parse_events(item.get("news_items")),
+                events=_parse_events(
+                    [*_items(item.get("news_items")), *_items(item.get("announcements"))]
+                ),
             )
         )
     return tuple(sorted(profiles, key=lambda stock: stock.code))

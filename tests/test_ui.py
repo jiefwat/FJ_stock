@@ -116,3 +116,6 @@ def test_interaction_assets_keep_holdings_private_to_the_browser() -> None:
     assert "method:" not in portfolio_javascript
     assert "innerHTML" not in app_javascript
     assert "innerHTML" not in portfolio_javascript
+    missing_guard = 'value === null || value === undefined || value === ""'
+    assert missing_guard in app_javascript
+    assert missing_guard in portfolio_javascript
