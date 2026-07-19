@@ -1,17 +1,7 @@
 from __future__ import annotations
 
+from .analysis import build_market_analysis, build_opportunities, sector_score
 from .models import Candidate, MarketSnapshot, SectorPulse
-
-
-def _sector_score(sector: SectorPulse) -> float:
-    divergence_penalty = 0.7 if sector.high_divergence else 0.0
-    return (
-        sector.pct_change
-        + sector.advancing_ratio * 2
-        + sector.amount_change * 0.03
-        + sector.consecutive_days * 0.2
-        - divergence_penalty
-    )
 
 
 def _sector_view(sector: SectorPulse) -> dict[str, object]:
@@ -22,7 +12,7 @@ def _sector_view(sector: SectorPulse) -> dict[str, object]:
         "amount_change": round(sector.amount_change, 2),
         "consecutive_days": sector.consecutive_days,
         "high_divergence": sector.high_divergence,
-        "strength": round(_sector_score(sector), 2),
+        "strength": round(sector_score(sector), 2),
     }
 
 
@@ -46,29 +36,19 @@ def _horizon_points(breadth: float, limit_down: int, peak_strength: float) -> li
 
 
 def build_view(snapshot: MarketSnapshot) -> dict[str, object]:
+    market_analysis = build_market_analysis(snapshot)
+    regime = market_analysis["regime"]
+    risk_level = market_analysis["risk_level"]
     total = snapshot.advancing + snapshot.declining
     breadth = snapshot.advancing / total if total else 0.0
-    if breadth >= 0.58 and snapshot.limit_down <= 10:
-        regime = "扩张"
-    elif breadth <= 0.42 or snapshot.limit_down >= 25:
-        regime = "收缩"
-    else:
-        regime = "轮动"
 
-    if snapshot.limit_down >= 25:
-        risk_level = "升高"
-    elif snapshot.limit_down >= 10:
-        risk_level = "留意"
-    else:
-        risk_level = "可控"
-
-    ordered_sectors = sorted(snapshot.sectors, key=_sector_score, reverse=True)
+    ordered_sectors = sorted(snapshot.sectors, key=sector_score, reverse=True)
     ordered_candidates = sorted(
         snapshot.candidates,
         key=lambda item: item.pct_change if item.pct_change is not None else float("-inf"),
         reverse=True,
     )
-    peak_strength = _sector_score(ordered_sectors[0]) if ordered_sectors else 0.0
+    peak_strength = sector_score(ordered_sectors[0]) if ordered_sectors else 0.0
 
     return {
         "status": "ready",
@@ -108,4 +88,6 @@ def build_view(snapshot: MarketSnapshot) -> dict[str, object]:
             for item in snapshot.news
         ],
         "horizon_points": _horizon_points(breadth, snapshot.limit_down, peak_strength),
+        "market_analysis": market_analysis,
+        "opportunities": build_opportunities(snapshot),
     }
