@@ -15,21 +15,17 @@ from .analysis import (
     find_stock,
     search_stocks,
 )
-from .presenter import build_view
-from .snapshot import load_snapshot
+from .snapshot_cache import SnapshotCache
 from .ui import asset_text, render_app
 
 DEFAULT_SNAPSHOT_PATH = Path("data/market_snapshot.json")
 
+def create_handler(
+    snapshot_path: Path | None = None,
+    snapshot_cache: SnapshotCache | None = None,
+) -> type[BaseHTTPRequestHandler]:
+    cache = snapshot_cache or SnapshotCache()
 
-def _view_for(path: Path) -> dict[str, Any]:
-    result = load_snapshot(path)
-    if result.snapshot is None:
-        return {"status": result.status, "message": result.message}
-    return build_view(result.snapshot)
-
-
-def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHandler]:
     class AsterRequestHandler(BaseHTTPRequestHandler):
         server_version = "AsterMarket/0.1"
         sys_version = ""
@@ -38,6 +34,9 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
             if snapshot_path is not None:
                 return snapshot_path
             return Path(os.getenv("ASTER_SNAPSHOT_PATH", str(DEFAULT_SNAPSHOT_PATH)))
+
+        def _snapshot_state(self):
+            return cache.get(self._snapshot_path())
 
         def _send(
             self,
@@ -65,7 +64,7 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
             self._send(status, body, "application/json; charset=utf-8")
 
         def _load_analysis_snapshot(self):
-            result = load_snapshot(self._snapshot_path())
+            result = self._snapshot_state().result
             if result.snapshot is None:
                 self._send_json(
                     HTTPStatus.SERVICE_UNAVAILABLE,
@@ -82,7 +81,7 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
                 return
 
             if path == "/api/snapshot":
-                view = _view_for(self._snapshot_path())
+                view = self._snapshot_state().view
                 status = (
                     HTTPStatus.OK
                     if view["status"] == "ready"
@@ -146,7 +145,7 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
                 return
 
             if path == "/":
-                view = _view_for(self._snapshot_path())
+                view = self._snapshot_state().view
                 body = render_app(view).encode("utf-8")
                 self._send(HTTPStatus.OK, body, "text/html; charset=utf-8")
                 return
@@ -179,8 +178,12 @@ def create_server(
     host: str,
     port: int,
     snapshot_path: Path | None = None,
+    snapshot_cache: SnapshotCache | None = None,
 ) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), create_handler(snapshot_path))
+    return ThreadingHTTPServer(
+        (host, port),
+        create_handler(snapshot_path, snapshot_cache=snapshot_cache),
+    )
 
 
 def main() -> None:

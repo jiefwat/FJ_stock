@@ -9,14 +9,23 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import urlopen
 
+from aster_market.snapshot_cache import SnapshotCache
 from aster_market.web import create_server
 
 FIXTURE = Path(__file__).parent / "fixtures" / "market_snapshot.json"
 
 
 @contextmanager
-def running_server(snapshot_path: Path = FIXTURE) -> Iterator[str]:
-    server = create_server("127.0.0.1", 0, snapshot_path=snapshot_path)
+def running_server(
+    snapshot_path: Path = FIXTURE,
+    snapshot_cache: SnapshotCache | None = None,
+) -> Iterator[str]:
+    server = create_server(
+        "127.0.0.1",
+        0,
+        snapshot_path=snapshot_path,
+        snapshot_cache=snapshot_cache,
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -127,3 +136,44 @@ def test_analysis_routes_return_503_when_snapshot_is_missing(tmp_path: Path) -> 
             assert json.loads(error.read())["status"] == "unavailable"
         else:
             raise AssertionError("missing snapshot should return 503")
+
+
+def test_routes_share_one_snapshot_cache(tmp_path: Path, monkeypatch) -> None:
+    from aster_market import snapshot_cache as cache_module
+
+    path = tmp_path / "snapshot.json"
+    path.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    calls = 0
+    real_loader = cache_module.load_snapshot
+
+    def counting_loader(candidate: Path):
+        nonlocal calls
+        calls += 1
+        return real_loader(candidate)
+
+    monkeypatch.setattr(cache_module, "load_snapshot", counting_loader)
+    cache = SnapshotCache()
+
+    with running_server(path, snapshot_cache=cache) as base_url:
+        _get(f"{base_url}/")
+        _get(f"{base_url}/api/analysis/market")
+        _get(f"{base_url}/api/stocks/300100")
+
+    assert calls == 1
+
+
+def test_server_reloads_snapshot_after_atomic_replacement(tmp_path: Path) -> None:
+    path = tmp_path / "snapshot.json"
+    path.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    with running_server(path) as base_url:
+        first = json.loads(_get(f"{base_url}/api/snapshot")[2])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["market"]["trade_date"] = "2026-07-19"
+        replacement = path.with_suffix(".staging")
+        replacement.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        replacement.replace(path)
+        second = json.loads(_get(f"{base_url}/api/snapshot")[2])
+
+    assert first["trade_date"] == "2026-07-18"
+    assert second["trade_date"] == "2026-07-19"
