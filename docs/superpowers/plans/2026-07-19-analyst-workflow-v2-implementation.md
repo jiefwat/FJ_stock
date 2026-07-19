@@ -27,7 +27,7 @@
 - `frontend/src/features/today/TodayPage.tsx`: actionable briefing and confidence formatting.
 - `frontend/src/features/market/MarketPage.tsx`: factor explanations and progressive sector disclosure.
 - `frontend/src/features/data/DataCenterPage.tsx`: freshness, timestamps, and refresh result.
-- `frontend/src/app/styles.css`: evidence-ledger and journal responsive styles.
+- `frontend/src/app/styles.css`: evidence-ledger and journal desktop styles.
 
 ### Task 1: Honest Opportunity Strategies
 

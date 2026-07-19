@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     frontend_dist: Path = Path("../frontend/dist")
     iwencai_api_key: str | None = None
+    iwencai_endpoint: str | None = None
 
     @property
     def database_path(self) -> Path:

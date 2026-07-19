@@ -2,7 +2,7 @@
 
 - [x] Freeze product, interaction, data, and acceptance design.
 - [x] Build normalized backend, analysis APIs, and local persistence.
-- [x] Build six responsive frontend modules.
+- [x] Build six desktop workbench frontend modules.
 - [x] Replace unreliable single-source full-market ingestion with Sina + Tencent multi-source acquisition.
 - [x] Pass lint, types, unit tests, production build, and live-data gate.
 - [x] Start locally and complete browser desktop workflow checks.

@@ -2,6 +2,7 @@ export type Meta = { source: string; observed_at: string; fetched_at: string; fr
 export type Quote = { symbol: string; code: string; name: string; price: number | null; change_pct: number | null; amount: number | null; turnover_rate: number | null; volume_ratio: number | null; pe: number | null; pb: number | null; market_cap: number | null; net_flow: number | null; sector: string | null };
 export type IndexQuote = { symbol: string; name: string; price: number | null; change_pct: number | null; amount: number | null };
 export type Sector = { code: string; name: string; change_pct: number | null; net_flow: number | null };
+export type SectorDossier = { sector: Sector; summary: string[]; evidence_coverage: number; missing_evidence: string[]; constituents: Quote[] };
 export type Factor = { key: string; label: string; score: number | null; weight: number; available: boolean; evidence: string };
 export type Analysis = { score: number; regime: string; confidence: number; factors: Factor[]; advancing: number; declining: number; unchanged: number };
 export type Candidate = { quote: Quote; base_score: number; context_penalty: number; score: number; evidence_coverage: number; components: { key: string; label: string; raw_value: number | null; score: number; weight: number; weighted_score: number }[]; risk_flags: string[] };

@@ -11,7 +11,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from marketdesk.models import EquityQuote, OpportunityResult, StockDossier, WatchlistItem
+from marketdesk.models import (
+    EquityQuote,
+    OpportunityResult,
+    SectorDossier,
+    StockDossier,
+    WatchlistItem,
+)
 from marketdesk.services import MarketService
 
 
@@ -46,6 +52,13 @@ def create_app(service: MarketService | None = None) -> FastAPI:
     @app.get("/api/v1/market")
     async def market() -> dict[str, Any]:
         return await market_service.market_payload()
+
+    @app.get("/api/v1/sectors/{code}")
+    async def sector(code: str) -> SectorDossier:
+        try:
+            return await market_service.sector(code)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="sector not found") from error
 
     @app.get("/api/v1/today")
     async def today() -> dict[str, Any]:

@@ -62,6 +62,14 @@ class SectorSnapshot(StrictModel):
     net_flow: float | None = None
 
 
+class SectorDossier(StrictModel):
+    sector: SectorSnapshot
+    summary: list[str]
+    evidence_coverage: float = Field(ge=0, le=1)
+    missing_evidence: list[str]
+    constituents: list[EquityQuote]
+
+
 class EquityDataset(StrictModel):
     meta: DatasetMeta
     items: list[EquityQuote]
@@ -162,6 +170,7 @@ class StockDossier(StrictModel):
     stance_score: float | None
     evidence_coverage: float = Field(ge=0, le=1)
     score_factors: list[StockScoreFactor]
+    research_evidence: list[str] = Field(default_factory=list)
     technical: TechnicalSummary | None
     bull_case: list[str]
     bear_case: list[str]

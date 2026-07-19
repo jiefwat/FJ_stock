@@ -4,8 +4,10 @@ import asyncio
 import json
 import math
 import re
+import subprocess
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, cast
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -20,6 +22,7 @@ from marketdesk.models import (
     SectorSnapshot,
 )
 from marketdesk.providers.base import ProviderUnavailable
+from marketdesk.providers.iwencai import IwencaiProvider
 
 
 def _market_observed_at(now: datetime) -> datetime:
@@ -42,6 +45,7 @@ class PublicMarketProvider:
     sina_list_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
     sina_count_url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount"
     sina_sector_url = "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php"
+    eastmoney_list_url = "https://push2delay.eastmoney.com/api/qt/clist/get"
     tencent_quote_url = (
         "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006,sh000300,sh000016,sh000688"
     )
@@ -56,6 +60,21 @@ class PublicMarketProvider:
             },
             follow_redirects=True,
         )
+        self._enhancement_status: dict[str, dict[str, Any]] = {
+            "eastmoney_fund_flow": {
+                "status": "not_checked",
+                "required": False,
+                "description": "东方财富资金流增强源",
+            },
+            "semantic_research": {
+                "status": "not_configured",
+                "required": False,
+                "description": "语义研究增强",
+            }
+        }
+        self.research_provider = IwencaiProvider(client=self.client)
+        if self.research_provider.configured:
+            self._mark_research_status("configured")
 
     async def _get(self, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
         last_error: Exception | None = None
@@ -70,6 +89,72 @@ class PublicMarketProvider:
                     await asyncio.sleep(0.2 * (attempt + 1))
         raise ProviderUnavailable(f"public market request failed: {last_error}") from last_error
 
+    async def _get_eastmoney_json(self, params: dict[str, Any]) -> dict[str, Any]:
+        try:
+            response = await self.client.get(
+                self.eastmoney_list_url,
+                params=params,
+                headers={
+                    "User-Agent": "Mozilla/5.0 MarketDesk/0.1",
+                    "Referer": "https://quote.eastmoney.com/",
+                },
+            )
+            response.raise_for_status()
+            return cast(dict[str, Any], response.json())
+        except (httpx.HTTPError, ValueError) as error:
+            return self._get_eastmoney_json_with_curl(params, error)
+
+    def _get_eastmoney_json_with_curl(
+        self, params: dict[str, Any], original_error: Exception
+    ) -> dict[str, Any]:
+        url = f"{self.eastmoney_list_url}?{urlencode(params)}"
+        try:
+            completed = subprocess.run(
+                [
+                    "curl",
+                    "-fsSL",
+                    "--http1.1",
+                    "-A",
+                    "Mozilla/5.0 MarketDesk/0.1",
+                    "-e",
+                    "https://quote.eastmoney.com/",
+                    "--max-time",
+                    "12",
+                    url,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return cast(dict[str, Any], json.loads(completed.stdout))
+        except (OSError, subprocess.CalledProcessError, ValueError) as curl_error:
+            raise ProviderUnavailable(
+                f"eastmoney request failed: {original_error}; curl fallback failed: {curl_error}"
+            ) from curl_error
+
+    def provider_status(self) -> dict[str, dict[str, Any]]:
+        return self._enhancement_status
+
+    def _mark_fund_flow_status(self, status: str, error: str | None = None) -> None:
+        payload: dict[str, Any] = {
+            "status": status,
+            "required": False,
+            "description": "东方财富资金流增强源",
+        }
+        if error:
+            payload["error"] = error
+        self._enhancement_status["eastmoney_fund_flow"] = payload
+
+    def _mark_research_status(self, status: str, error: str | None = None) -> None:
+        payload: dict[str, Any] = {
+            "status": status,
+            "required": False,
+            "description": "语义研究增强",
+        }
+        if error:
+            payload["error"] = error
+        self._enhancement_status["semantic_research"] = payload
+
     @staticmethod
     def _float(value: Any) -> float | None:
         try:
@@ -80,6 +165,11 @@ class PublicMarketProvider:
     @staticmethod
     def _symbol(raw: str) -> str:
         return f"{raw[:2].upper()}.{raw[-6:]}"
+
+    @staticmethod
+    def _symbol_from_code(code: str) -> str:
+        market = "SH" if code.startswith(("5", "6", "9")) else "SZ"
+        return f"{market}.{code}"
 
     def normalize_equities(self, rows: list[dict[str, Any]]) -> EquityDataset:
         items: list[EquityQuote] = []
@@ -145,6 +235,71 @@ class PublicMarketProvider:
                 )
             )
         return sorted(sectors, key=lambda item: item.change_pct or -999, reverse=True)
+
+    @staticmethod
+    def normalize_eastmoney_sector_funds(payload: dict[str, Any]) -> list[SectorSnapshot]:
+        rows = (payload.get("data") or {}).get("diff") or []
+        sectors: list[SectorSnapshot] = []
+        for row in rows:
+            code = str(row.get("f12") or "")
+            if not code:
+                continue
+            sectors.append(
+                SectorSnapshot(
+                    code=code,
+                    name=str(row.get("f14") or code),
+                    change_pct=PublicMarketProvider._float(row.get("f3")),
+                    net_flow=PublicMarketProvider._float(row.get("f62")),
+                )
+            )
+        return sectors
+
+    @staticmethod
+    def normalize_eastmoney_equity_enrichment(
+        rows: list[dict[str, Any]],
+    ) -> dict[str, dict[str, float | str]]:
+        enrichment: dict[str, dict[str, float | str]] = {}
+        for row in rows:
+            code = str(row.get("f12") or "")
+            if not code:
+                continue
+            values: dict[str, float | str] = {}
+            net_flow = PublicMarketProvider._float(row.get("f62"))
+            if net_flow is not None:
+                values["net_flow"] = net_flow
+            sector = str(row.get("f100") or "")
+            if sector:
+                values["sector"] = sector
+            if values:
+                enrichment[code] = values
+        return enrichment
+
+    @staticmethod
+    def normalize_eastmoney_board_constituents(payload: dict[str, Any]) -> list[EquityQuote]:
+        rows = (payload.get("data") or {}).get("diff") or []
+        quotes: list[EquityQuote] = []
+        for row in rows:
+            code = str(row.get("f12") or "")
+            if not code:
+                continue
+            quotes.append(
+                EquityQuote(
+                    symbol=PublicMarketProvider._symbol_from_code(code),
+                    code=code,
+                    name=str(row.get("f14") or code),
+                    price=PublicMarketProvider._float(row.get("f2")),
+                    change_pct=PublicMarketProvider._float(row.get("f3")),
+                    amount=PublicMarketProvider._float(row.get("f6")),
+                    turnover_rate=PublicMarketProvider._float(row.get("f8")),
+                    pe=PublicMarketProvider._float(row.get("f9")),
+                    volume_ratio=PublicMarketProvider._float(row.get("f10")),
+                    market_cap=PublicMarketProvider._float(row.get("f20")),
+                    pb=PublicMarketProvider._float(row.get("f23")),
+                    net_flow=PublicMarketProvider._float(row.get("f62")),
+                    sector=str(row.get("f100") or "") or None,
+                )
+            )
+        return quotes
 
     def normalize_indices(self, text: str) -> list[IndexQuote]:
         indices: list[IndexQuote] = []
@@ -215,7 +370,26 @@ class PublicMarketProvider:
                 return cast(list[dict[str, Any]], response.json())
 
         pages = await asyncio.gather(*(fetch_page(page) for page in range(1, page_count + 1)))
-        return self.normalize_equities([row for page in pages for row in page])
+        dataset = self.normalize_equities([row for page in pages for row in page])
+        try:
+            enrichment = await self._fetch_eastmoney_equity_enrichment()
+        except Exception as error:
+            self._mark_fund_flow_status("partial", str(error))
+            return dataset
+        if not enrichment:
+            self._mark_fund_flow_status("partial", "empty Eastmoney equity enrichment")
+            return dataset
+        self._mark_fund_flow_status("ready")
+        items = [
+            item.model_copy(update=enrichment[item.code]) if item.code in enrichment else item
+            for item in dataset.items
+        ]
+        return dataset.model_copy(
+            update={
+                "meta": dataset.meta.model_copy(update={"source": "sina+tencent+eastmoney"}),
+                "items": items,
+            }
+        )
 
     async def fetch_indices(self) -> list[IndexQuote]:
         response = await self._get(self.tencent_quote_url)
@@ -223,7 +397,110 @@ class PublicMarketProvider:
 
     async def fetch_sectors(self) -> list[SectorSnapshot]:
         response = await self._get(self.sina_sector_url)
-        return self.normalize_sectors(response.content.decode("gb18030", errors="replace"))
+        sectors = self.normalize_sectors(response.content.decode("gb18030", errors="replace"))
+        try:
+            funds = await self._fetch_eastmoney_sector_funds()
+        except Exception as error:
+            self._mark_fund_flow_status("partial", str(error))
+            return sectors
+        if funds:
+            self._mark_fund_flow_status("ready")
+            return sorted(funds, key=lambda item: item.change_pct or -999, reverse=True)[:120]
+        return sectors
+
+    async def fetch_sector_constituents(self, sector_code: str) -> list[EquityQuote]:
+        if sector_code.upper().startswith("BK"):
+            payload = await self._get_eastmoney_json(
+                {
+                    "pn": 1,
+                    "pz": 80,
+                    "po": 1,
+                    "np": 1,
+                    "fltt": 2,
+                    "fid": "f3",
+                    "fs": f"b:{sector_code}",
+                    "fields": "f12,f14,f2,f3,f6,f8,f9,f10,f20,f23,f62,f100",
+                }
+            )
+            return self.normalize_eastmoney_board_constituents(payload)
+        response = await self._get(
+            self.sina_list_url,
+            {
+                "page": 1,
+                "num": 80,
+                "sort": "amount",
+                "asc": 0,
+                "node": sector_code,
+                "symbol": "",
+                "_s_r_a": "page",
+            },
+        )
+        return self.normalize_equities(cast(list[dict[str, Any]], response.json())).items
+
+    async def _fetch_eastmoney_sector_funds(self) -> list[SectorSnapshot]:
+        payload = await self._get_eastmoney_json(
+            {
+                "pn": 1,
+                "pz": 200,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "fid": "f3",
+                "fs": "m:90+t:2+f:!50",
+                "fields": "f12,f14,f3,f62",
+            }
+        )
+        return self.normalize_eastmoney_sector_funds(payload)
+
+    async def _fetch_eastmoney_equity_enrichment(self) -> dict[str, dict[str, float | str]]:
+        params = {
+            "pn": 1,
+            "pz": 100,
+            "po": 1,
+            "np": 1,
+            "fltt": 2,
+            "invt": 2,
+            "fid": "f62",
+            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+            "fields": "f12,f62,f100",
+        }
+        first_payload = await self._get_eastmoney_json(params)
+        first_data = first_payload.get("data") or {}
+        rows = list(first_data.get("diff") or [])
+        total = int(first_data.get("total") or len(rows))
+        page_size = max(1, len(rows))
+        page_count = math.ceil(total / page_size)
+        semaphore = asyncio.Semaphore(3)
+
+        async def fetch_page(page: int) -> list[dict[str, Any]]:
+            async with semaphore:
+                payload = await self._get_eastmoney_json({**params, "pn": page})
+                return list((payload.get("data") or {}).get("diff") or [])
+
+        if page_count > 1:
+            pages = await asyncio.gather(*(fetch_page(page) for page in range(2, page_count + 1)))
+            for page_rows in pages:
+                rows.extend(page_rows)
+        return self.normalize_eastmoney_equity_enrichment(rows)
+
+    async def fetch_equity_enrichment(self, symbol: str) -> dict[str, float | str]:
+        _market, code = symbol.split(".", 1)
+        enrichment = await self._fetch_eastmoney_equity_enrichment()
+        return enrichment.get(code, {})
+
+    async def fetch_research_enrichment(
+        self, symbol: str, name: str, sector: str | None
+    ) -> list[str]:
+        if not self.research_provider.configured:
+            self._mark_research_status("not_configured")
+            return []
+        try:
+            evidence = await self.research_provider.fetch_research_evidence(symbol, name, sector)
+        except ProviderUnavailable as error:
+            self._mark_research_status("partial", str(error))
+            return []
+        self._mark_research_status("ready" if evidence else "empty")
+        return evidence
 
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Bar]:
         market, code = symbol.split(".", 1)

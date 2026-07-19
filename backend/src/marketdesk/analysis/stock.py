@@ -13,7 +13,10 @@ def _average(values: list[float], size: int) -> float | None:
     return sum(values[-size:]) / size if len(values) >= size else None
 
 
-def analyse_stock(quote: EquityQuote, bars: list[Bar]) -> StockDossier:
+def analyse_stock(
+    quote: EquityQuote, bars: list[Bar], research_evidence: list[str] | None = None
+) -> StockDossier:
+    research = research_evidence or []
     if not bars:
         return StockDossier(
             quote=quote,
@@ -21,6 +24,7 @@ def analyse_stock(quote: EquityQuote, bars: list[Bar]) -> StockDossier:
             stance_score=None,
             evidence_coverage=0,
             score_factors=[],
+            research_evidence=research,
             technical=None,
             bull_case=[],
             bear_case=[],
@@ -75,7 +79,7 @@ def analyse_stock(quote: EquityQuote, bars: list[Bar]) -> StockDossier:
     invalidation = (
         [f"跌破近 20 日支撑 {technical.support:.2f}"] if technical.support is not None else []
     )
-    missing = ["公告与研报增强数据"]
+    missing = [] if research else ["公告与研报增强数据"]
     if quote.sector is None:
         missing.append("个股行业映射")
     if quote.net_flow is None:
@@ -85,12 +89,14 @@ def analyse_stock(quote: EquityQuote, bars: list[Bar]) -> StockDossier:
     evidence_coverage += 0.15 if quote.pe is not None else 0
     evidence_coverage += 0.10 if quote.sector is not None else 0
     evidence_coverage += 0.10 if quote.net_flow is not None else 0
+    evidence_coverage += 0.10 if research else 0
     return StockDossier(
         quote=quote,
         stance=stance,
         stance_score=score,
-        evidence_coverage=round(evidence_coverage, 2),
+        evidence_coverage=round(min(evidence_coverage, 1), 2),
         score_factors=factors,
+        research_evidence=research,
         technical=technical,
         bull_case=bull,
         bear_case=bear,

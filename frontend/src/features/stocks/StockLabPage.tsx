@@ -27,6 +27,7 @@ type Dossier = {
   bear_case: string[];
   invalidation: string[];
   missing_evidence: string[];
+  research_evidence: string[];
   bars: { date: string; close: number }[];
 };
 
@@ -118,6 +119,7 @@ export function StockLabPage() {
         <div className="panel-title"><span>证据账本</span><small>所有加减分都来自下列事实</small></div>
         <div className="ledger-list">{query.data.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
       </section>
+      {query.data.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究增强</span><small>只作为证据补充，不直接改写评分</small></div>{query.data.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
       <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{query.data.technical ? Object.entries(query.data.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis"><div><h3>支持证据</h3>{query.data.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{query.data.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{query.data.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{query.data.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
     </>}</AsyncState>
   </>;

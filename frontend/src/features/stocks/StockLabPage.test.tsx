@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -14,7 +14,8 @@ const dossier = {
   ],
   technical: { ma5: 1237, ma20: 1204, ma60: 1265, rsi14: 66, volatility20: 21, support: 1168, resistance: 1259 },
   bull_case: ["收盘价位于 20 日均线之上"], bear_case: ["MA20 低于 MA60"],
-  invalidation: ["跌破近 20 日支撑 1168.00"], missing_evidence: ["公告与研报增强数据"],
+  invalidation: ["跌破近 20 日支撑 1168.00"], missing_evidence: [],
+  research_evidence: ["近三十日有分红相关公告", "研报关注现金流与渠道库存"],
   bars: Array.from({ length: 65 }, (_, index) => ({ date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`, close: 1200 + index })),
 };
 
@@ -43,6 +44,9 @@ it("shows the evidence ledger and edits the thesis before adding to watchlist", 
   expect(screen.getByText("收盘价")).toBeInTheDocument();
   expect(screen.getByText("证据覆盖 55%")).toBeInTheDocument();
   expect(screen.getByText("波动风险")).toBeInTheDocument();
+  expect(screen.getByText("语义研究增强")).toBeInTheDocument();
+  expect(screen.getByText(/近三十日有分红相关公告/)).toBeInTheDocument();
+  expect(screen.queryByText(/iWenCai|WenCai|问财/i)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "加入观察" }));
   expect(screen.getByLabelText("研究逻辑")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("研究逻辑"), { target: { value: "等待估值与趋势共振" } });
@@ -56,5 +60,5 @@ it("recognizes an existing watchlist item before another post", async () => {
   renderPage([{ id: 1, symbol: "SH.600519", name: "贵州茅台", thesis: "已有逻辑", invalidation: "已有失效条件", status: "researching", updated_at: "2026-07-19T09:00:00Z" }]);
 
   expect(await screen.findByRole("link", { name: "观察中 · 编辑记录" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "加入观察" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "加入观察" })).not.toBeInTheDocument());
 });

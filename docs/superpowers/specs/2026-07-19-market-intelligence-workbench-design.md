@@ -175,7 +175,7 @@ The application must send conservative timeouts, bounded retries, a descriptive 
 
 ### 6.2 Optional Enhanced Provider
 
-When `IWENCAI_API_KEY` is configured, an iWenCai provider can enrich:
+When semantic research credentials are configured, the optional research provider can enrich:
 
 - financial indicators;
 - company operations and shareholder structure;
@@ -261,7 +261,7 @@ Interaction requirements:
 - skeleton loading without layout shifts;
 - keyboard focus and semantic labels;
 - no color-only signals;
-- responsive tables become ranked cards on narrow screens;
+- desktop tables stay dense, readable, and avoid narrow-screen alternate layouts;
 - every refresh action shows scope, completion, and resulting data time.
 
 ## 11. Verification and Acceptance
@@ -316,4 +316,4 @@ Provide these commands:
 - `make verify`: run lint, type checks, tests, builds, data-quality checks, and browser smoke checks;
 - `make start`: build and start the production-style local application on a documented URL.
 
-The README must document source limitations, optional iWenCai configuration, troubleshooting, and how to interpret stale or partial data.
+The README must document source limitations, optional semantic research configuration, troubleshooting, and how to interpret stale or partial data.

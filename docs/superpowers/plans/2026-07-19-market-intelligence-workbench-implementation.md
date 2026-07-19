@@ -4,7 +4,7 @@
 
 **Goal:** Build and locally run a verified A-share decision workbench covering Today, Market, Opportunities, Stock Lab, Watchlist, and Data Center.
 
-**Architecture:** A FastAPI backend owns provider access, normalization, deterministic scoring, caching, and local persistence. A React/Vite frontend consumes only versioned local APIs and presents an editorial market-desk workflow. Eastmoney and FRED provide no-key core data; iWenCai is an optional enrichment provider represented explicitly in provider health.
+**Architecture:** A FastAPI backend owns provider access, normalization, deterministic scoring, caching, and local persistence. A React/Vite frontend consumes only versioned local APIs and presents an editorial market-desk workflow. Eastmoney and FRED provide no-key core data; semantic research is an optional enrichment provider represented explicitly in provider health.
 
 **Tech Stack:** Python 3.11, FastAPI, Pydantic, HTTPX, SQLite, pytest, Ruff, mypy, React 19, TypeScript, Vite, TanStack Query, ECharts, Vitest, Testing Library, Playwright.
 
@@ -28,7 +28,7 @@
 - `frontend/src/features/*`: one directory for each user-visible module.
 - `frontend/src/lib/api.ts`: typed local API client.
 - `scripts/setup.sh`, `scripts/dev.sh`, `scripts/start.sh`, `scripts/verify.sh`: operator commands.
-- `tests/browser/smoke.spec.ts`: browser workflow and responsive checks.
+- `tests/browser/smoke.spec.ts`: browser workflow and desktop layout checks.
 - `README.md`: setup, operation, data-source boundaries, and troubleshooting.
 
 ### Task 1: Repository and Contract Foundation
@@ -353,7 +353,7 @@ Run: `cd frontend && pnpm test --run src/features/opportunities/OpportunitiesPag
 
 - [ ] **Step 3: Implement all remaining pages**
 
-Opportunity tables become ranked cards below 720 pixels. Stock Lab keeps the conclusion and missing evidence above the fold, with chart and evidence sections below. Watchlist uses status chips plus editable thesis/invalidation fields. Data Center shows coverage, timestamps, provider latency, error reason, retry, and optional iWenCai configuration status.
+Opportunity tables remain desktop-ranked lists. Stock Lab keeps the conclusion and missing evidence above the fold, with chart and evidence sections below. Watchlist uses status chips plus editable thesis/invalidation fields. Data Center shows coverage, timestamps, provider latency, error reason, retry, and optional semantic-research configuration status.
 
 - [ ] **Step 4: Run frontend gates and commit**
 
@@ -378,7 +378,7 @@ Commit: `git commit -am "feat: complete research workflows"` after staging new f
 
 - [ ] **Step 1: Write live-data and browser acceptance checks**
 
-The live-data check asserts the required index set, at least 90% required-field coverage for the returned A-share universe, timezone-aware timestamps, no non-finite decision values, and graceful iWenCai-not-configured status.
+The live-data check asserts the required index set, at least 90% required-field coverage for the returned A-share universe, timezone-aware timestamps, no non-finite decision values, and graceful semantic-research-not-configured status.
 
 The browser suite verifies Today -> Opportunities -> Stock Lab -> Watchlist, Data Center visibility, keyboard access to primary navigation, 1440 x 900 desktop without horizontal document overflow.
 

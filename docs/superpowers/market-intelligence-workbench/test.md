@@ -61,7 +61,7 @@ The production build was served by FastAPI and tested in a real browser.
 
 - Public market endpoints and their terms can change without notice; production or commercial use still needs a licensing review.
 - Previous-market-day selection handles weekends but does not yet use an official exchange holiday calendar.
-- iWenCai enrichment was not exercised because `IWENCAI_API_KEY` is not configured.
+- Semantic research enrichment was not exercised because the optional endpoint and API key are not configured.
 - Stock-level sector mapping and capital-flow coverage are not available in the current normalized universe; dependent strategies stop with an explicit reason.
 - Oversold observation is a single-day proxy, not confirmation of a multi-day reversal.
 - FastAPI TestClient emits one third-party Starlette/httpx deprecation warning; it does not affect runtime behavior.
