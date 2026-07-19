@@ -1,41 +1,40 @@
-# Aster Market 运维入口
+# Agent Operations
 
-## 本地启动
+Default read order: `AGENTS.md` -> `docs/superpowers/README.md` -> active requirement.
+Do not scan historical requirements by default.
 
-```bash
-make install
-make test
-ASTER_SNAPSHOT_PATH=data/market_snapshot.json make run
-```
-
-默认监听 `127.0.0.1:8501`。可通过 `HOST`、`PORT` 和 `ASTER_SNAPSHOT_PATH` 覆盖。
-行情文件不会打包进仓库，也不会在缺失时由程序生成示例价格。
-
-## 健康检查
+## Local
 
 ```bash
-curl -fsS http://127.0.0.1:8501/healthz
-curl -fsS http://127.0.0.1:8501/api/snapshot
-curl -fsS http://127.0.0.1:8501/api/analysis/market
-curl -fsS http://127.0.0.1:8501/api/opportunities
-curl -fsS 'http://127.0.0.1:8501/api/stocks?query=300100'
-curl -fsS http://127.0.0.1:8501/api/stocks/300100
+make setup
+make start
+make stop
 ```
 
-`/healthz` 只证明进程可响应；`/api/snapshot` 的 `status=ready` 才证明行情文件可解析。
+`make start` builds the React frontend, starts FastAPI on `127.0.0.1`, and writes
+the selected port to `.run/marketdesk.port`.
 
-浏览器持仓不在服务器文件、日志或接口中。排查“我的持仓”时只检查当前浏览器，不要从服务器或旧项目恢复私人持仓。
+## Verify
 
-## 部署约束
+```bash
+make verify
+```
 
-- 发布目录统一使用 `/opt/aster-market`，禁止覆盖式修改其他应用目录。
-- 进程仅绑定回环地址，由既有公网代理转发；应用本身没有登录和会话。
-- 部署只替换 Aster 主服务，不修改反向代理、旁路服务、定时器或行情原文件。
-- 运行时行情通过 `deploy/link-live-snapshot.sh` 连接到
-  `/opt/aster-market/data/market_snapshot.json`；禁止复制一次后长期运行，否则页面会脱离每日刷新链路。
-- 连接脚本只建立只读符号链接，不修改行情原文件；可传入源路径和目标路径覆盖默认值。
-- 每次发布先验证测试、静态检查和本地 HTTP，再原子切换服务目录。
+The gate runs backend lint, backend mypy, backend tests, frontend typecheck,
+frontend tests, frontend production build, and live public-data quality checks.
 
-## 回滚
+## Public Deploy
 
-保留上一版发布目录和服务单元备份。回滚只切回上一版 Aster 目录，不从其他分支拷贝旧产品代码。
+Production keeps the existing public proxy port: the app binds
+`127.0.0.1:8501` through `stock-ts.service`.
+
+```bash
+DEPLOY_HOST=<public-host> \
+SSH_KEY=~/.ssh/stockts_aliyun_deploy \
+deploy/deploy_public.sh
+```
+
+The script builds frontend assets locally, uploads a release archive, creates a
+remote Python venv, installs backend runtime dependencies, switches
+`/opt/aster-market/current` atomically, and restarts only `stock-ts.service`.
+Runtime SQLite data stays under `/opt/aster-market/data`.

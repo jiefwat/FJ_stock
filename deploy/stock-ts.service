@@ -1,0 +1,22 @@
+[Unit]
+Description=Market Desk public research workbench
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/aster-market/current
+Environment=PYTHONPATH=/opt/aster-market/current/backend/src
+Environment=MARKETDESK_DATA_DIR=/opt/aster-market/data
+ExecStart=/opt/aster-market/current/.venv/bin/python -m uvicorn marketdesk.api:app --host 127.0.0.1 --port 8501
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/aster-market/data
+
+[Install]
+WantedBy=multi-user.target

@@ -1,16 +1,24 @@
-.PHONY: install format lint test run
+.PHONY: setup dev start stop test lint verify
 
-install:
-	python3 -m pip install -e '.[dev]'
+setup:
+	./scripts/setup.sh
 
-format:
-	ruff format src tests
+dev:
+	./scripts/dev.sh
 
-lint:
-	ruff check src tests
+start:
+	./scripts/start.sh
+
+stop:
+	./scripts/stop.sh
 
 test:
-	pytest
+	cd backend && uv run pytest -q
+	cd frontend && pnpm test --run
 
-run:
-	PYTHONPATH=src python3 -m aster_market.web
+lint:
+	cd backend && uv run ruff check src tests && uv run mypy src
+	cd frontend && pnpm typecheck
+
+verify:
+	./scripts/verify.sh
