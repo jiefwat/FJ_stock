@@ -44,6 +44,7 @@ def test_missing_market_values_are_not_invented_as_zero(tmp_path: Path) -> None:
         {"date": "2026-07-18", "close": 32.45}
     ]
     payload["candidate_universe"]["items"][1]["bars"] = []
+    payload["stocks"]["688981"]["bars"] = []
     path = tmp_path / "partial.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 

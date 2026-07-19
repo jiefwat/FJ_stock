@@ -52,7 +52,62 @@
       }
     ]
   },
-  "stocks": {},
+  "stocks": {
+    "300100": {
+      "code": "300100",
+      "name": "双林股份",
+      "sector": "机器人",
+      "price_reliable": true,
+      "bar_source": "market.daily",
+      "bars": [
+        {"date": "2026-07-09", "open": 29.10, "high": 29.80, "low": 28.90, "close": 29.50, "volume": 1200000},
+        {"date": "2026-07-10", "open": 29.60, "high": 30.10, "low": 29.40, "close": 29.90, "volume": 1250000},
+        {"date": "2026-07-13", "open": 29.85, "high": 30.50, "low": 29.70, "close": 30.30, "volume": 1320000},
+        {"date": "2026-07-14", "open": 30.40, "high": 30.80, "low": 30.00, "close": 30.60, "volume": 1290000},
+        {"date": "2026-07-15", "open": 30.55, "high": 31.20, "low": 30.40, "close": 31.00, "volume": 1410000},
+        {"date": "2026-07-16", "open": 31.10, "high": 31.55, "low": 30.90, "close": 31.20, "volume": 1380000},
+        {"date": "2026-07-17", "open": 31.20, "high": 31.70, "low": 31.00, "close": 31.20, "volume": 1460000},
+        {"date": "2026-07-18", "open": 31.30, "high": 32.80, "low": 31.10, "close": 32.45, "volume": 1950000, "pct_chg": 4.01}
+      ],
+      "pe_ttm": 28.4,
+      "valuation": {"pe_ttm": 28.4, "pb": 3.2, "ps": 2.1, "total_mv": 12600000000},
+      "fund_flow_detail": {
+        "amount_yuan": 632000000,
+        "turnover_rate": 4.2,
+        "inside_dish_hand": 81000,
+        "outer_disc_hand": 99000
+      },
+      "data_quality": {
+        "primary_source": "market.daily",
+        "data_quality": "complete",
+        "missing_fields": []
+      },
+      "news_items": [
+        {
+          "date": "2026-07-18 13:20:00",
+          "source": "公司公告",
+          "title": "双林股份披露业务进展",
+          "summary": "公司更新机器人相关业务进展。"
+        }
+      ]
+    },
+    "688981": {
+      "code": "688981",
+      "name": "中芯国际",
+      "sector": "半导体",
+      "price_reliable": true,
+      "bars": [
+        {"date": "2026-07-18", "open": 96.50, "high": 98.80, "low": 96.20, "close": 98.10, "volume": 860000, "pct_chg": 2.70}
+      ],
+      "valuation": {"pe_ttm": 42.1, "pb": null, "ps": 5.4, "total_mv": 780000000000},
+      "fund_flow_detail": {"amount_yuan": 841000000, "turnover_rate": 1.1},
+      "data_quality": {
+        "primary_source": "market.daily",
+        "data_quality": "partial",
+        "missing_fields": ["pb", "inside_dish_hand", "outer_disc_hand"]
+      }
+    }
+  },
   "market_news": [
     {
       "date": "2026-07-18 14:35:00",

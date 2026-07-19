@@ -41,6 +41,48 @@ class NewsItem:
 
 
 @dataclass(frozen=True)
+class PriceBar:
+    date: str
+    open: float | None
+    high: float | None
+    low: float | None
+    close: float
+    volume: float | None
+    pct_change: float | None
+
+
+@dataclass(frozen=True)
+class ValuationSnapshot:
+    pe_ttm: float | None
+    pb: float | None
+    ps: float | None
+    total_market_value: float | None
+
+
+@dataclass(frozen=True)
+class FlowSnapshot:
+    amount_yuan: float | None
+    turnover_rate: float | None
+    inside_volume: float | None
+    outside_volume: float | None
+
+
+@dataclass(frozen=True)
+class StockProfile:
+    code: str
+    name: str
+    sector: str
+    bars: tuple[PriceBar, ...]
+    valuation: ValuationSnapshot
+    flow: FlowSnapshot
+    price_reliable: bool
+    data_quality: str
+    primary_source: str
+    missing_fields: tuple[str, ...]
+    events: tuple[NewsItem, ...]
+
+
+@dataclass(frozen=True)
 class MarketSnapshot:
     trade_date: str
     generated_at: str
@@ -54,3 +96,4 @@ class MarketSnapshot:
     sectors: tuple[SectorPulse, ...]
     candidates: tuple[Candidate, ...]
     news: tuple[NewsItem, ...]
+    stocks: tuple[StockProfile, ...] = ()
