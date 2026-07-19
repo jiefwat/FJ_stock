@@ -1,0 +1,65 @@
+{
+  "source": "market-snapshot",
+  "generated_at": "2026-07-18T15:10:00+08:00",
+  "market": {
+    "trade_date": "2026-07-18",
+    "indices": [
+      {"code": "000001", "name": "上证指数", "close": 3501.26, "pct_chg": 0.48},
+      {"code": "399001", "name": "深证成指", "close": 10992.31, "pct_chg": 0.83}
+    ],
+    "advancing": 2841,
+    "declining": 2134,
+    "limit_up": 61,
+    "limit_down": 8,
+    "northbound_net_inflow": 12.4
+  },
+  "sectors": [
+    {
+      "name": "机器人",
+      "pct_chg": 3.8,
+      "advancing_ratio": 0.76,
+      "amount_change": 18.2,
+      "consecutive_days": 3,
+      "high_divergence": false
+    },
+    {
+      "name": "半导体",
+      "pct_chg": 2.9,
+      "advancing_ratio": 0.68,
+      "amount_change": 24.1,
+      "consecutive_days": 1,
+      "high_divergence": true
+    }
+  ],
+  "candidate_universe": {
+    "items": [
+      {
+        "code": "300100",
+        "name": "双林股份",
+        "sector": "机器人",
+        "bars": [
+          {"date": "2026-07-17", "close": 31.20, "pct_chg": 1.1},
+          {"date": "2026-07-18", "close": 32.45, "pct_chg": 4.01}
+        ]
+      },
+      {
+        "code": "688981",
+        "name": "中芯国际",
+        "sector": "半导体",
+        "bars": [
+          {"date": "2026-07-18", "close": 98.10, "pct_chg": 2.70}
+        ]
+      }
+    ]
+  },
+  "stocks": {},
+  "market_news": [
+    {
+      "date": "2026-07-18 14:35:00",
+      "source": "市场快讯",
+      "title": "制造主题午后保持活跃",
+      "summary": "机器人与工业自动化方向成交延续放大。",
+      "url": "https://example.test/news/1"
+    }
+  ]
+}
