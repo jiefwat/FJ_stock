@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .analysis import build_market_analysis, build_opportunities, sector_score
+from .analysis import (
+    build_decision_brief,
+    build_market_analysis,
+    build_opportunities,
+    sector_score,
+)
 from .models import Candidate, MarketSnapshot, SectorPulse
 
 
@@ -90,4 +95,5 @@ def build_view(snapshot: MarketSnapshot) -> dict[str, object]:
         "horizon_points": _horizon_points(breadth, snapshot.limit_down, peak_strength),
         "market_analysis": market_analysis,
         "opportunities": build_opportunities(snapshot),
+        "decision_brief": build_decision_brief(snapshot),
     }

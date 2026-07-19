@@ -36,3 +36,16 @@ def test_build_view_derives_expansion_and_contraction() -> None:
     assert expansion["regime"] == "扩张"
     assert contraction["regime"] == "收缩"
     assert contraction["risk_level"] == "升高"
+
+
+def test_build_view_exposes_decision_chain() -> None:
+    view = build_view(_snapshot())
+
+    assert view["decision_brief"]["permission"]["label"] == "结构确认"
+    assert [step["key"] for step in view["decision_brief"]["chain"]] == [
+        "environment",
+        "permission",
+        "mainline",
+        "validation",
+        "trigger",
+    ]

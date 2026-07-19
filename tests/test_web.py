@@ -56,6 +56,7 @@ def test_health_and_snapshot_are_public_no_store_endpoints() -> None:
     assert api_headers["Cache-Control"] == "no-store"
     assert payload["status"] == "ready"
     assert payload["regime"] == "轮动"
+    assert payload["decision_brief"]["mainline"]["theme"] == "机器人"
     assert "candidate_universe" not in payload
 
 
