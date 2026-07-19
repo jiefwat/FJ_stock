@@ -50,16 +50,20 @@
   });
 
   const toast = document.querySelector("[data-toast]");
+  const dismissToast = () => {
+    window.clearTimeout(toastTimer);
+    if (!toast) return;
+    toast.classList.remove("is-visible");
+    toast.hidden = true;
+  };
+
   const showToast = (message) => {
     if (!toast || !message) return;
     window.clearTimeout(toastTimer);
     toast.textContent = message;
     toast.hidden = false;
     toast.classList.add("is-visible");
-    toastTimer = window.setTimeout(() => {
-      toast.classList.remove("is-visible");
-      toast.hidden = true;
-    }, 1800);
+    toastTimer = window.setTimeout(dismissToast, 1800);
   };
 
   document.addEventListener("aster:toast", (event) => showToast(event.detail?.message));
@@ -221,6 +225,7 @@
       renderStock(stock);
       if (detail) detail.hidden = false;
     } catch (reason) {
+      if (requestId !== stockRequestSequence) return;
       if (error) {
         error.textContent = reason.message;
         error.hidden = false;
@@ -284,6 +289,14 @@
     searchTimer = window.setTimeout(() => searchStocks(normalized), options.immediate ? 0 : 220);
   };
 
+  const resetSearch = () => {
+    window.clearTimeout(searchTimer);
+    searchController?.abort();
+    if (globalSearch) globalSearch.value = "";
+    if (searchInput) searchInput.value = "";
+    if (results) results.textContent = "输入代码、名称或主题开始分析。";
+  };
+
   searchInput?.addEventListener("input", () => {
     scheduleSearch(searchInput.value, { activate: false });
   });
@@ -313,6 +326,17 @@
   document.addEventListener("keydown", (event) => {
     const target = event.target;
     const isEditing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    if (event.key === "Escape") {
+      const isSearch = target === globalSearch || target === searchInput;
+      const hasVisibleToast = Boolean(toast && !toast.hidden);
+      if (isSearch) {
+        event.preventDefault();
+        if (target.value || globalSearch?.value || searchInput?.value) resetSearch();
+        else target.blur();
+      }
+      if (hasVisibleToast) dismissToast();
+      if (isSearch || hasVisibleToast) return;
+    }
     if (event.key === "/" && !isEditing) {
       event.preventDefault();
       globalSearch?.focus();

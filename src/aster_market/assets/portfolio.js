@@ -11,6 +11,7 @@
   const detailCache = window.AsterStockCache || new Map();
   window.AsterStockCache = detailCache;
   let holdings = [];
+  let portfolioRenderSequence = 0;
 
   const showToast = (message) => {
     document.dispatchEvent(new CustomEvent("aster:toast", { detail: { message } }));
@@ -131,9 +132,11 @@
   };
 
   const render = async () => {
-    if (empty) empty.hidden = holdings.length > 0;
+    const requestId = ++portfolioRenderSequence;
+    const holdingSnapshot = holdings.map((holding) => ({ ...holding }));
+    if (empty) empty.hidden = holdingSnapshot.length > 0;
     clearNode(ledger);
-    if (holdings.length === 0) {
+    if (holdingSnapshot.length === 0) {
       setText("[data-portfolio-market-value]", "—");
       setText("[data-portfolio-cost]", "—");
       setText("[data-portfolio-profit]", "—");
@@ -142,16 +145,22 @@
       return;
     }
 
-    const details = await Promise.all(holdings.map((holding) => fetchStock(holding.code)));
-    const rows = holdings.map((holding, index) => {
+    const details = await Promise.all(holdingSnapshot.map((holding) => fetchStock(holding.code)));
+    if (requestId !== portfolioRenderSequence) return;
+    const rows = holdingSnapshot.map((holding, index) => {
       const stock = details[index];
       const latest = Number(stock?.latest_price);
-      const marketValue = Number.isFinite(latest) ? latest * holding.quantity : 0;
+      const hasQuote =
+        stock?.latest_price !== null &&
+        stock?.latest_price !== undefined &&
+        stock?.latest_price !== "" &&
+        Number.isFinite(latest);
+      const marketValue = hasQuote ? latest * holding.quantity : 0;
       const costValue = holding.cost * holding.quantity;
-      return { holding, stock, marketValue, costValue, profit: marketValue - costValue };
+      return { holding, stock, hasQuote, marketValue, costValue, profit: marketValue - costValue };
     });
 
-    rows.forEach(({ holding, stock, marketValue, costValue, profit }) => {
+    rows.forEach(({ holding, stock, hasQuote, marketValue, costValue, profit }) => {
       const row = document.createElement("article");
       row.className = "portfolio-row";
       const identity = document.createElement("div");
@@ -163,14 +172,17 @@
       );
       const quote = document.createElement("div");
       quote.append(
-        textElement("strong", stock ? formatMoney(stock.latest_price) : "行情不可用"),
-        textElement("span", stock ? `趋势 ${stock.trend?.label || "—"}` : "保留本机记录"),
+        textElement("strong", hasQuote ? formatMoney(stock.latest_price) : "行情不可用"),
+        textElement("span", hasQuote ? `趋势 ${stock.trend?.label || "—"}` : "保留本机记录"),
       );
       const outcome = document.createElement("div");
-      const returnRate = costValue > 0 && stock ? (profit / costValue) * 100 : null;
+      const returnRate = costValue > 0 && hasQuote ? (profit / costValue) * 100 : null;
       outcome.append(
-        textElement("strong", stock ? formatMoney(marketValue) : "—"),
-        textElement("span", stock ? `${formatMoney(profit)} / ${formatPercent(returnRate)}` : "—"),
+        textElement("strong", hasQuote ? formatMoney(marketValue) : "—"),
+        textElement(
+          "span",
+          hasQuote ? `${formatMoney(profit)} / ${formatPercent(returnRate)}` : "—",
+        ),
       );
       const actions = document.createElement("div");
       actions.append(
@@ -199,14 +211,19 @@
     const totalValue = rows.reduce((sum, row) => sum + row.marketValue, 0);
     const totalCost = rows.reduce((sum, row) => sum + row.costValue, 0);
     const totalProfit = totalValue - totalCost;
-    setText("[data-portfolio-market-value]", formatMoney(totalValue));
+    const completeQuotes = rows.every((row) => row.hasQuote);
+    setText("[data-portfolio-market-value]", completeQuotes ? formatMoney(totalValue) : "—");
     setText("[data-portfolio-cost]", formatMoney(totalCost));
-    setText("[data-portfolio-profit]", formatMoney(totalProfit));
+    setText("[data-portfolio-profit]", completeQuotes ? formatMoney(totalProfit) : "—");
     setText(
       "[data-portfolio-return]",
-      totalCost > 0 ? formatPercent((totalProfit / totalCost) * 100) : "—",
+      completeQuotes && totalCost > 0 ? formatPercent((totalProfit / totalCost) * 100) : "—",
     );
-    renderExposure(rows, totalValue);
+    if (completeQuotes) renderExposure(rows, totalValue);
+    else {
+      clearNode(exposure);
+      exposure?.append(textElement("span", "部分行情不可用，组合汇总暂不计算"));
+    }
   };
 
   form?.addEventListener("submit", (event) => {

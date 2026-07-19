@@ -312,8 +312,8 @@ def render_app(view: dict[str, Any]) -> str:
   <meta charset="utf-8">
   <meta name="color-scheme" content="light">
   <title>Aster Market · A股市场地形</title>
-  <link rel="stylesheet" href="/assets/app.css">
-  <link rel="stylesheet" href="/assets/modules.css?v=comfort-v3">
+  <link rel="stylesheet" href="/assets/app.css?v=comfort-v4">
+  <link rel="stylesheet" href="/assets/modules.css?v=comfort-v4">
 </head>
 <body data-aster-app="market-horizon">
   <header class="command-band">
@@ -354,8 +354,8 @@ def render_app(view: dict[str, Any]) -> str:
     <p>Aster Market 只提供公开市场观察，不执行交易，也不构成投资建议。</p>
     <span>READ-ONLY / A-SHARE / DESKTOP</span>
   </footer>
-  <script src="/assets/app.js?v=comfort-v3" defer></script>
-  <script src="/assets/portfolio.js?v=comfort-v3" defer></script>
+  <script src="/assets/app.js?v=comfort-v4" defer></script>
+  <script src="/assets/portfolio.js?v=comfort-v4" defer></script>
 </body>
 </html>
 """

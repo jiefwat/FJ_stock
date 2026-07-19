@@ -87,8 +87,10 @@ def test_ui_contains_four_analysis_decks() -> None:
     assert "我的持仓" in html
     assert "持仓只保存在当前浏览器" in html
     assert "card-grid" not in html
-    assert "/assets/modules.css?v=comfort-v3" in html
-    assert "/assets/portfolio.js?v=comfort-v3" in html
+    assert "/assets/app.css?v=comfort-v4" in html
+    assert "/assets/modules.css?v=comfort-v4" in html
+    assert "/assets/app.js?v=comfort-v4" in html
+    assert "/assets/portfolio.js?v=comfort-v4" in html
 
 
 def test_module_assets_keep_the_desktop_only_contract() -> None:
@@ -128,7 +130,7 @@ def test_ui_exposes_comfort_workbench_contract() -> None:
     assert 'data-keyboard-hint="1-4"' in html
     assert "data-toast" in html
     assert "stock-loading-skeleton" in html
-    assert "comfort-v3" in html
+    assert "comfort-v4" in html
     assert ".command-band" in css
     assert "min-height: 64px" in css
     assert ".deck-heading" in css
@@ -138,10 +140,19 @@ def test_ui_exposes_comfort_workbench_contract() -> None:
 def test_interaction_assets_include_smooth_workbench_controls() -> None:
     app_javascript = asset_text("app.js")
     portfolio_javascript = asset_text("portfolio.js")
+    app_css = asset_text("app.css")
 
     assert "AbortController" in app_javascript
     assert "moduleScrollPositions" in app_javascript
     assert 'event.key === "/"' in app_javascript
+    assert 'event.key === "Escape"' in app_javascript
+    assert "dismissToast" in app_javascript
     assert "AsterStockCache" in app_javascript
     assert "aster:toast" in app_javascript
     assert "AsterStockCache" in portfolio_javascript
+    assert app_javascript.count("if (requestId !== stockRequestSequence) return;") >= 2
+    assert "portfolioRenderSequence" in portfolio_javascript
+    assert "holdingSnapshot" in portfolio_javascript
+    assert "completeQuotes" in portfolio_javascript
+    assert "部分行情不可用，组合汇总暂不计算" in portfolio_javascript
+    assert "scroll-behavior: smooth" not in app_css
