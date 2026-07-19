@@ -155,6 +155,7 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
                 "/assets/app.css": ("app.css", "text/css; charset=utf-8"),
                 "/assets/modules.css": ("modules.css", "text/css; charset=utf-8"),
                 "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+                "/assets/portfolio.js": ("portfolio.js", "text/javascript; charset=utf-8"),
             }
             if path in assets:
                 name, content_type = assets[path]

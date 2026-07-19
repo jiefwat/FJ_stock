@@ -15,7 +15,7 @@ ASSET_DIR = Path(__file__).with_name("assets")
 
 
 def asset_text(name: str) -> str:
-    if name not in {"app.css", "app.js", "modules.css"}:
+    if name not in {"app.css", "app.js", "modules.css", "portfolio.js"}:
         raise ValueError("unknown asset")
     return (ASSET_DIR / name).read_text(encoding="utf-8")
 
@@ -302,7 +302,7 @@ def render_app(view: dict[str, Any]) -> str:
   <meta name="color-scheme" content="light">
   <title>Aster Market · A股市场地形</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <link rel="stylesheet" href="/assets/modules.css">
+  <link rel="stylesheet" href="/assets/modules.css?v=analysis-v2">
 </head>
 <body data-aster-app="market-horizon">
   <header class="command-band">
@@ -324,7 +324,7 @@ def render_app(view: dict[str, Any]) -> str:
     </nav>
     <div class="command-actions">
       <label class="candidate-search" for="candidate-search">
-        <span>搜索候选</span>
+        <span>搜索股票</span>
         <input id="candidate-search" type="search" autocomplete="off"
           placeholder="代码 / 名称 / 主题">
       </label>
@@ -336,7 +336,8 @@ def render_app(view: dict[str, Any]) -> str:
     <p>Aster Market 只提供公开市场观察，不执行交易，也不构成投资建议。</p>
     <span>READ-ONLY / A-SHARE / DESKTOP</span>
   </footer>
-  <script src="/assets/app.js" defer></script>
+  <script src="/assets/app.js?v=analysis-v2" defer></script>
+  <script src="/assets/portfolio.js?v=analysis-v2" defer></script>
 </body>
 </html>
 """

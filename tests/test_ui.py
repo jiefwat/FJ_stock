@@ -87,6 +87,8 @@ def test_ui_contains_four_analysis_decks() -> None:
     assert "我的持仓" in html
     assert "持仓只保存在当前浏览器" in html
     assert "card-grid" not in html
+    assert "/assets/modules.css?v=analysis-v2" in html
+    assert "/assets/portfolio.js?v=analysis-v2" in html
 
 
 def test_module_assets_keep_the_desktop_only_contract() -> None:
@@ -96,3 +98,21 @@ def test_module_assets_keep_the_desktop_only_contract() -> None:
     assert "min-width: 1180px" in css
     assert "@media (max-width" not in css
     assert "border-radius: 16px" not in css
+    assert "[data-stock-empty][hidden]" in css
+    assert "[data-portfolio-empty][hidden]" in css
+
+
+def test_interaction_assets_keep_holdings_private_to_the_browser() -> None:
+    app_javascript = asset_text("app.js")
+    portfolio_javascript = asset_text("portfolio.js")
+
+    assert "data-module-switch" in app_javascript
+    assert "/api/stocks?query=" in app_javascript
+    assert "/api/stocks/" in app_javascript
+    assert "aster.portfolio.v1" in portfolio_javascript
+    assert "localStorage" in portfolio_javascript
+    assert "/api/stocks/" in portfolio_javascript
+    assert "body:" not in portfolio_javascript
+    assert "method:" not in portfolio_javascript
+    assert "innerHTML" not in app_javascript
+    assert "innerHTML" not in portfolio_javascript
