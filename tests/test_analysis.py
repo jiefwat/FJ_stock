@@ -1,7 +1,9 @@
+from dataclasses import replace
 from pathlib import Path
 
 from aster_market.analysis import (
     analyze_stock,
+    build_decision_brief,
     build_market_analysis,
     build_opportunities,
     find_stock,
@@ -76,3 +78,38 @@ def test_stock_search_matches_code_name_and_sector() -> None:
     assert search_stocks(snapshot, "双林")[0]["name"] == "双林股份"
     assert search_stocks(snapshot, "机器人")[0]["sector"] == "机器人"
     assert len(search_stocks(snapshot, "")) <= 20
+
+
+def test_decision_brief_downgrades_strength_in_contracting_market() -> None:
+    snapshot = replace(_snapshot(), advancing=400, declining=4600, limit_down=80)
+
+    brief = build_decision_brief(snapshot)
+
+    assert brief["permission"]["label"] == "防守等待"
+    assert brief["mainline"]["status"] == "countertrend"
+    assert brief["mainline"]["label"] == "逆势异动"
+    assert "尚未形成可确认主线" in brief["summary"]
+
+
+def test_decision_brief_confirms_mainline_in_expansion() -> None:
+    snapshot = replace(_snapshot(), advancing=3400, declining=1600, limit_down=6)
+
+    brief = build_decision_brief(snapshot)
+
+    assert brief["permission"]["label"] == "主动跟踪"
+    assert brief["mainline"]["status"] == "confirmed"
+    assert brief["mainline"]["theme"] == "机器人"
+
+
+def test_decision_brief_keeps_rotation_as_candidate() -> None:
+    brief = build_decision_brief(_snapshot())
+
+    assert brief["permission"]["label"] == "结构确认"
+    assert brief["mainline"]["status"] == "candidate"
+
+
+def test_decision_brief_handles_empty_sectors() -> None:
+    brief = build_decision_brief(replace(_snapshot(), sectors=(), candidates=()))
+
+    assert brief["mainline"]["status"] == "none"
+    assert brief["mainline"]["theme"] is None

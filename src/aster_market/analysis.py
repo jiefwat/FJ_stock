@@ -164,6 +164,89 @@ def build_opportunities(snapshot: MarketSnapshot) -> list[dict[str, object]]:
     return opportunities
 
 
+def build_decision_brief(snapshot: MarketSnapshot) -> dict[str, object]:
+    market = build_market_analysis(snapshot)
+    opportunities = build_opportunities(snapshot)
+    regime = str(market["regime"])
+    risk_level = str(market["risk_level"])
+
+    if regime == "扩张" and risk_level == "可控":
+        permission = {
+            "label": "主动跟踪",
+            "tone": "constructive",
+            "reason": "市场扩张且风险可控",
+        }
+    elif regime == "收缩" or risk_level == "升高":
+        permission = {
+            "label": "防守等待",
+            "tone": "defensive",
+            "reason": f"市场{regime}且风险{risk_level}",
+        }
+    else:
+        permission = {
+            "label": "结构确认",
+            "tone": "selective",
+            "reason": "市场轮动，等待强度扩散",
+        }
+
+    top = opportunities[0] if opportunities else None
+    if top is None:
+        status, label = "none", "未形成主线"
+        reason = "当前快照没有可用主题证据"
+        summary = "当前没有足够主题证据形成主线判断。"
+    elif permission["tone"] == "defensive":
+        status, label = "countertrend", "逆势异动"
+        reason = "市场环境不支持确认主线"
+        summary = f"尚未形成可确认主线，{top['theme']}属于逆势异动。"
+    elif permission["tone"] == "constructive" and top["stage"] == "扩散":
+        status, label = "confirmed", "确认主线"
+        reason = "市场扩张，主题参与度和连续性同步确认"
+        summary = f"已形成可确认主线，{top['theme']}处于扩散阶段。"
+    elif permission["tone"] == "selective" and top["stage"] in {"扩散", "加速"}:
+        status, label = "candidate", "候选主线"
+        reason = "主题证据领先，但市场仍需确认扩散"
+        summary = f"尚未确认主线，{top['theme']}是当前候选方向。"
+    else:
+        status, label = "divergent", "方向分歧"
+        reason = "第一主题分歧较高或连续性不足"
+        summary = f"尚未形成可确认主线，{top['theme']}仍处于方向分歧。"
+
+    trigger_labels = {
+        "扩张": "保持广度与低跌停",
+        "轮动": "等待强度扩散",
+        "收缩": "等待广度修复",
+    }
+    theme = top["theme"] if top is not None else None
+    mainline = {
+        "status": status,
+        "label": label,
+        "theme": theme,
+        "stage": top["stage"] if top is not None else None,
+        "strength": top["strength"] if top is not None else None,
+        "reason": reason,
+        "invalidation": top["invalidation"] if top is not None else "等待主题证据",
+        "candidates": top["candidates"] if top is not None else [],
+    }
+    return {
+        "permission": permission,
+        "mainline": mainline,
+        "headline": f"市场{regime}，当前以{permission['label']}为主",
+        "summary": summary,
+        "next_trigger": market["next_check"],
+        "chain": [
+            {"key": "environment", "label": "市场环境", "value": regime},
+            {"key": "permission", "label": "参与许可", "value": permission["label"]},
+            {"key": "mainline", "label": "主线判定", "value": label},
+            {"key": "validation", "label": "验证对象", "value": theme or "暂无"},
+            {
+                "key": "trigger",
+                "label": "升级条件",
+                "value": trigger_labels.get(regime, "等待新证据"),
+            },
+        ],
+    }
+
+
 def find_stock(snapshot: MarketSnapshot, code: str) -> StockProfile | None:
     normalized = code.strip().upper()
     return next((stock for stock in snapshot.stocks if stock.code.upper() == normalized), None)
