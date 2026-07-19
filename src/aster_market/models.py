@@ -26,7 +26,7 @@ class Candidate:
     code: str
     name: str
     sector: str
-    pct_change: float
+    pct_change: float | None
     latest_price: float
     reason: str
     risk: str
@@ -50,7 +50,7 @@ class MarketSnapshot:
     declining: int
     limit_up: int
     limit_down: int
-    northbound_net_inflow: float
+    northbound_net_inflow: float | None
     sectors: tuple[SectorPulse, ...]
     candidates: tuple[Candidate, ...]
     news: tuple[NewsItem, ...]

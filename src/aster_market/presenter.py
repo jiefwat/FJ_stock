@@ -31,7 +31,7 @@ def _candidate_view(candidate: Candidate) -> dict[str, object]:
         "code": candidate.code,
         "name": candidate.name,
         "sector": candidate.sector,
-        "pct_change": round(candidate.pct_change, 2),
+        "pct_change": round(candidate.pct_change, 2) if candidate.pct_change is not None else None,
         "latest_price": round(candidate.latest_price, 2),
         "reason": candidate.reason,
         "risk": candidate.risk,
@@ -63,7 +63,11 @@ def build_view(snapshot: MarketSnapshot) -> dict[str, object]:
         risk_level = "可控"
 
     ordered_sectors = sorted(snapshot.sectors, key=_sector_score, reverse=True)
-    ordered_candidates = sorted(snapshot.candidates, key=lambda item: item.pct_change, reverse=True)
+    ordered_candidates = sorted(
+        snapshot.candidates,
+        key=lambda item: item.pct_change if item.pct_change is not None else float("-inf"),
+        reverse=True,
+    )
     peak_strength = _sector_score(ordered_sectors[0]) if ordered_sectors else 0.0
 
     return {
@@ -78,7 +82,11 @@ def build_view(snapshot: MarketSnapshot) -> dict[str, object]:
         "declining": snapshot.declining,
         "limit_up": snapshot.limit_up,
         "limit_down": snapshot.limit_down,
-        "northbound_net_inflow": round(snapshot.northbound_net_inflow, 2),
+        "northbound_net_inflow": (
+            round(snapshot.northbound_net_inflow, 2)
+            if snapshot.northbound_net_inflow is not None
+            else None
+        ),
         "indices": [
             {
                 "name": quote.name,

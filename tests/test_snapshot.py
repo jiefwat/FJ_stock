@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from aster_market.snapshot import load_snapshot
@@ -34,3 +35,21 @@ def test_malformed_snapshot_is_explicitly_unavailable(tmp_path: Path) -> None:
     assert result.status == "unavailable"
     assert result.snapshot is None
     assert "格式" in result.message
+
+
+def test_missing_market_values_are_not_invented_as_zero(tmp_path: Path) -> None:
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["market"]["northbound_net_inflow"] = None
+    payload["candidate_universe"]["items"][0]["bars"] = [
+        {"date": "2026-07-18", "close": 32.45}
+    ]
+    payload["candidate_universe"]["items"][1]["bars"] = []
+    path = tmp_path / "partial.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    result = load_snapshot(path)
+
+    assert result.snapshot is not None
+    assert result.snapshot.northbound_net_inflow is None
+    assert result.snapshot.candidates[0].pct_change is None
+    assert [item.code for item in result.snapshot.candidates] == ["300100"]

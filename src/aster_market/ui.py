@@ -31,11 +31,15 @@ def _dictionary_items(value: Any) -> list[dict[str, Any]]:
 
 
 def _signed(value: Any, suffix: str = "%") -> str:
+    if value is None:
+        return "—"
     number = _number(value)
     return f"{number:+.2f}{suffix}"
 
 
 def _tone(value: Any) -> str:
+    if value is None:
+        return "unavailable"
     return "positive" if _number(value) >= 0 else "negative"
 
 
@@ -109,6 +113,8 @@ def _render_candidates(view: dict[str, Any]) -> str:
 
     rows = []
     for item in candidates:
+        candidate_delta = _signed(item.get("pct_change"))
+        candidate_tone = _tone(item.get("pct_change"))
         haystack = " ".join(
             str(item.get(key, "")) for key in ("code", "name", "sector", "reason", "risk")
         ).lower()
@@ -123,9 +129,7 @@ def _render_candidates(view: dict[str, Any]) -> str:
               <div class="candidate-theme">{_safe(item.get("sector", "待分类"))}</div>
               <div class="candidate-price">
                 <strong>{_number(item.get("latest_price")):,.2f}</strong>
-                <span class="delta {_tone(item.get("pct_change"))}">
-                  {_signed(item.get("pct_change"))}
-                </span>
+                <span class="delta {candidate_tone}">{candidate_delta}</span>
               </div>
               <p>{_safe(item.get("reason", "进入观察池"))}</p>
               <div class="candidate-risk">{_safe(item.get("risk", "观察，不是买点"))}</div>

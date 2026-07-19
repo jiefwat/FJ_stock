@@ -24,6 +24,15 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _optional_number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _integer(value: Any, default: int = 0) -> int:
     if isinstance(value, bool):
         return default
@@ -43,21 +52,23 @@ def _items(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
-def _latest_bar(item: dict[str, Any], stocks: dict[str, Any]) -> tuple[float, float]:
+def _latest_bar(
+    item: dict[str, Any], stocks: dict[str, Any]
+) -> tuple[float | None, float | None]:
     code = _text(item.get("code"))
     bars = _items(item.get("bars"))
     if not bars and code:
         stock = stocks.get(code, {})
         bars = _items(stock.get("bars")) if isinstance(stock, dict) else []
     if not bars:
-        return 0.0, 0.0
+        return None, None
 
     latest = bars[-1]
-    latest_price = _number(latest.get("close"))
-    pct_change = _number(latest.get("pct_chg"))
+    latest_price = _optional_number(latest.get("close"))
+    pct_change = _optional_number(latest.get("pct_chg"))
     if "pct_chg" not in latest and len(bars) > 1:
-        previous = _number(bars[-2].get("close"))
-        if previous:
+        previous = _optional_number(bars[-2].get("close"))
+        if latest_price is not None and previous:
             pct_change = (latest_price - previous) / previous * 100
     return latest_price, pct_change
 
@@ -106,6 +117,8 @@ def _parse_snapshot(payload: dict[str, Any]) -> MarketSnapshot:
             continue
         sector = _text(item.get("sector"), "待分类")
         latest_price, pct_change = _latest_bar(item, stocks)
+        if latest_price is None:
+            continue
         candidates.append(
             Candidate(
                 code=code,
@@ -141,7 +154,7 @@ def _parse_snapshot(payload: dict[str, Any]) -> MarketSnapshot:
         declining=_integer(market.get("declining")),
         limit_up=_integer(market.get("limit_up")),
         limit_down=_integer(market.get("limit_down")),
-        northbound_net_inflow=_number(market.get("northbound_net_inflow")),
+        northbound_net_inflow=_optional_number(market.get("northbound_net_inflow")),
         sectors=sectors,
         candidates=tuple(candidates),
         news=news,

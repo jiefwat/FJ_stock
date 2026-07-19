@@ -63,3 +63,14 @@ def test_ui_explains_unavailable_data_without_fake_prices() -> None:
     assert "数据暂不可用" in html
     assert "快照暂不可用" in html
     assert "等待下一份有效行情快照" in html
+
+
+def test_ui_marks_missing_candidate_change_as_unavailable() -> None:
+    view = _sample_view()
+    candidates = view["candidates"]
+    assert isinstance(candidates, list)
+    candidates[0]["pct_change"] = None
+
+    html = render_app(view)
+
+    assert '<span class="delta unavailable">—</span>' in html

@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import json
+import os
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+from .presenter import build_view
+from .snapshot import load_snapshot
+from .ui import asset_text, render_app
+
+DEFAULT_SNAPSHOT_PATH = Path("data/market_snapshot.json")
+
+
+def _view_for(path: Path) -> dict[str, Any]:
+    result = load_snapshot(path)
+    if result.snapshot is None:
+        return {"status": result.status, "message": result.message}
+    return build_view(result.snapshot)
+
+
+def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHandler]:
+    class AsterRequestHandler(BaseHTTPRequestHandler):
+        server_version = "AsterMarket/0.1"
+        sys_version = ""
+
+        def _snapshot_path(self) -> Path:
+            if snapshot_path is not None:
+                return snapshot_path
+            return Path(os.getenv("ASTER_SNAPSHOT_PATH", str(DEFAULT_SNAPSHOT_PATH)))
+
+        def _send(
+            self,
+            status: HTTPStatus,
+            body: bytes,
+            content_type: str,
+            cache_control: str = "no-store",
+        ) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", cache_control)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "script-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+            )
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+            body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+            self._send(status, body, "application/json; charset=utf-8")
+
+        def do_GET(self) -> None:  # noqa: N802
+            path = urlsplit(self.path).path
+            if path == "/healthz":
+                self._send(HTTPStatus.OK, b"ok", "text/plain; charset=utf-8")
+                return
+
+            if path == "/api/snapshot":
+                view = _view_for(self._snapshot_path())
+                status = (
+                    HTTPStatus.OK
+                    if view["status"] == "ready"
+                    else HTTPStatus.SERVICE_UNAVAILABLE
+                )
+                self._send_json(status, view)
+                return
+
+            if path == "/":
+                view = _view_for(self._snapshot_path())
+                body = render_app(view).encode("utf-8")
+                self._send(HTTPStatus.OK, body, "text/html; charset=utf-8")
+                return
+
+            assets = {
+                "/assets/app.css": ("app.css", "text/css; charset=utf-8"),
+                "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            }
+            if path in assets:
+                name, content_type = assets[path]
+                self._send(
+                    HTTPStatus.OK,
+                    asset_text(name).encode("utf-8"),
+                    content_type,
+                    cache_control="public, max-age=300",
+                )
+                return
+
+            self._send_json(HTTPStatus.NOT_FOUND, {"status": "not_found", "path": path})
+
+        def log_message(self, format_string: str, *args: object) -> None:
+            print(f"{self.address_string()} - {format_string % args}")
+
+    return AsterRequestHandler
+
+
+def create_server(
+    host: str,
+    port: int,
+    snapshot_path: Path | None = None,
+) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((host, port), create_handler(snapshot_path))
+
+
+def main() -> None:
+    host = os.getenv("HOST", "127.0.0.1")
+    try:
+        port = int(os.getenv("PORT", "8501"))
+    except ValueError:
+        port = 8501
+    server = create_server(host, port)
+    print(f"Aster Market listening on http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()
