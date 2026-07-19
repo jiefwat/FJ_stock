@@ -15,12 +15,13 @@
 - 1920 × 1080：主内容宽度 1740，无横向溢出，控制台错误为 0。
 - 搜索“中芯”后只显示中芯国际，清空搜索后恢复全部候选。
 
-## 发布后待验证
+## 发布后验证
 
-- 公网首页无需登录，包含 `data-aster-app="market-horizon"`。
-- `/healthz` 返回 `ok`。
-- `/api/snapshot` 返回 `status=ready` 且不泄露供应商内部结构。
-- 旁路服务保持健康。
+- 公网首页返回 200，无登录跳转或 Cookie，包含 `data-aster-app="market-horizon"`。
+- `/healthz` 返回 200 和 `ok`。
+- `/api/snapshot` 返回 200、`status=ready`，包含 3 个指数、19 个主题、300 个候选和 23 条事件。
+- 首页、健康检查和 API 均返回 `Cache-Control: no-store` 与 `X-Content-Type-Options: nosniff`。
+- 主服务、旁路服务和 Nginx 均为 `active`；主服务重启次数为 0，最近日志无 warning。
 
 ## 真实快照预检
 
