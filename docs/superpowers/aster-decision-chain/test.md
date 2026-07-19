@@ -35,6 +35,14 @@
 - 三档首页主体底部分别约为 878px、896px、898px，五步研判链完整显示。
 - 页面 console error / warning 为 0。
 
-## 待完成
+## 公网验收
 
-- 公网实时快照与服务健康验收。
+- release：`20260719-185300-be67997`，`current` 与服务器唯一 release 均指向该目录。
+- 公网 `/healthz`、首页、快照、大盘、机会和生产真实个股接口均返回 200；首页使用 `decision-v1`，没有 viewport、旧地平线、事件流或候选流。
+- 实时快照链接继续指向 `/opt/stock-ts/data/imports/tdx_snapshots.json`，文件大小 84,137,234 字节，没有复制或改写行情原文件。
+- 实时交易日为 `2026-07-17`：市场为“收缩”，参与许可为“防守等待”，人工智能标记为“逆势异动”，没有误写成确认主线。
+- `/api/opportunities` 返回 8 个方向且全部为“逆势异动”；真实个股 `300795` 返回“米奥会展 / 人工智能 / 强趋势”。
+- 页面 view 与 `/api/snapshot` 不再含 `candidates`、`news`、`horizon_points` 旧字段。
+- 服务端热请求：首页 37.39ms、快照 1.67ms、大盘 2.90ms、机会 1.67ms、个股 31.00ms。
+- `stock-ts.service`、`stock-ts-signal-desk.service` 和 Nginx 均为 active；主服务 `NRestarts=0`，近 10 分钟 warning 为 0。
+- 公网浏览器自动化导航连续超时；公网 HTML、CSS、JavaScript 与 API 由外部 HTTPS 请求验证，真实浏览器交互使用同一提交的本地服务完成。
