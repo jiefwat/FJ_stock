@@ -133,3 +133,15 @@ def test_ui_exposes_comfort_workbench_contract() -> None:
     assert "min-height: 64px" in css
     assert ".deck-heading" in css
     assert "min-height: 112px" in css
+
+
+def test_interaction_assets_include_smooth_workbench_controls() -> None:
+    app_javascript = asset_text("app.js")
+    portfolio_javascript = asset_text("portfolio.js")
+
+    assert "AbortController" in app_javascript
+    assert "moduleScrollPositions" in app_javascript
+    assert 'event.key === "/"' in app_javascript
+    assert "AsterStockCache" in app_javascript
+    assert "aster:toast" in app_javascript
+    assert "AsterStockCache" in portfolio_javascript

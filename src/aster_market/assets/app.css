@@ -240,6 +240,11 @@ input:focus-visible {
   font-weight: 600;
 }
 
+.refresh-command:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 main,
 .aster-footer {
   width: calc(100% - 48px);
@@ -781,6 +786,7 @@ main,
   background: rgba(16, 24, 32, 0.94);
   box-shadow: 0 12px 38px rgba(16, 24, 32, 0.18);
   font-size: 12px;
+  animation: toast-enter 180ms ease-out;
 }
 
 .aster-toast[hidden] {
@@ -793,6 +799,11 @@ button {
 
 button:active {
   transform: translateY(1px);
+}
+
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .aster-footer span {

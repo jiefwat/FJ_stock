@@ -8,21 +8,38 @@
       deck,
     ]),
   );
+  const moduleScrollPositions = new Map();
+  const searchCache = new Map();
+  const stockCache = window.AsterStockCache || new Map();
+  window.AsterStockCache = stockCache;
+  let activeModule = "market";
+  let stockRequestSequence = 0;
+  let toastTimer;
 
   const activateModule = (name, options = {}) => {
     const target = decks.get(name) || decks.get("market");
     if (!target) return;
+    if (decks.has(activeModule) && activeModule !== target.dataset.moduleDeck) {
+      moduleScrollPositions.set(activeModule, window.scrollY);
+    }
     decks.forEach((deck) => {
       const active = deck === target;
       deck.hidden = !active;
       deck.classList.toggle("is-active", active);
     });
     moduleButtons.forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.moduleSwitch === target.dataset.moduleDeck);
+      const active = button.dataset.moduleSwitch === target.dataset.moduleDeck;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
     });
+    activeModule = target.dataset.moduleDeck;
     if (options.updateHash !== false) window.history.replaceState(null, "", `#${target.dataset.moduleDeck}`);
-    if (options.focus) target.querySelector("[data-deck-heading]")?.focus();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (options.focus) target.querySelector("[data-deck-heading]")?.focus({ preventScroll: true });
+    if (options.restoreScroll !== false) {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: moduleScrollPositions.get(activeModule) || 0, behavior: "auto" });
+      });
+    }
     document.dispatchEvent(
       new CustomEvent("aster:module-change", { detail: { module: target.dataset.moduleDeck } }),
     );
@@ -32,12 +49,34 @@
     button.addEventListener("click", () => activateModule(button.dataset.moduleSwitch, { focus: true }));
   });
 
+  const toast = document.querySelector("[data-toast]");
+  const showToast = (message) => {
+    if (!toast || !message) return;
+    window.clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.hidden = false;
+    toast.classList.add("is-visible");
+    toastTimer = window.setTimeout(() => {
+      toast.classList.remove("is-visible");
+      toast.hidden = true;
+    }, 1800);
+  };
+
+  document.addEventListener("aster:toast", (event) => showToast(event.detail?.message));
+
   document.querySelectorAll("[data-refresh]").forEach((button) => {
-    button.addEventListener("click", () => location.reload());
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      button.textContent = "读取中…";
+      location.reload();
+    });
   });
 
-  const fetchJson = async (url) => {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const fetchJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.message || "读取数据失败");
     return payload;
@@ -51,6 +90,7 @@
   const error = document.querySelector("[data-stock-error]");
   const detail = document.querySelector("[data-stock-detail]");
   let searchTimer;
+  let searchController;
 
   const clearNode = (node) => {
     while (node?.firstChild) node.removeChild(node.firstChild);
@@ -158,14 +198,26 @@
     renderEvents(document.querySelector("[data-stock-events]"), stock.events);
   };
 
+  const fetchStock = (code) => {
+    if (stockCache.has(code)) return stockCache.get(code);
+    const request = fetchJson(`/api/stocks/${encodeURIComponent(code)}`).catch((reason) => {
+      stockCache.delete(code);
+      throw reason;
+    });
+    stockCache.set(code, request);
+    return request;
+  };
+
   const loadStock = async (code) => {
     if (!code) return;
+    const requestId = ++stockRequestSequence;
     if (empty) empty.hidden = true;
     if (detail) detail.hidden = true;
     if (error) error.hidden = true;
     if (loading) loading.hidden = false;
     try {
-      const stock = await fetchJson(`/api/stocks/${encodeURIComponent(code)}`);
+      const stock = await fetchStock(code);
+      if (requestId !== stockRequestSequence) return;
       renderStock(stock);
       if (detail) detail.hidden = false;
     } catch (reason) {
@@ -174,7 +226,7 @@
         error.hidden = false;
       }
     } finally {
-      if (loading) loading.hidden = true;
+      if (loading && requestId === stockRequestSequence) loading.hidden = true;
     }
   };
 
@@ -200,27 +252,44 @@
 
   const searchStocks = async (query) => {
     if (!results) return;
+    if (!query) {
+      searchController?.abort();
+      results.textContent = "输入代码、名称或主题开始分析。";
+      return;
+    }
+    searchController?.abort();
+    if (searchCache.has(query)) {
+      renderSearchResults(searchCache.get(query));
+      return;
+    }
+    searchController = new AbortController();
     results.textContent = "正在搜索…";
     try {
-      const payload = await fetchJson(`/api/stocks?query=${encodeURIComponent(query.slice(0, 40))}`);
+      const payload = await fetchJson(`/api/stocks?query=${encodeURIComponent(query.slice(0, 40))}`, {
+        signal: searchController.signal,
+      });
+      searchCache.set(query, payload.items);
       renderSearchResults(payload.items);
     } catch (reason) {
+      if (reason.name === "AbortError") return;
       results.textContent = reason.message;
     }
   };
 
-  searchInput?.addEventListener("input", () => {
+  const scheduleSearch = (query, options = {}) => {
+    const normalized = query.trim().slice(0, 40);
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(() => searchStocks(searchInput.value.trim()), 180);
+    if (options.activate !== false) activateModule("stock");
+    if (searchInput && searchInput.value !== normalized) searchInput.value = normalized;
+    searchTimer = window.setTimeout(() => searchStocks(normalized), options.immediate ? 0 : 220);
+  };
+
+  searchInput?.addEventListener("input", () => {
+    scheduleSearch(searchInput.value, { activate: false });
   });
 
   globalSearch?.addEventListener("input", () => {
-    if (!globalSearch.value.trim()) return;
-    activateModule("stock");
-    if (searchInput) {
-      searchInput.value = globalSearch.value.slice(0, 40);
-      searchStocks(searchInput.value.trim());
-    }
+    scheduleSearch(globalSearch.value);
   });
 
   document.querySelectorAll("[data-open-stock]").forEach((button) => {
@@ -238,8 +307,25 @@
         detail: { code: window.AsterCurrentStock.code },
       }),
     );
+    showToast("已带入持仓，补充数量和成本即可保存");
+  });
+
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const isEditing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    if (event.key === "/" && !isEditing) {
+      event.preventDefault();
+      globalSearch?.focus();
+      return;
+    }
+    if (isEditing || event.altKey || event.ctrlKey || event.metaKey) return;
+    const shortcuts = { "1": "market", "2": "opportunities", "3": "stock", "4": "portfolio" };
+    if (shortcuts[event.key]) activateModule(shortcuts[event.key], { focus: true });
   });
 
   const initialModule = window.location.hash.replace("#", "");
-  activateModule(decks.has(initialModule) ? initialModule : "market", { updateHash: false });
+  activateModule(decks.has(initialModule) ? initialModule : "market", {
+    updateHash: false,
+    restoreScroll: false,
+  });
 })();

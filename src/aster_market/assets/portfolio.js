@@ -8,8 +8,13 @@
   const recovery = document.querySelector("[data-portfolio-recovery]");
   const formError = document.querySelector("[data-portfolio-form-error]");
   const exposure = document.querySelector("[data-portfolio-exposure]");
-  const detailCache = new Map();
+  const detailCache = window.AsterStockCache || new Map();
+  window.AsterStockCache = detailCache;
   let holdings = [];
+
+  const showToast = (message) => {
+    document.dispatchEvent(new CustomEvent("aster:toast", { detail: { message } }));
+  };
 
   const setText = (selector, value) => {
     const node = document.querySelector(selector);
@@ -74,15 +79,21 @@
   };
 
   const fetchStock = async (code) => {
-    if (detailCache.has(code)) return detailCache.get(code);
-    try {
-      const response = await fetch(`/api/stocks/${encodeURIComponent(code)}`, {
-        headers: { Accept: "application/json" },
+    if (!detailCache.has(code)) {
+      const request = (async () => {
+        const response = await fetch(`/api/stocks/${encodeURIComponent(code)}`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("行情不可用");
+        return response.json();
+      })().catch((reason) => {
+        detailCache.delete(code);
+        throw reason;
       });
-      if (!response.ok) throw new Error("行情不可用");
-      const stock = await response.json();
-      detailCache.set(code, stock);
-      return stock;
+      detailCache.set(code, request);
+    }
+    try {
+      return await detailCache.get(code);
     } catch {
       return null;
     }
@@ -168,6 +179,7 @@
           form.elements.quantity.value = holding.quantity;
           form.elements.cost.value = holding.cost;
           form.elements.quantity.focus();
+          showToast(`已载入 ${stock?.name || holding.code}，修改后保存`);
         }),
         actionButton(
           "删除",
@@ -175,6 +187,7 @@
             holdings = holdings.filter((item) => item.code !== holding.code);
             saveHoldings();
             render();
+            showToast(`已从本机持仓删除 ${stock?.name || holding.code}`);
           },
           "danger-action",
         ),
@@ -213,17 +226,24 @@
     }
     if (formError) formError.hidden = true;
     const existing = holdings.findIndex((item) => item.code === next.code);
-    if (existing >= 0) holdings[existing] = next;
+    const updated = existing >= 0;
+    if (updated) holdings[existing] = next;
     else holdings.push(next);
     saveHoldings();
     form.reset();
     render();
+    showToast(updated ? `已更新 ${next.code}` : `已保存 ${next.code} 到当前浏览器`);
   });
 
   document.querySelector("[data-clear-portfolio]")?.addEventListener("click", () => {
+    if (holdings.length === 0) {
+      showToast("当前浏览器没有持仓");
+      return;
+    }
     holdings = [];
     saveHoldings();
     render();
+    showToast("已清空当前浏览器持仓");
   });
 
   document.addEventListener("aster:portfolio-prefill", (event) => {
