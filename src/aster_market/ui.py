@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,14 @@ def _dictionary_items(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _generated_label(value: Any) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    return parsed.astimezone().strftime("%H:%M")
 
 
 def _signed(value: Any, suffix: str = "%") -> str:
@@ -293,7 +302,9 @@ def render_app(view: dict[str, Any]) -> str:
     ready = view.get("status") == "ready"
     content = _render_ready(view) if ready else _render_unavailable(view)
     trade_date = _safe(view.get("trade_date", "等待数据"))
-    generated_at = _safe(view.get("generated_at", "尚未生成"))
+    generated_value = view.get("generated_at", "尚未生成")
+    generated_at = _safe(generated_value)
+    generated_label = _safe(_generated_label(generated_value))
     status = "已连接" if ready else "中断"
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -302,7 +313,7 @@ def render_app(view: dict[str, Any]) -> str:
   <meta name="color-scheme" content="light">
   <title>Aster Market · A股市场地形</title>
   <link rel="stylesheet" href="/assets/app.css">
-  <link rel="stylesheet" href="/assets/modules.css?v=analysis-v2">
+  <link rel="stylesheet" href="/assets/modules.css?v=comfort-v3">
 </head>
 <body data-aster-app="market-horizon">
   <header class="command-band">
@@ -313,31 +324,38 @@ def render_app(view: dict[str, Any]) -> str:
     <div class="data-pulse">
       <span class="pulse-dot" aria-hidden="true"></span>
       <strong>{_safe(status)}</strong>
-      <span>{trade_date}</span>
-      <time>{generated_at}</time>
+      <span>交易日 {trade_date}</span>
+      <time datetime="{generated_at}" title="完整更新时间：{generated_at}">
+        更新 {generated_label}
+      </time>
     </div>
-    <nav class="view-switcher" aria-label="分析模块">
-      <button class="is-active" type="button" data-module-switch="market">大盘分析</button>
-      <button type="button" data-module-switch="opportunities">市场机会</button>
-      <button type="button" data-module-switch="stock">股票分析</button>
-      <button type="button" data-module-switch="portfolio">我的持仓</button>
+    <nav class="view-switcher" aria-label="分析模块" data-keyboard-hint="1-4">
+      <button class="is-active" type="button" data-module-switch="market"
+        data-shortcut="1" aria-keyshortcuts="1">大盘分析</button>
+      <button type="button" data-module-switch="opportunities"
+        data-shortcut="2" aria-keyshortcuts="2">市场机会</button>
+      <button type="button" data-module-switch="stock"
+        data-shortcut="3" aria-keyshortcuts="3">股票分析</button>
+      <button type="button" data-module-switch="portfolio"
+        data-shortcut="4" aria-keyshortcuts="4">我的持仓</button>
     </nav>
     <div class="command-actions">
       <label class="candidate-search" for="candidate-search">
-        <span>搜索股票</span>
+        <span>搜索股票 <kbd>/</kbd></span>
         <input id="candidate-search" type="search" autocomplete="off"
           placeholder="代码 / 名称 / 主题">
       </label>
-      <button class="refresh-command" type="button" data-refresh>刷新快照</button>
+      <button class="refresh-command" type="button" data-refresh>刷新</button>
     </div>
   </header>
   {content}
+  <div class="aster-toast" role="status" aria-live="polite" data-toast hidden></div>
   <footer class="aster-footer">
     <p>Aster Market 只提供公开市场观察，不执行交易，也不构成投资建议。</p>
     <span>READ-ONLY / A-SHARE / DESKTOP</span>
   </footer>
-  <script src="/assets/app.js?v=analysis-v2" defer></script>
-  <script src="/assets/portfolio.js?v=analysis-v2" defer></script>
+  <script src="/assets/app.js?v=comfort-v3" defer></script>
+  <script src="/assets/portfolio.js?v=comfort-v3" defer></script>
 </body>
 </html>
 """

@@ -147,7 +147,12 @@ def render_stock_deck() -> str:
             <strong>选择一只股票查看证据</strong>
             <p>趋势、动量、波动、估值、资金和事件会在这里展开。</p>
           </div>
-          <div class="stock-analysis-loading" data-stock-loading hidden>正在读取股票快照…</div>
+          <div class="stock-analysis-loading" data-stock-loading hidden>
+            <div class="stock-loading-skeleton" aria-hidden="true">
+              <i></i><i></i><i></i>
+            </div>
+            <p>正在读取股票快照…</p>
+          </div>
           <div class="stock-analysis-error" data-stock-error hidden></div>
           <article class="stock-analysis-detail" data-stock-detail hidden>
             <header class="stock-detail-head">

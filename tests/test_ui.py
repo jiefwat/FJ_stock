@@ -49,7 +49,7 @@ def test_assets_enforce_desktop_visual_contract() -> None:
     javascript = asset_text("app.js")
 
     assert "min-width: 1180px" in css
-    assert "#1346d8" in css.lower()
+    assert "#1648d8" in css.lower()
     assert "@media (max-width" not in css
     assert "desktop-sidebar" not in css
     assert "420ms" in css
@@ -87,8 +87,8 @@ def test_ui_contains_four_analysis_decks() -> None:
     assert "我的持仓" in html
     assert "持仓只保存在当前浏览器" in html
     assert "card-grid" not in html
-    assert "/assets/modules.css?v=analysis-v2" in html
-    assert "/assets/portfolio.js?v=analysis-v2" in html
+    assert "/assets/modules.css?v=comfort-v3" in html
+    assert "/assets/portfolio.js?v=comfort-v3" in html
 
 
 def test_module_assets_keep_the_desktop_only_contract() -> None:
@@ -119,3 +119,17 @@ def test_interaction_assets_keep_holdings_private_to_the_browser() -> None:
     missing_guard = 'value === null || value === undefined || value === ""'
     assert missing_guard in app_javascript
     assert missing_guard in portfolio_javascript
+
+
+def test_ui_exposes_comfort_workbench_contract() -> None:
+    html = render_app(_sample_view())
+    css = asset_text("app.css") + asset_text("modules.css")
+
+    assert 'data-keyboard-hint="1-4"' in html
+    assert "data-toast" in html
+    assert "stock-loading-skeleton" in html
+    assert "comfort-v3" in html
+    assert ".command-band" in css
+    assert "min-height: 64px" in css
+    assert ".deck-heading" in css
+    assert "min-height: 112px" in css
