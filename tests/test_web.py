@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import urlopen
 
 from aster_market.web import create_server
@@ -14,8 +15,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "market_snapshot.json"
 
 
 @contextmanager
-def running_server() -> Iterator[str]:
-    server = create_server("127.0.0.1", 0, snapshot_path=FIXTURE)
+def running_server(snapshot_path: Path = FIXTURE) -> Iterator[str]:
+    server = create_server("127.0.0.1", 0, snapshot_path=snapshot_path)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -73,3 +74,56 @@ def test_unknown_route_returns_404() -> None:
             assert error.headers["X-Content-Type-Options"] == "nosniff"
         else:
             raise AssertionError("unknown route should return 404")
+
+
+def test_analysis_routes_return_supplier_neutral_json() -> None:
+    with running_server() as base_url:
+        market_status, market_headers, market_body = _get(
+            f"{base_url}/api/analysis/market"
+        )
+        _, _, opportunities_body = _get(f"{base_url}/api/opportunities")
+        _, _, stocks_body = _get(f"{base_url}/api/stocks?query={quote('机器人')}")
+        _, _, detail_body = _get(f"{base_url}/api/stocks/300100")
+
+    market = json.loads(market_body)
+    opportunities = json.loads(opportunities_body)
+    stocks = json.loads(stocks_body)
+    detail = json.loads(detail_body)
+    assert market_status == 200
+    assert market_headers["Cache-Control"] == "no-store"
+    assert market["regime"] == "轮动"
+    assert opportunities["items"][0]["theme"] == "机器人"
+    assert stocks["items"][0]["code"] == "300100"
+    assert detail["code"] == "300100"
+    assert "fund_flow_detail" not in detail
+
+
+def test_analysis_routes_enforce_query_and_not_found_contracts() -> None:
+    with running_server() as base_url:
+        try:
+            _get(f"{base_url}/api/stocks/000000")
+        except HTTPError as error:
+            assert error.code == 404
+            assert json.loads(error.read())["status"] == "not_found"
+        else:
+            raise AssertionError("unknown stock should return 404")
+
+        try:
+            _get(f"{base_url}/api/stocks?query={'x' * 41}")
+        except HTTPError as error:
+            assert error.code == 400
+            assert json.loads(error.read())["status"] == "invalid_query"
+        else:
+            raise AssertionError("long query should return 400")
+
+
+def test_analysis_routes_return_503_when_snapshot_is_missing(tmp_path: Path) -> None:
+    with running_server(tmp_path / "missing.json") as base_url:
+        try:
+            _get(f"{base_url}/api/analysis/market")
+        except HTTPError as error:
+            assert error.code == 503
+            assert error.headers["Cache-Control"] == "no-store"
+            assert json.loads(error.read())["status"] == "unavailable"
+        else:
+            raise AssertionError("missing snapshot should return 503")

@@ -6,8 +6,15 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
+from .analysis import (
+    analyze_stock,
+    build_market_analysis,
+    build_opportunities,
+    find_stock,
+    search_stocks,
+)
 from .presenter import build_view
 from .snapshot import load_snapshot
 from .ui import asset_text, render_app
@@ -57,8 +64,19 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
             body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
             self._send(status, body, "application/json; charset=utf-8")
 
+        def _load_analysis_snapshot(self):
+            result = load_snapshot(self._snapshot_path())
+            if result.snapshot is None:
+                self._send_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"status": result.status, "message": result.message},
+                )
+                return None
+            return result.snapshot
+
         def do_GET(self) -> None:  # noqa: N802
-            path = urlsplit(self.path).path
+            request = urlsplit(self.path)
+            path = request.path
             if path == "/healthz":
                 self._send(HTTPStatus.OK, b"ok", "text/plain; charset=utf-8")
                 return
@@ -71,6 +89,60 @@ def create_handler(snapshot_path: Path | None = None) -> type[BaseHTTPRequestHan
                     else HTTPStatus.SERVICE_UNAVAILABLE
                 )
                 self._send_json(status, view)
+                return
+
+            if path == "/api/analysis/market":
+                snapshot = self._load_analysis_snapshot()
+                if snapshot is not None:
+                    self._send_json(HTTPStatus.OK, build_market_analysis(snapshot))
+                return
+
+            if path == "/api/opportunities":
+                snapshot = self._load_analysis_snapshot()
+                if snapshot is not None:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {
+                            "status": "ready",
+                            "trade_date": snapshot.trade_date,
+                            "items": build_opportunities(snapshot),
+                        },
+                    )
+                return
+
+            if path == "/api/stocks":
+                query = parse_qs(request.query, keep_blank_values=True).get("query", [""])[0]
+                if len(query) > 40:
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"status": "invalid_query", "message": "搜索内容不能超过 40 个字符"},
+                    )
+                    return
+                snapshot = self._load_analysis_snapshot()
+                if snapshot is not None:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {
+                            "status": "ready",
+                            "query": query,
+                            "items": search_stocks(snapshot, query),
+                        },
+                    )
+                return
+
+            if path.startswith("/api/stocks/"):
+                code = path.removeprefix("/api/stocks/").strip()
+                snapshot = self._load_analysis_snapshot()
+                if snapshot is None:
+                    return
+                stock = find_stock(snapshot, code)
+                if stock is None:
+                    self._send_json(
+                        HTTPStatus.NOT_FOUND,
+                        {"status": "not_found", "message": "没有找到这只股票"},
+                    )
+                else:
+                    self._send_json(HTTPStatus.OK, analyze_stock(stock))
                 return
 
             if path == "/":
