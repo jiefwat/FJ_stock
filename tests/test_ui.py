@@ -74,3 +74,25 @@ def test_ui_marks_missing_candidate_change_as_unavailable() -> None:
     html = render_app(view)
 
     assert '<span class="delta unavailable">—</span>' in html
+
+
+def test_ui_contains_four_analysis_decks() -> None:
+    html = render_app(_sample_view())
+
+    for module in ("market", "opportunities", "stock", "portfolio"):
+        assert f'data-module-deck="{module}"' in html
+    assert "大盘分析" in html
+    assert "市场机会" in html
+    assert "股票分析" in html
+    assert "我的持仓" in html
+    assert "持仓只保存在当前浏览器" in html
+    assert "card-grid" not in html
+
+
+def test_module_assets_keep_the_desktop_only_contract() -> None:
+    css = asset_text("modules.css")
+
+    assert "analysis-deck" in css
+    assert "min-width: 1180px" in css
+    assert "@media (max-width" not in css
+    assert "border-radius: 16px" not in css

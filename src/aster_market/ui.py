@@ -4,11 +4,18 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from .ui_modules import (
+    render_market_evidence,
+    render_opportunity_deck,
+    render_portfolio_deck,
+    render_stock_deck,
+)
+
 ASSET_DIR = Path(__file__).with_name("assets")
 
 
 def asset_text(name: str) -> str:
-    if name not in {"app.css", "app.js"}:
+    if name not in {"app.css", "app.js", "modules.css"}:
         raise ValueError("unknown asset")
     return (ASSET_DIR / name).read_text(encoding="utf-8")
 
@@ -181,6 +188,7 @@ def _render_ready(view: dict[str, Any]) -> str:
     breadth = _number(view.get("breadth_ratio")) * 100
     return f"""
     <main>
+      <section class="analysis-deck is-active" data-module-deck="market">
       <section class="horizon-stage" id="market-overview" data-view-section="market">
         <div class="market-statement">
           <span class="status-kicker">MARKET CONDITION</span>
@@ -228,6 +236,8 @@ def _render_ready(view: dict[str, Any]) -> str:
         </div>
       </section>
 
+      {render_market_evidence(view)}
+
       <section class="terrain-layout" id="theme-field" data-view-section="themes">
         <div class="section-heading">
           <span class="status-kicker">STRENGTH FIELD</span>
@@ -271,6 +281,10 @@ def _render_ready(view: dict[str, Any]) -> str:
         </div>
         <div class="event-list">{_render_news(view)}</div>
       </section>
+      </section>
+      {render_opportunity_deck(view)}
+      {render_stock_deck()}
+      {render_portfolio_deck()}
     </main>
     """
 
@@ -288,6 +302,7 @@ def render_app(view: dict[str, Any]) -> str:
   <meta name="color-scheme" content="light">
   <title>Aster Market · A股市场地形</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/modules.css">
 </head>
 <body data-aster-app="market-horizon">
   <header class="command-band">
@@ -301,11 +316,11 @@ def render_app(view: dict[str, Any]) -> str:
       <span>{trade_date}</span>
       <time>{generated_at}</time>
     </div>
-    <nav class="view-switcher" aria-label="工作区视图">
-      <button class="is-active" type="button" data-view-filter="market">市场</button>
-      <button type="button" data-view-filter="themes">强度</button>
-      <button type="button" data-view-filter="candidates">候选</button>
-      <button type="button" data-view-filter="events">事件</button>
+    <nav class="view-switcher" aria-label="分析模块">
+      <button class="is-active" type="button" data-module-switch="market">大盘分析</button>
+      <button type="button" data-module-switch="opportunities">市场机会</button>
+      <button type="button" data-module-switch="stock">股票分析</button>
+      <button type="button" data-module-switch="portfolio">我的持仓</button>
     </nav>
     <div class="command-actions">
       <label class="candidate-search" for="candidate-search">
