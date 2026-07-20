@@ -8,6 +8,7 @@ from marketdesk.models import (
     StockDossier,
     StockInvestmentAdvice,
     StockScoreFactor,
+    StockTrendForecast,
     TechnicalSummary,
 )
 
@@ -35,6 +36,14 @@ def analyse_stock(
             rationale=["历史行情缺失，无法计算趋势、波动和支撑压力"],
             disclaimer="研究建议不是保证收益，不能替代你的风险承受能力判断。",
         )
+        forecast = StockTrendForecast(
+            horizon="未来 1-4 周",
+            direction="无法判断",
+            confidence=0,
+            summary="历史行情不足，不能形成未来 1-4 周趋势判断。",
+            drivers=["历史行情缺失"],
+            invalidation="补齐历史行情后重新判断",
+        )
         return StockDossier(
             quote=quote,
             stance="insufficient_data",
@@ -44,6 +53,7 @@ def analyse_stock(
             score_factors=[],
             analysis_dimensions=[],
             investment_advice=advice,
+            trend_forecast=forecast,
             horizontal_comparison=[],
             vertical_comparison=[],
             next_actions=["补齐历史行情后再判断趋势、波动和支撑压力"],
@@ -128,6 +138,7 @@ def analyse_stock(
         vertical=vertical,
         next_actions=next_actions,
     )
+    forecast = _trend_forecast(quote, stance, score, technical, factors, vertical)
     conclusion = _build_conclusion(
         quote=quote,
         stance=stance,
@@ -151,6 +162,7 @@ def analyse_stock(
         score_factors=factors,
         analysis_dimensions=dimensions,
         investment_advice=advice,
+        trend_forecast=forecast,
         horizontal_comparison=horizontal,
         vertical_comparison=vertical,
         next_actions=next_actions,
@@ -547,6 +559,72 @@ def _investment_advice(
         confidence=confidence,
         rationale=rationale[:4],
         disclaimer="研究建议不是保证收益，不能替代你的风险承受能力判断。",
+    )
+
+
+def _trend_forecast(
+    quote: EquityQuote,
+    stance: str,
+    score: float,
+    technical: TechnicalSummary,
+    factors: list[StockScoreFactor],
+    vertical: list[StockComparisonItem],
+) -> StockTrendForecast:
+    ma5_above_ma20 = technical.ma5 is not None and technical.ma20 is not None and technical.ma5 >= technical.ma20
+    ma20_above_ma60 = technical.ma20 is not None and technical.ma60 is not None and technical.ma20 >= technical.ma60
+    overheat = technical.rsi14 is not None and technical.rsi14 > 75
+    high_volatility = technical.volatility20 is not None and technical.volatility20 > 40
+    capital_positive = quote.net_flow is not None and quote.net_flow >= 0
+    return_20 = next((item for item in vertical if item.key == "return_20d"), None)
+
+    if stance in {"strong_watch", "watch"} and ma5_above_ma20 and ma20_above_ma60 and not overheat:
+        direction = "震荡上行"
+    elif score >= 55 and ma5_above_ma20:
+        direction = "偏强震荡"
+    elif score < 45 or high_volatility:
+        direction = "偏弱震荡"
+    else:
+        direction = "区间震荡"
+
+    base_confidence = 0.48 + min(max(score - 50, -20), 25) / 100
+    confidence = base_confidence
+    if ma5_above_ma20:
+        confidence += 0.05
+    if ma20_above_ma60:
+        confidence += 0.05
+    if quote.net_flow is not None:
+        confidence += 0.04
+    if overheat or high_volatility:
+        confidence -= 0.08
+    confidence = round(max(0.2, min(0.86, confidence)), 2)
+
+    drivers = [
+        "MA5/MA20 短线结构占优" if ma5_above_ma20 else "MA5/MA20 短线结构未确认",
+        "MA20/MA60 中期趋势占优" if ma20_above_ma60 else "MA20/MA60 中期趋势仍需修复",
+        "资金流偏正向" if capital_positive else "资金流偏弱或缺失",
+    ]
+    if return_20 and return_20.available:
+        drivers.append(return_20.summary)
+    if overheat:
+        drivers.append(f"RSI {technical.rsi14:.1f} 偏热，未来更需要回踩确认")
+    if high_volatility:
+        drivers.append(f"年化波动率 {technical.volatility20:.1f}% 偏高，趋势置信度打折")
+
+    support = f"{technical.support:.2f}" if technical.support is not None else "近 20 日支撑"
+    resistance = f"{technical.resistance:.2f}" if technical.resistance is not None else "上方压力位"
+    summary = (
+        f"未来 1-4 周{direction}：MA5/MA20 "
+        f"{'保持多头' if ma5_above_ma20 else '尚未转强'}，"
+        f"{'MA20/MA60 同步向上' if ma20_above_ma60 else 'MA20/MA60 仍需修复'}；"
+        f"上方看 {resistance}，下方看 {support}，突破或跌破都要重新评估。"
+    )
+    return StockTrendForecast(
+        horizon="未来 1-4 周",
+        direction=direction,
+        confidence=confidence,
+        summary=summary,
+        drivers=drivers[:5],
+        invalidation=f"跌破 {support} 后趋势判断失效",
     )
 
 

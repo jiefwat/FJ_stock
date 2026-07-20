@@ -45,6 +45,17 @@ function shares(value: number | null | undefined) {
   return `${prefix}${Math.round(value).toLocaleString("zh-CN")} 股`;
 }
 
+function signedMoney(value: number | null | undefined, digits = 0) {
+  if (value == null) return "—";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${fmt(value, digits)}`;
+}
+
+function PnlCell({ value, ratio }: { value: number | null | undefined; ratio: number | null | undefined }) {
+  const statusClass = (value ?? 0) >= 0 ? "up" : "down";
+  return <td className="holding-pnl-cell"><b className={statusClass}>{signedMoney(value, 0)}</b><small className={statusClass}>{pct(ratio)}</small></td>;
+}
+
 function rebalanceText(dossier: HoldingDossier) {
   const quantity = dossier.rebalance_quantity;
   if (quantity == null) return "调仓待价格确认";
@@ -100,8 +111,6 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
     onSuccess: () => client.invalidateQueries({ queryKey: ["holdings"] }),
   });
 
-  const statusClass = (dossier.pnl ?? 0) >= 0 ? "up" : "down";
-
   return <tr className={`holding-row ${dossier.action}`}>
     <td className="holding-name-cell">
       <strong>{dossier.item.name}</strong>
@@ -112,7 +121,10 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
       <p>{compactConclusion(dossier)}</p>
       <em>{rebalanceText(dossier)}</em>
     </td>
-    <td><b>{fmt(dossier.market_value, 0)}</b><small className={statusClass}>{fmt(dossier.pnl, 0)} · {pct(dossier.pnl_pct)}</small></td>
+    <td><b>{fmt(dossier.market_value, 0)}</b><small>当前市值</small></td>
+    <PnlCell value={dossier.pnl} ratio={dossier.pnl_pct} />
+    <PnlCell value={dossier.day_pnl} ratio={dossier.day_pnl_pct} />
+    <PnlCell value={dossier.five_day_pnl} ratio={dossier.five_day_pnl_pct} />
     <td><b>{weight(dossier.portfolio_weight)}</b><small>目标 {weight(dossier.item.target_weight)}</small></td>
     <td><b className={(dossier.rebalance_quantity ?? 0) < 0 ? "down" : "up"}>{shares(dossier.rebalance_quantity)}</b><small>{actionLabel[dossier.action] ?? dossier.action}</small></td>
     <td className="holding-edit-cell">
@@ -165,7 +177,7 @@ export function HoldingsPage() {
     <section className="panel holdings-table-panel">
       <div className="panel-title"><span>持仓列表</span><small>{holdings.length} 笔 · 每行只放结论、仓位和跳板</small></div>
       {holdings.length ? <table className="holdings-table" aria-label="持仓列表">
-        <thead><tr><th>股票</th><th>单股结论</th><th>市值 / 盈亏</th><th>组合 / 目标</th><th>调仓</th><th>快改</th><th>操作</th></tr></thead>
+        <thead><tr><th>股票</th><th>单股结论</th><th>市值</th><th>总盈亏</th><th>单日盈亏</th><th>近5日盈亏</th><th>组合 / 目标</th><th>调仓</th><th>快改</th><th>操作</th></tr></thead>
         <tbody>{holdings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}</tbody>
       </table> : <div className="empty">还没有持仓。先新增一笔，系统会在上方生成组合结论，并在列表里给每只股票一个处理动作。</div>}
     </section>

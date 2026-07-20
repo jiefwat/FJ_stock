@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Protocol
 
 from marketdesk.analysis.events import analyse_market_events
@@ -198,22 +199,22 @@ class MarketService:
     async def holdings(self) -> list[HoldingDossier]:
         snapshot = await self.market()
         items = self.store.list_holdings()
-        return self._analyse_holdings(items, snapshot)
+        return await self._analyse_holdings(items, snapshot)
 
     async def create_holding(self, payload: dict[str, Any]) -> HoldingDossier:
         item = self.store.create_holding(**payload)
         snapshot = await self.market()
-        return self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+        return await self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
 
     async def update_holding(self, item_id: int, changes: dict[str, Any]) -> HoldingDossier:
         item = self.store.update_holding(item_id, **changes)
         snapshot = await self.market()
-        return self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+        return await self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
 
     def delete_holding(self, item_id: int) -> None:
         self.store.delete_holding(item_id)
 
-    def _analyse_holdings(
+    async def _analyse_holdings(
         self, items: list[HoldingItem], snapshot: MarketSnapshot
     ) -> list[HoldingDossier]:
         quote_by_symbol = {quote.symbol: quote for quote in snapshot.equities}
@@ -222,6 +223,7 @@ class MarketService:
             quote = quote_by_symbol.get(item.symbol)
             if quote is not None and quote.price is not None:
                 total_market_value += item.quantity * quote.price
+        bars_by_symbol = await self._holding_bars(items)
         return [
             analyse_holding(
                 item,
@@ -234,15 +236,29 @@ class MarketService:
                     ),
                 ),
                 total_market_value or None,
+                bars_by_symbol.get(item.symbol),
             )
             for item in items
         ]
 
-    def _analyse_selected_holding(
+    async def _holding_bars(self, items: list[HoldingItem]) -> dict[str, list[Any]]:
+        symbols = list(dict.fromkeys(item.symbol for item in items))
+        results = await asyncio.gather(
+            *(self.provider.fetch_kline(symbol, limit=8) for symbol in symbols),
+            return_exceptions=True,
+        )
+        bars_by_symbol: dict[str, list[Any]] = {}
+        for symbol, result in zip(symbols, results, strict=False):
+            if isinstance(result, BaseException):
+                continue
+            bars_by_symbol[symbol] = result
+        return bars_by_symbol
+
+    async def _analyse_selected_holding(
         self, items: list[HoldingItem], snapshot: MarketSnapshot, selected_id: int
     ) -> HoldingDossier:
         selected = next(
-            (dossier for dossier in self._analyse_holdings(items, snapshot) if dossier.item.id == selected_id),
+            (dossier for dossier in await self._analyse_holdings(items, snapshot) if dossier.item.id == selected_id),
             None,
         )
         if selected is None:

@@ -24,6 +24,10 @@ const holding = {
   cost_value: 140000,
   pnl: 10000,
   pnl_pct: 7.14,
+  day_pnl: 1780,
+  day_pnl_pct: 1.2,
+  five_day_pnl: -3200,
+  five_day_pnl_pct: -2.09,
   portfolio_weight: 1,
   drift: 0.6,
   target_market_value: 60000,
@@ -79,6 +83,9 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(within(row).getByText(/分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑/)).toBeInTheDocument();
   expect(within(row).getByText(/建议先减仓约 60 股/)).toBeInTheDocument();
   expect(within(row).queryByText(/当前盈利/)).not.toBeInTheDocument();
+  expect(within(row).getByText(/10,000/)).toBeInTheDocument();
+  expect(within(row).getByText("+1,780")).toBeInTheDocument();
+  expect(within(row).getByText("-3,200")).toBeInTheDocument();
   expect(within(row).getByRole("link", { name: "个股分析 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();

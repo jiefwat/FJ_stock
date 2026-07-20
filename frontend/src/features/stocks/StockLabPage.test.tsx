@@ -36,6 +36,14 @@ const dossier = {
     rationale: ["趋势结构中性", "横向同业估值一般", "过去 60 日累计涨跌 12.4%"],
     disclaimer: "研究建议不是保证收益，不能替代你的风险承受能力判断。",
   },
+  trend_forecast: {
+    horizon: "未来 1-4 周",
+    direction: "偏强震荡",
+    confidence: 0.68,
+    summary: "未来 1-4 周偏强震荡：MA5/MA20 保持多头，但上方压力位需要放量突破。",
+    drivers: ["MA5/MA20 短线结构占优", "资金流仍需连续确认", "接近压力位，追高性价比一般"],
+    invalidation: "跌破 1168.00 后趋势判断失效",
+  },
   horizontal_comparison: [
     { key: "sector_change_rank", label: "涨跌强弱", signal: "neutral", value: "-0.48%", benchmark: "白酒同业", summary: "相对行业涨跌强度处于约 42 分位", percentile: 42, available: true },
     { key: "sector_pe_position", label: "估值位置", signal: "positive", value: "PE 20.2", benchmark: "白酒同业 PE 中位 28.1", summary: "PE 20.2 相对行业估值吸引力约 68 分位", percentile: 68, available: true },
@@ -169,6 +177,22 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   const conclusionSection = await screen.findByLabelText("结构化总结论");
   expect(adviceSection.compareDocumentPosition(comparisonSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(comparisonSection.compareDocumentPosition(conclusionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("shows a future trend forecast before detailed evidence", async () => {
+  renderPage();
+
+  const forecast = within(await screen.findByLabelText("未来趋势判断"));
+  expect(forecast.getByText("偏强震荡")).toBeInTheDocument();
+  expect(forecast.getByText("未来 1-4 周")).toBeInTheDocument();
+  expect(forecast.getByText("置信度 68%")).toBeInTheDocument();
+  expect(forecast.getByText(/MA5\/MA20 保持多头/)).toBeInTheDocument();
+  expect(forecast.getByText("MA5/MA20 短线结构占优")).toBeInTheDocument();
+  expect(forecast.getByText(/趋势判断失效/)).toBeInTheDocument();
+
+  const forecastSection = await screen.findByLabelText("未来趋势判断");
+  const evidenceLedger = await screen.findByText("证据账本");
+  expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("recognizes an existing watchlist item before another post", async () => {

@@ -38,6 +38,15 @@ type InvestmentAdvice = {
   disclaimer: string;
 };
 
+type TrendForecast = {
+  horizon: string;
+  direction: string;
+  confidence: number;
+  summary: string;
+  drivers: string[];
+  invalidation: string;
+};
+
 type ComparisonItem = {
   key: string;
   label: string;
@@ -58,6 +67,7 @@ type Dossier = {
   score_factors: ScoreFactor[];
   analysis_dimensions: AnalysisDimension[];
   investment_advice: InvestmentAdvice;
+  trend_forecast: TrendForecast;
   horizontal_comparison: ComparisonItem[];
   vertical_comparison: ComparisonItem[];
   next_actions: string[];
@@ -205,6 +215,24 @@ function InvestmentAdvicePanel({ advice }: { advice: InvestmentAdvice }) {
   </section>;
 }
 
+function TrendForecastPanel({ forecast }: { forecast: TrendForecast }) {
+  return <section className="trend-forecast-panel" aria-label="未来趋势判断">
+    <article className="trend-forecast-verdict">
+      <span>未来趋势</span>
+      <strong>{forecast.direction}</strong>
+      <em>{forecast.horizon}</em>
+      <b>置信度 {percent(forecast.confidence * 100)}</b>
+    </article>
+    <div className="trend-forecast-body">
+      <p>{forecast.summary}</p>
+      <div className="trend-forecast-grid">
+        {forecast.drivers.map((item) => <span key={item}>{item}</span>)}
+      </div>
+      <small>{forecast.invalidation}</small>
+    </div>
+  </section>;
+}
+
 function ComparisonSection({ horizontal, vertical }: { horizontal: ComparisonItem[]; vertical: ComparisonItem[] }) {
   const renderItems = (items: ComparisonItem[]) => items.map((item) => <article key={item.key} className={item.signal}>
     <header><span>{item.label}</span><strong>{item.value}</strong></header>
@@ -295,6 +323,7 @@ export function StockLabPage() {
         <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button>}</div>
       </section>
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
+      <TrendForecastPanel forecast={query.data.trend_forecast} />
       <ComparisonSection horizontal={query.data.horizontal_comparison} vertical={query.data.vertical_comparison} />
       <AnalystActionMap dossier={query.data} />
       <ConclusionBrief dossier={query.data} />

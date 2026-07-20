@@ -279,6 +279,31 @@ def test_stock_analysis_generates_a_conclusion_from_visible_evidence() -> None:
     assert "个股行业映射、资金流数据" in result.conclusion
 
 
+def test_stock_analysis_returns_future_trend_forecast() -> None:
+    start = date(2026, 1, 1)
+    bars = [
+        Bar(
+            date=start + timedelta(days=index),
+            open=20 + index * 0.2,
+            high=20.5 + index * 0.2,
+            low=19.5 + index * 0.2,
+            close=20 + index * 0.2,
+            volume=1000 + index,
+            amount=10_000 + index,
+        )
+        for index in range(80)
+    ]
+
+    result = analyse_stock(equity(pe=24, change_pct=2, net_flow=60_000_000), bars)
+
+    assert result.trend_forecast.horizon == "未来 1-4 周"
+    assert result.trend_forecast.direction in {"震荡上行", "偏强震荡"}
+    assert result.trend_forecast.confidence > 0.5
+    assert "MA5/MA20" in result.trend_forecast.summary
+    assert len(result.trend_forecast.drivers) >= 3
+    assert result.trend_forecast.invalidation
+
+
 def test_holding_conclusion_leads_with_action_dimensions_and_reason() -> None:
     result = analyse_holding(
         holding_item(),
@@ -614,6 +639,36 @@ def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
     assert "持仓数量 100 股" not in result.conclusion
     assert "成本价 1400.00" not in result.conclusion
     assert "建议先减仓约 60 股" in result.conclusion
+
+
+def test_holding_analysis_splits_total_daily_and_five_day_pnl() -> None:
+    start = date(2026, 1, 1)
+    bars = [
+        Bar(
+            date=start + timedelta(days=index),
+            open=100 + index,
+            high=101 + index,
+            low=99 + index,
+            close=100 + index,
+            volume=1000,
+            amount=10_000,
+        )
+        for index in range(6)
+    ]
+
+    result = analyse_holding(
+        holding_item(quantity=100, cost_price=90, target_weight=0.2),
+        equity(price=110, change_pct=10),
+        total_market_value=110_000,
+        bars=bars,
+    )
+
+    assert result.pnl == 2000
+    assert result.pnl_pct == 22.22
+    assert result.day_pnl == 1000
+    assert result.day_pnl_pct == 10
+    assert result.five_day_pnl == 1000
+    assert result.five_day_pnl_pct == 10
 
 
 def test_holding_analysis_adds_portfolio_context_and_non_kline_advice() -> None:

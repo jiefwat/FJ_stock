@@ -1,8 +1,17 @@
-from marketdesk.models import EquityQuote, HoldingAnalysisDimension, HoldingDossier, HoldingItem
+from marketdesk.models import (
+    Bar,
+    EquityQuote,
+    HoldingAnalysisDimension,
+    HoldingDossier,
+    HoldingItem,
+)
 
 
 def analyse_holding(
-    item: HoldingItem, quote: EquityQuote, total_market_value: float | None
+    item: HoldingItem,
+    quote: EquityQuote,
+    total_market_value: float | None,
+    bars: list[Bar] | None = None,
 ) -> HoldingDossier:
     cost_value = item.quantity * item.cost_price
     market_value = item.quantity * quote.price if quote.price is not None else None
@@ -34,6 +43,8 @@ def analyse_holding(
         if quote.price is not None and item.cost_price > 0
         else None
     )
+    day_pnl, day_pnl_pct = _period_pnl_from_change(item, quote, quote.change_pct)
+    five_day_pnl, five_day_pnl_pct = _five_day_pnl(item, quote, bars or [])
     risk_flags = _risk_flags(item, quote, pnl_pct, drift)
     action = _action(pnl_pct, drift, quote)
     next_actions = _next_actions(action, item, quote, rebalance_quantity)
@@ -47,6 +58,10 @@ def analyse_holding(
         cost_value=round(cost_value, 2),
         pnl=round(pnl, 2) if pnl is not None else None,
         pnl_pct=round(pnl_pct, 2) if pnl_pct is not None else None,
+        day_pnl=round(day_pnl, 2) if day_pnl is not None else None,
+        day_pnl_pct=round(day_pnl_pct, 2) if day_pnl_pct is not None else None,
+        five_day_pnl=round(five_day_pnl, 2) if five_day_pnl is not None else None,
+        five_day_pnl_pct=round(five_day_pnl_pct, 2) if five_day_pnl_pct is not None else None,
         portfolio_weight=round(portfolio_weight, 4) if portfolio_weight is not None else None,
         drift=round(drift, 4) if drift is not None else None,
         target_market_value=round(target_market_value, 2)
@@ -77,6 +92,31 @@ def analyse_holding(
         risk_flags=risk_flags,
         next_actions=next_actions,
     )
+
+
+def _period_pnl_from_change(
+    item: HoldingItem, quote: EquityQuote, change_pct: float | None
+) -> tuple[float | None, float | None]:
+    if quote.price is None or change_pct is None:
+        return None, None
+    base_price = quote.price / (1 + change_pct / 100) if change_pct != -100 else None
+    if base_price is None:
+        return None, None
+    pnl = (quote.price - base_price) * item.quantity
+    return pnl, change_pct
+
+
+def _five_day_pnl(
+    item: HoldingItem, quote: EquityQuote, bars: list[Bar]
+) -> tuple[float | None, float | None]:
+    if quote.price is None or len(bars) < 6:
+        return None, None
+    base_price = bars[-6].close
+    if base_price == 0:
+        return None, None
+    pnl = (quote.price - base_price) * item.quantity
+    pct = (quote.price / base_price - 1) * 100
+    return pnl, pct
 
 
 def _risk_flags(

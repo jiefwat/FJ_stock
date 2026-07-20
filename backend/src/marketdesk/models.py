@@ -258,6 +258,15 @@ class StockInvestmentAdvice(StrictModel):
     disclaimer: str
 
 
+class StockTrendForecast(StrictModel):
+    horizon: str
+    direction: str
+    confidence: float = Field(ge=0, le=1)
+    summary: str
+    drivers: list[str] = Field(default_factory=list)
+    invalidation: str
+
+
 class StockComparisonItem(StrictModel):
     key: str
     label: str
@@ -278,6 +287,7 @@ class StockDossier(StrictModel):
     score_factors: list[StockScoreFactor]
     analysis_dimensions: list[StockAnalysisDimension] = Field(default_factory=list)
     investment_advice: StockInvestmentAdvice
+    trend_forecast: StockTrendForecast
     horizontal_comparison: list[StockComparisonItem] = Field(default_factory=list)
     vertical_comparison: list[StockComparisonItem] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
@@ -324,6 +334,10 @@ class HoldingDossier(StrictModel):
     cost_value: float
     pnl: float | None
     pnl_pct: float | None
+    day_pnl: float | None = None
+    day_pnl_pct: float | None = None
+    five_day_pnl: float | None = None
+    five_day_pnl_pct: float | None = None
     portfolio_weight: float | None
     drift: float | None
     target_market_value: float | None
