@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from marketdesk.analysis.events import analyse_market_events
+from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
 from marketdesk.analysis.opportunities import rank_candidates
 from marketdesk.analysis.sector import analyse_sector
@@ -10,6 +12,10 @@ from marketdesk.config import Settings
 from marketdesk.models import (
     EquityDataset,
     EquityQuote,
+    HoldingDossier,
+    HoldingItem,
+    MarketEventRaw,
+    MarketEventResult,
     MarketSnapshot,
     OpportunityResult,
     SectorDossier,
@@ -27,6 +33,7 @@ class MarketProvider(Protocol):
     async def fetch_research_enrichment(
         self, symbol: str, name: str, sector: str | None
     ) -> list[str]: ...
+    async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]: ...
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Any]: ...
 
 
@@ -84,6 +91,17 @@ class MarketService:
         snapshot = await self.market()
         return {"snapshot": snapshot, "analysis": analyse_market(snapshot)}
 
+    async def market_events(self, limit: int = 30) -> MarketEventResult:
+        fetcher = getattr(self.provider, "fetch_market_events", None)
+        if not callable(fetcher):
+            return analyse_market_events([])
+        try:
+            raw_events = await fetcher(limit)
+        except Exception as error:
+            self._provider_errors["eastmoney_fast_news"] = str(error)
+            raw_events = []
+        return analyse_market_events(raw_events[:limit])
+
     async def sector(self, code: str) -> SectorDossier:
         snapshot = await self.market()
         sector = next(
@@ -112,7 +130,15 @@ class MarketService:
         return analyse_sector(sector, constituents)
 
     async def opportunities(self, preset: str = "trend", limit: int = 50) -> OpportunityResult:
-        if preset not in {"trend", "sector_improving", "capital_confirmed", "oversold_rebound"}:
+        if preset not in {
+            "trend",
+            "volume_breakout",
+            "value_rebound",
+            "oversold_repair",
+            "sector_improving",
+            "capital_confirmed",
+            "oversold_rebound",
+        }:
             raise ValueError("unknown preset")
         snapshot = await self.market()
         regime = analyse_market(snapshot).regime
@@ -167,7 +193,61 @@ class MarketService:
             except Exception as error:
                 self._provider_errors["semantic_research"] = str(error)
         bars = await self.provider.fetch_kline(symbol)
-        return analyse_stock(quote, bars, research_evidence)
+        return analyse_stock(quote, bars, research_evidence, peer_quotes=snapshot.equities)
+
+    async def holdings(self) -> list[HoldingDossier]:
+        snapshot = await self.market()
+        items = self.store.list_holdings()
+        return self._analyse_holdings(items, snapshot)
+
+    async def create_holding(self, payload: dict[str, Any]) -> HoldingDossier:
+        item = self.store.create_holding(**payload)
+        snapshot = await self.market()
+        return self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+
+    async def update_holding(self, item_id: int, changes: dict[str, Any]) -> HoldingDossier:
+        item = self.store.update_holding(item_id, **changes)
+        snapshot = await self.market()
+        return self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+
+    def delete_holding(self, item_id: int) -> None:
+        self.store.delete_holding(item_id)
+
+    def _analyse_holdings(
+        self, items: list[HoldingItem], snapshot: MarketSnapshot
+    ) -> list[HoldingDossier]:
+        quote_by_symbol = {quote.symbol: quote for quote in snapshot.equities}
+        total_market_value = 0.0
+        for item in items:
+            quote = quote_by_symbol.get(item.symbol)
+            if quote is not None and quote.price is not None:
+                total_market_value += item.quantity * quote.price
+        return [
+            analyse_holding(
+                item,
+                quote_by_symbol.get(
+                    item.symbol,
+                    EquityQuote(
+                        symbol=item.symbol,
+                        code=item.symbol.split(".")[-1],
+                        name=item.name,
+                    ),
+                ),
+                total_market_value or None,
+            )
+            for item in items
+        ]
+
+    def _analyse_selected_holding(
+        self, items: list[HoldingItem], snapshot: MarketSnapshot, selected_id: int
+    ) -> HoldingDossier:
+        selected = next(
+            (dossier for dossier in self._analyse_holdings(items, snapshot) if dossier.item.id == selected_id),
+            None,
+        )
+        if selected is None:
+            raise KeyError(selected_id)
+        return selected
 
     def data_status(self) -> dict[str, Any]:
         provider_status = {}

@@ -19,6 +19,7 @@ from marketdesk.models import (
     EquityQuote,
     Freshness,
     IndexQuote,
+    MarketEventRaw,
     SectorSnapshot,
 )
 from marketdesk.providers.base import ProviderUnavailable
@@ -50,6 +51,7 @@ class PublicMarketProvider:
         "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006,sh000300,sh000016,sh000688"
     )
     tencent_kline_url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    eastmoney_fast_news_url = "https://np-weblist.eastmoney.com/comm/web/getFastNewsList"
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self.client = client or httpx.AsyncClient(
@@ -70,7 +72,12 @@ class PublicMarketProvider:
                 "status": "not_configured",
                 "required": False,
                 "description": "语义研究增强",
-            }
+            },
+            "eastmoney_fast_news": {
+                "status": "not_checked",
+                "required": False,
+                "description": "东方财富市场快讯",
+            },
         }
         self.research_provider = IwencaiProvider(client=self.client)
         if self.research_provider.configured:
@@ -154,6 +161,16 @@ class PublicMarketProvider:
         if error:
             payload["error"] = error
         self._enhancement_status["semantic_research"] = payload
+
+    def _mark_fast_news_status(self, status: str, error: str | None = None) -> None:
+        payload: dict[str, Any] = {
+            "status": status,
+            "required": False,
+            "description": "东方财富市场快讯",
+        }
+        if error:
+            payload["error"] = error
+        self._enhancement_status["eastmoney_fast_news"] = payload
 
     @staticmethod
     def _float(value: Any) -> float | None:
@@ -347,6 +364,57 @@ class PublicMarketProvider:
             )
         return bars
 
+    @staticmethod
+    def _eastmoney_related(raw_items: list[Any]) -> tuple[list[str], list[str]]:
+        symbols: list[str] = []
+        sectors: list[str] = []
+        for item in raw_items:
+            raw = str(item)
+            if raw.startswith("90.BK"):
+                sectors.append(raw.split(".", 1)[1])
+                continue
+            if "." not in raw:
+                continue
+            market, code = raw.split(".", 1)
+            if len(code) != 6 or not code.isdigit():
+                continue
+            if market == "1":
+                symbols.append(f"SH.{code}")
+            elif market == "0":
+                symbols.append(f"SZ.{code}")
+        return list(dict.fromkeys(symbols)), list(dict.fromkeys(sectors))
+
+    @staticmethod
+    def normalize_fast_news(payload: dict[str, Any]) -> list[MarketEventRaw]:
+        rows = (payload.get("data") or {}).get("fastNewsList") or []
+        events: list[MarketEventRaw] = []
+        shanghai = ZoneInfo("Asia/Shanghai")
+        for row in rows:
+            event_id = str(row.get("code") or row.get("realSort") or "")
+            title = str(row.get("title") or "").strip()
+            summary = str(row.get("summary") or title).strip()
+            show_time = str(row.get("showTime") or "")
+            if not event_id or not title or not show_time:
+                continue
+            try:
+                published_at = datetime.fromisoformat(show_time).replace(tzinfo=shanghai)
+            except ValueError:
+                continue
+            symbols, sectors = PublicMarketProvider._eastmoney_related(row.get("stockList") or [])
+            events.append(
+                MarketEventRaw(
+                    id=event_id,
+                    title=title,
+                    summary=summary,
+                    source="东方财富快讯",
+                    url=f"https://finance.eastmoney.com/a/{event_id}.html",
+                    published_at=published_at.astimezone(UTC),
+                    related_symbols=symbols,
+                    related_sectors=sectors,
+                )
+            )
+        return events
+
     async def fetch_equities(self) -> EquityDataset:
         count_response = await self._get(self.sina_count_url, {"node": "hs_a"})
         total = int(count_response.json())
@@ -501,6 +569,31 @@ class PublicMarketProvider:
             return []
         self._mark_research_status("ready" if evidence else "empty")
         return evidence
+
+    async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]:
+        try:
+            response = await self.client.get(
+                self.eastmoney_fast_news_url,
+                params={
+                    "client": "web",
+                    "biz": "web_724",
+                    "fastColumn": "102",
+                    "sortEnd": "",
+                    "pageSize": limit,
+                    "req_trace": str(int(datetime.now(UTC).timestamp() * 1000)),
+                },
+                headers={
+                    "User-Agent": "Mozilla/5.0 MarketDesk/0.1",
+                    "Referer": "https://kuaixun.eastmoney.com/",
+                },
+            )
+            response.raise_for_status()
+            events = self.normalize_fast_news(response.json())
+        except (httpx.HTTPError, ValueError) as error:
+            self._mark_fast_news_status("partial", str(error))
+            return []
+        self._mark_fast_news_status("ready" if events else "empty")
+        return events[:limit]
 
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Bar]:
         market, code = symbol.split(".", 1)

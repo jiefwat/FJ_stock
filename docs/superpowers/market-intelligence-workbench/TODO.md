@@ -17,3 +17,11 @@
 - [x] Add editable thesis and invalidation fields before and after watchlist creation.
 - [x] Distinguish observation time, fetch time, freshness, coverage, and refresh result.
 - [x] Pass `make verify` and complete the production-build analyst workflow in a real browser.
+
+## Market Events, Holdings, and Auto Refresh
+
+- [x] Add market-event radar and readable event-to-sector verification.
+- [x] Add richer opportunity diagnostics and candidate playbooks.
+- [x] Add direct stock advice, comparison cards, and next actions.
+- [x] Add local holdings CRUD with position analysis and rebalance hints.
+- [x] Enable production auto refresh every 7,200 seconds.

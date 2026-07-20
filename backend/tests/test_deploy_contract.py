@@ -19,3 +19,10 @@ def test_deploy_script_uses_local_frontend_build_and_atomic_current_switch() -> 
     assert "ln -sfn" in script
     assert "/opt/aster-market/current" in script
     assert "systemctl restart stock-ts.service" in script
+
+
+def test_production_service_enables_two_hour_market_refresh() -> None:
+    service = (ROOT / "deploy" / "stock-ts.service").read_text(encoding="utf-8")
+
+    assert "Environment=MARKETDESK_AUTO_REFRESH_ENABLED=true" in service
+    assert "Environment=MARKETDESK_AUTO_REFRESH_INTERVAL_SECONDS=7200" in service

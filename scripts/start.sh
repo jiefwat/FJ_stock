@@ -35,11 +35,13 @@ PY
 )
 
 pnpm --dir "$ROOT/frontend" build >/dev/null
-if [[ ! -x "$ROOT/backend/.venv/bin/uvicorn" ]]; then
-  uv sync --project "$ROOT/backend" >/dev/null
-fi
 cd "$ROOT"
-nohup "$ROOT/backend/.venv/bin/uvicorn" marketdesk.api:app --host 127.0.0.1 --port "$PORT" >"$LOG_FILE" 2>&1 &
+UVICORN_BIN="$ROOT/backend/.venv/bin/uvicorn"
+if [[ ! -x "$UVICORN_BIN" ]]; then
+  uv run --project backend python -c "import uvicorn" >/dev/null
+  UVICORN_BIN="$ROOT/backend/.venv/bin/uvicorn"
+fi
+nohup "$UVICORN_BIN" marketdesk.api:app --host 127.0.0.1 --port "$PORT" >"$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
 echo "$PORT" > "$PORT_FILE"

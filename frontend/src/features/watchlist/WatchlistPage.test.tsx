@@ -9,10 +9,19 @@ afterEach(() => vi.unstubAllGlobals());
 
 it("edits and saves an auditable research note", async () => {
   const item = { id: 1, symbol: "SH.600519", name: "贵州茅台", thesis: "现金流稳定", invalidation: "趋势破位", status: "researching", created_at: "2026-07-18T09:00:00Z", updated_at: "2026-07-19T09:00:00Z" };
+  const bars = [
+    { date: "2026-07-17", close: 1600 },
+    { date: "2026-07-18", close: 1620 },
+    { date: "2026-07-19", close: 1612 },
+  ];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(_input);
     if (init?.method === "PATCH") {
       const body = JSON.parse(String(init.body));
       return { ok: true, status: 200, json: async () => ({ ...item, ...body, updated_at: "2026-07-19T10:00:00Z" }) };
+    }
+    if (path.includes("/api/v1/stocks/SH.600519")) {
+      return { ok: true, status: 200, json: async () => ({ quote: { symbol: "SH.600519", name: "贵州茅台", price: 1612 }, bars }) };
     }
     return { ok: true, status: 200, json: async () => [item] };
   }));
@@ -20,9 +29,18 @@ it("edits and saves an auditable research note", async () => {
 
   render(<QueryClientProvider client={client}><MemoryRouter><WatchlistPage /></MemoryRouter></QueryClientProvider>);
 
+  expect(await screen.findByText("跟踪清单")).toBeInTheDocument();
+  expect(screen.getByText(/没买或还没决定买/)).toBeInTheDocument();
+  expect(screen.getByText("跟踪不是买入信号")).toBeInTheDocument();
+  expect(screen.getByText("先放进来")).toBeInTheDocument();
+  expect(await screen.findByText("加入跟踪后的走势")).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "价格趋势图" })).toBeInTheDocument();
+  expect(screen.getByText("加入跟踪")).toBeInTheDocument();
+  expect(screen.getByText(/圆点为加入跟踪日/)).toBeInTheDocument();
+  expect(screen.getByText(/跟踪后表现/)).toBeInTheDocument();
   expect(await screen.findByRole("link", { name: "贵州茅台" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
-  fireEvent.change(screen.getByLabelText("研究逻辑 贵州茅台"), { target: { value: "等待估值回落" } });
-  fireEvent.click(screen.getByRole("button", { name: "保存研究记录" }));
+  fireEvent.change(screen.getByLabelText("关注理由 贵州茅台"), { target: { value: "等待估值回落" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存跟踪记录" }));
 
   expect(await screen.findByText("已保存")).toBeInTheDocument();
 });

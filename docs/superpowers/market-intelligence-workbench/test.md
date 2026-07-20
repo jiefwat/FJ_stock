@@ -65,3 +65,29 @@ The production build was served by FastAPI and tested in a real browser.
 - Stock-level sector mapping and capital-flow coverage are not available in the current normalized universe; dependent strategies stop with an explicit reason.
 - Oversold observation is a single-day proxy, not confirmation of a multi-day reversal.
 - FastAPI TestClient emits one third-party Starlette/httpx deprecation warning; it does not affect runtime behavior.
+
+## Regression Sweep After Market Events, Holdings, and Auto Refresh
+
+Date: 2026-07-20
+Scope: merge latest `new_ts` logic into StockTs while preserving the desktop-only public deployment contract.
+
+Expected final gate:
+
+```text
+make verify
+```
+
+Coverage added in this merge:
+
+- Backend event analysis infers readable sector names from market news and avoids leaking raw `BK` codes into summaries.
+- `/api/v1/market-events` returns classified events, clusters, impacts, and next actions.
+- Opportunity presets expose diagnostics, candidate dimensions, thesis, invalidation, and next actions.
+- Stock dossiers expose direct advice, analysis dimensions, horizontal comparison, vertical comparison, and clean conclusions.
+- Holdings support create, edit, delete, local persistence, position analysis, rebalance hints, and risk flags.
+- Production service explicitly enables `MARKETDESK_AUTO_REFRESH_INTERVAL_SECONDS=7200`.
+- Frontend regression covers Today event radar, Market event verification, Opportunities decision cards, Stock advice/comparison, Watchlist journal, Holdings editor, and Data Center auto-refresh status.
+
+Desktop boundary:
+
+- Browser code remains API-only through `/api/v1/*`.
+- Public browser routes remain a desktop workbench: no device-scaling metadata, no drawer navigation, no bottom bar, and no narrow-screen CSS.

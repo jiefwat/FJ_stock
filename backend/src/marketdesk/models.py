@@ -101,6 +101,61 @@ class MarketAnalysis(StrictModel):
     unchanged: int
 
 
+class MarketEventRaw(StrictModel):
+    id: str
+    title: str
+    summary: str
+    source: str
+    url: str | None = None
+    published_at: datetime
+    related_symbols: list[str] = Field(default_factory=list)
+    related_sectors: list[str] = Field(default_factory=list)
+
+    @field_validator("published_at")
+    @classmethod
+    def require_event_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class MarketEvent(StrictModel):
+    id: str
+    title: str
+    summary: str
+    source: str
+    url: str | None = None
+    published_at: datetime
+    related_symbols: list[str] = Field(default_factory=list)
+    related_sectors: list[str] = Field(default_factory=list)
+    category: str
+    sentiment: str
+    importance_score: float = Field(ge=0, le=100)
+    tags: list[str] = Field(default_factory=list)
+    impact: str
+    action: str
+
+    @field_validator("published_at")
+    @classmethod
+    def require_classified_event_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class MarketEventCluster(StrictModel):
+    key: str
+    label: str
+    signal: str
+    count: int
+    summary: str
+    hot_score: float = Field(ge=0, le=100)
+
+
+class MarketEventResult(StrictModel):
+    meta: DatasetMeta
+    summary: list[str]
+    next_actions: list[str]
+    clusters: list[MarketEventCluster]
+    events: list[MarketEvent]
+
+
 class ScoreComponent(StrictModel):
     key: str
     label: str
@@ -110,6 +165,16 @@ class ScoreComponent(StrictModel):
     weighted_score: float
 
 
+class OpportunityDimension(StrictModel):
+    key: str
+    label: str
+    signal: str
+    score: float | None = Field(default=None, ge=0, le=100)
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    available: bool = True
+
+
 class RankedCandidate(StrictModel):
     quote: EquityQuote
     base_score: float
@@ -117,6 +182,10 @@ class RankedCandidate(StrictModel):
     score: float
     evidence_coverage: float = Field(ge=0, le=1)
     components: list[ScoreComponent]
+    dimensions: list[OpportunityDimension] = Field(default_factory=list)
+    thesis: str = ""
+    invalidation: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
 
 
@@ -129,7 +198,10 @@ class OpportunityResult(StrictModel):
     preset: str
     available: bool
     unavailable_reason: str | None = None
+    summary: str = ""
     rules: list[str]
+    diagnostics: list[OpportunityDimension] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
     funnel: dict[str, int]
     candidates: list[RankedCandidate]
     excluded: list[ExcludedCandidate]
@@ -164,12 +236,51 @@ class StockScoreFactor(StrictModel):
     available: bool
 
 
+class StockAnalysisDimension(StrictModel):
+    key: str
+    label: str
+    signal: str
+    score: float | None = Field(default=None, ge=0, le=100)
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    available: bool = True
+
+
+class StockInvestmentAdvice(StrictModel):
+    action: str
+    position_hint: str
+    entry_plan: str
+    stop_loss: str
+    take_profit: str
+    time_horizon: str
+    confidence: float = Field(ge=0, le=1)
+    rationale: list[str] = Field(default_factory=list)
+    disclaimer: str
+
+
+class StockComparisonItem(StrictModel):
+    key: str
+    label: str
+    signal: str
+    value: str
+    benchmark: str
+    summary: str
+    percentile: float | None = Field(default=None, ge=0, le=100)
+    available: bool = True
+
+
 class StockDossier(StrictModel):
     quote: EquityQuote
     stance: str
     stance_score: float | None
+    conclusion: str
     evidence_coverage: float = Field(ge=0, le=1)
     score_factors: list[StockScoreFactor]
+    analysis_dimensions: list[StockAnalysisDimension] = Field(default_factory=list)
+    investment_advice: StockInvestmentAdvice
+    horizontal_comparison: list[StockComparisonItem] = Field(default_factory=list)
+    vertical_comparison: list[StockComparisonItem] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
     research_evidence: list[str] = Field(default_factory=list)
     technical: TechnicalSummary | None
     bull_case: list[str]
@@ -177,6 +288,54 @@ class StockDossier(StrictModel):
     invalidation: list[str]
     missing_evidence: list[str]
     bars: list[Bar]
+
+
+class HoldingItem(StrictModel):
+    id: int
+    symbol: str
+    name: str
+    quantity: float
+    cost_price: float
+    target_weight: float = Field(ge=0, le=1)
+    thesis: str
+    invalidation: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def require_holding_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class HoldingAnalysisDimension(StrictModel):
+    key: str
+    label: str
+    signal: str
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+
+
+class HoldingDossier(StrictModel):
+    item: HoldingItem
+    quote: EquityQuote
+    market_value: float | None
+    cost_value: float
+    pnl: float | None
+    pnl_pct: float | None
+    portfolio_weight: float | None
+    drift: float | None
+    target_market_value: float | None
+    rebalance_value: float | None
+    rebalance_quantity: float | None
+    break_even_price: float
+    price_gap_to_cost_pct: float | None
+    analysis_dimensions: list[HoldingAnalysisDimension] = Field(default_factory=list)
+    action: str
+    conclusion: str
+    risk_flags: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
 
 
 class WatchlistItem(StrictModel):

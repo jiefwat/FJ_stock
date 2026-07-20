@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Activity, Binoculars, Database, RefreshCw, Search, Star } from "lucide-react";
+import { Activity, Binoculars, Briefcase, Database, RefreshCw, Search, Star } from "lucide-react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { DataCenterPage } from "../features/data/DataCenterPage";
+import { HoldingsPage } from "../features/holdings/HoldingsPage";
 import { MarketPage } from "../features/market/MarketPage";
 import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { StockLabPage } from "../features/stocks/StockLabPage";
@@ -15,7 +16,8 @@ const nav = [
   ["/market", "大盘", Binoculars],
   ["/opportunities", "机会", Search],
   ["/stocks", "个股", Star],
-  ["/watchlist", "观察", Star],
+  ["/holdings", "持仓", Briefcase],
+  ["/watchlist", "跟踪", Star],
   ["/data", "数据", Database],
 ] as const;
 
@@ -64,6 +66,7 @@ function Shell() {
             <Route path="/market" element={<MarketPage />} />
             <Route path="/opportunities" element={<OpportunitiesPage />} />
             <Route path="/stocks" element={<StockLabPage />} />
+            <Route path="/holdings" element={<HoldingsPage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/data" element={<DataCenterPage />} />
           </Routes>

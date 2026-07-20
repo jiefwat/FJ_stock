@@ -9,6 +9,7 @@ from marketdesk.models import (
     EquityQuote,
     Freshness,
     IndexQuote,
+    MarketEventRaw,
     SectorSnapshot,
 )
 from marketdesk.services import MarketService
@@ -81,6 +82,31 @@ class FixtureProvider:
             )
         ]
 
+    async def fetch_market_events(self, limit: int = 50):
+        now = datetime.now(UTC)
+        return [
+            MarketEventRaw(
+                id="e1",
+                title="两家央企宣布增持",
+                summary="中国国新、中国诚通继续增持央企和科技企业股票，维护资本市场平稳运行。",
+                source="东方财富快讯",
+                url="https://finance.eastmoney.com/a/e1.html",
+                published_at=now,
+                related_symbols=["SH.600519"],
+                related_sectors=["央企改革", "科技"],
+            ),
+            MarketEventRaw(
+                id="e2",
+                title="中信证券：银行板块兼具绝对和相对收益",
+                summary="近期市场风格剧烈波动，低波稳健型资金关注银行板块。",
+                source="东方财富快讯",
+                url="https://finance.eastmoney.com/a/e2.html",
+                published_at=now,
+                related_symbols=[],
+                related_sectors=["银行"],
+            ),
+        ][:limit]
+
     async def fetch_kline(self, symbol: str, limit: int = 180):
         from datetime import date, timedelta
 
@@ -148,6 +174,21 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     assert stock.json()["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
 
 
+def test_market_events_route_returns_classified_hot_events(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/market-events")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["source"] == "eastmoney_fast_news"
+    assert payload["events"][0]["category"] == "policy_support"
+    assert payload["events"][0]["impact"] != ""
+    assert payload["clusters"][0]["label"] in {"政策与监管", "资金与风格"}
+    assert any("央企改革" in item for item in payload["summary"])
+    assert any("公告/政策原文" in item for item in payload["next_actions"])
+
+
 def test_sector_route_returns_analysis_and_constituents(tmp_path) -> None:
     api = client(tmp_path)
 
@@ -193,6 +234,45 @@ def test_search_and_watchlist_crud(tmp_path) -> None:
     )
     assert len(api.get("/api/v1/watchlist").json()) == 1
     assert api.delete(f"/api/v1/watchlist/{item_id}").status_code == 204
+
+
+def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
+    api = client(tmp_path)
+    api.get("/api/v1/market")
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 100,
+            "cost_price": 1400,
+            "target_weight": 0.4,
+            "thesis": "现金流稳定，等待趋势延续",
+            "invalidation": "跌破成本且基本面证据转弱",
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["item"]["symbol"] == "SH.600519"
+    assert payload["market_value"] == 150_000
+    assert payload["pnl"] == 10_000
+    assert round(payload["pnl_pct"], 2) == 7.14
+    assert payload["action"] in {"hold", "trim", "review", "exit_watch"}
+    assert "持仓结论" in payload["conclusion"]
+    assert "现金流稳定" in payload["conclusion"]
+
+    item_id = payload["item"]["id"]
+    updated = api.patch(
+        f"/api/v1/holdings/{item_id}",
+        json={"target_weight": 0.25, "thesis": "降仓后继续观察现金流"},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["item"]["target_weight"] == 0.25
+    assert "降仓后继续观察现金流" in updated.json()["conclusion"]
+    assert len(api.get("/api/v1/holdings").json()) == 1
 
 
 def test_stock_route_backfills_sector_and_capital_when_snapshot_is_older(tmp_path) -> None:
@@ -261,3 +341,31 @@ async def test_market_service_keeps_core_data_when_sector_source_fails(tmp_path)
     assert len(snapshot.equities) == 1
     assert snapshot.sectors == []
     assert snapshot.meta.errors == ["sectors: sector provider unavailable"]
+
+
+def test_app_can_refresh_market_data_on_a_two_hour_schedule(tmp_path) -> None:
+    class CountingProvider(FixtureProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def fetch_equities(self):
+            self.calls += 1
+            return await super().fetch_equities()
+
+    provider = CountingProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "scheduled.db"))
+    app = create_app(
+        service,
+        auto_refresh_interval_seconds=0.01,
+        auto_refresh_run_immediately=True,
+    )
+
+    import time
+
+    with TestClient(app):
+        deadline = time.time() + 1
+        while provider.calls < 2 and time.time() < deadline:
+            time.sleep(0.02)
+
+    assert provider.calls >= 2
+    assert app.state.auto_refresh_interval_seconds == 0.01

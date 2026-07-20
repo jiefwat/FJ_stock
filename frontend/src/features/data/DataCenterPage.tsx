@@ -46,6 +46,6 @@ export function DataCenterPage() {
       <article><span>新鲜度</span><strong>{freshnessLabel[snapshot.freshness] ?? snapshot.freshness}</strong><small>{snapshot.freshness === "stale" ? "正在使用缓存" : "状态来自标准化契约"}</small></article>
       <article><span>字段覆盖</span><strong>{percent(snapshot.coverage * 100, 1)}</strong><small>核心字段非空比例</small></article>
     </section>}
-    <section className="panel data-note"><h3>覆盖与降级规则</h3><p>行情失败时使用最后一次有效快照并标记为 stale；没有快照时显示不可用，不把空值当作 0。</p><p>语义研究增强未配置不会影响核心行情、机会漏斗、个股价格和观察清单。配置后可增强财务、公告、研报与行业信息。</p>{snapshot?.errors.length ? <div className="provider-errors"><strong>最近错误</strong>{snapshot.errors.map((error) => <p key={error}>{error}</p>)}</div> : <p className="positive">当前快照没有标准化错误。</p>}</section>
+    <section className="panel data-note"><h3>覆盖与降级规则</h3><p>行情失败时使用最后一次有效快照并标记为 stale；没有快照时显示不可用，不把空值当作 0。</p><p>语义研究增强未配置不会影响核心行情、机会漏斗、个股价格和跟踪清单。配置后可增强财务、公告、研报与行业信息。</p>{snapshot?.errors.length ? <div className="provider-errors"><strong>最近错误</strong>{snapshot.errors.map((error) => <p key={error}>{error}</p>)}</div> : <p className="positive">当前快照没有标准化错误。</p>}</section>
   </>;
 }
