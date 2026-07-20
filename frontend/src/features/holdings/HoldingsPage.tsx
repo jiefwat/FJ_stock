@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, fmt, pct, percent, type HoldingDossier } from "../../lib/api";
@@ -44,20 +44,45 @@ function shares(value: number | null | undefined) {
   return `${prefix}${Math.round(value).toLocaleString("zh-CN")} 股`;
 }
 
-function PositionCard({ dossier, onDelete }: { dossier: HoldingDossier; onDelete: (id: number) => void }) {
+function rebalanceText(dossier: HoldingDossier) {
+  const quantity = dossier.rebalance_quantity;
+  if (quantity == null) return "调仓待价格确认";
+  const rounded = Math.abs(Math.round(quantity));
+  if (rounded === 0) return "接近目标仓位";
+  return quantity < 0 ? `建议减仓约 ${rounded.toLocaleString("zh-CN")} 股` : `可加仓约 ${rounded.toLocaleString("zh-CN")} 股`;
+}
+
+function compactConclusion(dossier: HoldingDossier) {
+  const escapedName = dossier.item.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return dossier.conclusion
+    .replace(/^持仓结论：/, "")
+    .replace(new RegExp(`^${escapedName}\\s*`), "")
+    .trim();
+}
+
+function portfolioSummary(items: HoldingDossier[]) {
+  const totalValue = items.reduce((sum, item) => sum + (item.market_value ?? 0), 0);
+  const totalCost = items.reduce((sum, item) => sum + item.cost_value, 0);
+  const totalPnl = items.reduce((sum, item) => sum + (item.pnl ?? 0), 0);
+  const totalPnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : null;
+  const reviewItems = items.filter((item) => item.action !== "hold" || Math.abs(item.rebalance_quantity ?? 0) > 1);
+  const riskFlags = [...new Set(items.flatMap((item) => item.risk_flags))];
+  const conclusion = items.length
+    ? `${items.length} 笔持仓，${reviewItems.length ? `需要复核 ${reviewItems.length} 笔` : "暂无必须处理的持仓"}；${riskFlags[0] ?? "组合暴露接近目标"}。`
+    : "还没有持仓，先录入真实数量、成本和目标仓位。";
+  return { totalValue, totalPnl, totalPnlPct, reviewItems, riskFlags, conclusion };
+}
+
+function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete: (id: number) => void }) {
   const client = useQueryClient();
   const [quantity, setQuantity] = useState(String(dossier.item.quantity));
   const [costPrice, setCostPrice] = useState(String(dossier.item.cost_price));
   const [targetWeight, setTargetWeight] = useState(String(dossier.item.target_weight * 100));
-  const [thesis, setThesis] = useState(dossier.item.thesis);
-  const [invalidation, setInvalidation] = useState(dossier.item.invalidation);
 
   useEffect(() => {
     setQuantity(String(dossier.item.quantity));
     setCostPrice(String(dossier.item.cost_price));
     setTargetWeight(String(dossier.item.target_weight * 100));
-    setThesis(dossier.item.thesis);
-    setInvalidation(dossier.item.invalidation);
   }, [dossier]);
 
   const update = useMutation({
@@ -67,8 +92,8 @@ function PositionCard({ dossier, onDelete }: { dossier: HoldingDossier; onDelete
         quantity: Number(quantity),
         cost_price: Number(costPrice),
         target_weight: Number(targetWeight) / 100,
-        thesis,
-        invalidation,
+        thesis: dossier.item.thesis,
+        invalidation: dossier.item.invalidation,
       }),
     }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["holdings"] }),
@@ -76,57 +101,40 @@ function PositionCard({ dossier, onDelete }: { dossier: HoldingDossier; onDelete
 
   const statusClass = (dossier.pnl ?? 0) >= 0 ? "up" : "down";
 
-  return <article className={`position-card ${dossier.action}`}>
-    <div className="position-card-grid">
-      <section className="position-editor-panel" aria-label={`编辑持仓数据 ${dossier.item.name}`}>
-        <div className="position-section-title"><span>编辑持仓数据</span><small>数量、成本、目标仓位会直接重算分析</small></div>
-        <div className="position-editor compact-editor">
-          <label>持仓数量<input aria-label={`持仓数量 ${dossier.item.name}`} value={quantity} onChange={(event) => { setQuantity(event.target.value); update.reset(); }} /></label>
-          <label>成本价<input aria-label={`成本价 ${dossier.item.name}`} value={costPrice} onChange={(event) => { setCostPrice(event.target.value); update.reset(); }} /></label>
-          <label>目标仓位 %<input aria-label={`目标仓位 ${dossier.item.name}`} value={targetWeight} onChange={(event) => { setTargetWeight(event.target.value); update.reset(); }} /></label>
-          <label>持仓逻辑<textarea aria-label={`持仓逻辑 ${dossier.item.name}`} value={thesis} onChange={(event) => { setThesis(event.target.value); update.reset(); }} /></label>
-          <label>失效条件<textarea aria-label={`持仓失效条件 ${dossier.item.name}`} value={invalidation} onChange={(event) => { setInvalidation(event.target.value); update.reset(); }} /></label>
-        </div>
-        <div className="position-editor-actions">
-          {update.isSuccess && <em role="status">已保存</em>}
-          {update.isError && <em className="negative" role="alert">保存失败，草稿仍在</em>}
-          <button className="icon-button" type="button" aria-label={`删除持仓 ${dossier.item.name}`} onClick={() => onDelete(dossier.item.id)}><Trash2 size={16} /></button>
-          <button className="button" type="button" onClick={() => update.mutate()} disabled={update.isPending}><Save size={14} />{update.isPending ? "保存中…" : "保存持仓"}</button>
-        </div>
-      </section>
-
-      <section className="position-analysis-panel">
-        <header>
-          <div><Link to={`/stocks?symbol=${dossier.item.symbol}`}>{dossier.item.name}</Link><small>{dossier.item.symbol} · {dossier.quote.sector ?? "行业待补"} · 最近更新 {new Date(dossier.item.updated_at).toLocaleString("zh-CN", { hour12: false })}</small></div>
-          <strong>{actionLabel[dossier.action] ?? dossier.action}</strong>
-        </header>
-        <p className="position-conclusion">{dossier.conclusion}</p>
-        <div className="position-metrics position-metrics-rich">
-          <div><span>当前市值</span><b>{fmt(dossier.market_value, 0)}</b></div>
-          <div><span>持仓成本</span><b>{fmt(dossier.cost_value, 0)}</b></div>
-          <div><span>浮动盈亏</span><b className={statusClass}>{fmt(dossier.pnl, 0)} · {pct(dossier.pnl_pct)}</b></div>
-          <div><span>组合 / 目标</span><b>{weight(dossier.portfolio_weight)} / {weight(dossier.item.target_weight)}</b></div>
-          <div><span>目标市值</span><b>{fmt(dossier.target_market_value, 0)}</b></div>
-          <div><span>调仓股数</span><b className={(dossier.rebalance_quantity ?? 0) < 0 ? "down" : "up"}>{shares(dossier.rebalance_quantity)}</b></div>
-        </div>
-        <div className="position-dimensions">
-          {dossier.analysis_dimensions.map((item) => <article className={`dimension-card ${item.signal}`} key={item.key}>
-            <span>{item.label}</span>
-            <p>{item.summary}</p>
-            <small>{item.evidence.join(" · ")}</small>
-          </article>)}
-        </div>
-        <div className="position-tags">{dossier.risk_flags.map((flag) => <i key={flag}>{flag}</i>)}</div>
-        <div className="position-next">{dossier.next_actions.map((action) => <span key={action}>{action}</span>)}</div>
-      </section>
-    </div>
-  </article>;
+  return <tr className={`holding-row ${dossier.action}`}>
+    <td className="holding-name-cell">
+      <strong>{dossier.item.name}</strong>
+      <small>{dossier.item.symbol} · {dossier.quote.sector ?? "行业待补"}</small>
+      {dossier.risk_flags.length > 0 && <span>{dossier.risk_flags[0]}</span>}
+    </td>
+    <td className="holding-conclusion-cell">
+      <p>{compactConclusion(dossier)}</p>
+      <em>{rebalanceText(dossier)}</em>
+    </td>
+    <td><b>{fmt(dossier.market_value, 0)}</b><small className={statusClass}>{fmt(dossier.pnl, 0)} · {pct(dossier.pnl_pct)}</small></td>
+    <td><b>{weight(dossier.portfolio_weight)}</b><small>目标 {weight(dossier.item.target_weight)}</small></td>
+    <td><b className={(dossier.rebalance_quantity ?? 0) < 0 ? "down" : "up"}>{shares(dossier.rebalance_quantity)}</b><small>{actionLabel[dossier.action] ?? dossier.action}</small></td>
+    <td className="holding-edit-cell">
+      <input aria-label={`持仓数量 ${dossier.item.name}`} value={quantity} onChange={(event) => { setQuantity(event.target.value); update.reset(); }} />
+      <input aria-label={`成本价 ${dossier.item.name}`} value={costPrice} onChange={(event) => { setCostPrice(event.target.value); update.reset(); }} />
+      <input aria-label={`目标仓位 ${dossier.item.name}`} value={targetWeight} onChange={(event) => { setTargetWeight(event.target.value); update.reset(); }} />
+    </td>
+    <td className="holding-actions-cell">
+      {update.isSuccess && <em role="status">已保存</em>}
+      {update.isError && <em className="negative" role="alert">保存失败</em>}
+      <button className="icon-button" type="button" aria-label={`删除持仓 ${dossier.item.name}`} onClick={() => onDelete(dossier.item.id)}><Trash2 size={15} /></button>
+      <button className="button secondary" type="button" aria-label={`保存 ${dossier.item.name}`} onClick={() => update.mutate()} disabled={update.isPending}><Save size={13} />保存</button>
+      <Link className="text-link" to={`/stocks?symbol=${dossier.item.symbol}`}>个股分析 →</Link>
+    </td>
+  </tr>;
 }
 
 export function HoldingsPage() {
   const client = useQueryClient();
   const [draft, setDraft] = useState<HoldingDraft>({ symbol: "SH.600519", name: "贵州茅台", quantity: "100", cost_price: "1400", target_weight: "20", thesis: "写下这笔持仓为什么还值得留在组合里", invalidation: "写下什么情况下必须降仓或退出" });
   const query = useQuery({ queryKey: ["holdings"], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings") });
+  const holdings = query.data ?? [];
+  const summary = useMemo(() => portfolioSummary(holdings), [holdings]);
   const create = useMutation({
     mutationFn: () => api<HoldingDossier>("/api/v1/holdings", { method: "POST", body: JSON.stringify(toPayload(draft)) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["holdings"] }),
@@ -135,31 +143,46 @@ export function HoldingsPage() {
     mutationFn: (id: number) => api(`/api/v1/holdings/${id}`, { method: "DELETE" }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["holdings"] }),
   });
-  const totalValue = query.data?.reduce((sum, item) => sum + (item.market_value ?? 0), 0) ?? 0;
-  const totalCost = query.data?.reduce((sum, item) => sum + item.cost_value, 0) ?? 0;
-  const totalPnl = query.data?.reduce((sum, item) => sum + (item.pnl ?? 0), 0) ?? 0;
-  const totalPnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : null;
-  const rebalanceCount = query.data?.filter((item) => item.action !== "hold" || Math.abs(item.rebalance_quantity ?? 0) > 1).length ?? 0;
 
   return <>
-    <header className="page-head"><div><p className="eyebrow">PORTFOLIO / 持仓分析</p><h1>个股持仓工作台，<br /><em>先改数量成本，再看结论。</em></h1></div></header>
-    <section className="position-brief">
-      <div><span>组合市值</span><strong>{fmt(totalValue, 0)}</strong></div>
-      <div><span>浮动盈亏</span><strong className={totalPnl >= 0 ? "up" : "down"}>{fmt(totalPnl, 0)} · {pct(totalPnlPct)}</strong></div>
-      <div><span>需复核持仓</span><strong>{rebalanceCount}</strong></div>
+    <header className="page-head"><div><p className="eyebrow">PORTFOLIO / 持仓分析</p><h1>组合给判断，<br /><em>个股进清单。</em></h1></div></header>
+    <section className="portfolio-overview panel" aria-label="组合总览">
+      <div className="panel-title"><span>组合总览</span><small>整体分析只回答：风险在哪里，今天先处理谁</small></div>
+      <div className="portfolio-hero-line">
+        <article><span>组合市值</span><strong>{fmt(summary.totalValue, 0)}</strong></article>
+        <article><span>浮动盈亏</span><strong className={summary.totalPnl >= 0 ? "up" : "down"}>{fmt(summary.totalPnl, 0)} · {pct(summary.totalPnlPct)}</strong></article>
+        <article><span>持仓数量</span><strong>{holdings.length}</strong></article>
+        <article><span>需复核</span><strong>{summary.reviewItems.length}</strong></article>
+      </div>
+      <div className="portfolio-conclusion">
+        <span>组合结论</span>
+        <p>{summary.conclusion}</p>
+        {summary.riskFlags.length > 0 && <div>{summary.riskFlags.slice(0, 4).map((flag) => <i key={flag}>{flag}</i>)}</div>}
+      </div>
     </section>
-    <form className="panel holding-create" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
-      <div className="panel-title"><span>新增持仓</span><small>填入个股持仓数、成本价、目标仓位，保存后生成持仓分析</small></div>
-      <label>代码<input value={draft.symbol} onChange={(event) => setDraft({ ...draft, symbol: event.target.value })} /></label>
-      <label>名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-      <label>持仓数量<input value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} /></label>
-      <label>成本价<input value={draft.cost_price} onChange={(event) => setDraft({ ...draft, cost_price: event.target.value })} /></label>
-      <label>目标仓位 %<input value={draft.target_weight} onChange={(event) => setDraft({ ...draft, target_weight: event.target.value })} /></label>
-      <label>持仓逻辑<textarea value={draft.thesis} onChange={(event) => setDraft({ ...draft, thesis: event.target.value })} /></label>
-      <label>失效条件<textarea value={draft.invalidation} onChange={(event) => setDraft({ ...draft, invalidation: event.target.value })} /></label>
-      <button className="button" disabled={create.isPending}>{create.isPending ? "保存中…" : "加入持仓分析"}</button>
-      {create.isError && <p className="form-error">保存失败，请检查代码是否已存在。</p>}
-    </form>
-    <section className="panel"><div className="panel-title"><span>个股持仓工作台</span><small>{query.data?.length ?? 0} 笔 · 修改数量、成本或目标仓位后主动保存</small></div>{query.data?.length ? <div className="position-list">{query.data.map((item) => <PositionCard key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}</div> : <div className="empty">还没有持仓。先新增一笔，系统会把持仓数、成本、浮盈亏、目标仓位和调仓股数连成一条分析链。</div>}</section>
+
+    <section className="panel holdings-table-panel">
+      <div className="panel-title"><span>持仓列表</span><small>{holdings.length} 笔 · 每行只放结论、仓位和跳板</small></div>
+      {holdings.length ? <table className="holdings-table" aria-label="持仓列表">
+        <thead><tr><th>股票</th><th>单股结论</th><th>市值 / 盈亏</th><th>组合 / 目标</th><th>调仓</th><th>快改</th><th>操作</th></tr></thead>
+        <tbody>{holdings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}</tbody>
+      </table> : <div className="empty">还没有持仓。先新增一笔，系统会在上方生成组合结论，并在列表里给每只股票一个处理动作。</div>}
+    </section>
+
+    <details className="holding-create-drawer">
+      <summary>新增持仓</summary>
+      <form className="panel holding-create compact-create" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
+        <div className="panel-title"><span>登记一笔持仓</span><small>保存后回到列表，不生成额外报告</small></div>
+        <label>代码<input value={draft.symbol} onChange={(event) => setDraft({ ...draft, symbol: event.target.value })} /></label>
+        <label>名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+        <label>数量<input value={draft.quantity} onChange={(event) => setDraft({ ...draft, quantity: event.target.value })} /></label>
+        <label>成本<input value={draft.cost_price} onChange={(event) => setDraft({ ...draft, cost_price: event.target.value })} /></label>
+        <label>目标 %<input value={draft.target_weight} onChange={(event) => setDraft({ ...draft, target_weight: event.target.value })} /></label>
+        <label>持仓逻辑<input value={draft.thesis} onChange={(event) => setDraft({ ...draft, thesis: event.target.value })} /></label>
+        <label>失效条件<input value={draft.invalidation} onChange={(event) => setDraft({ ...draft, invalidation: event.target.value })} /></label>
+        <button className="button" disabled={create.isPending}>{create.isPending ? "保存中…" : "加入持仓"}</button>
+        {create.isError && <p className="form-error">保存失败，请检查代码是否已存在。</p>}
+      </form>
+    </details>
   </>;
 }
