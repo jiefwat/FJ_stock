@@ -16,10 +16,11 @@ type HoldingDraft = {
 };
 
 const actionLabel: Record<string, string> = {
-  hold: "继续持有",
-  trim: "降低暴露",
+  hold: "持有",
+  trim: "减仓",
+  add_watch: "可加仓",
   review: "补齐数据",
-  exit_watch: "考虑退出",
+  exit_watch: "退出复核",
 };
 
 function toPayload(draft: HoldingDraft) {

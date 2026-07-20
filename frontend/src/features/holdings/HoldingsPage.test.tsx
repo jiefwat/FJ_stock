@@ -39,7 +39,7 @@ const holding = {
     { key: "valuation", label: "估值安全垫", signal: "neutral", summary: "PE 与 PB 需要结合行业比较", evidence: ["PE 23", "PB 7"] },
   ],
   action: "trim",
-  conclusion: "持仓结论：贵州茅台 当前盈利 7.14%，组合占比高于目标，建议降低暴露；持仓逻辑：现金流稳定。",
+  conclusion: "建议动作：减仓。分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑。原因：仓位明显高于目标、成本风险未触发强制处理、估值需要结合行业比较、流动性中性、资金净流入、持仓逻辑已记录，可进入个股页复核证据。建议先减仓约 60 股，回到目标仓位后再复核保留理由。",
   risk_flags: ["组合占比高于目标"],
   next_actions: ["复核是否需要降仓"],
 };
@@ -75,9 +75,10 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
 
   const row = within(table).getByRole("row", { name: /贵州茅台/ });
   expect(within(row).getByText("贵州茅台")).toBeInTheDocument();
-  expect(within(row).getByText("降低暴露")).toBeInTheDocument();
-  expect(within(row).getByText(/当前盈利 7.14%/)).toBeInTheDocument();
-  expect(within(row).getByText(/建议减仓约 60 股/)).toBeInTheDocument();
+  expect(within(row).getByText("减仓")).toBeInTheDocument();
+  expect(within(row).getByText(/分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑/)).toBeInTheDocument();
+  expect(within(row).getByText(/建议先减仓约 60 股/)).toBeInTheDocument();
+  expect(within(row).queryByText(/当前盈利/)).not.toBeInTheDocument();
   expect(within(row).getByRole("link", { name: "个股分析 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();

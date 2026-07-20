@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 from marketdesk.analysis.events import analyse_market_events
+from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
 from marketdesk.analysis.opportunities import rank_candidates
 from marketdesk.analysis.stock import analyse_stock
@@ -9,6 +10,7 @@ from marketdesk.models import (
     DatasetMeta,
     EquityQuote,
     Freshness,
+    HoldingItem,
     IndexQuote,
     MarketEventRaw,
     MarketSnapshot,
@@ -67,6 +69,25 @@ def snapshot() -> MarketSnapshot:
         ],
         sectors=[SectorSnapshot(code="BK1", name="半导体", change_pct=2.2, net_flow=100_000_000)],
     )
+
+
+def holding_item(**overrides: object) -> HoldingItem:
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "id": 1,
+        "symbol": "SH.688249",
+        "name": "晶合集成",
+        "quantity": 800,
+        "cost_price": 54.7482,
+        "target_weight": 0.125,
+        "thesis": "来自截图批量录入：先做持仓诊断，再逐个进入个股页复核。",
+        "invalidation": "若组合结论提示继续恶化或个股证据转弱，优先复核。",
+        "status": "holding",
+        "created_at": now,
+        "updated_at": now,
+    }
+    values.update(overrides)
+    return HoldingItem(**values)
 
 
 def test_market_analysis_renormalizes_missing_external_factor() -> None:
@@ -256,6 +277,53 @@ def test_stock_analysis_generates_a_conclusion_from_visible_evidence() -> None:
     assert "当日涨幅 8.5% 偏高" in result.conclusion
     assert "跌破近 20 日支撑" in result.conclusion
     assert "个股行业映射、资金流数据" in result.conclusion
+
+
+def test_holding_conclusion_leads_with_action_dimensions_and_reason() -> None:
+    result = analyse_holding(
+        holding_item(),
+        equity(
+            name="晶合集成",
+            symbol="SH.688249",
+            code="688249",
+            price=43.4,
+            change_pct=-1.1,
+            pe=120.6,
+            pb=4.4,
+            amount=450_000_000,
+            turnover_rate=2.8,
+            net_flow=-20_000_000,
+        ),
+        total_market_value=270_233,
+    )
+
+    assert result.action == "exit_watch"
+    assert result.conclusion.startswith("建议动作：减仓/退出复核")
+    assert "分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑" in result.conclusion
+    assert "原因：" in result.conclusion
+    assert "建议先减仓约 22 股" in result.conclusion
+    assert "当前盈亏" not in result.conclusion
+    assert "持仓数量 800 股" not in result.conclusion
+
+
+def test_holding_conclusion_can_recommend_add_when_under_target_and_clean() -> None:
+    result = analyse_holding(
+        holding_item(
+            symbol="SH.600001",
+            name="示例科技",
+            quantity=1000,
+            cost_price=10,
+            target_weight=0.3,
+            thesis="趋势仍在，等待回踩后补仓。",
+            invalidation="跌破中期支撑。",
+        ),
+        equity(price=12, pe=18, pb=2.0, net_flow=30_000_000),
+        total_market_value=120_000,
+    )
+
+    assert result.action == "add_watch"
+    assert result.conclusion.startswith("建议动作：可加仓")
+    assert "原因：" in result.conclusion
 
 
 def test_high_volatility_creates_bear_evidence() -> None:
@@ -541,9 +609,11 @@ def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
     assert result.break_even_price == 1400
     assert result.price_gap_to_cost_pct == 7.14
     assert {item.key for item in result.analysis_dimensions} >= {"position", "cost", "rebalance", "risk"}
-    assert "持仓数量 100 股" in result.conclusion
-    assert "成本价 1400.00" in result.conclusion
-    assert "建议减仓约 60 股" in result.conclusion
+    assert result.conclusion.startswith("建议动作：减仓")
+    assert "分析维度：" in result.conclusion
+    assert "持仓数量 100 股" not in result.conclusion
+    assert "成本价 1400.00" not in result.conclusion
+    assert "建议先减仓约 60 股" in result.conclusion
 
 
 def test_holding_analysis_adds_portfolio_context_and_non_kline_advice() -> None:

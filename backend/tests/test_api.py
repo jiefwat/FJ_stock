@@ -259,9 +259,10 @@ def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
     assert payload["market_value"] == 150_000
     assert payload["pnl"] == 10_000
     assert round(payload["pnl_pct"], 2) == 7.14
-    assert payload["action"] in {"hold", "trim", "review", "exit_watch"}
-    assert "持仓结论" in payload["conclusion"]
-    assert "现金流稳定" in payload["conclusion"]
+    assert payload["action"] in {"hold", "trim", "add_watch", "review", "exit_watch"}
+    assert payload["conclusion"].startswith("建议动作：")
+    assert "分析维度：" in payload["conclusion"]
+    assert "原因：" in payload["conclusion"]
 
     item_id = payload["item"]["id"]
     updated = api.patch(
@@ -271,7 +272,8 @@ def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
 
     assert updated.status_code == 200
     assert updated.json()["item"]["target_weight"] == 0.25
-    assert "降仓后继续观察现金流" in updated.json()["conclusion"]
+    assert updated.json()["item"]["thesis"] == "降仓后继续观察现金流"
+    assert updated.json()["conclusion"].startswith("建议动作：")
     assert len(api.get("/api/v1/holdings").json()) == 1
 
 

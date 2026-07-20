@@ -108,6 +108,13 @@ def _action(pnl_pct: float | None, drift: float | None, quote: EquityQuote) -> s
         return "exit_watch"
     if drift is not None and drift > 0.1:
         return "trim"
+    if (
+        drift is not None
+        and drift < -0.1
+        and pnl_pct >= 0
+        and (quote.net_flow is None or quote.net_flow >= 0)
+    ):
+        return "add_watch"
     return "hold"
 
 
@@ -117,6 +124,7 @@ def _next_actions(
     actions = {
         "trim": ["复核是否需要降仓到目标仓位", "更新保留仓位的失效条件"],
         "exit_watch": ["检查是否触发失效条件", "决定减仓、止损或转入跟踪清单"],
+        "add_watch": ["只在个股证据继续确认时补足目标仓位", "补仓前先设定失效条件"],
         "review": ["补齐行情价格或成本数据", "重读个股证据账本"],
         "hold": ["继续跟踪持仓逻辑", "收盘后复核资金与趋势证据"],
     }[action]
@@ -147,35 +155,108 @@ def _conclusion(
     action: str,
     rebalance_quantity: float | None,
 ) -> str:
-    action_text = {
-        "hold": "继续持有并跟踪证据",
-        "trim": "建议降低暴露",
-        "review": "需要先补齐数据再判断",
-        "exit_watch": "已接近或触发退出条件",
-    }[action]
-    pnl_text = "盈亏未知" if pnl_pct is None else f"当前盈亏 {pnl_pct:.2f}%"
-    drift_text = (
-        "仓位偏离未知"
-        if drift is None
-        else "组合占比高于目标"
-        if drift > 0.1
-        else "组合占比低于目标"
-        if drift < -0.1
-        else "组合占比接近目标"
-    )
-    rebalance_text = _rebalance_text(rebalance_quantity)
-    valuation_text = (
-        f"估值 PE {quote.pe:.1f}、PB {quote.pb:.2f}"
-        if quote.pe is not None and quote.pb is not None
-        else "估值数据待补"
-    )
-    sector_text = f"板块为 {quote.sector}" if quote.sector else "板块位置待补"
+    action_text = _action_text(action)
+    dimensions = "仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑"
+    reasons = _reason_fragments(item, quote, pnl_pct, drift)
+    execution = _execution_text(action, rebalance_quantity)
     return (
-        f"持仓结论：{item.name} 持仓数量 {item.quantity:g} 股，成本价 {item.cost_price:.2f}，"
-        f"{pnl_text}，{drift_text}，{action_text}，{rebalance_text}；"
-        f"{valuation_text}，{sector_text}；"
-        f"持仓逻辑：{item.thesis}；失效条件：{item.invalidation}。"
+        f"建议动作：{action_text}。"
+        f"分析维度：{dimensions}。"
+        f"原因：{'、'.join(reasons)}。"
+        f"{execution}"
     )
+
+
+def _action_text(action: str) -> str:
+    return {
+        "hold": "维持持有",
+        "trim": "减仓",
+        "add_watch": "可加仓",
+        "review": "暂不加仓，先补齐数据",
+        "exit_watch": "减仓/退出复核",
+    }[action]
+
+
+def _reason_fragments(
+    item: HoldingItem,
+    quote: EquityQuote,
+    pnl_pct: float | None,
+    drift: float | None,
+) -> list[str]:
+    reasons: list[str] = []
+    if drift is None:
+        reasons.append("仓位偏离需要先用有效行情确认")
+    elif drift > 0.1:
+        reasons.append("仓位明显高于目标")
+    elif drift < -0.1:
+        reasons.append("仓位低于目标")
+    else:
+        reasons.append("仓位接近目标")
+
+    if pnl_pct is None:
+        reasons.append("成本风控缺少现价证据")
+    elif pnl_pct <= -10:
+        reasons.append("成本风控已触发")
+    elif pnl_pct >= 20:
+        reasons.append("已有较高安全垫但需防回撤")
+    else:
+        reasons.append("成本风险未触发强制处理")
+
+    if quote.pe is None and quote.pb is None:
+        reasons.append("估值证据暂缺")
+    elif quote.pe is not None and quote.pe > 60:
+        reasons.append("估值压力偏高")
+    elif quote.pe is not None and 0 < quote.pe < 20:
+        reasons.append("估值相对温和")
+    else:
+        reasons.append("估值需要结合行业比较")
+
+    if quote.amount is None:
+        reasons.append("流动性待确认")
+    elif quote.amount >= 300_000_000:
+        reasons.append("流动性足够执行调仓")
+    elif quote.amount < 80_000_000:
+        reasons.append("流动性偏弱，调仓要分批")
+    else:
+        reasons.append("流动性中性")
+
+    if quote.net_flow is None:
+        reasons.append("板块资金持续性待确认")
+    elif quote.net_flow < 0:
+        reasons.append("资金净流出")
+    else:
+        reasons.append("资金净流入")
+
+    if item.thesis.strip() and item.invalidation.strip():
+        reasons.append("持仓逻辑已记录，可进入个股页复核证据")
+    else:
+        reasons.append("持仓逻辑或失效条件不完整")
+    return reasons
+
+
+def _execution_text(action: str, rebalance_quantity: float | None) -> str:
+    shares = abs(round(rebalance_quantity)) if rebalance_quantity is not None else 0
+    if action == "add_watch":
+        return (
+            f"可按目标仓位补仓约 {shares:g} 股，但必须等待个股页证据继续确认。"
+            if shares > 0
+            else "仓位已接近目标，暂不追高加仓。"
+        )
+    if action == "trim":
+        return (
+            f"建议先减仓约 {shares:g} 股，回到目标仓位后再复核保留理由。"
+            if shares > 0
+            else "仓位已接近目标，先观察而不是主动加仓。"
+        )
+    if action == "exit_watch":
+        return (
+            f"建议先减仓约 {shares:g} 股，剩余仓位进入个股页复核。"
+            if shares > 0
+            else "建议先做退出复核，确认是否减仓、止损或转入跟踪清单。"
+        )
+    if action == "review":
+        return "先补齐行情、成本和持仓逻辑，再决定是否加减仓。"
+    return "维持当前仓位，继续跟踪趋势、资金和失效条件。"
 
 
 def _analysis_dimensions(
