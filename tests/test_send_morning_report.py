@@ -989,7 +989,7 @@ def test_morning_report_prefers_structured_decisions_json(tmp_path: Path) -> Non
         announcement_dir=announcement_dir,
     )
 
-    assert "结构化大盘：防守优先" not in content
+    assert "早盘主线：结构化大盘：防守优先" in content
     assert "1. 济民健康｜医药｜机会：量能放大；风险：追高风险；动作：回踩承接" in content
     assert "Markdown 旧摘要" not in content.split("## 先处理持仓", 1)[0]
 
@@ -1286,3 +1286,94 @@ def test_morning_report_fills_three_candidates_when_decisions_json_has_fewer_ite
     assert numbered[0].startswith("1. 结构票1")
     assert any("候补股票2" in line for line in numbered)
     assert all("候补股票4" not in line for line in numbered)
+
+
+def test_morning_report_is_action_card_and_prefers_structured_decisions(tmp_path: Path) -> None:
+    module = _load_module()
+    daily_dir = tmp_path / "daily"
+    research_dir = tmp_path / "research"
+    announcement_dir = tmp_path / "announcements"
+    daily_dir.mkdir()
+    research_dir.mkdir()
+    announcement_dir.mkdir()
+    (daily_dir / "latest.md").write_text(
+        "# StockTS 每日深度复盘（2026-07-20）\n\n"
+        "## 每日大盘情况\n- 涨跌家数比 1.22\n\n"
+        "## 板块情况\n- 机器人概念活跃\n\n"
+        "## 候选股票池摘要\n1. 旧研究候选：观察分 90/100\n",
+        encoding="utf-8",
+    )
+    (daily_dir / "latest_decisions.json").write_text(
+        json.dumps(
+            {
+                "trade_date": "2026-07-20",
+                "market": {"summary": "市场震荡，结构性机会为主"},
+                "traffic_lights": {
+                    "red": [
+                        {
+                            "name": "甬矽电子",
+                            "action": "不加仓；反弹优先锁利润/降风险",
+                            "reason": "弱势高风险持仓",
+                            "stop_loss": "跌破最近支撑先处理",
+                            "trigger": "反弹不能收复短期均线先降风险",
+                        },
+                        {
+                            "name": "蓝色光标",
+                            "action": "可加仓",
+                            "reason": "红灯持仓不能补亏",
+                            "trigger": "未收复短期均线",
+                        },
+                    ],
+                    "yellow": [],
+                    "green": [],
+                },
+                "opportunities": [
+                    {
+                        "name": "汇金股份",
+                        "code": "300368",
+                        "sector": "大数据",
+                        "reason": "汇金股份所在大数据强度 100/100；汇金股份收盘价位于短期均线上方",
+                        "risk": "汇金股份短线已有涨幅，避免开盘情绪追高",
+                        "action": "汇金股份高开超过 3% 不追，等回落承接",
+                    }
+                ],
+                "action_limits": ["红灯持仓不补亏，机会股只验证不追高"],
+                "automation": {
+                    "status": "ok",
+                    "advice": "自动更新未发现硬失败",
+                    "failed_steps": [],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (daily_dir / "pipeline.status").write_text("status=ok\nreport=ok\n", encoding="utf-8")
+    (research_dir / "opportunity").mkdir()
+    (research_dir / "opportunity/latest.json").write_text(
+        json.dumps(
+            {"module_sections": [{"key": "opportunity-candidates", "items": []}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (announcement_dir / "latest.md").write_text("# 公告\n", encoding="utf-8")
+
+    content = module.build_morning_report(
+        daily_dir=daily_dir,
+        research_dir=research_dir,
+        announcement_dir=announcement_dir,
+        site_url="https://stock.example.com",
+    )
+
+    assert "早盘行动卡" in content.splitlines()[0]
+    assert "早盘主线：市场震荡，结构性机会为主" in content
+    assert "持仓红灯 2 / 黄灯 0 / 绿灯 0" in content
+    assert "甬矽电子｜先降风险｜动作：不加仓；反弹优先锁利润/降风险" in content
+    assert "蓝色光标｜先降风险｜动作：暂停加仓；先降风险" in content
+    assert "禁忌：不补亏、不追高" in content
+    assert "汇金股份｜大数据｜机会：大数据强度 100/100" in content
+    assert "动作：高开超过 3% 不追，等回落承接" in content
+    assert "旧研究候选" not in content
+    assert "看盘链接" in content
+    assert "内容仅用于研究复盘，不构成投资建议" in content

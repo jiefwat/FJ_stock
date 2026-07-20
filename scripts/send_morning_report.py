@@ -36,12 +36,19 @@ def build_morning_report(
     holdings_path: str | Path = "data/portfolio/holdings.csv",
     site_url: str = "https://stock.jiewat-kaka-fj.com",
 ) -> str:
-    daily_path = Path(daily_dir) / "latest.md"
-    decisions_path = Path(daily_dir) / "latest_decisions.json"
-    pipeline_path = Path(daily_dir) / "pipeline.status"
+    daily_root = Path(daily_dir)
+    research_root = Path(research_dir)
+    if str(research_dir) == "reports/research" and daily_root != Path("reports/daily"):
+        sibling_research = daily_root.parent / "research"
+        research_root = (
+            sibling_research if sibling_research.exists() else Path("__missing_research__")
+        )
+    daily_path = daily_root / "latest.md"
+    decisions_path = daily_root / "latest_decisions.json"
+    pipeline_path = daily_root / "pipeline.status"
     announcements_path = Path(announcement_dir) / "latest.md"
-    opportunity_path = Path(research_dir) / "opportunity" / "latest.json"
-    feedback_path = Path(research_dir) / "feedback_summary.json"
+    opportunity_path = research_root / "opportunity" / "latest.json"
+    feedback_path = research_root / "feedback_summary.json"
     daily = _read_text(daily_path)
     decisions = read_decision_artifact(decisions_path)
     pipeline = _read_text(pipeline_path)
@@ -93,32 +100,43 @@ def build_morning_report(
         extra_limits=action_limit_lines + automation_lines,
     )
     market_lines = _morning_market_fact_lines(market, sectors)
-    candidate_lines = _structured_opportunity_lines(
+    decision_market = _decision_market_summary(decisions)
+    if decision_market:
+        market_lines = [_bullet(f"早盘主线：{decision_market}"), *market_lines[:2]]
+    decision_candidate_lines = _decision_opportunity_actions(decisions, limit=3)
+    fallback_candidate_lines = _structured_opportunity_lines(
         _read_json_file(opportunity_path),
         site_url=site_url,
         limit=3,
     )
-    if not candidate_lines:
-        candidate_lines = [_shorten_line(item, limit=120) for item in opportunity_actions[:3]]
-    if not candidate_lines:
-        candidate_lines = _compact_block(
+    if not fallback_candidate_lines:
+        fallback_candidate_lines = [
+            _shorten_line(item, limit=120) for item in opportunity_actions[:3]
+        ]
+    if not fallback_candidate_lines:
+        fallback_candidate_lines = _compact_block(
             opportunities,
             fallback="暂无通过前瞻闸门的股票；不为凑数降低标准。",
             max_items=3,
         ).splitlines()
+    candidate_lines = _fill_candidate_lines(
+        decision_candidate_lines,
+        fallback_candidate_lines,
+        limit=3,
+    )
     feedback_line = _morning_feedback_line(_read_json_file(feedback_path))
     review_links = (
         f"[每日大盘]({site_url}/#market)｜[我的持仓]({site_url}/#portfolio)｜"
         f"[热门机会]({site_url}/#opportunity)"
     )
     lines = [
-        f"# StockTS 30秒晨报（{generated_at[:10]}｜交易日 {trade_date}）",
+        f"# StockTS 早盘行动卡 / 30秒晨报（{generated_at[:10]}｜交易日 {trade_date}）",
         "",
         "## 最新市场事实",
         "\n".join(market_lines),
         "",
         "## 先处理持仓",
-        "\n".join(holding_lines[:3]),
+        "\n".join(_visible_holding_lines(holding_lines)),
         "",
         "## 今日前瞻机会",
         "\n".join(candidate_lines),
@@ -132,7 +150,7 @@ def build_morning_report(
             or ["- 当前未发现改变判断的核心数据阻断项。"]
         ),
         "- 纪律：先处理持仓风险，再验证机会；没有确认，不扩大风险。",
-        f"- {review_links}",
+        f"- 看盘链接：{review_links}",
         "- 内容仅用于研究复盘，不构成投资建议。",
     ]
     return "\n".join(lines).strip() + "\n"
@@ -160,7 +178,7 @@ def send_morning_report(
         holdings_path=holdings_path,
         site_url=site_url,
     )
-    subject = f"StockTS 早间简报 {datetime.now().date().isoformat()}"
+    subject = f"StockTS 早间简报 · 早盘行动卡 {datetime.now().date().isoformat()}"
     previous_receivers = os.environ.get("EMAIL_RECEIVERS")
     if email_receivers is not None:
         os.environ["EMAIL_RECEIVERS"] = ",".join(email_receivers)
@@ -208,8 +226,18 @@ def _structured_holding_lines(decisions: dict[str, object]) -> list[str]:
     lights = decisions.get("traffic_lights") if isinstance(decisions, dict) else None
     if not isinstance(lights, dict):
         return []
-    lines: list[str] = []
-    for key, judgment in (("red", "先降风险"), ("yellow", "等待确认"), ("green", "持有跟踪")):
+    counts = {
+        key: len(items) if isinstance(items, list) else 0
+        for key, items in lights.items()
+    }
+    lines = [
+        _bullet(
+            f"持仓红灯 {counts.get('red', 0)} / 黄灯 {counts.get('yellow', 0)} / "
+            f"绿灯 {counts.get('green', 0)}：先处理红灯，再看黄灯修复，绿灯只跟踪。"
+        )
+    ]
+    rows = (("red", "先降风险"), ("yellow", "等待确认"), ("green", "持有跟踪"))
+    for key, judgment in rows:
         items = lights.get(key)
         if not isinstance(items, list):
             continue
@@ -219,12 +247,45 @@ def _structured_holding_lines(decisions: dict[str, object]) -> list[str]:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            action = str(item.get("action") or judgment).strip()
-            reason = str(item.get("reason") or "原因待补").strip()
-            lines.append(_bullet(f"{name}：判断：{judgment}；动作：{action}；触发：{reason}"))
-            if len(lines) >= 3:
+            action = _holding_card_action(str(item.get("action") or judgment), key=key)
+            trigger = str(item.get("trigger") or item.get("reason") or "原因待补").strip()
+            forbidden = _holding_card_forbidden(key, action)
+            lines.append(
+                _bullet(
+                    _shorten_line(
+                        f"{name}｜{judgment}｜动作：{action}｜触发：{trigger}｜禁忌：{forbidden}",
+                        limit=128,
+                    )
+                )
+            )
+            if len(lines) >= 4:
                 return lines
     return lines
+
+
+def _visible_holding_lines(holding_lines: list[str]) -> list[str]:
+    if holding_lines and "持仓红灯" in holding_lines[0]:
+        return holding_lines[:4]
+    return holding_lines[:3]
+
+
+def _holding_card_action(action: str, *, key: str) -> str:
+    clean = action.strip().rstrip("。；;，, ") or "只观察"
+    if key == "red" and "可加仓" in clean:
+        return "暂停加仓；先降风险"
+    if key == "red" and "加仓" in clean and "不加仓" not in clean:
+        return "暂停加仓；先降风险"
+    return clean
+
+
+def _holding_card_forbidden(key: str, action: str) -> str:
+    if key == "red":
+        return "不补亏、不追高"
+    if key == "yellow":
+        return "不提前加仓"
+    if "加仓" in action and "不加仓" not in action:
+        return "等确认后再执行"
+    return "不临时交易"
 
 
 def _priority_data_risk_lines(lines: list[str]) -> list[str]:
@@ -306,6 +367,39 @@ def _structured_opportunity_lines(
         if len(lines) >= limit:
             break
     return lines
+
+
+def _fill_candidate_lines(
+    primary: list[str], fallback: list[str], *, limit: int
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for raw_line in [*primary, *fallback]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        key = _candidate_line_key(stripped)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        merged.append(_renumber_candidate_line(stripped, len(merged) + 1))
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _candidate_line_key(line: str) -> str:
+    text = _strip_number_prefix(line).strip()
+    link = re.match(r"\[([^\]]+)\]", text)
+    if link:
+        return link.group(1).strip().lower()
+    return text.split("｜", 1)[0].split("：", 1)[0].strip().lower()
+
+
+def _renumber_candidate_line(line: str, number: int) -> str:
+    text = _strip_number_prefix(line).strip()
+    return f"{number}. {text}"
 
 
 def _morning_feedback_line(payload: dict[str, object]) -> str:
@@ -1158,9 +1252,17 @@ def _compact_opportunity_entry(
     action: str,
 ) -> str:
     return (
-        f"{name}｜{sector}｜机会：{_clause(reason, limit=22)}；"
-        f"风险：{_clause(risk, limit=14)}；动作：{_clause(action, limit=18)}"
+        f"{name}｜{sector}｜机会：{_opportunity_clause(reason, limit=26)}；"
+        f"风险：{_opportunity_clause(risk, limit=22)}；"
+        f"动作：{_opportunity_clause(action, limit=28)}"
     )
+
+
+def _opportunity_clause(value: str, *, limit: int) -> str:
+    clean = str(value).strip().rstrip("。；;，, ")
+    parts = [part.strip() for part in re.split(r"[；;。]", clean) if part.strip()]
+    chosen = parts[0] if parts else clean
+    return _shorten_line(chosen, limit=limit)
 
 
 def _clean_candidate_text(text: str, stock_name: str) -> str:
