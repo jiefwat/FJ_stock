@@ -351,6 +351,29 @@ def test_holding_conclusion_can_recommend_add_when_under_target_and_clean() -> N
     assert "原因：" in result.conclusion
 
 
+def test_holding_exit_watch_never_suggests_adding_when_under_target() -> None:
+    result = analyse_holding(
+        holding_item(
+            symbol="SH.600002",
+            name="风控样本",
+            quantity=4300,
+            cost_price=5.7226,
+            target_weight=0.125,
+            thesis="等待修复。",
+            invalidation="跌破成本后退出复核。",
+        ),
+        equity(symbol="SH.600002", code="600002", name="风控样本", price=3.73, change_pct=-6.98),
+        total_market_value=270_233,
+    )
+
+    assert result.action == "exit_watch"
+    assert result.rebalance_quantity and result.rebalance_quantity > 0
+    assert "暂停补仓" in result.conclusion
+    assert "可加仓" not in result.conclusion
+    assert "补仓约" not in result.conclusion
+    assert all("可加仓" not in action and "补足目标仓位" not in action for action in result.next_actions)
+
+
 def test_high_volatility_creates_bear_evidence() -> None:
     start = date(2026, 1, 1)
     closes = [100 + (25 if index % 2 else -20) + index * 0.2 for index in range(80)]

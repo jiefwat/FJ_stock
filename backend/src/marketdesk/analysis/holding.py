@@ -172,7 +172,7 @@ def _next_actions(
         shares = abs(round(rebalance_quantity))
         if shares > 0 and rebalance_quantity < 0:
             actions.insert(0, f"若回到目标仓位，需减仓约 {shares:g} 股")
-        elif shares > 0:
+        elif shares > 0 and action == "add_watch":
             actions.insert(0, f"若补足目标仓位，可加仓约 {shares:g} 股")
     if quote.sector:
         actions.append(f"同步检查 {quote.sector} 板块温度")
@@ -289,11 +289,11 @@ def _execution_text(action: str, rebalance_quantity: float | None) -> str:
             else "仓位已接近目标，先观察而不是主动加仓。"
         )
     if action == "exit_watch":
-        return (
-            f"建议先减仓约 {shares:g} 股，剩余仓位进入个股页复核。"
-            if shares > 0
-            else "建议先做退出复核，确认是否减仓、止损或转入跟踪清单。"
-        )
+        if rebalance_quantity is not None and rebalance_quantity < 0 and shares > 0:
+            return f"建议先减仓约 {shares:g} 股，剩余仓位进入个股页复核。"
+        if rebalance_quantity is not None and rebalance_quantity > 0:
+            return "暂停补仓，先做退出复核；只有成本风控解除后再讨论目标仓位缺口。"
+        return "建议先做退出复核，确认是否减仓、止损或转入跟踪清单。"
     if action == "review":
         return "先补齐行情、成本和持仓逻辑，再决定是否加减仓。"
     return "维持当前仓位，继续跟踪趋势、资金和失效条件。"

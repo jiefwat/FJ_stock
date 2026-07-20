@@ -48,6 +48,7 @@ class EastmoneyProvider:
             timeout=10,
             headers={"User-Agent": "MarketDesk/0.1 local-research"},
             follow_redirects=True,
+            trust_env=False,
         )
 
     async def _get_json(self, url: str, params: dict[str, Any]) -> dict[str, Any]:

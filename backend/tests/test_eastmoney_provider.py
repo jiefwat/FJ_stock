@@ -6,6 +6,20 @@ import pytest
 from marketdesk.providers.eastmoney import EastmoneyProvider
 
 
+def test_eastmoney_provider_does_not_read_shell_proxy_environment(monkeypatch) -> None:
+    created_clients: list[dict[str, object]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            created_clients.append(kwargs)
+
+    monkeypatch.setattr("marketdesk.providers.eastmoney.httpx.AsyncClient", FakeClient)
+
+    EastmoneyProvider()
+
+    assert created_clients[0]["trust_env"] is False
+
+
 def test_normalize_equities_maps_symbols_and_missing_values() -> None:
     payload = {
         "data": {

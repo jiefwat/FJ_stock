@@ -61,6 +61,7 @@ class PublicMarketProvider:
                 "Referer": "https://finance.sina.com.cn/",
             },
             follow_redirects=True,
+            trust_env=False,
         )
         self._enhancement_status: dict[str, dict[str, Any]] = {
             "eastmoney_fund_flow": {

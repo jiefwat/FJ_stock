@@ -69,7 +69,7 @@ afterEach(() => {
 it("shows portfolio overview and a compact holdings list with stock-analysis jumps", async () => {
   renderPage();
 
-  const table = await screen.findByRole("table", { name: "持仓列表" });
+  const list = await screen.findByRole("list", { name: "持仓清单" });
 
   expect(screen.getByText("组合总览")).toBeInTheDocument();
   expect(screen.getByText("组合结论")).toBeInTheDocument();
@@ -77,12 +77,16 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(screen.getByText(/需要复核 1 笔/)).toBeInTheDocument();
   expect(screen.getAllByText(/组合占比高于目标/).length).toBeGreaterThan(0);
 
-  const row = within(table).getByRole("row", { name: /贵州茅台/ });
+  const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
   expect(within(row).getByText("贵州茅台")).toBeInTheDocument();
   expect(within(row).getByText("减仓")).toBeInTheDocument();
   expect(within(row).getByText(/分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑/)).toBeInTheDocument();
   expect(within(row).getByText(/建议先减仓约 60 股/)).toBeInTheDocument();
   expect(within(row).queryByText(/当前盈利/)).not.toBeInTheDocument();
+  expect(within(row).getByText("收益拆分")).toBeInTheDocument();
+  expect(within(row).getByText("总盈亏")).toBeInTheDocument();
+  expect(within(row).getByText("单日盈亏")).toBeInTheDocument();
+  expect(within(row).getByText("近5日盈亏")).toBeInTheDocument();
   expect(within(row).getByText(/10,000/)).toBeInTheDocument();
   expect(within(row).getByText("+1,780")).toBeInTheDocument();
   expect(within(row).getByText("-3,200")).toBeInTheDocument();
@@ -96,11 +100,42 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
 it("keeps editing lightweight from the list row", async () => {
   renderPage();
 
-  const table = await screen.findByRole("table", { name: "持仓列表" });
-  const row = within(table).getByRole("row", { name: /贵州茅台/ });
+  const list = await screen.findByRole("list", { name: "持仓清单" });
+  const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
   fireEvent.change(within(row).getByLabelText("持仓数量 贵州茅台"), { target: { value: "80" } });
   fireEvent.change(within(row).getByLabelText("成本价 贵州茅台"), { target: { value: "1420" } });
   fireEvent.click(within(row).getByRole("button", { name: "保存 贵州茅台" }));
 
   expect(await screen.findByText("已保存")).toBeInTheDocument();
+});
+
+it("does not show an add signal when the holding action is exit review", async () => {
+  const exitHolding = {
+    ...holding,
+    item: { ...holding.item, id: 2, name: "风控样本", symbol: "SH.600002", quantity: 4300, cost_price: 5.7226, target_weight: 0.125 },
+    market_value: 16039,
+    pnl: -8568,
+    pnl_pct: -34.82,
+    day_pnl: -1204,
+    day_pnl_pct: -6.98,
+    five_day_pnl: -2021,
+    five_day_pnl_pct: -11.19,
+    portfolio_weight: 0.059,
+    drift: -0.066,
+    rebalance_quantity: 4756,
+    action: "exit_watch",
+    conclusion: "建议动作：减仓/退出复核。分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑。原因：成本风控已触发。暂停补仓，先做退出复核。",
+    risk_flags: ["亏损超过 10%"],
+  };
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => [exitHolding] })));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><MemoryRouter><HoldingsPage /></MemoryRouter></QueryClientProvider>);
+
+  const list = await screen.findByRole("list", { name: "持仓清单" });
+  const row = within(list).getByRole("listitem", { name: /风控样本/ });
+
+  expect(within(row).getByText("退出复核")).toBeInTheDocument();
+  expect(within(row).getAllByText(/暂停补仓/).length).toBeGreaterThan(0);
+  expect(within(row).queryByText(/可加仓/)).not.toBeInTheDocument();
+  expect(within(row).queryByText(/\+4,756 股/)).not.toBeInTheDocument();
 });

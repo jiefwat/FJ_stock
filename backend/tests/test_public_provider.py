@@ -7,6 +7,20 @@ import pytest
 from marketdesk.providers.public_market import PublicMarketProvider, _market_observed_at
 
 
+def test_public_provider_does_not_read_shell_proxy_environment(monkeypatch) -> None:
+    created_clients: list[dict[str, object]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            created_clients.append(kwargs)
+
+    monkeypatch.setattr("marketdesk.providers.public_market.httpx.AsyncClient", FakeClient)
+
+    PublicMarketProvider()
+
+    assert created_clients[0]["trust_env"] is False
+
+
 def test_sina_equities_normalize_market_cap_units() -> None:
     rows = [
         {
