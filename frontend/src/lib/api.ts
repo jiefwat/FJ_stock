@@ -15,9 +15,33 @@ export type HoldingItem = { id: number; symbol: string; name: string; quantity: 
 export type HoldingAnalysisDimension = { key: string; label: string; signal: string; summary: string; evidence: string[] };
 export type HoldingDossier = { item: HoldingItem; quote: Quote; market_value: number | null; cost_value: number; pnl: number | null; pnl_pct: number | null; day_pnl?: number | null; day_pnl_pct?: number | null; five_day_pnl?: number | null; five_day_pnl_pct?: number | null; portfolio_weight: number | null; drift: number | null; target_market_value: number | null; rebalance_value: number | null; rebalance_quantity: number | null; break_even_price: number; price_gap_to_cost_pct: number | null; analysis_dimensions: HoldingAnalysisDimension[]; action: string; conclusion: string; risk_flags: string[]; next_actions: string[] };
 export type TodayData = { meta: Meta; analysis: Analysis; indices: IndexQuote[]; sectors: Sector[]; top_opportunities: Candidate[]; risk_budget: number; next_actions: string[] };
+export type UserAccount = { id: number; email: string; display_name: string; created_at: string; updated_at: string };
+export type AuthResult = { user: UserAccount; access_token: string; token_type: "bearer" };
+export type UserPreferences = { default_symbol: string; start_page: string; risk_profile: string; morning_email_enabled: boolean };
+
+const tokenKey = "marketdesk.accessToken";
+
+export function getAuthToken(): string | null {
+  if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") return null;
+  return localStorage.getItem(tokenKey);
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof localStorage === "undefined" || typeof localStorage.setItem !== "function") return;
+  localStorage.setItem(tokenKey, token);
+}
+
+export function clearAuthToken(): void {
+  if (typeof localStorage === "undefined" || typeof localStorage.removeItem !== "function") return;
+  localStorage.removeItem(tokenKey);
+}
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  const token = getAuthToken();
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(path, { ...init, headers });
   if (!response.ok) throw new Error(`请求失败 (${response.status})`);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

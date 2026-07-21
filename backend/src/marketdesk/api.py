@@ -9,20 +9,24 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AuthResult,
     EquityQuote,
     HoldingDossier,
     MarketEventResult,
     OpportunityResult,
     SectorDossier,
     StockDossier,
+    UserAccount,
+    UserPreferences,
     WatchlistItem,
 )
 from marketdesk.services import MarketService
@@ -60,6 +64,33 @@ class HoldingUpdate(BaseModel):
     thesis: str | None = Field(default=None, min_length=1)
     invalidation: str | None = Field(default=None, min_length=1)
     status: Literal["holding", "trimming", "watching_exit", "closed"] | None = None
+
+
+class AuthRegister(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=8)
+    display_name: str | None = Field(default=None, min_length=1)
+
+
+class AuthLogin(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
+
+
+class PreferenceUpdate(BaseModel):
+    default_symbol: str | None = Field(default=None, min_length=1)
+    start_page: Literal[
+        "today", "market", "opportunities", "stocks", "holdings", "watchlist", "data"
+    ] | None = None
+    risk_profile: Literal["defensive", "balanced", "active"] | None = None
+    morning_email_enabled: bool | None = None
+
+
+def _normalize_email(email: str) -> str:
+    normalized = email.strip().lower()
+    if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+        raise HTTPException(status_code=422, detail="invalid email")
+    return normalized
 
 
 async def _safe_auto_refresh(service: MarketService) -> None:
@@ -132,6 +163,68 @@ def create_app(
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    def current_user(authorization: str | None) -> UserAccount:
+        if not authorization:
+            return market_service.store.get_user(market_service.store.default_user_id)
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token.strip():
+            raise HTTPException(status_code=401, detail="invalid auth header")
+        user = market_service.store.user_for_token(token.strip())
+        if user is None:
+            raise HTTPException(status_code=401, detail="invalid or expired token")
+        return user
+
+    @app.post("/api/v1/auth/register", status_code=201)
+    async def register(payload: AuthRegister) -> AuthResult:
+        email = _normalize_email(payload.email)
+        token = new_token()
+        try:
+            user = market_service.store.create_user(
+                email=email,
+                display_name=payload.display_name or email.split("@", 1)[0],
+                password_hash=hash_password(payload.password),
+            )
+        except Exception as error:
+            raise HTTPException(status_code=409, detail="email already registered") from error
+        market_service.store.create_session(user.id, token)
+        return AuthResult(user=user, access_token=token)
+
+    @app.post("/api/v1/auth/login")
+    async def login(payload: AuthLogin) -> AuthResult:
+        record = market_service.store.get_user_by_email(_normalize_email(payload.email))
+        if record is None or not verify_password(payload.password, record.password_hash):
+            raise HTTPException(status_code=401, detail="invalid email or password")
+        token = new_token()
+        market_service.store.create_session(record.account.id, token)
+        return AuthResult(user=record.account, access_token=token)
+
+    @app.post("/api/v1/auth/logout", status_code=204)
+    async def logout(request: Request) -> Response:
+        authorization = request.headers.get("authorization")
+        if authorization:
+            scheme, _, token = authorization.partition(" ")
+            if scheme.lower() == "bearer" and token.strip():
+                market_service.store.delete_session(token.strip())
+        return Response(status_code=204)
+
+    @app.get("/api/v1/auth/me")
+    async def me(request: Request) -> UserAccount:
+        return current_user(request.headers.get("authorization"))
+
+    @app.get("/api/v1/preferences")
+    async def preferences(request: Request) -> UserPreferences:
+        user = current_user(request.headers.get("authorization"))
+        return market_service.store.get_preferences(user.id)
+
+    @app.patch("/api/v1/preferences")
+    async def update_preferences(
+        payload: PreferenceUpdate, request: Request
+    ) -> UserPreferences:
+        user = current_user(request.headers.get("authorization"))
+        return market_service.store.update_preferences(
+            user.id, **payload.model_dump(exclude_none=True)
+        )
 
     @app.get("/api/v1/market")
     async def market() -> dict[str, Any]:
@@ -211,51 +304,73 @@ def create_app(
         return status
 
     @app.get("/api/v1/watchlist")
-    async def watchlist() -> list[WatchlistItem]:
-        return market_service.store.list_watchlist()
+    async def watchlist(request: Request) -> list[WatchlistItem]:
+        user = current_user(request.headers.get("authorization"))
+        return market_service.store.list_watchlist(user.id)
 
     @app.get("/api/v1/holdings")
-    async def holdings() -> list[HoldingDossier]:
-        return await market_service.holdings()
+    async def holdings(request: Request) -> list[HoldingDossier]:
+        user = current_user(request.headers.get("authorization"))
+        return await market_service.holdings(user.id)
 
     @app.post("/api/v1/holdings", status_code=201)
-    async def create_holding(payload: HoldingCreate) -> HoldingDossier:
+    async def create_holding(
+        payload: HoldingCreate, request: Request
+    ) -> HoldingDossier:
+        user = current_user(request.headers.get("authorization"))
         try:
-            return await market_service.create_holding(payload.model_dump())
+            return await market_service.create_holding(payload.model_dump(), user.id)
         except Exception as error:
             raise HTTPException(status_code=409, detail="holding already exists") from error
 
     @app.patch("/api/v1/holdings/{item_id}")
-    async def update_holding(item_id: int, payload: HoldingUpdate) -> HoldingDossier:
+    async def update_holding(
+        item_id: int, payload: HoldingUpdate, request: Request
+    ) -> HoldingDossier:
+        user = current_user(request.headers.get("authorization"))
         try:
-            return await market_service.update_holding(item_id, payload.model_dump(exclude_none=True))
+            return await market_service.update_holding(
+                item_id, payload.model_dump(exclude_none=True), user.id
+            )
         except KeyError as error:
             raise HTTPException(status_code=404, detail="holding not found") from error
 
     @app.delete("/api/v1/holdings/{item_id}", status_code=204)
-    async def delete_holding(item_id: int) -> Response:
-        market_service.delete_holding(item_id)
+    async def delete_holding(
+        item_id: int, request: Request
+    ) -> Response:
+        user = current_user(request.headers.get("authorization"))
+        market_service.delete_holding(item_id, user.id)
         return Response(status_code=204)
 
     @app.post("/api/v1/watchlist", status_code=201)
-    async def create_watchlist(payload: WatchlistCreate) -> WatchlistItem:
+    async def create_watchlist(
+        payload: WatchlistCreate, request: Request
+    ) -> WatchlistItem:
+        user = current_user(request.headers.get("authorization"))
         try:
-            return market_service.store.create_watchlist(**payload.model_dump())
+            return market_service.store.create_watchlist(**payload.model_dump(), user_id=user.id)
         except Exception as error:
             raise HTTPException(status_code=409, detail="symbol already exists") from error
 
     @app.patch("/api/v1/watchlist/{item_id}")
-    async def update_watchlist(item_id: int, payload: WatchlistUpdate) -> WatchlistItem:
+    async def update_watchlist(
+        item_id: int, payload: WatchlistUpdate, request: Request
+    ) -> WatchlistItem:
+        user = current_user(request.headers.get("authorization"))
         try:
             return market_service.store.update_watchlist(
-                item_id, **payload.model_dump(exclude_none=True)
+                item_id, user_id=user.id, **payload.model_dump(exclude_none=True)
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail="watchlist item not found") from error
 
     @app.delete("/api/v1/watchlist/{item_id}", status_code=204)
-    async def delete_watchlist(item_id: int) -> Response:
-        market_service.store.delete_watchlist(item_id)
+    async def delete_watchlist(
+        item_id: int, request: Request
+    ) -> Response:
+        user = current_user(request.headers.get("authorization"))
+        market_service.store.delete_watchlist(item_id, user.id)
         return Response(status_code=204)
 
     frontend = Path(__file__).resolve().parents[3] / "frontend" / "dist"

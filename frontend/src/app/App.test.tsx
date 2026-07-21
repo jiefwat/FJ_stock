@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -21,10 +21,22 @@ const events = {
 };
 
 beforeEach(() => {
+  const storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+    clear: () => storage.clear(),
+  });
+  localStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     return { ok: true, json: async () => url.includes("/api/v1/market-events") ? events : today };
   }));
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 it("shows the market state, next actions, and data time", async () => {
@@ -39,4 +51,59 @@ it("shows the market state, next actions, and data time", async () => {
   expect(screen.getByText("复盘清单")).toBeInTheDocument();
   expect(screen.getByText(/数据时间/)).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+});
+
+it("registers a user and sends the auth token with personal requests", async () => {
+  const calls: Array<{ url: string; auth: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    calls.push({ url, auth: headers.get("Authorization") ?? "" });
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: false, status: 401, json: async () => ({ detail: "missing" }) };
+    }
+    if (url.includes("/api/v1/auth/register")) {
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          access_token: "token-alpha",
+          token_type: "bearer",
+          user: {
+            id: 2,
+            email: "alpha@example.com",
+            display_name: "Alpha",
+            created_at: "2026-07-21T01:00:00Z",
+            updated_at: "2026-07-21T01:00:00Z",
+          },
+        }),
+      };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          default_symbol: "SH.600519",
+          start_page: "today",
+          risk_profile: "balanced",
+          morning_email_enabled: true,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "注册/登录" }));
+  fireEvent.click(screen.getByRole("button", { name: "注册新账号" }));
+  fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "alpha@example.com" } });
+  fireEvent.change(screen.getByLabelText("昵称"), { target: { value: "Alpha" } });
+  fireEvent.change(screen.getByLabelText("密码"), { target: { value: "Passw0rd-alpha" } });
+  fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+  expect(await screen.findByText("Alpha")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(calls.some((call) => call.url.includes("/api/v1/preferences") && call.auth === "Bearer token-alpha")).toBe(true);
+  });
 });

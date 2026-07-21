@@ -366,3 +366,29 @@ class WatchlistItem(StrictModel):
     @classmethod
     def require_watchlist_timezone(cls, value: datetime) -> datetime:
         return DatasetMeta.require_timezone(value)
+
+
+class UserAccount(StrictModel):
+    id: int
+    email: str
+    display_name: str
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def require_user_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class AuthResult(StrictModel):
+    user: UserAccount
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserPreferences(StrictModel):
+    default_symbol: str = "SH.600519"
+    start_page: str = "today"
+    risk_profile: str = "balanced"
+    morning_email_enabled: bool = True

@@ -326,6 +326,108 @@ def test_adding_existing_symbol_is_idempotent(tmp_path) -> None:
     assert len(api.get("/api/v1/watchlist").json()) == 1
 
 
+def test_registered_users_have_isolated_holdings(tmp_path) -> None:
+    api = client(tmp_path)
+
+    alpha = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "alpha@example.com",
+            "password": "Passw0rd-alpha",
+            "display_name": "Alpha",
+        },
+    )
+    beta = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "beta@example.com",
+            "password": "Passw0rd-beta",
+            "display_name": "Beta",
+        },
+    )
+
+    assert alpha.status_code == 201
+    assert beta.status_code == 201
+    alpha_auth = {"Authorization": f"Bearer {alpha.json()['access_token']}"}
+    beta_auth = {"Authorization": f"Bearer {beta.json()['access_token']}"}
+
+    created = api.post(
+        "/api/v1/holdings",
+        headers=alpha_auth,
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 100,
+            "cost_price": 1400,
+            "target_weight": 0.4,
+            "thesis": "Alpha 的现金流逻辑",
+            "invalidation": "Alpha 的失效条件",
+        },
+    )
+
+    assert created.status_code == 201
+    assert len(api.get("/api/v1/holdings", headers=alpha_auth).json()) == 1
+    assert api.get("/api/v1/holdings", headers=beta_auth).json() == []
+
+    beta_created = api.post(
+        "/api/v1/holdings",
+        headers=beta_auth,
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 8,
+            "cost_price": 1490,
+            "target_weight": 0.1,
+            "thesis": "Beta 的低仓位观察",
+            "invalidation": "Beta 的失效条件",
+        },
+    )
+
+    assert beta_created.status_code == 201
+    assert api.get("/api/v1/holdings", headers=alpha_auth).json()[0]["item"]["quantity"] == 100
+    assert api.get("/api/v1/holdings", headers=beta_auth).json()[0]["item"]["quantity"] == 8
+
+
+def test_user_preferences_are_personal(tmp_path) -> None:
+    api = client(tmp_path)
+    alpha = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "prefs-alpha@example.com",
+            "password": "Passw0rd-alpha",
+            "display_name": "Alpha",
+        },
+    ).json()
+    beta = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "prefs-beta@example.com",
+            "password": "Passw0rd-beta",
+            "display_name": "Beta",
+        },
+    ).json()
+    alpha_auth = {"Authorization": f"Bearer {alpha['access_token']}"}
+    beta_auth = {"Authorization": f"Bearer {beta['access_token']}"}
+
+    updated = api.patch(
+        "/api/v1/preferences",
+        headers=alpha_auth,
+        json={
+            "default_symbol": "SH.600519",
+            "start_page": "holdings",
+            "risk_profile": "defensive",
+            "morning_email_enabled": False,
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["start_page"] == "holdings"
+    assert updated.json()["risk_profile"] == "defensive"
+    assert updated.json()["morning_email_enabled"] is False
+    assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "today"
+    assert api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
+
+
 def test_data_status_marks_semantic_research_optional(tmp_path) -> None:
     status = client(tmp_path).get("/api/v1/data-status")
     assert status.status_code == 200

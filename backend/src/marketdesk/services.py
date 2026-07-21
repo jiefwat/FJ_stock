@@ -196,23 +196,31 @@ class MarketService:
         bars = await self.provider.fetch_kline(symbol)
         return analyse_stock(quote, bars, research_evidence, peer_quotes=snapshot.equities)
 
-    async def holdings(self) -> list[HoldingDossier]:
+    async def holdings(self, user_id: int | None = None) -> list[HoldingDossier]:
         snapshot = await self.market()
-        items = self.store.list_holdings()
+        items = self.store.list_holdings(user_id)
         return await self._analyse_holdings(items, snapshot)
 
-    async def create_holding(self, payload: dict[str, Any]) -> HoldingDossier:
-        item = self.store.create_holding(**payload)
+    async def create_holding(
+        self, payload: dict[str, Any], user_id: int | None = None
+    ) -> HoldingDossier:
+        item = self.store.create_holding(**payload, user_id=user_id)
         snapshot = await self.market()
-        return await self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+        return await self._analyse_selected_holding(
+            self.store.list_holdings(user_id), snapshot, item.id
+        )
 
-    async def update_holding(self, item_id: int, changes: dict[str, Any]) -> HoldingDossier:
-        item = self.store.update_holding(item_id, **changes)
+    async def update_holding(
+        self, item_id: int, changes: dict[str, Any], user_id: int | None = None
+    ) -> HoldingDossier:
+        item = self.store.update_holding(item_id, user_id=user_id, **changes)
         snapshot = await self.market()
-        return await self._analyse_selected_holding(self.store.list_holdings(), snapshot, item.id)
+        return await self._analyse_selected_holding(
+            self.store.list_holdings(user_id), snapshot, item.id
+        )
 
-    def delete_holding(self, item_id: int) -> None:
-        self.store.delete_holding(item_id)
+    def delete_holding(self, item_id: int, user_id: int | None = None) -> None:
+        self.store.delete_holding(item_id, user_id)
 
     async def _analyse_holdings(
         self, items: list[HoldingItem], snapshot: MarketSnapshot
