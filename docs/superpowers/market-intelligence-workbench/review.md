@@ -21,3 +21,21 @@ Scope: data resilience, deterministic analysis, Stock Lab interaction, persisten
 No unresolved correctness or interaction finding blocks local release. All required modules load, the Today -> Market/Opportunities -> Stock Lab -> Watchlist path has no dead end, and desktop browser checks show no horizontal overflow.
 
 The known sector-mapping, capital-flow, semantic-research, external-endpoint, and calendar limitations are documented in `test.md`; unavailable evidence is never presented as complete data or an investment recommendation.
+
+## 2026-07-23 Market Summary Payload Review
+
+### Findings
+
+No explicit findings. The change preserves the full `MarketSnapshot` inside the service, computes analysis from the complete equity universe, and projects only the browser-facing response into the compact contract.
+
+### Open Questions And Assumptions
+
+The repository frontend is the supported consumer of `/api/v1/market`; it already types and reads only metadata, indices, sectors, and analysis. No external client contract is documented in the repository.
+
+### Residual Risks And Testing Gaps
+
+An undocumented external client that reads `snapshot.equities` from this public v1 endpoint would need to migrate to the search, opportunity, or stock APIs. The response-contract regression test and production smoke check cover the supported browser workflow.
+
+### Decision
+
+Approved for deployment. No P0, P1, or P2 finding blocks release.

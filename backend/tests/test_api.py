@@ -169,7 +169,11 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     stock = api.get("/api/v1/stocks/SH.600519")
 
     assert market.status_code == 200
-    assert market.json()["snapshot"]["meta"]["source"] == "fixture"
+    market_payload = market.json()
+    assert market_payload["snapshot"]["meta"]["source"] == "fixture"
+    assert market_payload["snapshot"]["indices"][0]["symbol"] == "SH.000001"
+    assert market_payload["snapshot"]["sectors"][0]["code"] == "BK1"
+    assert "equities" not in market_payload["snapshot"]
     assert today.json()["top_opportunities"][0]["quote"]["name"] == "贵州茅台"
     assert stock.json()["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
 

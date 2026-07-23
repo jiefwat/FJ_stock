@@ -101,6 +101,17 @@ class MarketAnalysis(StrictModel):
     unchanged: int
 
 
+class MarketSummarySnapshot(StrictModel):
+    meta: DatasetMeta
+    indices: list[IndexQuote]
+    sectors: list[SectorSnapshot]
+
+
+class MarketPayload(StrictModel):
+    snapshot: MarketSummarySnapshot
+    analysis: MarketAnalysis
+
+
 class MarketEventRaw(StrictModel):
     id: str
     title: str

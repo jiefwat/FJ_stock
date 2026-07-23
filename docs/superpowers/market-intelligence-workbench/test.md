@@ -4,6 +4,13 @@ Date: 2026-07-19
 Branch: `codex/analyst-workflow-v2`
 Local verification URL: `http://127.0.0.1:8765`
 
+## 2026-07-23 Market Summary Payload
+
+- Added a response-contract regression test proving `/api/v1/market` omits the internal `snapshot.equities` universe while preserving metadata, indices, sectors, and analysis.
+- The focused test failed against the old full-snapshot response, then passed after the explicit summary projection was added.
+- Local production response size fell from the observed public baseline of 1,408,848 bytes to 9,666 bytes, a 99.3% reduction.
+- `make verify` passed with 63 backend tests, 16 frontend tests, a production build, and live data covering 5,529 equities, 6 indices, and 100 sectors.
+
 ## Automated Gates
 
 `make verify` passed the complete operator gate:

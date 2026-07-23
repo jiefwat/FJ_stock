@@ -17,7 +17,9 @@ from marketdesk.models import (
     HoldingItem,
     MarketEventRaw,
     MarketEventResult,
+    MarketPayload,
     MarketSnapshot,
+    MarketSummarySnapshot,
     OpportunityResult,
     SectorDossier,
     StockDossier,
@@ -88,9 +90,16 @@ class MarketService:
                 self._snapshot = MarketSnapshot.model_validate(payload)
         return self._snapshot
 
-    async def market_payload(self) -> dict[str, Any]:
+    async def market_payload(self) -> MarketPayload:
         snapshot = await self.market()
-        return {"snapshot": snapshot, "analysis": analyse_market(snapshot)}
+        return MarketPayload(
+            snapshot=MarketSummarySnapshot(
+                meta=snapshot.meta,
+                indices=snapshot.indices,
+                sectors=snapshot.sectors,
+            ),
+            analysis=analyse_market(snapshot),
+        )
 
     async def market_events(self, limit: int = 30) -> MarketEventResult:
         fetcher = getattr(self.provider, "fetch_market_events", None)

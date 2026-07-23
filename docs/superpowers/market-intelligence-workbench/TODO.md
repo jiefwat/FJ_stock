@@ -25,3 +25,7 @@
 - [x] Add direct stock advice, comparison cards, and next actions.
 - [x] Add local holdings CRUD with position analysis and rebalance hints.
 - [x] Enable production auto refresh every 7,200 seconds.
+
+## Delivery Efficiency
+
+- [x] Keep the browser-facing market summary free of the unused full-equity universe.

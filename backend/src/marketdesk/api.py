@@ -22,6 +22,7 @@ from marketdesk.models import (
     EquityQuote,
     HoldingDossier,
     MarketEventResult,
+    MarketPayload,
     OpportunityResult,
     SectorDossier,
     StockDossier,
@@ -226,8 +227,8 @@ def create_app(
             user.id, **payload.model_dump(exclude_none=True)
         )
 
-    @app.get("/api/v1/market")
-    async def market() -> dict[str, Any]:
+    @app.get("/api/v1/market", response_model=MarketPayload)
+    async def market() -> MarketPayload:
         return await market_service.market_payload()
 
     @app.get("/api/v1/market-events")
