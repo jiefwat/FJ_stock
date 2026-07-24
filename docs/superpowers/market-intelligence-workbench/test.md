@@ -206,3 +206,17 @@ Final local gate before release:
 | Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
 
 Real Chromium at 1,440 x 1,000 restored `白酒Ⅱ`, minimum amount `10` hundred-million-yuan units (CNY 1 billion), maximum turnover `5%`, and complete-data mode from the URL, returning one real row with no document overflow. A temporary saved view was created and deleted through the live local API. At 390 x 844 the first run exposed a 920px shell overflow; after the responsive-shell fix, the main area measured 390px, the advanced panel 360px, document overflow was false, and the console reported zero errors or warnings.
+
+### Production Smoke
+
+Release `20260724-132150-ab91a9b` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health and service | `/healthz` returned `status=ok`; systemd service active |
+| Combined advanced filter | `白酒Ⅱ`, change >= 0%, amount >= CNY 1 billion, turnover <= 5%, complete data returned only `SH.600519` |
+| Industry facet | 128 real non-empty equity industries returned |
+| Saved-view persistence | Temporary view created in the production SQLite store and deleted with HTTP 204 |
+| Desktop browser | Restored industry and amount from URL, showed one row, no document overflow |
+| Mobile browser | 390px main, 360px advanced panel, no document overflow |
+| Browser runtime | Zero console errors or warnings |
