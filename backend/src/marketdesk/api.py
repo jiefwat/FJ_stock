@@ -19,6 +19,7 @@ from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
 from marketdesk.models import (
     AuthResult,
+    EquityPage,
     EquityQuote,
     HoldingDossier,
     MarketEventResult,
@@ -230,6 +231,24 @@ def create_app(
     @app.get("/api/v1/market", response_model=MarketPayload)
     async def market() -> MarketPayload:
         return await market_service.market_payload()
+
+    @app.get("/api/v1/equities", response_model=EquityPage)
+    async def equities(
+        q: str | None = Query(default=None, max_length=40),
+        sort_by: Literal[
+            "amount", "change_pct", "turnover_rate", "market_cap"
+        ] = "amount",
+        direction: Literal["asc", "desc"] = "desc",
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=25, ge=1, le=50),
+    ) -> EquityPage:
+        return await market_service.equities_page(
+            query=q,
+            sort_by=sort_by,
+            direction=direction,
+            page=page,
+            page_size=page_size,
+        )
 
     @app.get("/api/v1/market-events")
     async def market_events(limit: int = Query(default=30, ge=1, le=100)) -> MarketEventResult:

@@ -98,3 +98,29 @@ Desktop boundary:
 
 - Browser code remains API-only through `/api/v1/*`.
 - Public browser routes remain a desktop workbench: no device-scaling metadata, no drawer navigation, no bottom bar, and no narrow-screen CSS.
+
+## 2026-07-24 Full-Market Browser
+
+The compact `/api/v1/market` contract remains unchanged. A dedicated bounded endpoint now exposes the cached full A-share universe through search, numeric ranking, and one-based server pagination.
+
+TDD evidence:
+
+- The backend route test first failed because `/api/v1/equities` fell through to the SPA HTML response, then passed after the typed endpoint and service page contract were implemented.
+- The Market page interaction test first failed because `全市场行情` did not exist, then passed after the isolated quote browser was mounted.
+- A focused honesty regression first failed because a missing `change_pct` cell received the `up` class, then passed after missing values were rendered without directional color.
+
+Final local gate:
+
+| Gate | Result |
+| --- | --- |
+| Ruff | Passed, no findings |
+| mypy | Passed, 19 source files |
+| Backend pytest | Passed, 64 tests |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 17 tests |
+| Vite production build | Passed, 1,652 modules transformed |
+| Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Contract assertions cover Chinese-name and code search, both numeric sort directions, missing values last, bounded page size, and an empty out-of-range page with the true total. Frontend interaction coverage includes ranking, explicit search submission, page navigation, Stock Lab links, and neutral styling for missing change evidence.
+
+The in-app browser could not establish a stable connection to the local development server even though terminal health and API checks were normal. Public browser interaction and production API smoke checks are therefore required after deployment and will be recorded separately.

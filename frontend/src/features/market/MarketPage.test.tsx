@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -37,18 +37,39 @@ const events = {
   ],
 };
 
+const equityPage = {
+  meta: market.snapshot.meta,
+  total: 27,
+  page: 1,
+  page_size: 25,
+  sort_by: "amount",
+  direction: "desc",
+  items: [
+    { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 2000000000, turnover_rate: 0.8, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: 80000000, sector: "白酒" },
+    { symbol: "SZ.000001", code: "000001", name: "平安银行", price: 12.5, change_pct: -0.5, amount: 1000000000, turnover_rate: 1.2, volume_ratio: null, pe: 6, pb: 0.7, market_cap: 240000000000, net_flow: null, sector: "银行" },
+    { symbol: "SH.600000", code: "600000", name: "缺失样本", price: null, change_pct: null, amount: null, turnover_rate: null, volume_ratio: null, pe: null, pb: null, market_cap: null, net_flow: null, sector: null },
+  ],
+};
+
 function renderPage(initialPath = "/market") {
+  const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    requests.push(url);
     if (url.includes("/api/v1/sectors/BK1")) return { ok: true, status: 200, json: async () => sector };
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
+    if (url.includes("/api/v1/equities")) return { ok: true, status: 200, json: async () => equityPage };
     return { ok: true, status: 200, json: async () => market };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialPath]}><MarketPage /></MemoryRouter></QueryClientProvider>);
+  return requests;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("opens a sector research panel with constituents and stock links", async () => {
   renderPage();
@@ -63,7 +84,34 @@ it("opens a sector research panel with constituents and stock links", async () =
   expect(screen.getByText("价格是否确认")).toBeInTheDocument();
   expect(screen.getByText("资金是否确认")).toBeInTheDocument();
   expect(screen.getByText("主力净流入 1.00 亿，板块热度偏强。")).toBeInTheDocument();
-  const row = screen.getByRole("link", { name: /贵州茅台/ });
+  const detail = screen.getByText("白酒板块简析").closest("section");
+  expect(detail).not.toBeNull();
+  const row = within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ });
   expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
+});
+
+it("browses, ranks, and searches the full market without loading every quote", async () => {
+  const requests = renderPage();
+
+  const title = await screen.findByText("全市场行情");
+  const browser = title.closest("section");
+  expect(browser).not.toBeNull();
+  expect(await within(browser as HTMLElement).findByRole("link", { name: /贵州茅台/ })).toHaveAttribute(
+    "href",
+    "/stocks?symbol=SH.600519",
+  );
+  const missingRow = within(browser as HTMLElement).getByRole("link", { name: /缺失样本/ }).closest("tr");
+  expect(missingRow?.children[2]).not.toHaveClass("up");
+  expect(missingRow?.children[2]).not.toHaveClass("down");
+
+  fireEvent.change(screen.getByLabelText("排序字段"), { target: { value: "change_pct" } });
+  await waitFor(() => expect(requests.some((url) => url.includes("sort_by=change_pct"))).toBe(true));
+
+  fireEvent.change(screen.getByLabelText("搜索全市场"), { target: { value: "茅台" } });
+  fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+  await waitFor(() => expect(requests.some((url) => url.includes("q=%E8%8C%85%E5%8F%B0"))).toBe(true));
+
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  await waitFor(() => expect(requests.some((url) => url.includes("page=2"))).toBe(true));
 });

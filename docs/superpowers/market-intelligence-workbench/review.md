@@ -39,3 +39,25 @@ An undocumented external client that reads `snapshot.equities` from this public 
 ### Decision
 
 Approved for deployment. No P0, P1, or P2 finding blocks release.
+
+## 2026-07-24 Full-Market Browser Review
+
+### Findings
+
+No blocking findings. The new endpoint reads the existing cached snapshot, validates sort and pagination inputs, returns no more than 50 rows, and keeps missing numeric evidence after present values in both sort directions. The browser panel owns its own query state, so a quote-browser failure does not hide the market summary or sector analysis.
+
+One presentation finding was resolved before release: a missing `change_pct` value inherited the positive color because it was compared as zero. A red-green regression now requires missing change evidence to remain visually neutral.
+
+### Assumptions And Boundaries
+
+- `/api/v1/market` remains the compact summary contract and does not return the full equity universe.
+- `/api/v1/equities` is the supported browser contract for full-market inspection; provider access remains behind the service snapshot.
+- Sorting is deterministic for the evidence available in a snapshot. No claim is made that unavailable turnover, amount, or market-cap fields equal zero.
+
+### Residual Risks
+
+The local in-app browser connection timed out despite healthy terminal and API checks, so the final interaction check must run against the deployed public origin. External market providers and their field coverage remain operational dependencies.
+
+### Decision
+
+Approved for production deployment after a fresh `make verify`. No P0, P1, or P2 finding remains open.

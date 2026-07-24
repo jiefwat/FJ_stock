@@ -132,6 +132,38 @@ class SectorFailProvider(FixtureProvider):
         raise RuntimeError("sector provider unavailable")
 
 
+class EquityBrowserProvider(FixtureProvider):
+    async def fetch_equities(self):
+        dataset = await super().fetch_equities()
+        return dataset.model_copy(
+            update={
+                "items": [
+                    *dataset.items,
+                    EquityQuote(
+                        symbol="SZ.000001",
+                        code="000001",
+                        name="平安银行",
+                        price=12.5,
+                        change_pct=-0.5,
+                        amount=1_000_000_000,
+                        turnover_rate=1.2,
+                        market_cap=240_000_000_000,
+                    ),
+                    EquityQuote(
+                        symbol="SZ.000002",
+                        code="000002",
+                        name="万科A",
+                        price=8.2,
+                        change_pct=3.0,
+                        amount=None,
+                        turnover_rate=None,
+                        market_cap=98_000_000_000,
+                    ),
+                ]
+            }
+        )
+
+
 class StockEnhancementProvider(FixtureProvider):
     async def fetch_equities(self):
         dataset = await super().fetch_equities()
@@ -176,6 +208,46 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     assert "equities" not in market_payload["snapshot"]
     assert today.json()["top_opportunities"][0]["quote"]["name"] == "贵州茅台"
     assert stock.json()["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
+
+
+def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
+    service = MarketService(
+        provider=EquityBrowserProvider(), store=Store(tmp_path / "equities.db")
+    )
+    api = TestClient(create_app(service))
+
+    response = api.get(
+        "/api/v1/equities",
+        params={"sort_by": "amount", "direction": "desc", "page": 1, "page_size": 2},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    payload = response.json()
+    assert payload["total"] == 3
+    assert payload["page"] == 1
+    assert payload["page_size"] == 2
+    assert [item["symbol"] for item in payload["items"]] == ["SH.600519", "SZ.000001"]
+    assert "equities" not in payload
+
+    second_page = api.get(
+        "/api/v1/equities",
+        params={"sort_by": "amount", "direction": "desc", "page": 2, "page_size": 2},
+    ).json()
+    assert [item["symbol"] for item in second_page["items"]] == ["SZ.000002"]
+
+    missing_last = api.get(
+        "/api/v1/equities",
+        params={"sort_by": "amount", "direction": "asc", "page": 1, "page_size": 3},
+    ).json()
+    assert missing_last["items"][-1]["amount"] is None
+
+    search = api.get("/api/v1/equities", params={"q": "茅台"}).json()
+    assert search["total"] == 1
+    assert search["items"][0]["symbol"] == "SH.600519"
+
+    code_search = api.get("/api/v1/equities", params={"q": "000001"}).json()
+    assert code_search["items"][0]["name"] == "平安银行"
 
 
 def test_market_events_route_returns_classified_hot_events(tmp_path) -> None:

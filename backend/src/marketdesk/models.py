@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -72,6 +73,16 @@ class SectorDossier(StrictModel):
 
 class EquityDataset(StrictModel):
     meta: DatasetMeta
+    items: list[EquityQuote]
+
+
+class EquityPage(StrictModel):
+    meta: DatasetMeta
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=50)
+    sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"]
+    direction: Literal["asc", "desc"]
     items: list[EquityQuote]
 
 

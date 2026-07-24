@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from marketdesk.analysis.events import analyse_market_events
 from marketdesk.analysis.holding import analyse_holding
@@ -12,6 +12,7 @@ from marketdesk.analysis.stock import analyse_stock
 from marketdesk.config import Settings
 from marketdesk.models import (
     EquityDataset,
+    EquityPage,
     EquityQuote,
     HoldingDossier,
     HoldingItem,
@@ -99,6 +100,45 @@ class MarketService:
                 sectors=snapshot.sectors,
             ),
             analysis=analyse_market(snapshot),
+        )
+
+    async def equities_page(
+        self,
+        *,
+        query: str | None,
+        sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"],
+        direction: Literal["asc", "desc"],
+        page: int,
+        page_size: int,
+    ) -> EquityPage:
+        snapshot = await self.market()
+        normalized = (query or "").strip().lower()
+        filtered = [
+            item
+            for item in snapshot.equities
+            if not normalized
+            or normalized in item.symbol.lower()
+            or normalized in item.code.lower()
+            or normalized in item.name.lower()
+        ]
+        present = [item for item in filtered if getattr(item, sort_by) is not None]
+        missing = [item for item in filtered if getattr(item, sort_by) is None]
+        present.sort(key=lambda item: item.symbol)
+        present.sort(
+            key=lambda item: cast(float, getattr(item, sort_by)),
+            reverse=direction == "desc",
+        )
+        missing.sort(key=lambda item: item.symbol)
+        ordered = [*present, *missing]
+        start = (page - 1) * page_size
+        return EquityPage(
+            meta=snapshot.meta,
+            total=len(ordered),
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            direction=direction,
+            items=ordered[start : start + page_size],
         )
 
     async def market_events(self, limit: int = 30) -> MarketEventResult:
