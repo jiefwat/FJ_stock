@@ -124,3 +124,19 @@ Final local gate:
 Contract assertions cover Chinese-name and code search, both numeric sort directions, missing values last, bounded page size, and an empty out-of-range page with the true total. Frontend interaction coverage includes ranking, explicit search submission, page navigation, Stock Lab links, and neutral styling for missing change evidence.
 
 The in-app browser could not establish a stable connection to the local development server even though terminal health and API checks were normal. Public browser interaction and production API smoke checks are therefore required after deployment and will be recorded separately.
+
+### Production Smoke
+
+Release `20260724-114030-8d3fee6` was deployed to `stock.jiewat-kaka-fj.com` and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health | `/healthz` returned `status=ok`; systemd service active |
+| Full-market default | 5,530 total equities; exactly 25 items returned |
+| Search | `q=茅台` returned `SH.600519` |
+| Pagination | Page 1 and page 2 had different first symbols; browser reached page 2 of 222 |
+| Sorting | Amount accepted both directions; missing values remained last on the final page |
+| Compact market summary | 9,960 bytes; snapshot keys remained `meta`, `indices`, and `sectors` |
+| Persistent data | 7 holdings and 2 watchlist records remained available after release switch |
+
+Real Chrome at 1,440 x 900 rendered the panel, searched to the single `贵州茅台` result, switched to change-percentage ranking, moved to the second page, and exposed Stock Lab links. The page had no document-level horizontal overflow and emitted no browser console or page errors.

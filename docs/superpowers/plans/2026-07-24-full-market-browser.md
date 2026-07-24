@@ -147,10 +147,10 @@ Expected: backend lint, types, tests, frontend types, tests, build, and live-dat
 
 Document the red-green tests, final counts, API boundaries, residual risks, and review decision. Mark the active TODO only after the full gate passes.
 
-- [ ] **Step 3: Commit, push, and deploy**
+- [x] **Step 3: Commit, push, and deploy**
 
 Create a traceable Chinese-scope commit, push `codex/user-accounts-personalization`, and deploy through `deploy/deploy_public.sh` with the existing host and SSH key.
 
-- [ ] **Step 4: Smoke-test production**
+- [x] **Step 4: Smoke-test production**
 
 Verify health, default pagination, name search, both sort directions, missing-value placement, response bounds, production release pointer, and service activity. Confirm the public Market page still loads its compact summary independently.
