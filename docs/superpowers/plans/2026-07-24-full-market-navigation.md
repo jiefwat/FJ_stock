@@ -96,10 +96,10 @@ Expected: backend lint, mypy, pytest, frontend types, Vitest, production build, 
 
 Document red-green evidence, test counts, contract compatibility, missing-data behavior, and the production smoke checklist. Mark the active TODO only after the full gate passes.
 
-- [ ] **Step 3: Commit, push, and deploy**
+- [x] **Step 3: Commit, push, and deploy**
 
 Use Chinese-scope commits, push `codex/user-accounts-personalization`, and deploy with `deploy/deploy_public.sh` to `stock.jiewat-kaka-fj.com`.
 
-- [ ] **Step 4: Smoke-test production**
+- [x] **Step 4: Smoke-test production**
 
 Check health, non-empty `sh`, `sz`, and `bj` responses, combined search, page-size 50, direct page 2, service status, persisted holdings/watchlist, and the full interaction in real Chrome.

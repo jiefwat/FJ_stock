@@ -164,3 +164,20 @@ Final local gate:
 | Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
 
 The focused interaction suite verifies exchange reset, 25/50 page-size reset, bounded direct jump, first/last controls, query parameters, and synchronized page input. Production must still confirm that the live normalized universe contains non-empty `SH.`, `SZ.`, and `BJ.` partitions.
+
+### Production Smoke
+
+Release `20260724-120226-72e4c59` was deployed and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Full universe | 5,530 equities |
+| Shanghai | 2,308 equities; returned symbols use `SH.` |
+| Shenzhen | 2,892 equities; returned symbols use `SZ.` |
+| Beijing | 330 equities; returned symbols use `BJ.` and page 2 is non-empty |
+| Combined filter | `exchange=sh&q=600519` returned `贵州茅台` |
+| Validation | Unsupported `exchange=hk` returned HTTP 422 |
+| Page size | 50-row response returned exactly 50 rows |
+| Persistent data | 7 holdings and 2 watchlist records remained available |
+
+Real Chrome at 1,440 x 900 selected Beijing listings, switched from 25 rows/14 pages to 50 rows/7 pages, opened the last page at rows 301–330, returned to the first page, and clamped page `999` to page 7. Searching `920211` returned `新睿电子` with a Stock Lab link. The page had no document-level horizontal overflow and emitted no console or page errors.
