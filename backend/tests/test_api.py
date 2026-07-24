@@ -148,6 +148,7 @@ class EquityBrowserProvider(FixtureProvider):
                         amount=1_000_000_000,
                         turnover_rate=1.2,
                         market_cap=240_000_000_000,
+                        sector="银行",
                     ),
                     EquityQuote(
                         symbol="SZ.000002",
@@ -270,6 +271,58 @@ def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
     ).json()
     assert shenzhen_search["total"] == 1
     assert shenzhen_search["items"][0]["name"] == "平安银行"
+
+
+def test_advanced_equity_filters_combine_and_report_real_sectors(tmp_path) -> None:
+    service = MarketService(
+        provider=EquityBrowserProvider(), store=Store(tmp_path / "advanced-equities.db")
+    )
+    api = TestClient(create_app(service))
+
+    response = api.get(
+        "/api/v1/equities",
+        params={
+            "sector": "白酒",
+            "min_change_pct": 1,
+            "max_change_pct": 2,
+            "min_amount": 1_500_000_000,
+            "min_turnover_rate": 0.5,
+            "max_turnover_rate": 1,
+            "min_market_cap": 1_000_000_000_000,
+            "complete_only": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["symbol"] for item in payload["items"]] == ["SH.600519"]
+    assert payload["available_sectors"] == ["白酒", "银行"]
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum"),
+    [
+        ("min_change_pct", "max_change_pct"),
+        ("min_amount", "max_amount"),
+        ("min_turnover_rate", "max_turnover_rate"),
+        ("min_market_cap", "max_market_cap"),
+    ],
+)
+def test_advanced_equity_filters_reject_inverted_ranges(
+    tmp_path, minimum: str, maximum: str
+) -> None:
+    api = TestClient(
+        create_app(
+            MarketService(
+                provider=EquityBrowserProvider(), store=Store(tmp_path / f"{minimum}.db")
+            )
+        )
+    )
+
+    response = api.get("/api/v1/equities", params={minimum: 2, maximum: 1})
+
+    assert response.status_code == 422
 
 
 def test_market_events_route_returns_classified_hot_events(tmp_path) -> None:
@@ -524,6 +577,75 @@ def test_user_preferences_are_personal(tmp_path) -> None:
     assert updated.json()["morning_email_enabled"] is False
     assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "today"
     assert api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
+
+
+def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
+    api = client(tmp_path)
+    alpha = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "views-alpha@example.com",
+            "password": "Passw0rd-alpha",
+            "display_name": "Alpha",
+        },
+    ).json()
+    beta = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "views-beta@example.com",
+            "password": "Passw0rd-beta",
+            "display_name": "Beta",
+        },
+    ).json()
+    alpha_auth = {"Authorization": f"Bearer {alpha['access_token']}"}
+    beta_auth = {"Authorization": f"Bearer {beta['access_token']}"}
+    payload = {
+        "name": "白酒放量",
+        "filters": {
+            "query": "茅台",
+            "exchange": "sh",
+            "sector": "白酒",
+            "min_change_pct": 1,
+            "max_change_pct": 5,
+            "min_amount": 1_000_000_000,
+            "max_amount": None,
+            "min_turnover_rate": 0.5,
+            "max_turnover_rate": 3,
+            "min_market_cap": 100_000_000_000,
+            "max_market_cap": None,
+            "complete_only": True,
+            "sort_by": "amount",
+            "direction": "desc",
+            "page_size": 50,
+        },
+    }
+
+    alpha_created = api.post("/api/v1/equity-views", headers=alpha_auth, json=payload)
+    beta_created = api.post("/api/v1/equity-views", headers=beta_auth, json=payload)
+
+    assert alpha_created.status_code == 201
+    assert beta_created.status_code == 201
+    assert len(api.get("/api/v1/equity-views", headers=alpha_auth).json()) == 1
+    assert len(api.get("/api/v1/equity-views", headers=beta_auth).json()) == 1
+    assert api.post("/api/v1/equity-views", headers=alpha_auth, json=payload).status_code == 409
+    alpha_id = alpha_created.json()["id"]
+    assert api.delete(f"/api/v1/equity-views/{alpha_id}", headers=beta_auth).status_code == 404
+    assert api.delete(f"/api/v1/equity-views/{alpha_id}", headers=alpha_auth).status_code == 204
+    assert api.get("/api/v1/equity-views", headers=alpha_auth).json() == []
+
+    blank_name = api.post(
+        "/api/v1/equity-views",
+        headers=alpha_auth,
+        json={**payload, "name": "   "},
+    )
+    assert blank_name.status_code == 422
+
+    invalid = api.post(
+        "/api/v1/equity-views",
+        headers=alpha_auth,
+        json={**payload, "name": "反向区间", "filters": {**payload["filters"], "min_change_pct": 5, "max_change_pct": 1}},
+    )
+    assert invalid.status_code == 422
 
 
 def test_data_status_marks_semantic_research_optional(tmp_path) -> None:

@@ -31,3 +31,5 @@
 - [x] Keep the browser-facing market summary free of the unused full-equity universe.
 - [x] Add a searchable, sortable, server-paginated full-market quote browser.
 - [x] Add exchange filtering, selectable page size, and direct page navigation.
+- [x] Add advanced full-market filters, URL-restorable state, and account-scoped saved views.
+- [x] Make the Market shell and advanced filter workflow usable without document overflow at 390px.

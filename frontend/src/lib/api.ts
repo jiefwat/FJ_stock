@@ -21,7 +21,25 @@ export type UserPreferences = { default_symbol: string; start_page: string; risk
 export type EquityExchange = "all" | "sh" | "sz" | "bj";
 export type EquitySort = "amount" | "change_pct" | "turnover_rate" | "market_cap";
 export type SortDirection = "asc" | "desc";
-export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; exchange: EquityExchange; sort_by: EquitySort; direction: SortDirection; items: Quote[] };
+export type EquityViewFilters = {
+  query: string;
+  exchange: EquityExchange;
+  sector: string | null;
+  min_change_pct: number | null;
+  max_change_pct: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  min_turnover_rate: number | null;
+  max_turnover_rate: number | null;
+  min_market_cap: number | null;
+  max_market_cap: number | null;
+  complete_only: boolean;
+  sort_by: EquitySort;
+  direction: SortDirection;
+  page_size: 25 | 50;
+};
+export type SavedEquityView = { id: number; name: string; filters: EquityViewFilters; created_at: string; updated_at: string };
+export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; exchange: EquityExchange; sort_by: EquitySort; direction: SortDirection; available_sectors: string[]; items: Quote[] };
 
 const tokenKey = "marketdesk.accessToken";
 

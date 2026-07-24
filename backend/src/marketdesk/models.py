@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -84,7 +84,51 @@ class EquityPage(StrictModel):
     exchange: Literal["all", "sh", "sz", "bj"]
     sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"]
     direction: Literal["asc", "desc"]
+    available_sectors: list[str] = Field(default_factory=list)
     items: list[EquityQuote]
+
+
+class EquityViewFilters(StrictModel):
+    query: str = Field(default="", max_length=40)
+    exchange: Literal["all", "sh", "sz", "bj"] = "all"
+    sector: str | None = Field(default=None, max_length=40)
+    min_change_pct: float | None = None
+    max_change_pct: float | None = None
+    min_amount: float | None = Field(default=None, ge=0)
+    max_amount: float | None = Field(default=None, ge=0)
+    min_turnover_rate: float | None = Field(default=None, ge=0)
+    max_turnover_rate: float | None = Field(default=None, ge=0)
+    min_market_cap: float | None = Field(default=None, ge=0)
+    max_market_cap: float | None = Field(default=None, ge=0)
+    complete_only: bool = False
+    sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"] = "amount"
+    direction: Literal["asc", "desc"] = "desc"
+    page_size: Literal[25, 50] = 25
+
+    @model_validator(mode="after")
+    def require_ordered_ranges(self) -> "EquityViewFilters":
+        for minimum, maximum in (
+            (self.min_change_pct, self.max_change_pct),
+            (self.min_amount, self.max_amount),
+            (self.min_turnover_rate, self.max_turnover_rate),
+            (self.min_market_cap, self.max_market_cap),
+        ):
+            if minimum is not None and maximum is not None and minimum > maximum:
+                raise ValueError("minimum cannot exceed maximum")
+        return self
+
+
+class SavedEquityView(StrictModel):
+    id: int
+    name: str
+    filters: EquityViewFilters
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def require_view_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
 
 
 class MarketSnapshot(StrictModel):

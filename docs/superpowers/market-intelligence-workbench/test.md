@@ -181,3 +181,28 @@ Release `20260724-120226-72e4c59` was deployed and activated by `stock-ts.servic
 | Persistent data | 7 holdings and 2 watchlist records remained available |
 
 Real Chrome at 1,440 x 900 selected Beijing listings, switched from 25 rows/14 pages to 50 rows/7 pages, opened the last page at rows 301–330, returned to the first page, and clamped page `999` to page 7. Searching `920211` returned `新睿电子` with a Stock Lab link. The page had no document-level horizontal overflow and emitted no console or page errors.
+
+## 2026-07-24 Advanced Full-Market Filters and Saved Views
+
+The full-market endpoint now combines industry, change percentage, amount, turnover, market-cap, and core-data-completeness filters before deterministic sorting and pagination. The Market page stores active research conditions in the hash URL and lets the current account create, apply, and delete validated reusable views without storing a stale page number.
+
+TDD evidence:
+
+- Six backend tests first failed on ignored query parameters, missing range validation, and absent saved-view routes; they passed after service filtering, Pydantic contracts, SQLite persistence, and account-scoped APIs were connected.
+- The store test first failed because `EquityViewFilters` and view CRUD did not exist, then passed with cross-account delete isolation.
+- Two Market interaction tests first failed because advanced controls and saved-view actions were absent, then passed with URL restoration, yuan-to-100-million-yuan conversion, and create/apply/delete coverage.
+- A whitespace-only view-name regression first returned HTTP 201, then returned HTTP 422 after server-side normalization.
+
+Final local gate before release:
+
+| Gate | Result |
+| --- | --- |
+| Ruff | Passed, no findings |
+| mypy | Passed, 19 source files |
+| Backend pytest | Passed, 71 tests |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 20 tests |
+| Vite production build | Passed, 1,652 modules transformed |
+| Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Real Chromium at 1,440 x 1,000 restored `白酒Ⅱ`, minimum amount `10` hundred-million-yuan units (CNY 1 billion), maximum turnover `5%`, and complete-data mode from the URL, returning one real row with no document overflow. A temporary saved view was created and deleted through the live local API. At 390 x 844 the first run exposed a 920px shell overflow; after the responsive-shell fix, the main area measured 390px, the advanced panel 360px, document overflow was false, and the console reported zero errors or warnings.

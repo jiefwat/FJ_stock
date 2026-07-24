@@ -5,6 +5,7 @@ import contextlib
 import csv
 import io
 import logging
+import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -13,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
@@ -21,10 +22,12 @@ from marketdesk.models import (
     AuthResult,
     EquityPage,
     EquityQuote,
+    EquityViewFilters,
     HoldingDossier,
     MarketEventResult,
     MarketPayload,
     OpportunityResult,
+    SavedEquityView,
     SectorDossier,
     StockDossier,
     UserAccount,
@@ -86,6 +89,19 @@ class PreferenceUpdate(BaseModel):
     ] | None = None
     risk_profile: Literal["defensive", "balanced", "active"] | None = None
     morning_email_enabled: bool | None = None
+
+
+class EquityViewCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
+    filters: EquityViewFilters
+
+    @field_validator("name")
+    @classmethod
+    def require_visible_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("view name cannot be blank")
+        return normalized
 
 
 def _normalize_email(email: str) -> str:
@@ -242,7 +258,25 @@ def create_app(
         direction: Literal["asc", "desc"] = "desc",
         page: int = Query(default=1, ge=1),
         page_size: int = Query(default=25, ge=1, le=50),
+        sector: str | None = Query(default=None, max_length=40),
+        min_change_pct: float | None = None,
+        max_change_pct: float | None = None,
+        min_amount: float | None = Query(default=None, ge=0),
+        max_amount: float | None = Query(default=None, ge=0),
+        min_turnover_rate: float | None = Query(default=None, ge=0),
+        max_turnover_rate: float | None = Query(default=None, ge=0),
+        min_market_cap: float | None = Query(default=None, ge=0),
+        max_market_cap: float | None = Query(default=None, ge=0),
+        complete_only: bool = False,
     ) -> EquityPage:
+        for minimum, maximum in (
+            (min_change_pct, max_change_pct),
+            (min_amount, max_amount),
+            (min_turnover_rate, max_turnover_rate),
+            (min_market_cap, max_market_cap),
+        ):
+            if minimum is not None and maximum is not None and minimum > maximum:
+                raise HTTPException(status_code=422, detail="minimum cannot exceed maximum")
         return await market_service.equities_page(
             query=q,
             exchange=exchange,
@@ -250,7 +284,41 @@ def create_app(
             direction=direction,
             page=page,
             page_size=page_size,
+            sector=sector,
+            min_change_pct=min_change_pct,
+            max_change_pct=max_change_pct,
+            min_amount=min_amount,
+            max_amount=max_amount,
+            min_turnover_rate=min_turnover_rate,
+            max_turnover_rate=max_turnover_rate,
+            min_market_cap=min_market_cap,
+            max_market_cap=max_market_cap,
+            complete_only=complete_only,
         )
+
+    @app.get("/api/v1/equity-views", response_model=list[SavedEquityView])
+    async def equity_views(request: Request) -> list[SavedEquityView]:
+        user = current_user(request.headers.get("authorization"))
+        return market_service.store.list_equity_views(user.id)
+
+    @app.post("/api/v1/equity-views", response_model=SavedEquityView, status_code=201)
+    async def create_equity_view(
+        payload: EquityViewCreate, request: Request
+    ) -> SavedEquityView:
+        user = current_user(request.headers.get("authorization"))
+        try:
+            return market_service.store.create_equity_view(
+                payload.name, payload.filters, user.id
+            )
+        except sqlite3.IntegrityError as error:
+            raise HTTPException(status_code=409, detail="view name already exists") from error
+
+    @app.delete("/api/v1/equity-views/{view_id}", status_code=204)
+    async def delete_equity_view(view_id: int, request: Request) -> Response:
+        user = current_user(request.headers.get("authorization"))
+        if not market_service.store.delete_equity_view(view_id, user.id):
+            raise HTTPException(status_code=404, detail="saved view not found")
+        return Response(status_code=204)
 
     @app.get("/api/v1/market-events")
     async def market_events(limit: int = Query(default=30, ge=1, le=100)) -> MarketEventResult:

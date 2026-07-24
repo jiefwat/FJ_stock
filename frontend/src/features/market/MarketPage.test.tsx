@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { MarketPage } from "./MarketPage";
@@ -45,6 +45,7 @@ const equityPage = {
   exchange: "all",
   sort_by: "amount",
   direction: "desc",
+  available_sectors: ["白酒", "银行"],
   items: [
     { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 2000000000, turnover_rate: 0.8, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: 80000000, sector: "白酒" },
     { symbol: "SZ.000001", code: "000001", name: "平安银行", price: 12.5, change_pct: -0.5, amount: 1000000000, turnover_rate: 1.2, volume_ratio: null, pe: 6, pb: 0.7, market_cap: 240000000000, net_flow: null, sector: "银行" },
@@ -52,23 +53,69 @@ const equityPage = {
   ],
 };
 
+const requestBodies: unknown[] = [];
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
+}
+
 function renderPage(initialPath = "/market") {
   const requests: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  let savedViews = [{
+    id: 7,
+    name: "白酒放量",
+    filters: {
+      query: "",
+      exchange: "sh",
+      sector: "白酒",
+      min_change_pct: 1,
+      max_change_pct: null,
+      min_amount: 1_000_000_000,
+      max_amount: null,
+      min_turnover_rate: null,
+      max_turnover_rate: null,
+      min_market_cap: null,
+      max_market_cap: null,
+      complete_only: true,
+      sort_by: "amount",
+      direction: "desc",
+      page_size: 25,
+    },
+    created_at: "2026-07-24T01:00:00Z",
+    updated_at: "2026-07-24T01:00:00Z",
+  }];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(url);
+    if (init?.body) requestBodies.push(JSON.parse(String(init.body)));
+    if (url.includes("/api/v1/equity-views")) {
+      if (init?.method === "POST") {
+        const payload = requestBodies.at(-1) as { name: string; filters: typeof savedViews[number]["filters"] };
+        const created = { id: 8, ...payload, created_at: "2026-07-24T02:00:00Z", updated_at: "2026-07-24T02:00:00Z" };
+        savedViews = [created, ...savedViews];
+        return { ok: true, status: 201, json: async () => created };
+      }
+      if (init?.method === "DELETE") {
+        const id = Number(url.split("/").at(-1));
+        savedViews = savedViews.filter((view) => view.id !== id);
+        return { ok: true, status: 204, json: async () => undefined };
+      }
+      return { ok: true, status: 200, json: async () => savedViews };
+    }
     if (url.includes("/api/v1/sectors/BK1")) return { ok: true, status: 200, json: async () => sector };
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
     if (url.includes("/api/v1/equities")) return { ok: true, status: 200, json: async () => equityPage };
     return { ok: true, status: 200, json: async () => market };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialPath]}><MarketPage /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialPath]}><MarketPage /><LocationProbe /></MemoryRouter></QueryClientProvider>);
   return requests;
 }
 
 afterEach(() => {
   cleanup();
+  requestBodies.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -140,4 +187,42 @@ it("filters exchanges and jumps across the full result set", async () => {
 
   fireEvent.change(screen.getByLabelText("每页数量"), { target: { value: "50" } });
   await waitFor(() => expect(requests.some((url) => url.includes("page_size=50") && url.includes("page=1"))).toBe(true));
+});
+
+it("restores advanced filters from the URL and sends normalized server units", async () => {
+  const requests = renderPage(
+    "/market?industry=%E7%99%BD%E9%85%92&min_change_pct=1&min_amount=15&complete_only=true",
+  );
+
+  expect(await screen.findByLabelText("行业")).toHaveValue("白酒");
+  expect(screen.getByLabelText("涨跌幅下限（%）")).toHaveValue(1);
+  expect(screen.getByLabelText("成交额下限（亿元）")).toHaveValue(15);
+  expect(screen.getByLabelText("仅看核心数据完整")).toBeChecked();
+  await waitFor(() => expect(requests.some((url) => url.includes("min_amount=1500000000"))).toBe(true));
+
+  fireEvent.change(screen.getByLabelText("换手率上限（%）"), { target: { value: "3.5" } });
+  fireEvent.change(screen.getByLabelText("总市值下限（亿元）"), { target: { value: "100" } });
+  fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
+
+  await waitFor(() => expect(requests.some((url) => url.includes("max_turnover_rate=3.5") && url.includes("min_market_cap=10000000000"))).toBe(true));
+  expect(screen.getByTestId("location-search")).toHaveTextContent("max_turnover_rate=3.5");
+
+  fireEvent.click(screen.getByRole("button", { name: "重置全部" }));
+  await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent(/^$/));
+});
+
+it("applies, creates, and deletes reusable saved views", async () => {
+  const requests = renderPage();
+
+  fireEvent.click(await screen.findByRole("button", { name: "应用视图 白酒放量" }));
+  await waitFor(() => expect(requests.some((url) => url.includes("sector=%E7%99%BD%E9%85%92") && url.includes("page=1"))).toBe(true));
+  expect(screen.getByLabelText("交易所")).toHaveValue("sh");
+
+  fireEvent.change(screen.getByLabelText("视图名称"), { target: { value: "我的白酒池" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存当前视图" }));
+  await waitFor(() => expect(requestBodies.some((body) => (body as { name?: string }).name === "我的白酒池")).toBe(true));
+  expect(await screen.findByRole("button", { name: "应用视图 我的白酒池" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "删除视图 我的白酒池" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "应用视图 我的白酒池" })).not.toBeInTheDocument());
 });

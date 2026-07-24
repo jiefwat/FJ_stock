@@ -7,7 +7,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from marketdesk.auth import hash_token
-from marketdesk.models import HoldingItem, UserAccount, UserPreferences, WatchlistItem
+from marketdesk.models import (
+    EquityViewFilters,
+    HoldingItem,
+    SavedEquityView,
+    UserAccount,
+    UserPreferences,
+    WatchlistItem,
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
                 CREATE TABLE IF NOT EXISTS user_preferences (user_id INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS saved_equity_views (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL, filters TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id, name), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
             """)
             owner_id = self._ensure_default_user(connection)
             self._ensure_personal_table(
@@ -285,6 +293,66 @@ class Store:
                 ),
             )
         return preferences
+
+    def create_equity_view(
+        self,
+        name: str,
+        filters: EquityViewFilters,
+        user_id: int | None = None,
+    ) -> SavedEquityView:
+        resolved_user_id = user_id or self.default_user_id
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO saved_equity_views(user_id,name,filters,created_at,updated_at)
+                VALUES(?,?,?,?,?)
+                """,
+                (
+                    resolved_user_id,
+                    name.strip(),
+                    filters.model_dump_json(),
+                    now,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM saved_equity_views WHERE id=? AND user_id=?",
+                (cursor.lastrowid, resolved_user_id),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("saved equity view insert did not return an item")
+        return self._equity_view_from_row(row)
+
+    def list_equity_views(self, user_id: int | None = None) -> list[SavedEquityView]:
+        resolved_user_id = user_id or self.default_user_id
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM saved_equity_views
+                WHERE user_id=? ORDER BY updated_at DESC, id DESC
+                """,
+                (resolved_user_id,),
+            ).fetchall()
+        return [self._equity_view_from_row(row) for row in rows]
+
+    def delete_equity_view(self, view_id: int, user_id: int | None = None) -> bool:
+        resolved_user_id = user_id or self.default_user_id
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM saved_equity_views WHERE id=? AND user_id=?",
+                (view_id, resolved_user_id),
+            )
+        return cursor.rowcount > 0
+
+    def _equity_view_from_row(self, row: sqlite3.Row) -> SavedEquityView:
+        return SavedEquityView(
+            id=row["id"],
+            name=row["name"],
+            filters=EquityViewFilters.model_validate_json(row["filters"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
     def create_watchlist(
         self,

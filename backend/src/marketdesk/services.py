@@ -111,18 +111,61 @@ class MarketService:
         direction: Literal["asc", "desc"],
         page: int,
         page_size: int,
+        sector: str | None = None,
+        min_change_pct: float | None = None,
+        max_change_pct: float | None = None,
+        min_amount: float | None = None,
+        max_amount: float | None = None,
+        min_turnover_rate: float | None = None,
+        max_turnover_rate: float | None = None,
+        min_market_cap: float | None = None,
+        max_market_cap: float | None = None,
+        complete_only: bool = False,
     ) -> EquityPage:
         snapshot = await self.market()
         normalized = (query or "").strip().lower()
+        available_sectors = sorted(
+            {item.sector for item in snapshot.equities if item.sector},
+            key=str.casefold,
+        )
+        ranges = (
+            ("change_pct", min_change_pct, max_change_pct),
+            ("amount", min_amount, max_amount),
+            ("turnover_rate", min_turnover_rate, max_turnover_rate),
+            ("market_cap", min_market_cap, max_market_cap),
+        )
+
+        def matches_ranges(item: EquityQuote) -> bool:
+            for field, minimum, maximum in ranges:
+                if minimum is None and maximum is None:
+                    continue
+                value = getattr(item, field)
+                if value is None:
+                    return False
+                if minimum is not None and value < minimum:
+                    return False
+                if maximum is not None and value > maximum:
+                    return False
+            return True
+
         filtered = [
             item
             for item in snapshot.equities
             if (exchange == "all" or item.symbol.startswith(f"{exchange.upper()}."))
+            and (sector is None or item.sector == sector)
             and (
                 not normalized
                 or normalized in item.symbol.lower()
                 or normalized in item.code.lower()
                 or normalized in item.name.lower()
+            )
+            and matches_ranges(item)
+            and (
+                not complete_only
+                or all(
+                    getattr(item, field) is not None
+                    for field in ("price", "change_pct", "amount", "turnover_rate", "market_cap")
+                )
             )
         ]
         present = [item for item in filtered if getattr(item, sort_by) is not None]
@@ -143,6 +186,7 @@ class MarketService:
             exchange=exchange,
             sort_by=sort_by,
             direction=direction,
+            available_sectors=available_sectors,
             items=ordered[start : start + page_size],
         )
 
