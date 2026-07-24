@@ -184,7 +184,7 @@ def create_app(
 
     def current_user(authorization: str | None) -> UserAccount:
         if not authorization:
-            return market_service.store.get_user(market_service.store.default_user_id)
+            raise HTTPException(status_code=401, detail="authentication required")
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
             raise HTTPException(status_code=401, detail="invalid auth header")

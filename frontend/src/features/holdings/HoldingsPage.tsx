@@ -3,7 +3,7 @@ import { Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, fmt, pct, percent, type HoldingDossier } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, percent, type HoldingDossier } from "../../lib/api";
 
 type HoldingDraft = {
   symbol: string;
@@ -166,7 +166,7 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
 export function HoldingsPage() {
   const client = useQueryClient();
   const [draft, setDraft] = useState<HoldingDraft>({ symbol: "SH.600519", name: "贵州茅台", quantity: "100", cost_price: "1400", target_weight: "20", thesis: "写下这笔持仓为什么还值得留在组合里", invalidation: "写下什么情况下必须降仓或退出" });
-  const query = useQuery({ queryKey: ["holdings"], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings") });
+  const query = useQuery({ queryKey: ["holdings"], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings"), retry: false });
   const holdings = query.data ?? [];
   const summary = useMemo(() => portfolioSummary(holdings), [holdings]);
   const create = useMutation({
@@ -177,6 +177,17 @@ export function HoldingsPage() {
     mutationFn: (id: number) => api(`/api/v1/holdings/${id}`, { method: "DELETE" }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["holdings"] }),
   });
+
+  if (query.isError) {
+    const hasToken = Boolean(getAuthToken());
+    return <>
+      <header className="page-head"><div><p className="eyebrow">PORTFOLIO / 持仓分析</p><h1>组合给判断，<br /><em>个股进清单。</em></h1></div></header>
+      <section className="panel personal-auth-gate" role="alert">
+        <span>{hasToken ? "登录状态已失效" : "请先登录后查看个人持仓"}</span>
+        <p>{hasToken ? "请退出后重新登录，系统不会回退展示其他账号的数据。" : "持仓属于个人数据。登录后这里只会显示当前账号自己的组合。"}</p>
+      </section>
+    </>;
+  }
 
   return <>
     <header className="page-head"><div><p className="eyebrow">PORTFOLIO / 持仓分析</p><h1>组合给判断，<br /><em>个股进清单。</em></h1></div></header>

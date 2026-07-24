@@ -220,3 +220,29 @@ Release `20260724-132150-ab91a9b` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Desktop browser | Restored industry and amount from URL, showed one row, no document overflow |
 | Mobile browser | 390px main, 360px advanced panel, no document overflow |
 | Browser runtime | Zero console errors or warnings |
+
+## 2026-07-24 Personal Data Authentication Boundary
+
+Production diagnosis showed that storage isolation was already correct: user 1 owned 7 holdings, user 2 owned 0, and there were no orphan holdings. A temporary authenticated account received 0 holdings, while the same request without a bearer token received user 1's 7 holdings. The root cause was the API's missing-authorization fallback to the default owner, not duplicated database rows or a broken `user_id` query.
+
+The fallback is removed. `/auth/me`, preferences, holdings, watchlists, and saved equity views now return HTTP 401 without a valid bearer token. Holdings and watchlist pages show an explicit login boundary instead of an empty or shared portfolio, and failed authentication never falls back to another account.
+
+TDD evidence:
+
+- The backend regression first received HTTP 200 from `/auth/me` without credentials, then passed after all personal GET endpoints returned HTTP 401 while `/api/v1/market` remained public.
+- The frontend regression first rendered a zero-value portfolio and an enabled add form after a holdings 401, then passed after the page rendered `请先登录后查看个人持仓` and no personal list.
+- Existing personal API tests now authenticate their fixture client explicitly; the two-user isolation test still proves different quantities for the same symbol.
+
+Final local gate before release:
+
+| Gate | Result |
+| --- | --- |
+| Ruff | Passed, no findings |
+| mypy | Passed, 19 source files |
+| Backend pytest | Passed, 72 tests |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 21 tests |
+| Vite production build | Passed, 1,652 modules transformed |
+| Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Real Chromium opened the local holdings route without credentials and showed only the login boundary. Registering a temporary account on the same page removed the gate and rendered an empty zero-row portfolio for that account rather than the default owner's holdings.

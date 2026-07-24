@@ -201,7 +201,35 @@ class ResearchEnhancementProvider(FixtureProvider):
 
 def client(tmp_path) -> TestClient:
     service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "test.db"))
-    return TestClient(create_app(service))
+    api = TestClient(create_app(service))
+    result = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "fixture-user@example.com",
+            "password": "FixturePass-0724",
+            "display_name": "Fixture User",
+        },
+    )
+    api.headers["Authorization"] = f"Bearer {result.json()['access_token']}"
+    return api
+
+
+def test_personal_endpoints_require_authentication(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "auth-boundary.db")
+    )
+    api = TestClient(create_app(service))
+
+    for path in (
+        "/api/v1/auth/me",
+        "/api/v1/preferences",
+        "/api/v1/holdings",
+        "/api/v1/watchlist",
+        "/api/v1/equity-views",
+    ):
+        assert api.get(path).status_code == 401
+
+    assert api.get("/api/v1/market").status_code == 200
 
 
 def test_market_today_and_stock_routes(tmp_path) -> None:

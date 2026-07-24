@@ -107,3 +107,19 @@ it("registers a user and sends the auth token with personal requests", async () 
     expect(calls.some((call) => call.url.includes("/api/v1/preferences") && call.auth === "Bearer token-alpha")).toBe(true);
   });
 });
+
+it("does not expose the default portfolio before login", async () => {
+  window.location.hash = "#/holdings";
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/holdings")) {
+      return { ok: false, status: 401, json: async () => ({ detail: "authentication required" }) };
+    }
+    return { ok: true, status: 200, json: async () => today };
+  }));
+
+  render(<App />);
+
+  expect(await screen.findByText("请先登录后查看个人持仓")).toBeInTheDocument();
+  expect(screen.queryByRole("list", { name: "持仓清单" })).not.toBeInTheDocument();
+});

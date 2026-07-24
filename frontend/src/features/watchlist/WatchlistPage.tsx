@@ -3,7 +3,7 @@ import { Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, fmt, pct, type WatchlistItem } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, type WatchlistItem } from "../../lib/api";
 import { StockTrend } from "../stocks/StockTrend";
 
 type WatchTrendDossier = {
@@ -76,11 +76,21 @@ function ResearchCard({ item, onDelete }: { item: WatchlistItem; onDelete: (id: 
 
 export function WatchlistPage() {
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ["watchlist"], queryFn: () => api<WatchlistItem[]>("/api/v1/watchlist") });
+  const query = useQuery({ queryKey: ["watchlist"], queryFn: () => api<WatchlistItem[]>("/api/v1/watchlist"), retry: false });
   const remove = useMutation({
     mutationFn: (id: number) => api(`/api/v1/watchlist/${id}`, { method: "DELETE" }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["watchlist"] }),
   });
+  if (query.isError) {
+    const hasToken = Boolean(getAuthToken());
+    return <>
+      <header className="page-head"><div><p className="eyebrow">WATCHLIST / 跟踪清单</p><h1>没买或还没决定买，<br /><em>先放这里盯着。</em></h1></div></header>
+      <section className="panel personal-auth-gate" role="alert">
+        <span>{hasToken ? "登录状态已失效" : "请先登录后查看个人跟踪清单"}</span>
+        <p>{hasToken ? "请退出后重新登录，系统不会回退展示其他账号的数据。" : "跟踪清单属于个人数据。登录后这里只会显示当前账号自己的记录。"}</p>
+      </section>
+    </>;
+  }
   return <>
     <header className="page-head"><div><p className="eyebrow">WATCHLIST / 跟踪清单</p><h1>没买或还没决定买，<br /><em>先放这里盯着。</em></h1></div></header>
     <section className="panel watchlist-guide"><div className="panel-title"><span>这个模块是干嘛的？</span><small>跟踪不是买入信号</small></div><p>这里放“暂时不买、但值得继续看”的股票。它像一个提醒本：先把想法放下，等条件成熟再决定要不要研究更深。</p><div className="tracking-steps"><div><b>1</b><strong>先放进来</strong><span>在个股页点“加入跟踪”，只是记录，不代表买入。</span></div><div><b>2</b><strong>写两句话</strong><span>为什么关注它？什么情况就放弃？越短越好。</span></div><div><b>3</b><strong>定期清理</strong><span>理由还在就继续跟；理由失效就归档。</span></div></div></section>

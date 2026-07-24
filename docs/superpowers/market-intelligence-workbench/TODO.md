@@ -33,3 +33,4 @@
 - [x] Add exchange filtering, selectable page size, and direct page navigation.
 - [x] Add advanced full-market filters, URL-restorable state, and account-scoped saved views.
 - [x] Make the Market shell and advanced filter workflow usable without document overflow at 390px.
+- [x] Require authentication for holdings, watchlists, preferences, and saved views without default-owner fallback.

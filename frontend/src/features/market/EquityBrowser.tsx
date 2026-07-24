@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   api,
   fmt,
+  getAuthToken,
   pct,
   percent,
   type EquityExchange,
@@ -398,7 +399,7 @@ export function EquityBrowser() {
           <button type="submit" className="button secondary" disabled={!viewName.trim() || createView.isPending}>保存当前视图</button>
         </form>
         {createView.isError ? <p role="alert">保存失败，名称可能已存在，请换一个名称重试。</p> : null}
-        {savedViews.isError || deleteView.isError ? <p role="alert">保存视图暂时不可用，行情筛选不受影响。</p> : null}
+        {savedViews.isError || deleteView.isError ? <p role="alert">{getAuthToken() ? "保存视图暂时不可用，行情筛选不受影响。" : "登录后可保存个人筛选视图，行情筛选仍可直接使用。"}</p> : null}
       </div>
 
       {query.isLoading ? <div className="equity-state" role="status">正在读取全市场行情…</div> : null}
