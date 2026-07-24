@@ -106,6 +106,7 @@ class MarketService:
         self,
         *,
         query: str | None,
+        exchange: Literal["all", "sh", "sz", "bj"],
         sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"],
         direction: Literal["asc", "desc"],
         page: int,
@@ -116,10 +117,13 @@ class MarketService:
         filtered = [
             item
             for item in snapshot.equities
-            if not normalized
-            or normalized in item.symbol.lower()
-            or normalized in item.code.lower()
-            or normalized in item.name.lower()
+            if (exchange == "all" or item.symbol.startswith(f"{exchange.upper()}."))
+            and (
+                not normalized
+                or normalized in item.symbol.lower()
+                or normalized in item.code.lower()
+                or normalized in item.name.lower()
+            )
         ]
         present = [item for item in filtered if getattr(item, sort_by) is not None]
         missing = [item for item in filtered if getattr(item, sort_by) is None]
@@ -136,6 +140,7 @@ class MarketService:
             total=len(ordered),
             page=page,
             page_size=page_size,
+            exchange=exchange,
             sort_by=sort_by,
             direction=direction,
             items=ordered[start : start + page_size],

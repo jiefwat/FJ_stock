@@ -42,6 +42,7 @@ const equityPage = {
   total: 27,
   page: 1,
   page_size: 25,
+  exchange: "all",
   sort_by: "amount",
   direction: "desc",
   items: [
@@ -114,4 +115,29 @@ it("browses, ranks, and searches the full market without loading every quote", a
 
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
   await waitFor(() => expect(requests.some((url) => url.includes("page=2"))).toBe(true));
+});
+
+it("filters exchanges and jumps across the full result set", async () => {
+  const requests = renderPage();
+
+  await screen.findByText("全市场行情");
+  fireEvent.change(screen.getByLabelText("交易所"), { target: { value: "bj" } });
+  await waitFor(() => expect(requests.some((url) => url.includes("exchange=bj") && url.includes("page=1"))).toBe(true));
+  await waitFor(() => expect(screen.getByRole("button", { name: "跳转" })).toBeEnabled());
+
+  fireEvent.change(screen.getByLabelText("跳转页码"), { target: { value: "999" } });
+  fireEvent.click(screen.getByRole("button", { name: "跳转" }));
+  await waitFor(() => expect(requests.some((url) => url.includes("exchange=bj") && url.includes("page=2"))).toBe(true));
+  await waitFor(() => expect(screen.getByRole("button", { name: "首页" })).toBeEnabled());
+
+  fireEvent.click(screen.getByRole("button", { name: "首页" }));
+  await waitFor(() => expect(screen.getByLabelText("跳转页码")).toHaveValue(1));
+  await waitFor(() => expect(screen.getByRole("button", { name: "末页" })).toBeEnabled());
+
+  const lastPageRequests = requests.filter((url) => url.includes("page=2")).length;
+  fireEvent.click(screen.getByRole("button", { name: "末页" }));
+  await waitFor(() => expect(requests.filter((url) => url.includes("page=2")).length).toBeGreaterThan(lastPageRequests));
+
+  fireEvent.change(screen.getByLabelText("每页数量"), { target: { value: "50" } });
+  await waitFor(() => expect(requests.some((url) => url.includes("page_size=50") && url.includes("page=1"))).toBe(true));
 });

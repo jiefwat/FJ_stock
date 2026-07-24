@@ -140,3 +140,27 @@ Release `20260724-114030-8d3fee6` was deployed to `stock.jiewat-kaka-fj.com` and
 | Persistent data | 7 holdings and 2 watchlist records remained available after release switch |
 
 Real Chrome at 1,440 x 900 rendered the panel, searched to the single `贵州茅台` result, switched to change-percentage ranking, moved to the second page, and exposed Stock Lab links. The page had no document-level horizontal overflow and emitted no browser console or page errors.
+
+## 2026-07-24 Full-Market Navigation
+
+The full-market browser now filters the cached universe by Shanghai, Shenzhen, or Beijing exchange before applying the existing search, deterministic sort, and bounded page slice. The client adds 25/50-row selection, first/last controls, a visible result range, and direct page entry with out-of-range values clamped to the nearest valid page.
+
+TDD evidence:
+
+- The backend focused test failed on the missing `exchange` response key, then passed after the typed route, model, and service filter were connected.
+- The frontend focused test failed because the `交易所` control did not exist, then passed after navigation state and controls were implemented.
+- The first GREEN attempt exposed native number-input validation blocking an out-of-range jump before application clamping could run. The jump form now bypasses native blocking and the regression proves `999` resolves to the last valid page.
+
+Final local gate:
+
+| Gate | Result |
+| --- | --- |
+| Ruff | Passed, no findings |
+| mypy | Passed, 19 source files |
+| Backend pytest | Passed, 64 tests |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 18 tests |
+| Vite production build | Passed, 1,652 modules transformed |
+| Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+The focused interaction suite verifies exchange reset, 25/50 page-size reset, bounded direct jump, first/last controls, query parameters, and synchronized page input. Production must still confirm that the live normalized universe contains non-empty `SH.`, `SZ.`, and `BJ.` partitions.

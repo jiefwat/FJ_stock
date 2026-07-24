@@ -18,9 +18,10 @@ export type TodayData = { meta: Meta; analysis: Analysis; indices: IndexQuote[];
 export type UserAccount = { id: number; email: string; display_name: string; created_at: string; updated_at: string };
 export type AuthResult = { user: UserAccount; access_token: string; token_type: "bearer" };
 export type UserPreferences = { default_symbol: string; start_page: string; risk_profile: string; morning_email_enabled: boolean };
+export type EquityExchange = "all" | "sh" | "sz" | "bj";
 export type EquitySort = "amount" | "change_pct" | "turnover_rate" | "market_cap";
 export type SortDirection = "asc" | "desc";
-export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; sort_by: EquitySort; direction: SortDirection; items: Quote[] };
+export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; exchange: EquityExchange; sort_by: EquitySort; direction: SortDirection; items: Quote[] };
 
 const tokenKey = "marketdesk.accessToken";
 

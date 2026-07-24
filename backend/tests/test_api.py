@@ -159,6 +159,16 @@ class EquityBrowserProvider(FixtureProvider):
                         turnover_rate=None,
                         market_cap=98_000_000_000,
                     ),
+                    EquityQuote(
+                        symbol="BJ.430047",
+                        code="430047",
+                        name="诺思兰德",
+                        price=15.8,
+                        change_pct=1.5,
+                        amount=500_000_000,
+                        turnover_rate=2.4,
+                        market_cap=4_300_000_000,
+                    ),
                 ]
             }
         )
@@ -224,9 +234,10 @@ def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     payload = response.json()
-    assert payload["total"] == 3
+    assert payload["total"] == 4
     assert payload["page"] == 1
     assert payload["page_size"] == 2
+    assert payload["exchange"] == "all"
     assert [item["symbol"] for item in payload["items"]] == ["SH.600519", "SZ.000001"]
     assert "equities" not in payload
 
@@ -234,11 +245,11 @@ def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
         "/api/v1/equities",
         params={"sort_by": "amount", "direction": "desc", "page": 2, "page_size": 2},
     ).json()
-    assert [item["symbol"] for item in second_page["items"]] == ["SZ.000002"]
+    assert [item["symbol"] for item in second_page["items"]] == ["BJ.430047", "SZ.000002"]
 
     missing_last = api.get(
         "/api/v1/equities",
-        params={"sort_by": "amount", "direction": "asc", "page": 1, "page_size": 3},
+        params={"sort_by": "amount", "direction": "asc", "page": 1, "page_size": 4},
     ).json()
     assert missing_last["items"][-1]["amount"] is None
 
@@ -248,6 +259,17 @@ def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
 
     code_search = api.get("/api/v1/equities", params={"q": "000001"}).json()
     assert code_search["items"][0]["name"] == "平安银行"
+
+    beijing = api.get("/api/v1/equities", params={"exchange": "bj"}).json()
+    assert beijing["exchange"] == "bj"
+    assert beijing["total"] == 1
+    assert beijing["items"][0]["symbol"] == "BJ.430047"
+
+    shenzhen_search = api.get(
+        "/api/v1/equities", params={"exchange": "sz", "q": "000001"}
+    ).json()
+    assert shenzhen_search["total"] == 1
+    assert shenzhen_search["items"][0]["name"] == "平安银行"
 
 
 def test_market_events_route_returns_classified_hot_events(tmp_path) -> None:

@@ -235,6 +235,7 @@ def create_app(
     @app.get("/api/v1/equities", response_model=EquityPage)
     async def equities(
         q: str | None = Query(default=None, max_length=40),
+        exchange: Literal["all", "sh", "sz", "bj"] = "all",
         sort_by: Literal[
             "amount", "change_pct", "turnover_rate", "market_cap"
         ] = "amount",
@@ -244,6 +245,7 @@ def create_app(
     ) -> EquityPage:
         return await market_service.equities_page(
             query=q,
+            exchange=exchange,
             sort_by=sort_by,
             direction=direction,
             page=page,

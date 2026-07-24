@@ -81,6 +81,7 @@ class EquityPage(StrictModel):
     total: int = Field(ge=0)
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=50)
+    exchange: Literal["all", "sh", "sz", "bj"]
     sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"]
     direction: Literal["asc", "desc"]
     items: list[EquityQuote]

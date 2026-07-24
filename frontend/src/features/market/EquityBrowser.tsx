@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, fmt, pct, percent, type EquityPage, type EquitySort, type SortDirection } from "../../lib/api";
+import { api, fmt, pct, percent, type EquityExchange, type EquityPage, type EquitySort, type SortDirection } from "../../lib/api";
 
 const sortLabels: Record<EquitySort, string> = {
   amount: "成交额",
@@ -15,14 +15,17 @@ const sortLabels: Record<EquitySort, string> = {
 export function EquityBrowser() {
   const [draftQuery, setDraftQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const [exchange, setExchange] = useState<EquityExchange>("all");
   const [sortBy, setSortBy] = useState<EquitySort>("amount");
   const [direction, setDirection] = useState<SortDirection>("desc");
   const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState<25 | 50>(25);
+  const [pageDraft, setPageDraft] = useState("1");
   const query = useQuery({
-    queryKey: ["equities", submittedQuery, sortBy, direction, page],
+    queryKey: ["equities", submittedQuery, exchange, sortBy, direction, page, pageSize],
     queryFn: () => {
       const params = new URLSearchParams({
+        exchange,
         sort_by: sortBy,
         direction,
         page: String(page),
@@ -34,6 +37,12 @@ export function EquityBrowser() {
     placeholderData: (previous) => previous,
   });
   const totalPages = Math.max(1, Math.ceil((query.data?.total ?? 0) / pageSize));
+  const rangeStart = query.data?.total ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, query.data?.total ?? 0);
+
+  useEffect(() => {
+    setPageDraft(String(page));
+  }, [page]);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,11 +50,21 @@ export function EquityBrowser() {
     setPage(1);
   };
 
+  const submitPage = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const requestedPage = Number.parseInt(pageDraft, 10);
+    const nextPage = Number.isFinite(requestedPage)
+      ? Math.min(totalPages, Math.max(1, requestedPage))
+      : page;
+    setPageDraft(String(nextPage));
+    setPage(nextPage);
+  };
+
   return (
     <section className="panel equity-browser" aria-labelledby="equity-browser-title">
       <div className="panel-title">
         <span id="equity-browser-title">全市场行情</span>
-        <small>服务端排序 · 每页最多 {pageSize} 只 · 缺失数据置后</small>
+        <small>交易所筛选 · 服务端排序 · 每页 {pageSize} 只 · 缺失数据置后</small>
       </div>
       <div className="equity-toolbar">
         <form className="equity-search" onSubmit={submitSearch}>
@@ -56,6 +75,14 @@ export function EquityBrowser() {
           <button type="submit" className="button">搜索</button>
         </form>
         <div className="equity-rank-controls">
+          <label>交易所
+            <select value={exchange} onChange={(event) => { setExchange(event.target.value as EquityExchange); setPage(1); }}>
+              <option value="all">全部 A 股</option>
+              <option value="sh">沪市</option>
+              <option value="sz">深市</option>
+              <option value="bj">北交所</option>
+            </select>
+          </label>
           <label>排序字段
             <select value={sortBy} onChange={(event) => { setSortBy(event.target.value as EquitySort); setPage(1); }}>
               {Object.entries(sortLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -65,6 +92,12 @@ export function EquityBrowser() {
             <select value={direction} onChange={(event) => { setDirection(event.target.value as SortDirection); setPage(1); }}>
               <option value="desc">从高到低</option>
               <option value="asc">从低到高</option>
+            </select>
+          </label>
+          <label>每页数量
+            <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value) as 25 | 50); setPage(1); }}>
+              <option value="25">25 只</option>
+              <option value="50">50 只</option>
             </select>
           </label>
         </div>
@@ -90,11 +123,19 @@ export function EquityBrowser() {
         </div>
         {query.data.items.length === 0 ? <div className="equity-state">没有找到匹配股票，请检查代码或名称。</div> : null}
         <footer className="equity-pagination">
-          <span>{submittedQuery ? `“${submittedQuery}” · ` : ""}共 {query.data.total.toLocaleString("zh-CN")} 只 · 第 {page} / {totalPages} 页</span>
-          <div>
+          <span aria-live="polite">{submittedQuery ? `“${submittedQuery}” · ` : ""}第 {rangeStart}–{rangeEnd} 只 / 共 {query.data.total.toLocaleString("zh-CN")} 只 · 第 {page} / {totalPages} 页</span>
+          <nav className="equity-page-controls" aria-label="全市场行情分页">
+            <button type="button" className="button secondary" disabled={page === 1 || query.isFetching} onClick={() => setPage(1)}>首页</button>
             <button type="button" className="button secondary" disabled={page === 1 || query.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>上一页</button>
+            <form className="equity-page-jump" noValidate onSubmit={submitPage}>
+              <label>跳转页码
+                <input type="number" min="1" max={totalPages} value={pageDraft} onChange={(event) => setPageDraft(event.target.value)} />
+              </label>
+              <button type="submit" className="button secondary" disabled={query.isFetching}>跳转</button>
+            </form>
             <button type="button" className="button secondary" disabled={page >= totalPages || query.isFetching} onClick={() => setPage((value) => value + 1)}>下一页</button>
-          </div>
+            <button type="button" className="button secondary" disabled={page >= totalPages || query.isFetching} onClick={() => setPage(totalPages)}>末页</button>
+          </nav>
         </footer>
       </> : null}
     </section>

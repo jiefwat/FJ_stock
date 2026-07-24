@@ -30,3 +30,4 @@
 
 - [x] Keep the browser-facing market summary free of the unused full-equity universe.
 - [x] Add a searchable, sortable, server-paginated full-market quote browser.
+- [x] Add exchange filtering, selectable page size, and direct page navigation.
