@@ -246,3 +246,17 @@ Final local gate before release:
 | Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
 
 Real Chromium opened the local holdings route without credentials and showed only the login boundary. Registering a temporary account on the same page removed the gate and rendered an empty zero-row portfolio for that account rather than the default owner's holdings.
+
+### Production Smoke
+
+Release `20260724-203821-9e7277f` was deployed and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Anonymous personal APIs | `/auth/me`, preferences, holdings, watchlist, and equity views all returned HTTP 401 |
+| Account A | Created one temporary `SH.600519` holding and received exactly one holding |
+| Account B | Received zero holdings while account A still owned one |
+| Data preservation | Temporary accounts and rows removed; owner retained all 7 holdings |
+| Browser boundary | Logged-out Holdings page showed the login requirement, zero holding rows, and the register/login action |
+
+This proves the deployed system distinguishes `unauthenticated`, `account A`, `account B`, and the existing owner instead of routing them to one shared portfolio.
