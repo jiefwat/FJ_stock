@@ -492,3 +492,20 @@ Release `20260725-164925-9758197` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Stock Lab link | Ask answer link resolved to `#/stocks?symbol=SH.600519` |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-ask-refine-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-25 Ask Stock Decision Metrics
+
+The Ask Stock API now returns a compact `metrics` strip for both deterministic stock answers and semantic-screening results. Stock answers expose the existing deterministic dossier score, suggested action, evidence coverage, advice confidence, latest price, and change percentage. Semantic-screening answers expose candidate count and enhancement source, while recognized stock-code cells link directly to Stock Lab.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 19 ask-stock tests |
+| Focused frontend Ask tests | Passed: 6 tests |
+| Backend mypy | Passed: 21 source files |
+| Frontend typecheck | Passed |
+| `make verify` | Passed: 106 backend tests, 31 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+Real Chrome at 1,280 x 900 rendered the Ask Stock metric strip for `贵州茅台现在主要风险是什么`: `综合分72`, `建议动作持有观察`, `证据覆盖90%`, `置信度82%`, `最新价1297.41`, and `涨跌幅+0.42%`. The Stock Lab link resolved to `#/stocks?symbol=SH.600519`; desktop and 390px mobile viewports had matching document scroll width.
+

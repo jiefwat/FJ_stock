@@ -30,6 +30,7 @@ const followUpPrompts = [
 const stockCodePattern = /\b(?:SH|SZ|BJ)?\.?\d{6}\b/i;
 const followUpPrefixPattern = /^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/;
 const followUpTopicPattern = /(风险|趋势|估值|仓位|止损|支撑|压力|能买吗|怎么样)/;
+const stockCodeColumnPattern = /(股票)?代码|证券代码|symbol/i;
 
 function observedTime(value: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "时间未提供";
@@ -106,12 +107,43 @@ function storeMessages(messages: AskMessage[]) {
   sessionStorage.setItem(key, JSON.stringify({ version: storageVersion, messages: messages.slice(-maxStoredMessages) }));
 }
 
+function symbolFromCode(value: unknown) {
+  const raw = String(value ?? "").trim().toUpperCase();
+  const prefixed = raw.match(/^(SH|SZ|BJ)\.?\s*(\d{6})$/);
+  if (prefixed) return `${prefixed[1]}.${prefixed[2]}`;
+  const plain = raw.match(/^\d{6}$/);
+  if (!plain) return null;
+  if (raw.startsWith("6")) return `SH.${raw}`;
+  if (raw.startsWith("0") || raw.startsWith("3")) return `SZ.${raw}`;
+  if (raw.startsWith("4") || raw.startsWith("8") || raw.startsWith("9")) return `BJ.${raw}`;
+  return null;
+}
+
+function renderScreenCell(column: string, value: unknown) {
+  const text = String(value ?? "—");
+  if (!stockCodeColumnPattern.test(column)) return text;
+  const symbol = symbolFromCode(value);
+  if (!symbol) return text;
+  return <a className="ask-table-link" href={`#/stocks?symbol=${encodeURIComponent(symbol)}`}>{text}</a>;
+}
+
 function EvidenceList({ title, items, tone }: { title: string; items: string[]; tone: string }) {
   if (items.length === 0) return null;
   return <section className={`ask-list ${tone}`}>
     <h3>{title}</h3>
     <ol>{items.map((item) => <li key={item}>{item}</li>)}</ol>
   </section>;
+}
+
+function AskMetrics({ result }: { result: AskStockResponse }) {
+  const metrics = result.metrics ?? [];
+  if (metrics.length === 0) return null;
+  return <div className="ask-metrics" aria-label="回答关键指标">
+    {metrics.map((metric) => <span className={`ask-metric ${metric.tone}`} key={metric.label}>
+      <small>{metric.label}</small>
+      <b>{metric.value}</b>
+    </span>)}
+  </div>;
 }
 
 function AskResult({ result }: { result: AskStockResponse }) {
@@ -128,6 +160,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
         {result.symbol ? <a className="ask-stock-link" href={`#/stocks?symbol=${encodeURIComponent(result.symbol)}`}>打开个股研究</a> : null}
       </div>
     </header>
+    <AskMetrics result={result} />
     <article className="ask-answer">
       <span>回答</span>
       <p>{result.answer}</p>
@@ -136,7 +169,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
       <table className="ask-table">
         <thead><tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
         <tbody>{result.rows.map((row, index) => <tr key={`${index}-${String(row[result.columns[0]])}`}>
-          {result.columns.map((column) => <td key={column}>{String(row[column] ?? "—")}</td>)}
+          {result.columns.map((column) => <td key={column}>{renderScreenCell(column, row[column])}</td>)}
         </tr>)}</tbody>
       </table>
     </div>}

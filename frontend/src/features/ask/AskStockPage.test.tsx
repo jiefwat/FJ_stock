@@ -14,6 +14,14 @@ const stockAnswer = {
   evidence: ["价格仍在 MA20 上方", "估值处于同业中位"],
   risks: ["短期波动放大"],
   next_actions: ["等待下一交易日确认"],
+  metrics: [
+    { label: "综合分", value: "62", tone: "positive" },
+    { label: "建议动作", value: "观察", tone: "positive" },
+    { label: "证据覆盖", value: "80%", tone: "positive" },
+    { label: "置信度", value: "70%", tone: "positive" },
+    { label: "最新价", value: "1500.00", tone: "neutral" },
+    { label: "涨跌幅", value: "+1.20%", tone: "positive" },
+  ],
   observed_at: "2026-07-25T01:00:00Z",
   source: "本地行情快照 + 确定性分析",
   disclaimer: "研究辅助信息，不构成投资建议。",
@@ -68,6 +76,8 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(screen.getByText("等待下一交易日确认")).toBeInTheDocument();
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("综合分62");
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("证据覆盖80%");
   expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
   expect(screen.getByRole("button", { name: "继续问估值" })).toBeInTheDocument();
   expect(requests).toEqual([{
@@ -159,6 +169,10 @@ it("renders bounded semantic screening rows", async () => {
       name: null,
       answer: "问财语义筛选返回 1 个候选结果。",
       source: "问财语义筛选（可选增强）",
+      metrics: [
+        { label: "候选数量", value: "1", tone: "neutral" },
+        { label: "增强来源", value: "问财", tone: "neutral" },
+      ],
       columns: ["股票代码", "股票简称", "市盈率"],
       rows: [{ 股票代码: "600519", 股票简称: "贵州茅台", 市盈率: 23 }],
     }),
@@ -169,6 +183,8 @@ it("renders bounded semantic screening rows", async () => {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
   expect(await screen.findByText("问财语义筛选返回 1 个候选结果。")).toBeInTheDocument();
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("候选数量1");
+  expect(screen.getByRole("link", { name: "600519" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
   expect(screen.getByRole("columnheader", { name: "市盈率" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "贵州茅台" })).toBeInTheDocument();
 });

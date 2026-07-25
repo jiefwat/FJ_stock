@@ -251,6 +251,14 @@ def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> N
     assert payload["symbol"] == "SH.600519"
     assert payload["name"] == "贵州茅台"
     assert payload["evidence"]
+    assert [item["label"] for item in payload["metrics"]] == [
+        "综合分",
+        "建议动作",
+        "证据覆盖",
+        "置信度",
+        "最新价",
+        "涨跌幅",
+    ]
     assert payload["observed_at"]
 
 
@@ -288,6 +296,10 @@ def test_ask_stock_uses_optional_semantic_screen(tmp_path) -> None:
     payload = response.json()
     assert payload["kind"] == "semantic_screen"
     assert payload["intent"] == "screening"
+    assert payload["metrics"] == [
+        {"label": "候选数量", "value": "1", "tone": "neutral"},
+        {"label": "增强来源", "value": "问财", "tone": "neutral"},
+    ]
     assert payload["columns"] == ["股票代码", "股票简称", "市盈率"]
     assert payload["rows"][0]["股票代码"] == "600519"
 

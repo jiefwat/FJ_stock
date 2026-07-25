@@ -17,6 +17,7 @@ from marketdesk.analysis.sector import analyse_sector
 from marketdesk.analysis.stock import analyse_stock
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AskStockMetric,
     AskStockResponse,
     EquityDataset,
     EquityPage,
@@ -321,6 +322,10 @@ class MarketService:
                 evidence=["候选字段与排序由当前自然语言问题和外部语义数据共同决定。"],
                 risks=["筛选结果可能延迟或缺少字段，请回到个股研究页核对证据。"],
                 next_actions=["选择候选股票后，在问股中输入股票名称或代码继续分析。"],
+                metrics=[
+                    AskStockMetric(label="候选数量", value=str(len(result.rows)), tone="neutral"),
+                    AskStockMetric(label="增强来源", value="问财", tone="neutral"),
+                ],
                 observed_at=snapshot.meta.observed_at,
                 source="问财语义筛选（可选增强）",
                 disclaimer="研究辅助信息，不构成投资建议。",

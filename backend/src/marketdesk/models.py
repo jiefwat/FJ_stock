@@ -397,6 +397,12 @@ class SemanticScreenResult(StrictModel):
     rows: list[dict[str, JsonScalar]] = Field(max_length=20)
 
 
+class AskStockMetric(StrictModel):
+    label: str
+    value: str
+    tone: Literal["positive", "neutral", "negative", "missing"] = "neutral"
+
+
 class AskStockResponse(StrictModel):
     kind: Literal["stock_analysis", "semantic_screen"]
     question: str
@@ -407,6 +413,7 @@ class AskStockResponse(StrictModel):
     evidence: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+    metrics: list[AskStockMetric] = Field(default_factory=list, max_length=8)
     observed_at: datetime | None = None
     source: str
     disclaimer: str

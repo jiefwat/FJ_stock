@@ -4,9 +4,10 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from marketdesk.models import AskStockResponse, EquityQuote, StockDossier
+from marketdesk.models import AskStockMetric, AskStockResponse, EquityQuote, StockDossier
 
 AskStockIntent = Literal["risk", "trend", "valuation", "action", "overview"]
+AskStockMetricTone = Literal["positive", "neutral", "negative", "missing"]
 
 
 class StockQuestionNotFound(ValueError):
@@ -122,6 +123,7 @@ def build_stock_answer(
         evidence=evidence[:5],
         risks=risks,
         next_actions=next_actions,
+        metrics=_stock_metrics(dossier),
         observed_at=observed_at,
         source="本地行情快照 + 确定性分析",
         disclaimer="研究辅助信息，不构成投资建议。",
@@ -145,6 +147,75 @@ def _alias_counts(quotes: list[EquityQuote]) -> dict[str, int]:
         for alias in _name_aliases(_compact(quote.name).casefold()):
             counts[alias] = counts.get(alias, 0) + 1
     return counts
+
+
+def _metric_tone(value: float | None, *, good: float, bad: float) -> AskStockMetricTone:
+    if value is None:
+        return "missing"
+    if value >= good:
+        return "positive"
+    if value < bad:
+        return "negative"
+    return "neutral"
+
+
+def _percent(value: float | None) -> str:
+    return "—" if value is None else f"{value * 100:.0f}%"
+
+
+def _price(value: float | None) -> str:
+    return "—" if value is None else f"{value:.2f}"
+
+
+def _change_pct(value: float | None) -> str:
+    if value is None:
+        return "—"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.2f}%"
+
+
+def _change_tone(value: float | None) -> AskStockMetricTone:
+    if value is None:
+        return "missing"
+    if value > 0:
+        return "positive"
+    if value < 0:
+        return "negative"
+    return "neutral"
+
+
+def _stock_metrics(dossier: StockDossier) -> list[AskStockMetric]:
+    quote = dossier.quote
+    score = dossier.stance_score
+    confidence = dossier.investment_advice.confidence
+    return [
+        AskStockMetric(
+            label="综合分",
+            value="—" if score is None else f"{score:.0f}",
+            tone=_metric_tone(score, good=60, bad=45),
+        ),
+        AskStockMetric(
+            label="建议动作",
+            value=dossier.investment_advice.action,
+            tone=_metric_tone(score, good=60, bad=45),
+        ),
+        AskStockMetric(
+            label="证据覆盖",
+            value=_percent(dossier.evidence_coverage),
+            tone=_metric_tone(dossier.evidence_coverage, good=0.7, bad=0.45),
+        ),
+        AskStockMetric(
+            label="置信度",
+            value=_percent(confidence),
+            tone=_metric_tone(confidence, good=0.65, bad=0.45),
+        ),
+        AskStockMetric(label="最新价", value=_price(quote.price), tone="neutral"),
+        AskStockMetric(
+            label="涨跌幅",
+            value=_change_pct(quote.change_pct),
+            tone=_change_tone(quote.change_pct),
+        ),
+    ]
 
 
 def _unique(values: list[str]) -> list[str]:

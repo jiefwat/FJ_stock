@@ -117,6 +117,14 @@ def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
     assert 1 <= len(answer.evidence) <= 5
     assert len(answer.risks) <= 4
     assert len(answer.next_actions) <= 4
+    assert [item.label for item in answer.metrics] == [
+        "综合分",
+        "建议动作",
+        "证据覆盖",
+        "置信度",
+        "最新价",
+        "涨跌幅",
+    ]
     assert answer.source == "本地行情快照 + 确定性分析"
     assert answer.disclaimer == "研究辅助信息，不构成投资建议。"
 

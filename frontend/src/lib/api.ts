@@ -41,6 +41,11 @@ export type EquityViewFilters = {
 export type SavedEquityView = { id: number; name: string; filters: EquityViewFilters; created_at: string; updated_at: string };
 export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; exchange: EquityExchange; sort_by: EquitySort; direction: SortDirection; available_sectors: string[]; items: Quote[] };
 export type AskStockCell = string | number | boolean | null;
+export type AskStockMetric = {
+  label: string;
+  value: string;
+  tone: "positive" | "neutral" | "negative" | "missing";
+};
 export type AskStockResponse = {
   kind: "stock_analysis" | "semantic_screen";
   question: string;
@@ -51,6 +56,7 @@ export type AskStockResponse = {
   evidence: string[];
   risks: string[];
   next_actions: string[];
+  metrics?: AskStockMetric[];
   observed_at: string | null;
   source: string;
   disclaimer: string;
