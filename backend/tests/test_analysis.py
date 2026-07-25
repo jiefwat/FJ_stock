@@ -90,6 +90,23 @@ def holding_item(**overrides: object) -> HoldingItem:
     return HoldingItem(**values)
 
 
+def trending_bars(count: int = 160) -> list[Bar]:
+    start = date(2025, 1, 1)
+    closes = [20 + index * 0.08 + index * index * 0.0015 for index in range(count)]
+    return [
+        Bar(
+            date=start + timedelta(days=index),
+            open=close - 0.2,
+            high=close + 0.6,
+            low=close - 0.6,
+            close=close,
+            volume=1_000_000 + index * 5_000,
+            amount=120_000_000 + index * 1_000_000,
+        )
+        for index, close in enumerate(closes)
+    ]
+
+
 def test_market_analysis_renormalizes_missing_external_factor() -> None:
     result = analyse_market(snapshot())
 
@@ -146,10 +163,39 @@ def test_opportunity_does_not_score_missing_evidence_as_neutral() -> None:
 
 def test_opportunity_presets_are_distinct_and_effective_with_current_fields() -> None:
     rows = [
-        equity(symbol="SH.600010", code="600010", change_pct=3.0, amount=400_000_000, pe=42, volume_ratio=1.1),
-        equity(symbol="SH.600011", code="600011", change_pct=6.0, amount=1_200_000_000, pe=48, volume_ratio=2.1),
-        equity(symbol="SH.600012", code="600012", change_pct=0.4, amount=300_000_000, pe=15, pb=1.8, volume_ratio=1.0),
-        equity(symbol="SH.600013", code="600013", change_pct=-3.0, amount=180_000_000, pe=22, volume_ratio=0.9),
+        equity(
+            symbol="SH.600010",
+            code="600010",
+            change_pct=3.0,
+            amount=400_000_000,
+            pe=42,
+            volume_ratio=1.1,
+        ),
+        equity(
+            symbol="SH.600011",
+            code="600011",
+            change_pct=6.0,
+            amount=1_200_000_000,
+            pe=48,
+            volume_ratio=2.1,
+        ),
+        equity(
+            symbol="SH.600012",
+            code="600012",
+            change_pct=0.4,
+            amount=300_000_000,
+            pe=15,
+            pb=1.8,
+            volume_ratio=1.0,
+        ),
+        equity(
+            symbol="SH.600013",
+            code="600013",
+            change_pct=-3.0,
+            amount=180_000_000,
+            pe=22,
+            volume_ratio=0.9,
+        ),
     ]
 
     trend = rank_candidates(rows, "balanced", "trend")
@@ -176,8 +222,12 @@ def test_risk_off_penalty_is_visible() -> None:
 
 def test_volume_breakout_strategy_enforces_its_displayed_turnover_rule() -> None:
     rows = [
-        equity(symbol="SH.600020", code="600020", change_pct=2.0, amount=300_000_000, volume_ratio=2.0),
-        equity(symbol="SH.600021", code="600021", change_pct=2.0, amount=650_000_000, volume_ratio=2.0),
+        equity(
+            symbol="SH.600020", code="600020", change_pct=2.0, amount=300_000_000, volume_ratio=2.0
+        ),
+        equity(
+            symbol="SH.600021", code="600021", change_pct=2.0, amount=650_000_000, volume_ratio=2.0
+        ),
     ]
 
     result = rank_candidates(rows, "balanced", "volume_breakout")
@@ -252,6 +302,67 @@ def test_stock_stance_uses_multiple_visible_factors() -> None:
         "valuation",
     }
     assert round(50 + sum(item.impact for item in result.score_factors), 2) == result.stance_score
+
+
+def test_stock_analysis_adds_independent_momentum_and_risk_factors() -> None:
+    result = analyse_stock(equity(pe=22), trending_bars())
+
+    assert result.technical is not None
+    assert result.technical.macd_histogram is not None
+    assert result.technical.atr_pct is not None
+    assert result.technical.bollinger_position is not None
+    assert result.technical.max_drawdown60 is not None
+    assert {factor.key for factor in result.score_factors} >= {
+        "macd_momentum",
+        "atr_risk",
+        "bollinger_position",
+        "drawdown_risk",
+    }
+    assert any(item.key == "signal_confluence" for item in result.analysis_dimensions)
+
+
+def test_historical_validation_is_descriptive_and_does_not_change_live_score() -> None:
+    result = analyse_stock(equity(pe=22), trending_bars())
+    expected_score = round(
+        max(0, min(100, 50 + sum(item.impact for item in result.score_factors))), 2
+    )
+
+    assert result.stance_score == expected_score
+    assert result.signal_validation.available is True
+    assert result.signal_validation.horizon_days == 20
+    assert result.signal_validation.sample_count >= 3
+    assert "不直接计入实时评分" in result.signal_validation.summary
+
+
+def test_short_history_returns_unavailable_validation() -> None:
+    result = analyse_stock(equity(), trending_bars(30))
+
+    assert result.signal_validation.available is False
+    assert result.signal_validation.sample_count == 0
+
+
+def test_macd_roundoff_near_zero_is_not_treated_as_negative_momentum() -> None:
+    start = date(2026, 1, 1)
+    bars = [
+        Bar(
+            date=start + timedelta(days=index),
+            open=10 + index * 0.1,
+            high=10.5 + index * 0.1,
+            low=9.5 + index * 0.1,
+            close=10 + index * 0.1,
+            volume=1000 + index,
+            amount=10_000 + index,
+        )
+        for index in range(80)
+    ]
+
+    result = analyse_stock(equity(), bars)
+    momentum = next(
+        item for item in result.score_factors if item.key == "macd_momentum"
+    )
+
+    assert momentum.impact == 0
+    assert "接近零" in momentum.evidence
 
 
 def test_stock_analysis_generates_a_conclusion_from_visible_evidence() -> None:
@@ -371,7 +482,9 @@ def test_holding_exit_watch_never_suggests_adding_when_under_target() -> None:
     assert "暂停补仓" in result.conclusion
     assert "可加仓" not in result.conclusion
     assert "补仓约" not in result.conclusion
-    assert all("可加仓" not in action and "补足目标仓位" not in action for action in result.next_actions)
+    assert all(
+        "可加仓" not in action and "补足目标仓位" not in action for action in result.next_actions
+    )
 
 
 def test_high_volatility_creates_bear_evidence() -> None:
@@ -394,6 +507,7 @@ def test_high_volatility_creates_bear_evidence() -> None:
 
     assert any("波动" in item for item in result.bear_case)
 
+
 def test_stock_analysis_returns_rich_dimension_cards_and_next_actions() -> None:
     start = date(2026, 1, 1)
     bars = [
@@ -410,15 +524,34 @@ def test_stock_analysis_returns_rich_dimension_cards_and_next_actions() -> None:
     ]
 
     result = analyse_stock(
-        equity(pe=24, pb=4.2, change_pct=2.2, amount=850_000_000, turnover_rate=3.4, volume_ratio=1.6, net_flow=48_000_000, sector="白酒"),
+        equity(
+            pe=24,
+            pb=4.2,
+            change_pct=2.2,
+            amount=850_000_000,
+            turnover_rate=3.4,
+            volume_ratio=1.6,
+            net_flow=48_000_000,
+            sector="白酒",
+        ),
         bars,
         research_evidence=["公告显示现金分红稳定", "研报关注渠道库存修复"],
     )
 
     dimension_keys = {item.key for item in result.analysis_dimensions}
-    assert dimension_keys >= {"trend", "risk_reward", "valuation", "liquidity", "capital_flow", "sector", "research"}
+    assert dimension_keys >= {
+        "trend",
+        "risk_reward",
+        "valuation",
+        "liquidity",
+        "capital_flow",
+        "sector",
+        "research",
+    }
     assert any("风险收益比" in item.summary for item in result.analysis_dimensions)
-    assert any("放量" in item.summary or "成交额" in item.summary for item in result.analysis_dimensions)
+    assert any(
+        "放量" in item.summary or "成交额" in item.summary for item in result.analysis_dimensions
+    )
     assert result.next_actions
     assert "技术面" in result.conclusion
     assert "估值" in result.conclusion
@@ -490,13 +623,51 @@ def test_stock_analysis_returns_direct_advice_and_comparisons() -> None:
         for index in range(130)
     ]
     peers = [
-        equity(symbol="SH.600001", code="600001", name="目标股", sector="白酒", pe=22, amount=900_000_000, change_pct=2.6, net_flow=80_000_000),
-        equity(symbol="SH.600002", code="600002", name="同业A", sector="白酒", pe=35, amount=300_000_000, change_pct=0.4, net_flow=-20_000_000),
-        equity(symbol="SH.600003", code="600003", name="同业B", sector="白酒", pe=18, amount=600_000_000, change_pct=1.1, net_flow=10_000_000),
-        equity(symbol="SH.600004", code="600004", name="异业", sector="半导体", pe=55, amount=1_200_000_000, change_pct=5.0, net_flow=30_000_000),
+        equity(
+            symbol="SH.600001",
+            code="600001",
+            name="目标股",
+            sector="白酒",
+            pe=22,
+            amount=900_000_000,
+            change_pct=2.6,
+            net_flow=80_000_000,
+        ),
+        equity(
+            symbol="SH.600002",
+            code="600002",
+            name="同业A",
+            sector="白酒",
+            pe=35,
+            amount=300_000_000,
+            change_pct=0.4,
+            net_flow=-20_000_000,
+        ),
+        equity(
+            symbol="SH.600003",
+            code="600003",
+            name="同业B",
+            sector="白酒",
+            pe=18,
+            amount=600_000_000,
+            change_pct=1.1,
+            net_flow=10_000_000,
+        ),
+        equity(
+            symbol="SH.600004",
+            code="600004",
+            name="异业",
+            sector="半导体",
+            pe=55,
+            amount=1_200_000_000,
+            change_pct=5.0,
+            net_flow=30_000_000,
+        ),
     ]
 
-    result = analyse_stock(peers[0], bars, research_evidence=["研报提示需求修复"], peer_quotes=peers)
+    result = analyse_stock(
+        peers[0], bars, research_evidence=["研报提示需求修复"], peer_quotes=peers
+    )
 
     assert result.investment_advice.action in {"可小仓试错", "持有观察", "等待回踩", "暂不参与"}
     assert result.investment_advice.position_hint
@@ -506,9 +677,16 @@ def test_stock_analysis_returns_direct_advice_and_comparisons() -> None:
     assert "不是保证收益" in result.investment_advice.disclaimer
     horizontal_keys = {item.key for item in result.horizontal_comparison}
     vertical_keys = {item.key for item in result.vertical_comparison}
-    assert horizontal_keys >= {"sector_change_rank", "sector_pe_position", "sector_liquidity_rank", "sector_capital_rank"}
+    assert horizontal_keys >= {
+        "sector_change_rank",
+        "sector_pe_position",
+        "sector_liquidity_rank",
+        "sector_capital_rank",
+    }
     assert vertical_keys >= {"return_20d", "return_60d", "drawdown_60d", "range_position_60d"}
-    assert any("同业" in item.summary or "行业" in item.summary for item in result.horizontal_comparison)
+    assert any(
+        "同业" in item.summary or "行业" in item.summary for item in result.horizontal_comparison
+    )
     assert any("过去 60 日" in item.summary for item in result.vertical_comparison)
     assert "投资建议" in result.conclusion
     assert "横向对比" in result.conclusion
@@ -553,7 +731,9 @@ def test_stock_conclusion_does_not_repeat_section_labels() -> None:
         for index in range(80)
     ]
 
-    result = analyse_stock(equity(pe=19, pb=5, amount=700_000_000, net_flow=-100_000_000, sector="白酒"), bars)
+    result = analyse_stock(
+        equity(pe=19, pb=5, amount=700_000_000, net_flow=-100_000_000, sector="白酒"), bars
+    )
 
     assert "技术面：技术面" not in result.conclusion
     assert "估值：估值" not in result.conclusion
@@ -563,26 +743,59 @@ def test_stock_conclusion_does_not_repeat_section_labels() -> None:
 
 def test_opportunity_result_has_strategy_diagnostics_and_candidate_playbook() -> None:
     rows = [
-        equity(symbol="SH.600030", code="600030", change_pct=3.2, amount=680_000_000, net_flow=26_000_000, sector="券商"),
-        equity(symbol="SH.600031", code="600031", change_pct=9.2, amount=900_000_000, net_flow=30_000_000, sector="机械"),
-        equity(symbol="SH.600032", code="600032", change_pct=-2.0, amount=120_000_000, net_flow=-5_000_000, sector=None),
+        equity(
+            symbol="SH.600030",
+            code="600030",
+            change_pct=3.2,
+            amount=680_000_000,
+            net_flow=26_000_000,
+            sector="券商",
+        ),
+        equity(
+            symbol="SH.600031",
+            code="600031",
+            change_pct=9.2,
+            amount=900_000_000,
+            net_flow=30_000_000,
+            sector="机械",
+        ),
+        equity(
+            symbol="SH.600032",
+            code="600032",
+            change_pct=-2.0,
+            amount=120_000_000,
+            net_flow=-5_000_000,
+            sector=None,
+        ),
     ]
 
     result = rank_candidates(rows, "cautious", "trend")
 
     assert result.summary
-    assert {item.key for item in result.diagnostics} >= {"market_fit", "selection_pressure", "data_quality", "risk_control"}
+    assert {item.key for item in result.diagnostics} >= {
+        "market_fit",
+        "selection_pressure",
+        "data_quality",
+        "risk_control",
+    }
     assert result.next_actions
     candidate = result.candidates[0]
     assert candidate.thesis.startswith("趋势延续候选")
-    assert {item.key for item in candidate.dimensions} >= {"trigger", "confirmation", "risk_control", "execution"}
+    assert {item.key for item in candidate.dimensions} >= {
+        "trigger",
+        "confirmation",
+        "risk_control",
+        "execution",
+    }
     assert candidate.invalidation
     assert candidate.next_actions
     assert "环境" in candidate.next_actions[0] or candidate.context_penalty > 0
 
 
 def test_opportunity_candidate_thesis_has_clean_readable_punctuation() -> None:
-    result = rank_candidates([equity(change_pct=3.2, amount=680_000_000, net_flow=26_000_000)], "balanced", "trend")
+    result = rank_candidates(
+        [equity(change_pct=3.2, amount=680_000_000, net_flow=26_000_000)], "balanced", "trend"
+    )
 
     assert result.candidates[0].thesis.startswith("趋势延续候选：价格变化")
     assert "：，" not in result.candidates[0].thesis
@@ -656,7 +869,12 @@ def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
     assert result.rebalance_quantity == -60
     assert result.break_even_price == 1400
     assert result.price_gap_to_cost_pct == 7.14
-    assert {item.key for item in result.analysis_dimensions} >= {"position", "cost", "rebalance", "risk"}
+    assert {item.key for item in result.analysis_dimensions} >= {
+        "position",
+        "cost",
+        "rebalance",
+        "risk",
+    }
     assert result.conclusion.startswith("建议动作：减仓")
     assert "分析维度：" in result.conclusion
     assert "持仓数量 100 股" not in result.conclusion

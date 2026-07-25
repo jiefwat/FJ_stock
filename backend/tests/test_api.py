@@ -215,9 +215,7 @@ def client(tmp_path) -> TestClient:
 
 
 def test_personal_endpoints_require_authentication(tmp_path) -> None:
-    service = MarketService(
-        provider=FixtureProvider(), store=Store(tmp_path / "auth-boundary.db")
-    )
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "auth-boundary.db"))
     api = TestClient(create_app(service))
 
     for path in (
@@ -246,13 +244,15 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     assert market_payload["snapshot"]["sectors"][0]["code"] == "BK1"
     assert "equities" not in market_payload["snapshot"]
     assert today.json()["top_opportunities"][0]["quote"]["name"] == "贵州茅台"
-    assert stock.json()["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
+    stock_payload = stock.json()
+    assert stock_payload["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
+    assert "signal_validation" in stock_payload
+    assert stock_payload["technical"]["macd_histogram"] is not None
+    assert stock_payload["technical"]["atr_pct"] is not None
 
 
 def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
-    service = MarketService(
-        provider=EquityBrowserProvider(), store=Store(tmp_path / "equities.db")
-    )
+    service = MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / "equities.db"))
     api = TestClient(create_app(service))
 
     response = api.get(
@@ -294,9 +294,7 @@ def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
     assert beijing["total"] == 1
     assert beijing["items"][0]["symbol"] == "BJ.430047"
 
-    shenzhen_search = api.get(
-        "/api/v1/equities", params={"exchange": "sz", "q": "000001"}
-    ).json()
+    shenzhen_search = api.get("/api/v1/equities", params={"exchange": "sz", "q": "000001"}).json()
     assert shenzhen_search["total"] == 1
     assert shenzhen_search["items"][0]["name"] == "平安银行"
 
@@ -342,9 +340,7 @@ def test_advanced_equity_filters_reject_inverted_ranges(
 ) -> None:
     api = TestClient(
         create_app(
-            MarketService(
-                provider=EquityBrowserProvider(), store=Store(tmp_path / f"{minimum}.db")
-            )
+            MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / f"{minimum}.db"))
         )
     )
 
@@ -604,7 +600,9 @@ def test_user_preferences_are_personal(tmp_path) -> None:
     assert updated.json()["risk_profile"] == "defensive"
     assert updated.json()["morning_email_enabled"] is False
     assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "today"
-    assert api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
+    assert (
+        api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
+    )
 
 
 def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
@@ -671,7 +669,11 @@ def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
     invalid = api.post(
         "/api/v1/equity-views",
         headers=alpha_auth,
-        json={**payload, "name": "反向区间", "filters": {**payload["filters"], "min_change_pct": 5, "max_change_pct": 1}},
+        json={
+            **payload,
+            "name": "反向区间",
+            "filters": {**payload["filters"], "min_change_pct": 5, "max_change_pct": 1},
+        },
     )
     assert invalid.status_code == 422
 

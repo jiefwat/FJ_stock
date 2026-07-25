@@ -1,5 +1,12 @@
 from math import sqrt
 
+from marketdesk.analysis.indicators import (
+    average_true_range,
+    bollinger_bands,
+    ema_series,
+    macd_series,
+    maximum_drawdown,
+)
 from marketdesk.models import (
     Bar,
     EquityQuote,
@@ -8,6 +15,7 @@ from marketdesk.models import (
     StockDossier,
     StockInvestmentAdvice,
     StockScoreFactor,
+    StockSignalValidation,
     StockTrendForecast,
     TechnicalSummary,
 )
@@ -15,6 +23,64 @@ from marketdesk.models import (
 
 def _average(values: list[float], size: int) -> float | None:
     return sum(values[-size:]) / size if len(values) >= size else None
+
+
+def _historical_signal_validation(bars: list[Bar], horizon_days: int = 20) -> StockSignalValidation:
+    closes = [bar.close for bar in bars]
+    if len(closes) < 35 + horizon_days:
+        return StockSignalValidation(
+            available=False,
+            horizon_days=horizon_days,
+            sample_count=0,
+            summary="历史长度不足，暂不能形成可复核的滚动信号样本。",
+        )
+
+    _, _, histogram = macd_series(closes)
+    forward_returns: list[float] = []
+    for index in range(len(closes) - horizon_days):
+        close = closes[index]
+        future_close = closes[index + horizon_days]
+        ma5 = _average(closes[: index + 1], 5)
+        ma20 = _average(closes[: index + 1], 20)
+        momentum = histogram[index]
+        if (
+            close <= 0
+            or ma5 is None
+            or ma20 is None
+            or momentum is None
+            or close <= ma20
+            or ma5 <= ma20
+            or momentum <= 0
+        ):
+            continue
+        forward_returns.append((future_close / close - 1) * 100)
+
+    sample_count = len(forward_returns)
+    if sample_count < 3:
+        return StockSignalValidation(
+            available=False,
+            horizon_days=horizon_days,
+            sample_count=sample_count,
+            summary=(f"仅找到 {sample_count} 个完整历史信号样本，少于 3 个，暂不展示统计结论。"),
+        )
+
+    positive_rate = sum(value > 0 for value in forward_returns) / sample_count
+    average_return = sum(forward_returns) / sample_count
+    worst_return = min(forward_returns)
+    return StockSignalValidation(
+        available=True,
+        horizon_days=horizon_days,
+        sample_count=sample_count,
+        positive_rate=round(positive_rate, 4),
+        average_return=round(average_return, 2),
+        worst_return=round(worst_return, 2),
+        summary=(
+            f"当前技术条件在历史中出现 {sample_count} 个滚动样本；"
+            f"{horizon_days} 日后上涨比例 {positive_rate:.0%}，"
+            f"平均收益 {average_return:.2f}%，最差收益 {worst_return:.2f}%。"
+            "样本可能重叠，只作描述，不直接计入实时评分。"
+        ),
+    )
 
 
 def analyse_stock(
@@ -54,6 +120,7 @@ def analyse_stock(
             analysis_dimensions=[],
             investment_advice=advice,
             trend_forecast=forecast,
+            signal_validation=_historical_signal_validation([]),
             horizontal_comparison=[],
             vertical_comparison=[],
             next_actions=["补齐历史行情后再判断趋势、波动和支撑压力"],
@@ -87,12 +154,30 @@ def analyse_stock(
         avg_gain = sum(gains) / 14
         avg_loss = sum(losses) / 14
         rsi = 100 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+    ema12 = ema_series(closes, 12)
+    ema26 = ema_series(closes, 26)
+    macd, macd_signal, macd_histogram = macd_series(closes)
+    atr14 = average_true_range(bars, 14)
+    latest_close = closes[-1]
+    atr_pct = atr14 / latest_close * 100 if atr14 is not None and latest_close > 0 else None
+    bollinger_upper, bollinger_lower, bollinger_position = bollinger_bands(closes)
     technical = TechnicalSummary(
         ma5=_average(closes, 5),
         ma20=_average(closes, 20),
         ma60=_average(closes, 60),
+        ema12=ema12[-1],
+        ema26=ema26[-1],
+        macd=macd[-1],
+        macd_signal=macd_signal[-1],
+        macd_histogram=macd_histogram[-1],
         rsi14=rsi,
         volatility20=volatility,
+        atr14=atr14,
+        atr_pct=atr_pct,
+        bollinger_upper=bollinger_upper,
+        bollinger_lower=bollinger_lower,
+        bollinger_position=bollinger_position,
+        max_drawdown60=maximum_drawdown(closes, 60),
         support=min(closes[-20:]),
         resistance=max(closes[-20:]),
     )
@@ -163,6 +248,7 @@ def analyse_stock(
         analysis_dimensions=dimensions,
         investment_advice=advice,
         trend_forecast=forecast,
+        signal_validation=_historical_signal_validation(bars),
         horizontal_comparison=horizontal,
         vertical_comparison=vertical,
         next_actions=next_actions,
@@ -183,7 +269,15 @@ def _factor(
     evidence: str,
     available: bool = True,
 ) -> StockScoreFactor:
-    signal = "missing" if not available else "positive" if impact > 0 else "negative" if impact < 0 else "neutral"
+    signal = (
+        "missing"
+        if not available
+        else "positive"
+        if impact > 0
+        else "negative"
+        if impact < 0
+        else "neutral"
+    )
     return StockScoreFactor(
         key=key,
         label=label,
@@ -251,11 +345,122 @@ def _score_factors(
     if quote.change_pct is None:
         factors.append(_factor("chase_risk", "追涨风险", 0, "当日涨跌数据不足", False))
     elif quote.change_pct > 7:
-        factors.append(_factor("chase_risk", "追涨风险", -8, f"当日涨幅 {quote.change_pct:.1f}% 偏高"))
+        factors.append(
+            _factor("chase_risk", "追涨风险", -8, f"当日涨幅 {quote.change_pct:.1f}% 偏高")
+        )
     elif quote.change_pct < -7:
-        factors.append(_factor("chase_risk", "极端波动", -5, f"当日跌幅 {quote.change_pct:.1f}% 偏大"))
+        factors.append(
+            _factor("chase_risk", "极端波动", -5, f"当日跌幅 {quote.change_pct:.1f}% 偏大")
+        )
     else:
         factors.append(_factor("chase_risk", "追涨风险", 0, "当日涨跌未触发极端波动约束"))
+
+    macd_histogram = technical.macd_histogram
+    if macd_histogram is None:
+        factors.append(_factor("macd_momentum", "MACD 动量", 0, "MACD 信号尚未充分预热", False))
+    elif abs(macd_histogram) <= 1e-6:
+        factors.append(_factor("macd_momentum", "MACD 动量", 0, "MACD 柱值接近零，动量中性"))
+    elif macd_histogram > 0:
+        factors.append(
+            _factor(
+                "macd_momentum",
+                "MACD 动量",
+                6,
+                f"MACD 柱值 {macd_histogram:.3f} 为正，动量确认趋势",
+            )
+        )
+    elif macd_histogram < 0:
+        factors.append(
+            _factor(
+                "macd_momentum",
+                "MACD 动量",
+                -6,
+                f"MACD 柱值 {macd_histogram:.3f} 为负，动量与趋势存在分歧",
+            )
+        )
+    atr_pct = technical.atr_pct
+    if atr_pct is None:
+        factors.append(_factor("atr_risk", "ATR 波动风险", 0, "ATR 数据不足", False))
+    elif atr_pct <= 2:
+        factors.append(
+            _factor("atr_risk", "ATR 波动风险", 3, f"ATR 占现价 {atr_pct:.1f}%，波动受控")
+        )
+    elif atr_pct <= 3:
+        factors.append(
+            _factor("atr_risk", "ATR 波动风险", 0, f"ATR 占现价 {atr_pct:.1f}%，波动中性")
+        )
+    elif atr_pct <= 5:
+        factors.append(
+            _factor("atr_risk", "ATR 波动风险", -4, f"ATR 占现价 {atr_pct:.1f}%，需要缩小仓位")
+        )
+    else:
+        factors.append(
+            _factor("atr_risk", "ATR 波动风险", -8, f"ATR 占现价 {atr_pct:.1f}%，波动风险较高")
+        )
+
+    bollinger_position = technical.bollinger_position
+    if bollinger_position is None:
+        factors.append(_factor("bollinger_position", "布林位置", 0, "布林带数据不足", False))
+    elif bollinger_position > 1:
+        factors.append(
+            _factor(
+                "bollinger_position",
+                "布林位置",
+                -6,
+                f"价格位于布林带 {bollinger_position:.2f} 位置，突破上轨后追高风险上升",
+            )
+        )
+    elif bollinger_position < 0:
+        factors.append(
+            _factor(
+                "bollinger_position",
+                "布林位置",
+                -3,
+                f"价格位于布林带 {bollinger_position:.2f} 位置，跌破下轨且趋势偏弱",
+            )
+        )
+    elif 0.35 <= bollinger_position <= 0.8:
+        factors.append(
+            _factor(
+                "bollinger_position",
+                "布林位置",
+                3,
+                f"价格位于布林带 {bollinger_position:.2f} 位置，扩张程度可控",
+            )
+        )
+    else:
+        factors.append(
+            _factor(
+                "bollinger_position",
+                "布林位置",
+                0,
+                f"价格位于布林带 {bollinger_position:.2f} 位置，信号中性",
+            )
+        )
+
+    drawdown = technical.max_drawdown60
+    if drawdown is None:
+        factors.append(_factor("drawdown_risk", "60 日回撤", 0, "60 日回撤数据不足", False))
+    elif drawdown <= 8:
+        factors.append(
+            _factor("drawdown_risk", "60 日回撤", 2, f"60 日最大回撤 {drawdown:.1f}%，回撤受控")
+        )
+    elif drawdown <= 15:
+        factors.append(
+            _factor("drawdown_risk", "60 日回撤", 0, f"60 日最大回撤 {drawdown:.1f}%，处于中性区间")
+        )
+    elif drawdown <= 25:
+        factors.append(
+            _factor(
+                "drawdown_risk", "60 日回撤", -4, f"60 日最大回撤 {drawdown:.1f}%，修复压力较大"
+            )
+        )
+    else:
+        factors.append(
+            _factor(
+                "drawdown_risk", "60 日回撤", -8, f"60 日最大回撤 {drawdown:.1f}%，尾部风险较高"
+            )
+        )
     return factors
 
 
@@ -298,7 +503,9 @@ def _factor_by_key(factors: list[StockScoreFactor], key: str) -> StockScoreFacto
     return next((item for item in factors if item.key == key), None)
 
 
-def _percentile_rank(value: float | None, values: list[float], higher_is_better: bool = True) -> float | None:
+def _percentile_rank(
+    value: float | None, values: list[float], higher_is_better: bool = True
+) -> float | None:
     if value is None or not values:
         return None
     usable = sorted(item for item in values if item is not None)
@@ -334,7 +541,9 @@ def _horizontal_comparison(
 ) -> list[StockComparisonItem]:
     same_sector = [item for item in peer_quotes if quote.sector and item.sector == quote.sector]
     peers = same_sector if len(same_sector) >= 2 else peer_quotes
-    benchmark_name = f"{quote.sector}同业" if quote.sector and len(same_sector) >= 2 else "全市场样本"
+    benchmark_name = (
+        f"{quote.sector}同业" if quote.sector and len(same_sector) >= 2 else "全市场样本"
+    )
 
     change_values = [item.change_pct for item in peers if item.change_pct is not None]
     pe_values = [item.pe for item in peers if item.pe is not None and item.pe > 0]
@@ -351,7 +560,9 @@ def _horizontal_comparison(
         StockComparisonItem(
             key="sector_change_rank",
             label="涨跌强弱",
-            signal=_comparison_signal(change_pctile, quote.change_pct is not None and bool(change_values)),
+            signal=_comparison_signal(
+                change_pctile, quote.change_pct is not None and bool(change_values)
+            ),
             value=f"{quote.change_pct:.2f}%" if quote.change_pct is not None else "暂缺",
             benchmark=benchmark_name,
             percentile=change_pctile,
@@ -367,7 +578,9 @@ def _horizontal_comparison(
             label="估值位置",
             signal=_comparison_signal(pe_pctile, quote.pe is not None and bool(pe_values)),
             value=f"PE {quote.pe:.1f}" if quote.pe is not None else "PE 暂缺",
-            benchmark=f"{benchmark_name} PE 中位 {pe_median:.1f}" if pe_median is not None else benchmark_name,
+            benchmark=f"{benchmark_name} PE 中位 {pe_median:.1f}"
+            if pe_median is not None
+            else benchmark_name,
             percentile=pe_pctile,
             summary=(
                 f"PE {quote.pe:.1f} 相对{benchmark_name}估值吸引力约 {pe_pctile:.0f} 分位"
@@ -379,7 +592,9 @@ def _horizontal_comparison(
         StockComparisonItem(
             key="sector_liquidity_rank",
             label="流动性排名",
-            signal=_comparison_signal(amount_pctile, quote.amount is not None and bool(amount_values)),
+            signal=_comparison_signal(
+                amount_pctile, quote.amount is not None and bool(amount_values)
+            ),
             value=_money(quote.amount),
             benchmark=benchmark_name,
             percentile=amount_pctile,
@@ -393,7 +608,9 @@ def _horizontal_comparison(
         StockComparisonItem(
             key="sector_capital_rank",
             label="资金排名",
-            signal=_comparison_signal(flow_pctile, quote.net_flow is not None and bool(flow_values)),
+            signal=_comparison_signal(
+                flow_pctile, quote.net_flow is not None and bool(flow_values)
+            ),
             value=_signed_money(quote.net_flow),
             benchmark=benchmark_name,
             percentile=flow_pctile,
@@ -460,7 +677,13 @@ def _vertical_comparison(
         StockComparisonItem(
             key="drawdown_60d",
             label="60日回撤",
-            signal="positive" if drawdown_60 is not None and drawdown_60 > -8 else "negative" if drawdown_60 is not None and drawdown_60 < -20 else "neutral" if drawdown_60 is not None else "missing",
+            signal="positive"
+            if drawdown_60 is not None and drawdown_60 > -8
+            else "negative"
+            if drawdown_60 is not None and drawdown_60 < -20
+            else "neutral"
+            if drawdown_60 is not None
+            else "missing",
             value=f"{drawdown_60:.1f}%" if drawdown_60 is not None else "暂缺",
             benchmark="自身 60 日高点",
             percentile=None,
@@ -488,7 +711,13 @@ def _vertical_comparison(
         StockComparisonItem(
             key="ma20_distance",
             label="MA20距离",
-            signal="negative" if ma20_distance is not None and ma20_distance < -8 else "positive" if ma20_distance is not None and -3 <= ma20_distance <= 2 else "neutral" if ma20_distance is not None else "missing",
+            signal="negative"
+            if ma20_distance is not None and ma20_distance < -8
+            else "positive"
+            if ma20_distance is not None and -3 <= ma20_distance <= 2
+            else "neutral"
+            if ma20_distance is not None
+            else "missing",
             value=f"{abs(ma20_distance):.1f}%" if ma20_distance is not None else "暂缺",
             benchmark="20 日均线",
             percentile=None,
@@ -570,8 +799,14 @@ def _trend_forecast(
     factors: list[StockScoreFactor],
     vertical: list[StockComparisonItem],
 ) -> StockTrendForecast:
-    ma5_above_ma20 = technical.ma5 is not None and technical.ma20 is not None and technical.ma5 >= technical.ma20
-    ma20_above_ma60 = technical.ma20 is not None and technical.ma60 is not None and technical.ma20 >= technical.ma60
+    ma5_above_ma20 = (
+        technical.ma5 is not None and technical.ma20 is not None and technical.ma5 >= technical.ma20
+    )
+    ma20_above_ma60 = (
+        technical.ma20 is not None
+        and technical.ma60 is not None
+        and technical.ma20 >= technical.ma60
+    )
     overheat = technical.rsi14 is not None and technical.rsi14 > 75
     high_volatility = technical.volatility20 is not None and technical.volatility20 > 40
     capital_positive = quote.net_flow is not None and quote.net_flow >= 0
@@ -628,6 +863,54 @@ def _trend_forecast(
     )
 
 
+def _signal_confluence_dimension(
+    factors: list[StockScoreFactor],
+) -> StockAnalysisDimension:
+    confluence_keys = {
+        "price_ma20",
+        "ma5_ma20",
+        "ma20_ma60",
+        "rsi",
+        "macd_momentum",
+        "volatility",
+        "atr_risk",
+        "bollinger_position",
+        "drawdown_risk",
+        "chase_risk",
+    }
+    available = [item for item in factors if item.key in confluence_keys and item.available]
+    positive = [item for item in available if item.impact > 0]
+    negative = [item for item in available if item.impact < 0]
+    if not available:
+        return StockAnalysisDimension(
+            key="signal_confluence",
+            label="信号一致性",
+            signal="missing",
+            score=None,
+            summary="趋势、动量和风险信号均未充分预热",
+            evidence=[],
+            available=False,
+        )
+
+    if len(positive) >= len(negative) + 2:
+        score = 72.0
+        summary = "多类信号偏正向共振"
+    elif len(negative) >= len(positive) + 2:
+        score = 35.0
+        summary = "多类信号偏负向共振"
+    else:
+        score = 52.0
+        summary = "趋势、动量和风险信号存在分歧"
+    return StockAnalysisDimension(
+        key="signal_confluence",
+        label="信号一致性",
+        signal=_signal(score),
+        score=score,
+        summary=f"正向 {len(positive)} 项、反向 {len(negative)} 项；{summary}",
+        evidence=[item.evidence for item in [*positive[:2], *negative[:2]]],
+    )
+
+
 def _analysis_dimensions(
     quote: EquityQuote,
     close: float,
@@ -636,9 +919,7 @@ def _analysis_dimensions(
     research: list[str],
 ) -> list[StockAnalysisDimension]:
     trend_factors = [
-        item
-        for item in factors
-        if item.key in {"price_ma20", "ma5_ma20", "ma20_ma60", "rsi"}
+        item for item in factors if item.key in {"price_ma20", "ma5_ma20", "ma20_ma60", "rsi"}
     ]
     trend_score = max(0.0, min(100.0, 50 + sum(item.impact for item in trend_factors)))
     trend_evidence = [item.evidence for item in trend_factors]
@@ -660,7 +941,11 @@ def _analysis_dimensions(
 
     valuation_factor = _factor_by_key(factors, "valuation")
     valuation_available = valuation_factor.available if valuation_factor else False
-    valuation_score = None if not valuation_available else max(0.0, min(100.0, 50 + (valuation_factor.impact if valuation_factor else 0) * 4))
+    valuation_score = (
+        None
+        if not valuation_available
+        else max(0.0, min(100.0, 50 + (valuation_factor.impact if valuation_factor else 0) * 4))
+    )
     valuation_bits = []
     if quote.pe is not None:
         valuation_bits.append(f"PE {quote.pe:.1f}")
@@ -712,18 +997,30 @@ def _analysis_dimensions(
 
     research_available = bool(research)
     research_summary = (
-        "；".join(research[:2])
-        if research
-        else "公告与研报增强数据暂缺，暂不能验证基本面叙事"
+        "；".join(research[:2]) if research else "公告与研报增强数据暂缺，暂不能验证基本面叙事"
     )
-    market_cap_score = 60.0 if quote.market_cap is None else 72.0 if quote.market_cap >= 50_000_000_000 else 58.0
+    market_cap_score = (
+        60.0 if quote.market_cap is None else 72.0 if quote.market_cap >= 50_000_000_000 else 58.0
+    )
     fundamental_score = max(
         0.0,
         min(
             100.0,
             50
-            + (12 if quote.pe is not None and 0 < quote.pe < 35 else -6 if quote.pe is not None else 0)
-            + (8 if quote.pb is not None and 0 < quote.pb < 5 else -4 if quote.pb is not None else 0)
+            + (
+                12
+                if quote.pe is not None and 0 < quote.pe < 35
+                else -6
+                if quote.pe is not None
+                else 0
+            )
+            + (
+                8
+                if quote.pb is not None and 0 < quote.pb < 5
+                else -4
+                if quote.pb is not None
+                else 0
+            )
             + (8 if quote.market_cap is not None and quote.market_cap >= 20_000_000_000 else 0)
             + (6 if research else 0),
         ),
@@ -735,11 +1032,14 @@ def _analysis_dimensions(
     ]
     if research:
         fundamental_evidence.append(f"研究证据 {len(research)} 条")
-    fundamental_summary = (
-        "基本面质量用估值、规模和公告研报交叉验证；"
-        + "，".join(fundamental_evidence[:3])
+    fundamental_summary = "基本面质量用估值、规模和公告研报交叉验证；" + "，".join(
+        fundamental_evidence[:3]
     )
-    catalyst_score = None if not research and quote.sector is None else 50.0 + (12 if research else 0) + (6 if quote.sector else 0)
+    catalyst_score = (
+        None
+        if not research and quote.sector is None
+        else 50.0 + (12 if research else 0) + (6 if quote.sector else 0)
+    )
     catalyst_evidence = research[:3] if research else ["公告、研报和事件催化暂缺"]
     if quote.sector:
         catalyst_evidence.append(f"板块线索 {quote.sector}")
@@ -771,8 +1071,8 @@ def _analysis_dimensions(
         if technical.volatility20 is not None
         else "波动率暂缺",
     ]
-    risk_control_summary = (
-        "交易计划先定义放弃线、压力位和复核节奏；" + "，".join(risk_control_evidence)
+    risk_control_summary = "交易计划先定义放弃线、压力位和复核节奏；" + "，".join(
+        risk_control_evidence
     )
 
     return [
@@ -784,6 +1084,7 @@ def _analysis_dimensions(
             summary=trend_summary,
             evidence=trend_evidence,
         ),
+        _signal_confluence_dimension(factors),
         StockAnalysisDimension(
             key="risk_reward",
             label="风险收益",
@@ -793,7 +1094,9 @@ def _analysis_dimensions(
             evidence=[
                 f"现价 {close:.2f}",
                 f"支撑 {technical.support:.2f}" if technical.support is not None else "支撑暂缺",
-                f"压力 {technical.resistance:.2f}" if technical.resistance is not None else "压力暂缺",
+                f"压力 {technical.resistance:.2f}"
+                if technical.resistance is not None
+                else "压力暂缺",
             ],
             available=risk_reward is not None,
         ),
@@ -953,7 +1256,9 @@ def _build_conclusion(
     catalyst = by_key.get("catalyst")
     risk_controls = by_key.get("risk_controls")
     next_step = next_actions[0] if next_actions else "继续补证据后再调整判断"
-    horizontal_text = "；".join(item.summary for item in horizontal[:2]) if horizontal else "横向样本不足"
+    horizontal_text = (
+        "；".join(item.summary for item in horizontal[:2]) if horizontal else "横向样本不足"
+    )
     vertical_text = "；".join(item.summary for item in vertical[:2]) if vertical else "纵向历史不足"
     return (
         f"总结论：{quote.name} 当前为{label}（{score:.0f}/100），{action}，但不是买卖指令。"

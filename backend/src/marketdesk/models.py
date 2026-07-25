@@ -288,8 +288,19 @@ class TechnicalSummary(StrictModel):
     ma5: float | None
     ma20: float | None
     ma60: float | None
+    ema12: float | None
+    ema26: float | None
+    macd: float | None
+    macd_signal: float | None
+    macd_histogram: float | None
     rsi14: float | None
     volatility20: float | None
+    atr14: float | None
+    atr_pct: float | None
+    bollinger_upper: float | None
+    bollinger_lower: float | None
+    bollinger_position: float | None
+    max_drawdown60: float | None
     support: float | None
     resistance: float | None
 
@@ -334,6 +345,16 @@ class StockTrendForecast(StrictModel):
     invalidation: str
 
 
+class StockSignalValidation(StrictModel):
+    available: bool
+    horizon_days: int = 20
+    sample_count: int = Field(ge=0)
+    positive_rate: float | None = Field(default=None, ge=0, le=1)
+    average_return: float | None = None
+    worst_return: float | None = None
+    summary: str
+
+
 class StockComparisonItem(StrictModel):
     key: str
     label: str
@@ -355,6 +376,7 @@ class StockDossier(StrictModel):
     analysis_dimensions: list[StockAnalysisDimension] = Field(default_factory=list)
     investment_advice: StockInvestmentAdvice
     trend_forecast: StockTrendForecast
+    signal_validation: StockSignalValidation
     horizontal_comparison: list[StockComparisonItem] = Field(default_factory=list)
     vertical_comparison: list[StockComparisonItem] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
