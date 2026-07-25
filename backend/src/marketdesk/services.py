@@ -5,8 +5,10 @@ from typing import Any, Literal, Protocol, cast
 
 from marketdesk.analysis.ask_stock import (
     StockQuestionNotFound,
+    build_portfolio_answer,
     build_stock_answer,
     classify_stock_question,
+    is_portfolio_question,
     resolve_stock_question,
 )
 from marketdesk.analysis.events import analyse_market_events
@@ -303,11 +305,18 @@ class MarketService:
         bars = await self.provider.fetch_kline(symbol)
         return analyse_stock(quote, bars, research_evidence, peer_quotes=snapshot.equities)
 
-    async def ask_stock(self, question: str) -> AskStockResponse:
+    async def ask_stock(self, question: str, user_id: int | None = None) -> AskStockResponse:
         snapshot = await self.market()
+        holdings = self.store.list_holdings(user_id) if user_id is not None else []
         try:
             quote = resolve_stock_question(question, snapshot.equities)
         except StockQuestionNotFound as error:
+            if user_id is not None and is_portfolio_question(question):
+                return build_portfolio_answer(
+                    question=question,
+                    holdings=await self._analyse_holdings(holdings, snapshot),
+                    observed_at=snapshot.meta.observed_at,
+                )
             semantic_screener = getattr(self.provider, "query_stock_screen", None)
             if not callable(semantic_screener):
                 raise ProviderUnavailable(
@@ -333,10 +342,17 @@ class MarketService:
                 rows=result.rows,
             )
         dossier = await self.stock(quote.symbol)
+        holding_context = None
+        if holdings:
+            analysed_holdings = await self._analyse_holdings(holdings, snapshot)
+            holding_context = next(
+                (item for item in analysed_holdings if item.item.symbol == quote.symbol), None
+            )
         return build_stock_answer(
             question=question,
             intent=classify_stock_question(question),
             dossier=dossier,
+            holding=holding_context,
             observed_at=snapshot.meta.observed_at,
         )
 

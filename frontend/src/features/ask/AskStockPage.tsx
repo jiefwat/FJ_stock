@@ -8,7 +8,7 @@ const prompts = [
   "贵州茅台现在主要风险是什么",
   "600519 的技术趋势怎么样",
   "平安银行的估值贵不贵",
-  "五粮液的仓位和止损怎么定",
+  "我的持仓里风险最大的是哪个",
 ];
 
 const intentLabel: Record<AskStockResponse["intent"], string> = {
@@ -18,6 +18,7 @@ const intentLabel: Record<AskStockResponse["intent"], string> = {
   action: "操作纪律",
   overview: "综合研究",
   screening: "问财筛选",
+  portfolio: "持仓诊断",
 };
 const storageVersion = 1;
 const maxStoredMessages = 24;
@@ -34,6 +35,23 @@ const stockCodeColumnPattern = /(股票)?代码|证券代码|symbol/i;
 
 function observedTime(value: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "时间未提供";
+}
+
+function percentValue(value: number | null | undefined) {
+  return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function signedPercentValue(value: number | null | undefined) {
+  if (value == null) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function moneyValue(value: number | null | undefined) {
+  if (value == null) return "—";
+  if (Math.abs(value) >= 100_000_000) return `${(value / 100_000_000).toFixed(1)} 亿`;
+  if (Math.abs(value) >= 10_000) return `${(value / 10_000).toFixed(0)} 万`;
+  return value.toFixed(0);
 }
 
 type StockAnchor = { name: string; symbol: string };
@@ -146,12 +164,54 @@ function AskMetrics({ result }: { result: AskStockResponse }) {
   </div>;
 }
 
+function HoldingContext({ result }: { result: AskStockResponse }) {
+  const holding = result.holding_context;
+  if (!holding?.owned) return null;
+  return <aside className="ask-holding-context" aria-label="个人持仓上下文">
+    <strong>个人持仓上下文</strong>
+    <span>数量 {holding.quantity ?? "—"} 股</span>
+    <span>成本 {holding.cost_price?.toFixed(2) ?? "—"}</span>
+    <span>市值 {moneyValue(holding.market_value)}</span>
+    <span>盈亏 {signedPercentValue(holding.pnl_pct)}</span>
+    <span>组合占比 {percentValue(holding.portfolio_weight)}</span>
+    <span>动作 {holding.action ?? "—"}</span>
+    {holding.risk_flags.length > 0 ? <small>风险：{holding.risk_flags.join(" / ")}</small> : null}
+  </aside>;
+}
+
+function AskFactors({ result }: { result: AskStockResponse }) {
+  const factors = result.factors ?? [];
+  if (factors.length === 0) return null;
+  return <details className="ask-factors">
+    <summary>展开评分因子</summary>
+    <div>
+      {factors.map((factor) => <article className={`ask-factor ${factor.signal}`} key={`${factor.label}-${factor.evidence}`}>
+        <b>{factor.impact > 0 ? `+${factor.impact}` : factor.impact}</b>
+        <span>{factor.label}</span>
+        <p>{factor.evidence}</p>
+      </article>)}
+    </div>
+  </details>;
+}
+
+function AskRowsTable({ result }: { result: AskStockResponse }) {
+  if (result.rows.length === 0) return null;
+  return <div className="ask-table-wrap">
+    <table className="ask-table">
+      <thead><tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+      <tbody>{result.rows.map((row, index) => <tr key={`${index}-${String(row[result.columns[0]])}`}>
+        {result.columns.map((column) => <td key={column}>{renderScreenCell(column, row[column])}</td>)}
+      </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
 function AskResult({ result }: { result: AskStockResponse }) {
   return <section className="ask-result" aria-live="polite">
     <header className="ask-result-head">
       <div>
         <span>{intentLabel[result.intent]}</span>
-        <h2>{result.name ?? "自然语言选股"}</h2>
+        <h2>{result.name ?? (result.kind === "portfolio_analysis" ? "账户组合" : "自然语言选股")}</h2>
         {result.symbol && <b>{result.symbol}</b>}
       </div>
       <div className="ask-provenance">
@@ -161,18 +221,13 @@ function AskResult({ result }: { result: AskStockResponse }) {
       </div>
     </header>
     <AskMetrics result={result} />
+    <HoldingContext result={result} />
     <article className="ask-answer">
       <span>回答</span>
       <p>{result.answer}</p>
     </article>
-    {result.kind === "semantic_screen" && result.rows.length > 0 && <div className="ask-table-wrap">
-      <table className="ask-table">
-        <thead><tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
-        <tbody>{result.rows.map((row, index) => <tr key={`${index}-${String(row[result.columns[0]])}`}>
-          {result.columns.map((column) => <td key={column}>{renderScreenCell(column, row[column])}</td>)}
-        </tr>)}</tbody>
-      </table>
-    </div>}
+    <AskRowsTable result={result} />
+    <AskFactors result={result} />
     <div className="ask-evidence-grid">
       <EvidenceList title="判断依据" items={result.evidence} tone="evidence" />
       <EvidenceList title="主要风险" items={result.risks} tone="risk" />
@@ -248,7 +303,7 @@ export function AskStockPage() {
       <aside className="ask-context panel">
         <div>
           <span><Sparkles size={15} />对话上下文</span>
-          <p>{activeStock ? `正在围绕 ${stockLabel(activeStock)} 追问` : "先问一只股票，再继续追问风险、估值、趋势或仓位。"}</p>
+          <p>{activeStock ? `正在围绕 ${stockLabel(activeStock)} 追问` : "先问一只股票，或直接问“我的持仓里风险最大的是哪个”。"}</p>
         </div>
         <div className="ask-prompts" aria-label="问题示例">
           {prompts.map((prompt) => <button type="button" key={prompt} onClick={() => void submitQuestion(prompt)} disabled={ask.isPending}>
@@ -264,7 +319,7 @@ export function AskStockPage() {
           {messages.length === 0 ? <div className="ask-thread-empty">
             <MessageSquareText size={28} />
             <strong>从一个股票问题开始</strong>
-            <p>后续可以直接问“那估值呢”“风险呢”“仓位怎么定”，页面会沿用上一只股票。</p>
+            <p>后续可以直接问“那估值呢”“风险呢”“仓位怎么定”，也可以问“我的持仓里风险最大的是哪个”。</p>
           </div> : messages.map((message) => {
             if (message.role === "user") {
               return <article className="ask-message user" key={message.id}>
@@ -303,7 +358,7 @@ export function AskStockPage() {
               <Send size={16} />{ask.isPending ? "分析中" : "发送"}
             </button>
           </div>
-          <small>{question.length}/160 · {activeStock ? `上文股票 ${stockLabel(activeStock)}` : "一次只研究一只股票，宽泛选股会走可选问财增强"}</small>
+          <small>{question.length}/160 · {activeStock ? `上文股票 ${stockLabel(activeStock)}` : "支持单股研究、账户持仓诊断；宽泛选股会走可选问财增强"}</small>
         </form>
       </div>
     </section>

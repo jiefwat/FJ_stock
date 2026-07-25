@@ -22,6 +22,11 @@ const stockAnswer = {
     { label: "最新价", value: "1500.00", tone: "neutral" },
     { label: "涨跌幅", value: "+1.20%", tone: "positive" },
   ],
+  factors: [
+    { label: "价格与 MA20", impact: 10, signal: "positive", evidence: "收盘价位于 20 日均线之上" },
+    { label: "波动风险", impact: -4, signal: "negative", evidence: "ATR 占现价偏高" },
+  ],
+  holding_context: null,
   observed_at: "2026-07-25T01:00:00Z",
   source: "本地行情快照 + 确定性分析",
   disclaimer: "研究辅助信息，不构成投资建议。",
@@ -78,6 +83,8 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("综合分62");
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("证据覆盖80%");
+  expect(screen.getByText("展开评分因子")).toBeInTheDocument();
+  expect(screen.getByText("价格与 MA20")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
   expect(screen.getByRole("button", { name: "继续问估值" })).toBeInTheDocument();
   expect(requests).toEqual([{
@@ -155,6 +162,78 @@ it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns",
 
   expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
   expect(requests).toEqual(["低估值白酒股", "低估值白酒股"]);
+});
+
+it("renders personal holding context when the answer includes account data", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ...stockAnswer,
+      answer: "贵州茅台当前建议为持有观察。结合你的账户持仓：当前持有 10 股。",
+      metrics: [
+        { label: "综合分", value: "72", tone: "positive" },
+        { label: "建议动作", value: "持有观察", tone: "positive" },
+        { label: "证据覆盖", value: "90%", tone: "positive" },
+        { label: "置信度", value: "82%", tone: "positive" },
+        { label: "持仓盈亏", value: "+7.14%", tone: "positive" },
+        { label: "组合占比", value: "50%", tone: "neutral" },
+      ],
+      holding_context: {
+        owned: true,
+        quantity: 10,
+        cost_price: 1400,
+        market_value: 15000,
+        pnl_pct: 7.14,
+        portfolio_weight: 0.5,
+        drift: 0,
+        action: "hold",
+        risk_flags: ["资金净流出"],
+      },
+    }),
+  })));
+
+  renderPage();
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "我持有的贵州茅台要减仓吗" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByLabelText("个人持仓上下文")).toHaveTextContent("数量 10 股");
+  expect(screen.getByLabelText("个人持仓上下文")).toHaveTextContent("盈亏 +7.14%");
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("持仓盈亏+7.14%");
+});
+
+it("renders portfolio analysis rows with Stock Lab links", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ...stockAnswer,
+      kind: "portfolio_analysis",
+      intent: "portfolio",
+      symbol: null,
+      name: null,
+      answer: "当前组合最需要先复核的是 贵州茅台（SH.600519）。",
+      source: "账户持仓 + 本地行情快照 + 确定性分析",
+      metrics: [
+        { label: "持仓数量", value: "1", tone: "neutral" },
+        { label: "总市值", value: "1.5 万", tone: "neutral" },
+        { label: "风险持仓", value: "1", tone: "negative" },
+        { label: "最需复核", value: "贵州茅台", tone: "negative" },
+      ],
+      factors: [],
+      columns: ["股票代码", "股票简称", "组合占比", "盈亏", "动作", "风险"],
+      rows: [{ 股票代码: "SH.600519", 股票简称: "贵州茅台", 组合占比: "50%", 盈亏: "-11.76%", 动作: "exit_watch", 风险: "亏损超过 10%" }],
+    }),
+  })));
+
+  renderPage();
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "我的持仓里风险最大的是哪个" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("账户组合")).toBeInTheDocument();
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("持仓数量1");
+  expect(screen.getByRole("link", { name: "SH.600519" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  expect(screen.getByRole("cell", { name: "亏损超过 10%" })).toBeInTheDocument();
 });
 
 it("renders bounded semantic screening rows", async () => {

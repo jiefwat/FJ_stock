@@ -524,3 +524,18 @@ Release `20260725-170200-df69673` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Stock Lab link | Ask answer link resolved to `#/stocks?symbol=SH.600519` |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-ask-metric-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-25 Ask Stock Holding-Aware Refactor
+
+Ask Stock was refactored into three explicit answer paths: deterministic single-stock analysis, authenticated holding-context analysis, and portfolio-level analysis. The API now exposes `holding_context` for owned stocks and `factors` for score transparency; portfolio questions such as `我的持仓里风险最大的是哪个` return an account-scoped ranked table without using default-owner fallback or another user's holdings.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 21 ask-stock tests, including current-user holding context and cross-account portfolio isolation |
+| Focused frontend Ask tests | Passed: 8 tests, including holding context, factor disclosure, and portfolio rows |
+| `make verify` | Passed: 108 backend tests, 33 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+Local API smoke created two temporary accounts. Account A created a `SH.600519` holding and received `portfolio_analysis` with `持仓数量=1`, a `SH.600519` portfolio row, and stock-level `holding_context.owned=true`. Account B asked the same portfolio question and received `持仓数量=0` with no rows. Real Chrome at 1,280 x 900 rendered the portfolio table, personal holding context, and factor disclosure; after reload at 390px mobile width, the restored conversation had no document-level horizontal overflow. Temporary local users were removed from `data/marketdesk.db`.
+

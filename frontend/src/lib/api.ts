@@ -46,10 +46,27 @@ export type AskStockMetric = {
   value: string;
   tone: "positive" | "neutral" | "negative" | "missing";
 };
+export type AskStockFactor = {
+  label: string;
+  impact: number;
+  signal: "positive" | "neutral" | "negative" | "missing";
+  evidence: string;
+};
+export type AskStockHoldingContext = {
+  owned: boolean;
+  quantity: number | null;
+  cost_price: number | null;
+  market_value: number | null;
+  pnl_pct: number | null;
+  portfolio_weight: number | null;
+  drift: number | null;
+  action: string | null;
+  risk_flags: string[];
+};
 export type AskStockResponse = {
-  kind: "stock_analysis" | "semantic_screen";
+  kind: "stock_analysis" | "semantic_screen" | "portfolio_analysis";
   question: string;
-  intent: "risk" | "trend" | "valuation" | "action" | "overview" | "screening";
+  intent: "risk" | "trend" | "valuation" | "action" | "overview" | "screening" | "portfolio";
   symbol: string | null;
   name: string | null;
   answer: string;
@@ -57,6 +74,8 @@ export type AskStockResponse = {
   risks: string[];
   next_actions: string[];
   metrics?: AskStockMetric[];
+  factors?: AskStockFactor[];
+  holding_context?: AskStockHoldingContext | null;
   observed_at: string | null;
   source: string;
   disclaimer: string;

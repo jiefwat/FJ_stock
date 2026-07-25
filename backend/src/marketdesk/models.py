@@ -403,10 +403,31 @@ class AskStockMetric(StrictModel):
     tone: Literal["positive", "neutral", "negative", "missing"] = "neutral"
 
 
+class AskStockFactor(StrictModel):
+    label: str
+    impact: float
+    signal: Literal["positive", "neutral", "negative", "missing"]
+    evidence: str
+
+
+class AskStockHoldingContext(StrictModel):
+    owned: bool
+    quantity: float | None = None
+    cost_price: float | None = None
+    market_value: float | None = None
+    pnl_pct: float | None = None
+    portfolio_weight: float | None = None
+    drift: float | None = None
+    action: str | None = None
+    risk_flags: list[str] = Field(default_factory=list)
+
+
 class AskStockResponse(StrictModel):
-    kind: Literal["stock_analysis", "semantic_screen"]
+    kind: Literal["stock_analysis", "semantic_screen", "portfolio_analysis"]
     question: str
-    intent: Literal["risk", "trend", "valuation", "action", "overview", "screening"]
+    intent: Literal[
+        "risk", "trend", "valuation", "action", "overview", "screening", "portfolio"
+    ]
     symbol: str | None = None
     name: str | None = None
     answer: str
@@ -414,6 +435,8 @@ class AskStockResponse(StrictModel):
     risks: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     metrics: list[AskStockMetric] = Field(default_factory=list, max_length=8)
+    factors: list[AskStockFactor] = Field(default_factory=list, max_length=12)
+    holding_context: AskStockHoldingContext | None = None
     observed_at: datetime | None = None
     source: str
     disclaimer: str

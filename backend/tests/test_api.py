@@ -212,12 +212,14 @@ class SemanticScreenProvider(FixtureProvider):
         )
 
 
-def authenticated_client(service: MarketService) -> TestClient:
+def authenticated_client(
+    service: MarketService, email: str = "fixture-user@example.com"
+) -> TestClient:
     api = TestClient(create_app(service))
     result = api.post(
         "/api/v1/auth/register",
         json={
-            "email": "fixture-user@example.com",
+            "email": email,
             "password": "FixturePass-0724",
             "display_name": "Fixture User",
         },
@@ -260,6 +262,80 @@ def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> N
         "涨跌幅",
     ]
     assert payload["observed_at"]
+
+
+def test_ask_stock_includes_only_current_user_holding_context(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "ask-holding-context.db")
+    )
+    api_a = authenticated_client(service, "holder-a@example.com")
+    api_b = authenticated_client(service, "holder-b@example.com")
+    holding_payload = {
+        "symbol": "SH.600519",
+        "name": "贵州茅台",
+        "quantity": 10,
+        "cost_price": 1400,
+        "target_weight": 0.5,
+        "thesis": "白酒龙头现金流稳定",
+        "invalidation": "跌破长期均线",
+    }
+    assert api_a.post("/api/v1/holdings", json=holding_payload).status_code == 201
+
+    held_response = api_a.post(
+        "/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"}
+    )
+    empty_response = api_b.post(
+        "/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"}
+    )
+
+    assert held_response.status_code == 200
+    held = held_response.json()
+    assert held["holding_context"]["owned"] is True
+    assert held["holding_context"]["quantity"] == 10
+    assert "结合你的账户持仓" in held["answer"]
+    assert "持仓盈亏" in [item["label"] for item in held["metrics"]]
+    assert any(item["label"] == "价格与 MA20" for item in held["factors"])
+
+    assert empty_response.status_code == 200
+    empty = empty_response.json()
+    assert empty["holding_context"] is None
+    assert "结合你的账户持仓" not in empty["answer"]
+
+
+def test_ask_stock_answers_portfolio_question_without_cross_account_leakage(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "ask-portfolio.db")
+    )
+    api_a = authenticated_client(service, "portfolio-a@example.com")
+    api_b = authenticated_client(service, "portfolio-b@example.com")
+    assert api_a.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 10,
+            "cost_price": 1700,
+            "target_weight": 0.3,
+            "thesis": "白酒龙头",
+            "invalidation": "跌破支撑",
+        },
+    ).status_code == 201
+
+    response_a = api_a.post("/api/v1/ask-stock", json={"question": "我的持仓里风险最大的是哪个"})
+    response_b = api_b.post("/api/v1/ask-stock", json={"question": "我的持仓里风险最大的是哪个"})
+
+    assert response_a.status_code == 200
+    payload_a = response_a.json()
+    assert payload_a["kind"] == "portfolio_analysis"
+    assert payload_a["intent"] == "portfolio"
+    assert payload_a["rows"][0]["股票代码"] == "SH.600519"
+    assert payload_a["metrics"][0] == {"label": "持仓数量", "value": "1", "tone": "neutral"}
+
+    assert response_b.status_code == 200
+    payload_b = response_b.json()
+    assert payload_b["kind"] == "portfolio_analysis"
+    assert payload_b["metrics"][0] == {"label": "持仓数量", "value": "0", "tone": "missing"}
+    assert payload_b["rows"] == []
 
 
 def test_ask_stock_validates_question_length(tmp_path) -> None:

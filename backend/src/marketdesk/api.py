@@ -413,9 +413,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="stock not found") from error
 
     @app.post("/api/v1/ask-stock")
-    async def ask_stock(payload: AskStockRequest) -> AskStockResponse:
+    async def ask_stock(payload: AskStockRequest, request: Request) -> AskStockResponse:
+        user = current_user(request.headers.get("authorization"))
         try:
-            return await market_service.ask_stock(payload.question)
+            return await market_service.ask_stock(payload.question, user.id)
         except AmbiguousStockQuestion as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         except ProviderUnavailable as error:
