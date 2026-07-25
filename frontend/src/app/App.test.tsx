@@ -21,6 +21,7 @@ const events = {
 };
 
 beforeEach(() => {
+  window.location.hash = "";
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -156,4 +157,24 @@ it("restores a valid session and removes the shell on logout", async () => {
   expect(screen.getByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
+});
+
+it("keeps the Ask Stock route behind the authenticated shell", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-ask-route");
+  window.location.hash = "#/ask";
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 8, email: "ask@example.com", display_name: "Ask User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    return { ok: true, status: 200, json: async () => today };
+  }));
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: "用问题开始研究" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
 });

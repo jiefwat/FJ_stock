@@ -40,6 +40,23 @@ export type EquityViewFilters = {
 };
 export type SavedEquityView = { id: number; name: string; filters: EquityViewFilters; created_at: string; updated_at: string };
 export type EquityPage = { meta: Meta; total: number; page: number; page_size: number; exchange: EquityExchange; sort_by: EquitySort; direction: SortDirection; available_sectors: string[]; items: Quote[] };
+export type AskStockCell = string | number | boolean | null;
+export type AskStockResponse = {
+  kind: "stock_analysis" | "semantic_screen";
+  question: string;
+  intent: "risk" | "trend" | "valuation" | "action" | "overview" | "screening";
+  symbol: string | null;
+  name: string | null;
+  answer: string;
+  evidence: string[];
+  risks: string[];
+  next_actions: string[];
+  observed_at: string | null;
+  source: string;
+  disclaimer: string;
+  columns: string[];
+  rows: Array<Record<string, AskStockCell>>;
+};
 
 const tokenKey = "marketdesk.accessToken";
 
@@ -58,13 +75,29 @@ export function clearAuthToken(): void {
   localStorage.removeItem(tokenKey);
 }
 
+export class ApiError extends Error {
+  constructor(public readonly status: number, public readonly detail: string) {
+    super(detail);
+    this.name = "ApiError";
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
   const token = getAuthToken();
   if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(path, { ...init, headers });
-  if (!response.ok) throw new Error(`请求失败 (${response.status})`);
+  if (!response.ok) {
+    let detail = `请求失败 (${response.status})`;
+    try {
+      const payload = await response.json() as { detail?: unknown };
+      if (typeof payload.detail === "string" && payload.detail.trim()) detail = payload.detail;
+    } catch {
+      // Keep the status-based fallback when the backend did not return JSON.
+    }
+    throw new ApiError(response.status, detail);
+  }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
