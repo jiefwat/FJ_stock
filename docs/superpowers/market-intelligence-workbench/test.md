@@ -476,3 +476,19 @@ Verification evidence:
 
 Real Chrome at 1,280 x 900 opened Ask Stock with an authenticated token, asked `贵州茅台现在主要风险是什么`, used the inline `继续问估值` follow-up, refreshed the page, and restored the thread plus active stock context. The Stock Lab link resolved to `#/stocks?symbol=SH.600519`. Desktop and 390px mobile viewports both measured no document-level horizontal overflow.
 
+
+### Production smoke
+
+Release `20260725-164925-9758197` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| HTML shell | Public `/` returned the production HTML with viewport metadata |
+| Anonymous Ask Stock | `POST /api/v1/ask-stock` without a bearer token returned HTTP 401 |
+| Alias stock question | Temporary smoke account asked `茅台主要风险`; response returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, `intent=risk` |
+| Authenticated follow-up | The carried-context request `贵州茅台 那估值呢` returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, `intent=valuation` |
+| Browser conversation | Real Chrome at 1,280 x 900 asked the first question, clicked `继续问估值`, refreshed, and restored active context `贵州茅台 SH.600519` |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
+| Stock Lab link | Ask answer link resolved to `#/stocks?symbol=SH.600519` |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-ask-refine-%@marketdesk.local` users were removed from the production database |
