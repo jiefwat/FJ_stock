@@ -7,6 +7,7 @@ from marketdesk.analysis.ask_stock import (
     StockQuestionNotFound,
     build_stock_answer,
     classify_stock_question,
+    is_portfolio_diagnostic_question,
     resolve_stock_question,
 )
 from marketdesk.analysis.stock import analyse_stock
@@ -96,6 +97,12 @@ def test_requires_exactly_one_local_stock() -> None:
 )
 def test_classifies_question_intent(question: str, intent: str) -> None:
     assert classify_stock_question(question) == intent
+
+
+def test_detects_portfolio_diagnostics_without_swallowing_single_holding_questions() -> None:
+    assert is_portfolio_diagnostic_question("我的持仓里贵州茅台占比是不是太高")
+    assert is_portfolio_diagnostic_question("组合行业集中度怎么样")
+    assert not is_portfolio_diagnostic_question("我持有的贵州茅台要减仓吗")
 
 
 @pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "action", "overview"])

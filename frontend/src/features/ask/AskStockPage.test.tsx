@@ -217,12 +217,16 @@ it("renders portfolio analysis rows with Stock Lab links", async () => {
       metrics: [
         { label: "持仓数量", value: "1", tone: "neutral" },
         { label: "总市值", value: "1.5 万", tone: "neutral" },
+        { label: "最大单票", value: "50%", tone: "negative" },
+        { label: "行业集中", value: "50%", tone: "neutral" },
         { label: "风险持仓", value: "1", tone: "negative" },
         { label: "最需复核", value: "贵州茅台", tone: "negative" },
       ],
-      factors: [],
-      columns: ["股票代码", "股票简称", "组合占比", "盈亏", "动作", "风险"],
-      rows: [{ 股票代码: "SH.600519", 股票简称: "贵州茅台", 组合占比: "50%", 盈亏: "-11.76%", 动作: "exit_watch", 风险: "亏损超过 10%" }],
+      factors: [
+        { label: "最大单票集中度", impact: -10, signal: "negative", evidence: "最大单票占比 50%，超过 35% 需要复核分散度。" },
+      ],
+      columns: ["股票代码", "股票简称", "行业", "组合占比", "目标仓位", "偏离", "盈亏", "动作", "风险"],
+      rows: [{ 股票代码: "SH.600519", 股票简称: "贵州茅台", 行业: "白酒", 组合占比: "50%", 目标仓位: "30%", 偏离: "+20.0%", 盈亏: "-11.76%", 动作: "exit_watch", 风险: "亏损超过 10%" }],
     }),
   })));
 
@@ -232,7 +236,11 @@ it("renders portfolio analysis rows with Stock Lab links", async () => {
 
   expect(await screen.findByText("账户组合")).toBeInTheDocument();
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("持仓数量1");
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("最大单票50%");
   expect(screen.getByRole("link", { name: "SH.600519" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  expect(screen.getByRole("columnheader", { name: "目标仓位" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "+20.0%" })).toBeInTheDocument();
+  expect(screen.getByText("最大单票集中度")).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "亏损超过 10%" })).toBeInTheDocument();
 });
 

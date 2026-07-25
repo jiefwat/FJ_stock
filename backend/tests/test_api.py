@@ -338,6 +338,88 @@ def test_ask_stock_answers_portfolio_question_without_cross_account_leakage(tmp_
     assert payload_b["rows"] == []
 
 
+def test_ask_stock_named_portfolio_diagnostic_uses_current_account_holdings(tmp_path) -> None:
+    service = MarketService(
+        provider=EquityBrowserProvider(), store=Store(tmp_path / "ask-portfolio-focus.db")
+    )
+    api_a = authenticated_client(service, "portfolio-focus-a@example.com")
+    api_b = authenticated_client(service, "portfolio-focus-b@example.com")
+    for payload in (
+        {
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 10,
+            "cost_price": 1700,
+            "target_weight": 0.2,
+            "thesis": "白酒龙头",
+            "invalidation": "跌破支撑",
+        },
+        {
+            "symbol": "SZ.000001",
+            "name": "平安银行",
+            "quantity": 1000,
+            "cost_price": 12,
+            "target_weight": 0.2,
+            "thesis": "低估值银行",
+            "invalidation": "净息差继续下行",
+        },
+        {
+            "symbol": "BJ.430047",
+            "name": "诺思兰德",
+            "quantity": 1000,
+            "cost_price": 13,
+            "target_weight": 0.2,
+            "thesis": "北交所成长观察",
+            "invalidation": "成交萎缩",
+        },
+    ):
+        assert api_a.post("/api/v1/holdings", json=payload).status_code == 201
+
+    response_a = api_a.post(
+        "/api/v1/ask-stock", json={"question": "我的持仓里贵州茅台占比是不是太高"}
+    )
+    response_b = api_b.post(
+        "/api/v1/ask-stock", json={"question": "我的持仓里贵州茅台占比是不是太高"}
+    )
+
+    assert response_a.status_code == 200
+    payload_a = response_a.json()
+    assert payload_a["kind"] == "portfolio_analysis"
+    assert "贵州茅台（SH.600519）在当前组合风险排序第" in payload_a["answer"]
+    assert "最大单票占比" in payload_a["answer"]
+    assert [item["label"] for item in payload_a["metrics"]] == [
+        "持仓数量",
+        "总市值",
+        "最大单票",
+        "行业集中",
+        "风险持仓",
+        "最需复核",
+    ]
+    assert payload_a["columns"] == [
+        "股票代码",
+        "股票简称",
+        "行业",
+        "组合占比",
+        "目标仓位",
+        "偏离",
+        "盈亏",
+        "动作",
+        "风险",
+    ]
+    assert any(item["label"] == "最大单票集中度" for item in payload_a["factors"])
+    assert {row["股票代码"] for row in payload_a["rows"]} == {
+        "SH.600519",
+        "SZ.000001",
+        "BJ.430047",
+    }
+
+    assert response_b.status_code == 200
+    payload_b = response_b.json()
+    assert payload_b["kind"] == "portfolio_analysis"
+    assert payload_b["metrics"][0] == {"label": "持仓数量", "value": "0", "tone": "missing"}
+    assert payload_b["rows"] == []
+
+
 def test_ask_stock_validates_question_length(tmp_path) -> None:
     api = client(tmp_path)
     assert api.post("/api/v1/ask-stock", json={"question": " "}).status_code == 422

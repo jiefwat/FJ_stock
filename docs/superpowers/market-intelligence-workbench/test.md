@@ -555,3 +555,18 @@ Release `20260725-171525-0d2f3f9` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width after conversation restore |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-ask-refactor-%@marketdesk.local` users and holdings were removed from the production database |
+
+## 2026-07-25 Ask Stock Portfolio Diagnostics
+
+The Ask Stock portfolio path now handles portfolio-diagnostic questions even when the question names a specific stock, such as `我的持仓里贵州茅台占比是不是太高`. This prevents a portfolio allocation question from being downgraded into ordinary single-stock analysis. The response keeps account scoping and adds concentration evidence: largest single-position weight, highest sector concentration, target-weight drift, missing invalidation records, and triggered risk flags.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 23 ask-stock tests, including named-stock portfolio diagnostics and cross-account isolation |
+| Focused frontend Ask tests | Passed: 8 tests, including portfolio concentration metrics, target-weight columns, and factor disclosure |
+| Backend mypy and ruff | Passed: 21 source files, no lint findings |
+| `make verify` | Passed: 110 backend tests, 33 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+Local API regression created Account A with three holdings across `SH.600519`, `SZ.000001`, and `BJ.430047`; `我的持仓里贵州茅台占比是不是太高` returned `kind=portfolio_analysis`, named `SH.600519` in the answer, exposed metrics for `最大单票` and `行业集中`, and returned rows with `行业`, `目标仓位`, and `偏离`. Account B asked the same question and received `持仓数量=0` with no rows, proving the diagnostic still does not fall back to default-owner data.

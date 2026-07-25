@@ -8,6 +8,7 @@ from marketdesk.analysis.ask_stock import (
     build_portfolio_answer,
     build_stock_answer,
     classify_stock_question,
+    is_portfolio_diagnostic_question,
     is_portfolio_question,
     resolve_stock_question,
 )
@@ -340,6 +341,13 @@ class MarketService:
                 disclaimer="研究辅助信息，不构成投资建议。",
                 columns=result.columns,
                 rows=result.rows,
+            )
+        if user_id is not None and is_portfolio_diagnostic_question(question):
+            return build_portfolio_answer(
+                question=question,
+                holdings=await self._analyse_holdings(holdings, snapshot),
+                observed_at=snapshot.meta.observed_at,
+                focus_symbol=quote.symbol,
             )
         dossier = await self.stock(quote.symbol)
         holding_context = None

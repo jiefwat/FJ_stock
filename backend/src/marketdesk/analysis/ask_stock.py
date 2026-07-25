@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Literal, cast
+from typing import Literal, TypedDict, cast
 
 from marketdesk.models import (
     AskStockFactor,
@@ -18,6 +18,16 @@ from marketdesk.models import (
 
 AskStockIntent = Literal["risk", "trend", "valuation", "action", "overview"]
 AskStockMetricTone = Literal["positive", "neutral", "negative", "missing"]
+
+
+class PortfolioConcentration(TypedDict):
+    max_holding_text: str
+    max_weight: float
+    max_weight_text: str
+    top_sector: str
+    top_sector_weight: float
+    top_sector_weight_text: str
+    top_sector_text: str
 
 
 class StockQuestionNotFound(ValueError):
@@ -61,6 +71,32 @@ def is_portfolio_question(question: str) -> bool:
         "仓位里",
         "我持有",
         "我买的",
+    )
+    return any(keyword in normalized for keyword in keywords)
+
+
+def is_portfolio_diagnostic_question(question: str) -> bool:
+    normalized = _compact(question)
+    if not is_portfolio_question(normalized):
+        return False
+    keywords = (
+        "风险最大",
+        "哪个",
+        "哪些",
+        "排序",
+        "排名",
+        "组合",
+        "集中",
+        "行业",
+        "板块",
+        "占比",
+        "仓位太",
+        "仓位过",
+        "太重",
+        "过重",
+        "分散",
+        "配置",
+        "调仓",
     )
     return any(keyword in normalized for keyword in keywords)
 
@@ -173,6 +209,7 @@ def build_portfolio_answer(
     question: str,
     holdings: list[HoldingDossier],
     observed_at: datetime,
+    focus_symbol: str | None = None,
 ) -> AskStockResponse:
     if not holdings:
         return AskStockResponse(
@@ -195,24 +232,60 @@ def build_portfolio_answer(
 
     ranked = sorted(holdings, key=_holding_risk_score, reverse=True)
     total_value = sum(item.market_value or 0 for item in holdings)
+    concentration = _portfolio_concentration(holdings)
     risky = sum(1 for item in holdings if item.risk_flags)
     top = ranked[0]
+    overweight = sum(1 for item in holdings if item.drift is not None and item.drift > 0.1)
+    missing_invalidation = sum(1 for item in holdings if not item.item.invalidation.strip())
+    focused = next((item for item in holdings if item.item.symbol == focus_symbol), None)
+    if focus_symbol and focused is None:
+        answer = (
+            f"当前账户没有 {focus_symbol} 的持仓记录；组合诊断仍按你的账户现有持仓生成，"
+            f"最需要先复核的是 {top.item.name}（{top.item.symbol}）。"
+        )
+    elif focused is not None:
+        rank = ranked.index(focused) + 1
+        answer = (
+            f"{focused.item.name}（{focused.item.symbol}）在当前组合风险排序第 {rank}，"
+            f"组合占比 {_percent(focused.portfolio_weight)}，目标仓位 {_percent(focused.item.target_weight)}，"
+            f"偏离 {_signed_percent(focused.drift)}，动作建议 {focused.action}。"
+        )
+    else:
+        answer = (
+            f"当前组合最需要先复核的是 {top.item.name}（{top.item.symbol}）。"
+            f"持仓动作建议为 {top.action}，"
+            f"当前盈亏 {_pct(top.pnl_pct)}，组合占比 {_percent(top.portfolio_weight)}。"
+        )
     answer = (
-        f"当前组合最需要先复核的是 {top.item.name}（{top.item.symbol}）。"
-        f"持仓动作建议为 {top.action}，"
-        f"当前盈亏 { _pct(top.pnl_pct) }，组合占比 { _percent(top.portfolio_weight) }。"
+        f"{answer} 最大单票占比 {concentration['max_weight_text']}，"
+        f"最高行业集中在 {concentration['top_sector_text']}。"
     )
     return AskStockResponse(
         kind="portfolio_analysis",
         question=" ".join(question.split()),
         intent="portfolio",
         answer=answer,
-        evidence=[item.conclusion for item in ranked[:5]],
+        evidence=[
+            f"最大单票：{concentration['max_holding_text']}",
+            f"行业集中：{concentration['top_sector_text']}",
+            f"超目标持仓 {overweight} 个，缺少失效条件 {missing_invalidation} 个。",
+            *[item.conclusion for item in ranked[:3]],
+        ][:5],
         risks=_unique(flag for item in ranked for flag in item.risk_flags)[:5],
         next_actions=_unique(action for item in ranked[:3] for action in item.next_actions)[:5],
         metrics=[
             AskStockMetric(label="持仓数量", value=str(len(holdings)), tone="neutral"),
             AskStockMetric(label="总市值", value=_money(total_value or None), tone="neutral"),
+            AskStockMetric(
+                label="最大单票",
+                value=concentration["max_weight_text"],
+                tone="negative" if concentration["max_weight"] > 0.35 else "neutral",
+            ),
+            AskStockMetric(
+                label="行业集中",
+                value=concentration["top_sector_weight_text"],
+                tone="negative" if concentration["top_sector_weight"] > 0.5 else "neutral",
+            ),
             AskStockMetric(
                 label="风险持仓",
                 value=str(risky),
@@ -220,8 +293,14 @@ def build_portfolio_answer(
             ),
             AskStockMetric(label="最需复核", value=top.item.name, tone="negative" if top.risk_flags else "neutral"),
         ],
+        factors=_portfolio_factors(
+            concentration=concentration,
+            risky=risky,
+            overweight=overweight,
+            missing_invalidation=missing_invalidation,
+        ),
         rows=[_holding_row(item) for item in ranked[:8]],
-        columns=["股票代码", "股票简称", "组合占比", "盈亏", "动作", "风险"],
+        columns=["股票代码", "股票简称", "行业", "组合占比", "目标仓位", "偏离", "盈亏", "动作", "风险"],
         observed_at=observed_at,
         source="账户持仓 + 本地行情快照 + 确定性分析",
         disclaimer="研究辅助信息，不构成投资建议。",
@@ -259,6 +338,13 @@ def _metric_tone(value: float | None, *, good: float, bad: float) -> AskStockMet
 
 def _percent(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.0f}%"
+
+
+def _signed_percent(value: float | None) -> str:
+    if value is None:
+        return "—"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value * 100:.1f}%"
 
 
 def _pct(value: float | None) -> str:
@@ -391,11 +477,85 @@ def _holding_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
     return {
         "股票代码": holding.item.symbol,
         "股票简称": holding.item.name,
+        "行业": holding.quote.sector or "待补",
         "组合占比": _percent(holding.portfolio_weight),
+        "目标仓位": _percent(holding.item.target_weight),
+        "偏离": _signed_percent(holding.drift),
         "盈亏": _pct(holding.pnl_pct),
         "动作": holding.action,
         "风险": "；".join(holding.risk_flags) if holding.risk_flags else "未触发",
     }
+
+
+def _portfolio_concentration(holdings: list[HoldingDossier]) -> PortfolioConcentration:
+    weighted = [item for item in holdings if item.portfolio_weight is not None]
+    max_holding = max(weighted, key=lambda item: item.portfolio_weight or 0, default=None)
+    sector_weights: dict[str, float] = {}
+    for item in weighted:
+        sector = item.quote.sector or "行业待补"
+        sector_weights[sector] = sector_weights.get(sector, 0.0) + (item.portfolio_weight or 0.0)
+    top_sector, top_sector_weight = max(
+        sector_weights.items(), key=lambda item: item[1], default=("—", 0.0)
+    )
+    max_weight = max_holding.portfolio_weight if max_holding and max_holding.portfolio_weight is not None else 0.0
+    return {
+        "max_holding_text": (
+            f"{max_holding.item.name} {_percent(max_holding.portfolio_weight)}"
+            if max_holding is not None
+            else "—"
+        ),
+        "max_weight": max_weight,
+        "max_weight_text": _percent(max_weight) if max_holding is not None else "—",
+        "top_sector": top_sector,
+        "top_sector_weight": top_sector_weight,
+        "top_sector_weight_text": _percent(top_sector_weight) if top_sector != "—" else "—",
+        "top_sector_text": (
+            f"{top_sector} {_percent(top_sector_weight)}" if top_sector != "—" else "—"
+        ),
+    }
+
+
+def _portfolio_factors(
+    *,
+    concentration: PortfolioConcentration,
+    risky: int,
+    overweight: int,
+    missing_invalidation: int,
+) -> list[AskStockFactor]:
+    max_weight = concentration["max_weight"]
+    top_sector_weight = concentration["top_sector_weight"]
+    return [
+        AskStockFactor(
+            label="最大单票集中度",
+            impact=-10 if max_weight > 0.35 else 3,
+            signal="negative" if max_weight > 0.35 else "neutral",
+            evidence=f"最大单票占比 {concentration['max_weight_text']}，超过 35% 需要复核分散度。",
+        ),
+        AskStockFactor(
+            label="行业集中度",
+            impact=-8 if top_sector_weight > 0.5 else 2,
+            signal="negative" if top_sector_weight > 0.5 else "neutral",
+            evidence=f"最高行业为 {concentration['top_sector_text']}，超过 50% 需要检查同向风险。",
+        ),
+        AskStockFactor(
+            label="目标仓位偏离",
+            impact=-6 if overweight else 2,
+            signal="negative" if overweight else "neutral",
+            evidence=f"{overweight} 个持仓高于目标仓位 10 个百分点以上。",
+        ),
+        AskStockFactor(
+            label="风控记录完整度",
+            impact=-6 if missing_invalidation else 3,
+            signal="negative" if missing_invalidation else "positive",
+            evidence=f"{missing_invalidation} 个持仓缺少失效条件。",
+        ),
+        AskStockFactor(
+            label="风险旗标数量",
+            impact=-5 if risky else 2,
+            signal="negative" if risky else "positive",
+            evidence=f"{risky} 个持仓触发风险旗标。",
+        ),
+    ]
 
 
 def _unique(values: Iterable[object]) -> list[str]:

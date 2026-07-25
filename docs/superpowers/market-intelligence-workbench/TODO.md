@@ -63,3 +63,4 @@
 - [x] Persist Ask Stock tab conversations, add follow-up prompts, retry failed turns, and accept unique short stock aliases.
 - [x] Surface Ask Stock decision metrics and link semantic-screening stock codes back to Stock Lab.
 - [x] Refactor Ask Stock into stock, holding-context, and portfolio-analysis answer paths without cross-account leakage.
+- [x] Add portfolio concentration, sector concentration, target-drift, and risk-record diagnostics to Ask Stock.
