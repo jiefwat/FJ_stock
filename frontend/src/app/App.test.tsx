@@ -175,6 +175,6 @@ it("keeps the Ask Stock route behind the authenticated shell", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "用问题开始研究" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "问股对话" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
 });

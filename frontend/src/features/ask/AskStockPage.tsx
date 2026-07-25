@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { ArrowUpRight, MessageSquareText, SearchCheck, ShieldAlert } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { ArrowUpRight, MessageSquareText, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api, type AskStockResponse } from "../../lib/api";
 
@@ -22,6 +22,37 @@ const intentLabel: Record<AskStockResponse["intent"], string> = {
 
 function observedTime(value: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "时间未提供";
+}
+
+type StockAnchor = { name: string; symbol: string };
+type AskMessage =
+  | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
+  | { id: string; role: "assistant"; result: AskStockResponse }
+  | { id: string; role: "error"; content: string };
+
+function messageId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function stockLabel(stock: StockAnchor) {
+  return `${stock.name} ${stock.symbol}`;
+}
+
+function latestStock(messages: AskMessage[]): StockAnchor | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role === "assistant" && message.result.kind === "stock_analysis" && message.result.symbol && message.result.name) {
+      return { name: message.result.name, symbol: message.result.symbol };
+    }
+  }
+  return null;
+}
+
+function shouldCarryStock(question: string, stock: StockAnchor | null) {
+  if (!stock) return false;
+  if (question.includes(stock.name) || question.includes(stock.symbol) || question.includes(stock.symbol.slice(-6))) return false;
+  if (/\b(?:SH|SZ|BJ)?\.?\d{6}\b/i.test(question)) return false;
+  if (/^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/.test(question)) return true;
+  return question.length <= 6 && /(风险|趋势|估值|仓位|止损|支撑|压力|能买吗|怎么样)/.test(question);
 }
 
 function EvidenceList({ title, items, tone }: { title: string; items: string[]; tone: string }) {
@@ -68,59 +99,106 @@ function AskResult({ result }: { result: AskStockResponse }) {
 
 export function AskStockPage() {
   const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<AskMessage[]>([]);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
   const ask = useMutation({
     mutationFn: (value: string) => api<AskStockResponse>("/api/v1/ask-stock", {
       method: "POST",
       body: JSON.stringify({ question: value }),
     }),
   });
+  const activeStock = useMemo(() => latestStock(messages), [messages]);
 
-  const submitQuestion = (value: string) => {
+  useEffect(() => {
+    if (typeof threadEndRef.current?.scrollIntoView === "function") {
+      threadEndRef.current.scrollIntoView({ block: "end" });
+    }
+  }, [messages, ask.isPending]);
+
+  const submitQuestion = async (value: string) => {
     const normalized = value.trim();
-    setQuestion(value);
-    if (normalized.length >= 2) ask.mutate(normalized);
+    if (normalized.length < 2 || ask.isPending) return;
+
+    const carriedStock = shouldCarryStock(normalized, activeStock) ? activeStock : null;
+    const requestQuestion = carriedStock ? `${carriedStock.name} ${normalized}` : normalized;
+    setMessages((current) => [...current, { id: messageId(), role: "user", content: normalized, carriedStock }]);
+    setQuestion("");
+
+    try {
+      const result = await ask.mutateAsync(requestQuestion);
+      setMessages((current) => [...current, { id: messageId(), role: "assistant", result }]);
+    } catch (error) {
+      const detail = error instanceof ApiError ? error.detail : "问股请求失败，请稍后重试。";
+      setMessages((current) => [...current, { id: messageId(), role: "error", content: detail }]);
+      setQuestion(value);
+    }
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    submitQuestion(question);
+    void submitQuestion(question);
   };
-
-  const error = ask.error instanceof ApiError ? ask.error.detail : ask.isError ? "问股请求失败，请稍后重试。" : null;
 
   return <>
     <header className="page-head ask-page-head">
-      <div><p className="eyebrow">ASK STOCK · EVIDENCE FIRST</p><h1>用问题开始研究</h1></div>
-      <div className="data-stamp"><MessageSquareText size={14} />本地分析优先 · 问财可选增强</div>
+      <div><p className="eyebrow">ASK STOCK · CONVERSATION</p><h1>问股对话</h1></div>
+      <div className="data-stamp"><MessageSquareText size={14} />本地分析优先 · 可连续追问</div>
     </header>
-    <section className="ask-composer panel">
-      <div className="ask-composer-copy">
-        <span>一次只研究一只股票</span>
-        <p>输入股票名称或六位代码，系统会从当前行情、技术证据、估值和风险纪律中组织回答。</p>
-      </div>
-      <form onSubmit={submit}>
-        <label htmlFor="ask-question">输入你的股票问题</label>
+    <section className="ask-chat-layout">
+      <aside className="ask-context panel">
         <div>
-          <textarea
-            id="ask-question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            maxLength={160}
-            placeholder="例如：贵州茅台现在主要风险是什么"
-          />
-          <button className="button ask-submit" type="submit" disabled={ask.isPending || question.trim().length < 2}>
-            <SearchCheck size={16} />{ask.isPending ? "分析中" : "开始分析"}
-          </button>
+          <span><Sparkles size={15} />对话上下文</span>
+          <p>{activeStock ? `正在围绕 ${stockLabel(activeStock)} 追问` : "先问一只股票，再继续追问风险、估值、趋势或仓位。"}</p>
         </div>
-        <small>{question.length}/160 · 回答不会绕过现有确定性分析</small>
-      </form>
-      <div className="ask-prompts" aria-label="问题示例">
-        {prompts.map((prompt) => <button type="button" key={prompt} onClick={() => submitQuestion(prompt)} disabled={ask.isPending}>
-          <span>{prompt}</span><ArrowUpRight size={14} />
-        </button>)}
+        <div className="ask-prompts" aria-label="问题示例">
+          {prompts.map((prompt) => <button type="button" key={prompt} onClick={() => void submitQuestion(prompt)} disabled={ask.isPending}>
+            <span>{prompt}</span><ArrowUpRight size={14} />
+          </button>)}
+        </div>
+        <button className="ask-reset" type="button" onClick={() => setMessages([])} disabled={messages.length === 0 || ask.isPending}>
+          <RotateCcw size={14} />清空对话
+        </button>
+      </aside>
+      <div className="ask-chat-main">
+        <section className="ask-thread panel" aria-label="问股对话记录">
+          {messages.length === 0 ? <div className="ask-thread-empty">
+            <MessageSquareText size={28} />
+            <strong>从一个股票问题开始</strong>
+            <p>后续可以直接问“那估值呢”“风险呢”“仓位怎么定”，页面会沿用上一只股票。</p>
+          </div> : messages.map((message) => {
+            if (message.role === "user") {
+              return <article className="ask-message user" key={message.id}>
+                <div><span>你</span><p>{message.content}</p>{message.carriedStock ? <small>沿用上文：{stockLabel(message.carriedStock)}</small> : null}</div>
+              </article>;
+            }
+            if (message.role === "error") {
+              return <article className="ask-message error" key={message.id} role="alert">{message.content}</article>;
+            }
+            return <article className="ask-message assistant" key={message.id}>
+              <span>Market Desk</span>
+              <AskResult result={message.result} />
+            </article>;
+          })}
+          {ask.isPending ? <article className="ask-message assistant pending"><span>Market Desk</span><p>正在整理行情证据...</p></article> : null}
+          <div ref={threadEndRef} />
+        </section>
+        <form className="ask-chat-composer panel" onSubmit={submit}>
+          <label htmlFor="ask-question">继续追问</label>
+          <div>
+            <textarea
+              id="ask-question"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              maxLength={160}
+              placeholder={activeStock ? `继续问 ${activeStock.name}：例如 那估值呢` : "例如：贵州茅台现在主要风险是什么"}
+            />
+            <button className="button ask-submit" type="submit" disabled={ask.isPending || question.trim().length < 2}>
+              <Send size={16} />{ask.isPending ? "分析中" : "发送"}
+            </button>
+          </div>
+          <small>{question.length}/160 · {activeStock ? `上文股票 ${stockLabel(activeStock)}` : "一次只研究一只股票，宽泛选股会走可选问财增强"}</small>
+        </form>
       </div>
     </section>
-    {error && <p className="ask-error" role="alert">{error}</p>}
-    {ask.data && <AskResult result={ask.data} />}
   </>;
 }

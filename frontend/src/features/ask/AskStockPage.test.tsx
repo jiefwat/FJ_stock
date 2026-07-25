@@ -51,9 +51,10 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   }));
 
   renderPage();
-  expect(screen.getByRole("heading", { name: "用问题开始研究" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "问股对话" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "贵州茅台现在主要风险是什么" }));
 
+  await waitFor(() => expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2));
   expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
   expect(screen.getByText("SH.600519")).toBeInTheDocument();
   expect(screen.getByText("价格仍在 MA20 上方")).toBeInTheDocument();
@@ -65,6 +66,36 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),
     auth: "Bearer token-ask",
   }]);
+});
+
+it("keeps multiple turns and carries the previous stock into a follow-up", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        answer: parsed.question.includes("估值") ? "贵州茅台估值处于合理偏高区间。" : stockAnswer.answer,
+        intent: parsed.question.includes("估值") ? "valuation" : "risk",
+      }),
+    };
+  }));
+
+  renderPage();
+  fireEvent.click(screen.getByRole("button", { name: "贵州茅台现在主要风险是什么" }));
+  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "那估值呢" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("贵州茅台估值处于合理偏高区间。")).toBeInTheDocument();
+  expect(screen.getByText("那估值呢")).toBeInTheDocument();
+  expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
+  expect(requests).toEqual(["贵州茅台现在主要风险是什么", "贵州茅台 那估值呢"]);
 });
 
 it("renders bounded semantic screening rows", async () => {
@@ -85,8 +116,8 @@ it("renders bounded semantic screening rows", async () => {
   })));
 
   renderPage();
-  fireEvent.change(screen.getByLabelText("输入你的股票问题"), { target: { value: "低估值白酒股" } });
-  fireEvent.click(screen.getByRole("button", { name: "开始分析" }));
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "低估值白酒股" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
   expect(await screen.findByText("问财语义筛选返回 1 个候选结果。")).toBeInTheDocument();
   expect(screen.getByRole("columnheader", { name: "市盈率" })).toBeInTheDocument();
@@ -101,9 +132,9 @@ it("keeps the question and shows the backend unavailable detail", async () => {
   })));
 
   renderPage();
-  const input = screen.getByLabelText("输入你的股票问题");
+  const input = screen.getByLabelText("继续追问");
   fireEvent.change(input, { target: { value: "低估值白酒股" } });
-  fireEvent.click(screen.getByRole("button", { name: "开始分析" }));
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("问财筛选暂不可用");
   await waitFor(() => expect(input).toHaveValue("低估值白酒股"));

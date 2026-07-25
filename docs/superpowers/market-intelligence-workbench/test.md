@@ -414,3 +414,28 @@ Release `20260725-135335-cdf90b4` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Persistent data boundary | `/opt/aster-market/data` remained outside the release; `/opt/aster-market/current/data` was absent |
 
 The rollback tag `release-2026-07-25` remains fixed at `b1c7a80`; this Ask Stock deployment does not change the rollback data boundary.
+
+## Ask Stock Conversational UI — 2026-07-25
+
+The Ask Stock page now behaves as a multi-turn conversation instead of a single-submit answer card. The page keeps the current answer history in a message thread, displays user and assistant turns, keeps suggested prompts available, and adds a clear-thread action. Follow-up questions such as `那估值呢` carry the latest named-stock context into the deterministic Ask Stock endpoint while preserving the user's original wording in the chat.
+
+### Regression evidence
+
+| Check | Result |
+| --- | --- |
+| Suggested prompt | Clicking `贵州茅台现在主要风险是什么` appends a user message and a structured assistant answer |
+| Multi-turn context | After the first `SH.600519` answer, submitting `那估值呢` calls the API as `贵州茅台 那估值呢` and renders `沿用上文：贵州茅台 SH.600519` |
+| Semantic table | Broad screening responses still render bounded rows and columns inside the chat thread |
+| Provider unavailable | HTTP 503 details render as an inline error message and the typed question stays in the composer |
+| App route | The authenticated `#/ask` route still mounts behind the application shell and highlights `问股` |
+
+### Local browser acceptance
+
+Chrome loaded the FastAPI-served production bundle at `http://127.0.0.1:8765/#/ask` with a temporary local account.
+
+| Check | Result |
+| --- | --- |
+| Desktop chat | 1,280px viewport and 1,280px document width; two user turns plus two assistant turns rendered |
+| Follow-up | `贵州茅台现在主要风险是什么` then `那估值呢` returned two HTTP 200 Ask Stock answers and displayed the carried-stock marker |
+| Mobile chat | 390px viewport and 390px document width after adding the missing viewport meta tag |
+| Cleanup | Temporary `local-ask-chat-%@marketdesk.local` users were removed from the local database |
