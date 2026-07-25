@@ -16,9 +16,11 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
+from marketdesk.analysis.ask_stock import AmbiguousStockQuestion
 from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AskStockResponse,
     AuthResult,
     EquityPage,
     EquityQuote,
@@ -30,10 +32,12 @@ from marketdesk.models import (
     SavedEquityView,
     SectorDossier,
     StockDossier,
+    StrictModel,
     UserAccount,
     UserPreferences,
     WatchlistItem,
 )
+from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.services import MarketService
 
 logger = logging.getLogger(__name__)
@@ -80,6 +84,15 @@ class AuthRegister(BaseModel):
 class AuthLogin(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=1)
+
+
+class AskStockRequest(StrictModel):
+    question: str = Field(min_length=2, max_length=160)
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
 
 
 class PreferenceUpdate(BaseModel):
@@ -398,6 +411,18 @@ def create_app(
             return await market_service.stock(symbol.upper())
         except KeyError as error:
             raise HTTPException(status_code=404, detail="stock not found") from error
+
+    @app.post("/api/v1/ask-stock")
+    async def ask_stock(payload: AskStockRequest) -> AskStockResponse:
+        try:
+            return await market_service.ask_stock(payload.question)
+        except AmbiguousStockQuestion as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except ProviderUnavailable as error:
+            raise HTTPException(
+                status_code=503,
+                detail="问财筛选暂不可用，请在问题中包含一个 A 股股票名称或代码。",
+            ) from error
 
     @app.get("/api/v1/data-status")
     async def data_status() -> dict[str, Any]:

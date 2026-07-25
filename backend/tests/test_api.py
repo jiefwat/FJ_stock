@@ -11,6 +11,7 @@ from marketdesk.models import (
     IndexQuote,
     MarketEventRaw,
     SectorSnapshot,
+    SemanticScreenResult,
 )
 from marketdesk.services import MarketService
 from marketdesk.store import Store
@@ -199,6 +200,18 @@ class ResearchEnhancementProvider(FixtureProvider):
         return ["近三十日有分红相关公告", "研报关注现金流与渠道库存"]
 
 
+class SemanticScreenProvider(FixtureProvider):
+    async def query_stock_screen(
+        self, question: str, limit: int = 20
+    ) -> SemanticScreenResult:
+        assert question == "低估值白酒股"
+        assert limit == 20
+        return SemanticScreenResult(
+            columns=["股票代码", "股票简称", "市盈率"],
+            rows=[{"股票代码": "600519", "股票简称": "贵州茅台", "市盈率": 23.0}],
+        )
+
+
 def authenticated_client(service: MarketService) -> TestClient:
     api = TestClient(create_app(service))
     result = api.post(
@@ -216,6 +229,77 @@ def authenticated_client(service: MarketService) -> TestClient:
 def client(tmp_path) -> TestClient:
     service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "test.db"))
     return authenticated_client(service)
+
+
+def test_ask_stock_requires_authentication(tmp_path) -> None:
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "ask-auth.db"))
+    response = TestClient(create_app(service)).post(
+        "/api/v1/ask-stock", json={"question": "贵州茅台怎么样"}
+    )
+    assert response.status_code == 401
+
+
+def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "贵州茅台主要风险是什么"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "stock_analysis"
+    assert payload["intent"] == "risk"
+    assert payload["symbol"] == "SH.600519"
+    assert payload["name"] == "贵州茅台"
+    assert payload["evidence"]
+    assert payload["observed_at"]
+
+
+def test_ask_stock_validates_question_length(tmp_path) -> None:
+    api = client(tmp_path)
+    assert api.post("/api/v1/ask-stock", json={"question": " "}).status_code == 422
+    assert api.post(
+        "/api/v1/ask-stock", json={"question": "茅" * 161}
+    ).status_code == 422
+
+
+def test_ask_stock_rejects_multiple_local_stocks(tmp_path) -> None:
+    service = MarketService(
+        provider=EquityBrowserProvider(), store=Store(tmp_path / "ask-ambiguous.db")
+    )
+    api = authenticated_client(service)
+
+    response = api.post(
+        "/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更好"}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "一次只问一只股票"
+
+
+def test_ask_stock_uses_optional_semantic_screen(tmp_path) -> None:
+    service = MarketService(
+        provider=SemanticScreenProvider(), store=Store(tmp_path / "ask-semantic.db")
+    )
+    api = authenticated_client(service)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "低估值白酒股"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "semantic_screen"
+    assert payload["intent"] == "screening"
+    assert payload["columns"] == ["股票代码", "股票简称", "市盈率"]
+    assert payload["rows"][0]["股票代码"] == "600519"
+
+
+def test_ask_stock_semantic_unavailable_does_not_break_market(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "低估值白酒股"})
+
+    assert response.status_code == 503
+    assert "股票名称或代码" in response.json()["detail"]
+    assert api.get("/api/v1/today").status_code == 200
 
 
 def test_application_routes_require_authentication(tmp_path) -> None:

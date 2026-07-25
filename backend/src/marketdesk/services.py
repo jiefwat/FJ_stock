@@ -3,6 +3,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal, Protocol, cast
 
+from marketdesk.analysis.ask_stock import (
+    StockQuestionNotFound,
+    build_stock_answer,
+    classify_stock_question,
+    resolve_stock_question,
+)
 from marketdesk.analysis.events import analyse_market_events
 from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
@@ -11,6 +17,7 @@ from marketdesk.analysis.sector import analyse_sector
 from marketdesk.analysis.stock import analyse_stock
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AskStockResponse,
     EquityDataset,
     EquityPage,
     EquityQuote,
@@ -25,6 +32,7 @@ from marketdesk.models import (
     SectorDossier,
     StockDossier,
 )
+from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.public_market import PublicMarketProvider
 from marketdesk.store import Store
 
@@ -293,6 +301,39 @@ class MarketService:
                 self._provider_errors["semantic_research"] = str(error)
         bars = await self.provider.fetch_kline(symbol)
         return analyse_stock(quote, bars, research_evidence, peer_quotes=snapshot.equities)
+
+    async def ask_stock(self, question: str) -> AskStockResponse:
+        snapshot = await self.market()
+        try:
+            quote = resolve_stock_question(question, snapshot.equities)
+        except StockQuestionNotFound as error:
+            semantic_screener = getattr(self.provider, "query_stock_screen", None)
+            if not callable(semantic_screener):
+                raise ProviderUnavailable(
+                    "semantic stock screening is not configured"
+                ) from error
+            result = await semantic_screener(question, 20)
+            return AskStockResponse(
+                kind="semantic_screen",
+                question=question,
+                intent="screening",
+                answer=f"问财语义筛选返回 {len(result.rows)} 个候选结果。",
+                evidence=["候选字段与排序由当前自然语言问题和外部语义数据共同决定。"],
+                risks=["筛选结果可能延迟或缺少字段，请回到个股研究页核对证据。"],
+                next_actions=["选择候选股票后，在问股中输入股票名称或代码继续分析。"],
+                observed_at=snapshot.meta.observed_at,
+                source="问财语义筛选（可选增强）",
+                disclaimer="研究辅助信息，不构成投资建议。",
+                columns=result.columns,
+                rows=result.rows,
+            )
+        dossier = await self.stock(quote.symbol)
+        return build_stock_answer(
+            question=question,
+            intent=classify_stock_question(question),
+            dossier=dossier,
+            observed_at=snapshot.meta.observed_at,
+        )
 
     async def holdings(self, user_id: int | None = None) -> list[HoldingDossier]:
         snapshot = await self.market()
