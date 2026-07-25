@@ -43,3 +43,10 @@
 - [x] Make stop and trial-position guidance adapt to ATR while retaining structural support levels.
 - [x] Keep anonymous stock research independent from private watchlist requests.
 - [x] Preserve the desktop layout and remove Stock Lab horizontal overflow at 390px.
+
+## Application Authentication Gate
+
+- [ ] Render a standalone login/register page before mounting the application shell.
+- [ ] Require a valid session for every market, analysis, refresh, and personal API.
+- [ ] Clear the application shell and query cache immediately on logout or session expiry.
+- [ ] Verify anonymous, authenticated, desktop, mobile, and production boundaries.
