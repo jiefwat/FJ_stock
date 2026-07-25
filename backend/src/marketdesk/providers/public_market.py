@@ -21,6 +21,7 @@ from marketdesk.models import (
     IndexQuote,
     MarketEventRaw,
     SectorSnapshot,
+    SemanticScreenResult,
 )
 from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.iwencai import IwencaiProvider
@@ -570,6 +571,20 @@ class PublicMarketProvider:
             return []
         self._mark_research_status("ready" if evidence else "empty")
         return evidence
+
+    async def query_stock_screen(
+        self, question: str, limit: int = 20
+    ) -> SemanticScreenResult:
+        if not self.research_provider.configured:
+            self._mark_research_status("not_configured")
+            raise ProviderUnavailable("semantic stock screening is not configured")
+        try:
+            result = await self.research_provider.query_stocks(question, limit)
+        except ProviderUnavailable as error:
+            self._mark_research_status("partial", str(error))
+            raise
+        self._mark_research_status("ready" if result.rows else "empty")
+        return result
 
     async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]:
         try:
