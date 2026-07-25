@@ -399,3 +399,18 @@ Chrome loaded the FastAPI-served production bundle at the direct `#/ask` URL.
 | Mobile 390 px | Document and viewport widths both remained 390 px; composer, answer, and three evidence sections stacked without document overflow |
 
 The unavailable semantic request produces the browser's expected failed-resource console entry for HTTP 503; the application renders that response as a controlled error state. No credential, Cookie, or provider payload is exposed to browser code.
+
+### Production smoke
+
+Release `20260725-135335-cdf90b4` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health and service | Public `/healthz` returned `status=ok`; systemd service active |
+| Anonymous Ask Stock | `POST /api/v1/ask-stock` without a bearer token returned HTTP 401 with `authentication required` |
+| Authenticated Ask Stock | A temporary smoke account registered and asked `贵州茅台现在主要风险是什么`; response returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, source `本地行情快照 + 确定性分析`, 4 evidence items, and 3 risks |
+| Semantic fallback | `低估值白酒股` returned the controlled HTTP 503 provider-unavailable message because the production Wencai semantic endpoint is not configured |
+| Session cleanup | The temporary smoke session was logged out and all `codex-smoke-%@marketdesk.local` users were removed from the production database |
+| Persistent data boundary | `/opt/aster-market/data` remained outside the release; `/opt/aster-market/current/data` was absent |
+
+The rollback tag `release-2026-07-25` remains fixed at `b1c7a80`; this Ask Stock deployment does not change the rollback data boundary.
