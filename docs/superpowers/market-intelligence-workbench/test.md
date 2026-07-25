@@ -539,3 +539,19 @@ Verification evidence:
 
 Local API smoke created two temporary accounts. Account A created a `SH.600519` holding and received `portfolio_analysis` with `持仓数量=1`, a `SH.600519` portfolio row, and stock-level `holding_context.owned=true`. Account B asked the same portfolio question and received `持仓数量=0` with no rows. Real Chrome at 1,280 x 900 rendered the portfolio table, personal holding context, and factor disclosure; after reload at 390px mobile width, the restored conversation had no document-level horizontal overflow. Temporary local users were removed from `data/marketdesk.db`.
 
+
+### Production smoke
+
+Release `20260725-171525-0d2f3f9` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| HTML shell | Public `/` returned the production HTML with viewport metadata |
+| Anonymous Ask Stock | `POST /api/v1/ask-stock` without a bearer token returned HTTP 401 |
+| Account A portfolio | Temporary Account A created one `SH.600519` holding; `我的持仓里风险最大的是哪个` returned `kind=portfolio_analysis`, `持仓数量=1`, and a `SH.600519` row |
+| Account B isolation | Temporary Account B asked the same portfolio question and received `持仓数量=0` with no rows |
+| Holding-aware stock answer | Account A asked `我持有的贵州茅台要减仓吗`; response returned `holding_context.owned=true`, `持仓盈亏=-23.68%`, and 11 score factors |
+| Browser workflow | Real Chrome at 1,280 x 900 rendered the portfolio table, personal holding context, and factor disclosure |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width after conversation restore |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-ask-refactor-%@marketdesk.local` users and holdings were removed from the production database |
