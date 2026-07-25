@@ -6,13 +6,13 @@ import csv
 import io
 import logging
 import sqlite3
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -192,6 +192,22 @@ def create_app(
         if user is None:
             raise HTTPException(status_code=401, detail="invalid or expired token")
         return user
+
+    @app.middleware("http")
+    async def require_application_session(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        public_api_paths = {"/api/v1/auth/register", "/api/v1/auth/login"}
+        if (
+            request.method != "OPTIONS"
+            and request.url.path.startswith("/api/v1/")
+            and request.url.path not in public_api_paths
+        ):
+            try:
+                current_user(request.headers.get("authorization"))
+            except HTTPException as error:
+                return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+        return await call_next(request)
 
     @app.post("/api/v1/auth/register", status_code=201)
     async def register(payload: AuthRegister) -> AuthResult:

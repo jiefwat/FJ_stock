@@ -320,3 +320,24 @@ Release `20260725-120422-d576575` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Persistent data boundary | `/opt/aster-market/data` remained outside the release and `/opt/aster-market/current/data` was absent |
 
 The rollback tag `release-2026-07-25` remains fixed at `b1c7a80`. Rolling back this application release must continue to leave `/opt/aster-market/data` untouched.
+
+## Application Authentication Gate — 2026-07-25
+
+The application shell no longer doubles as the login surface. Anonymous visitors receive a standalone login/register page, and the React feature tree is not mounted until a stored bearer token is validated. The backend independently protects every `/api/v1/*` business route so the same boundary cannot be bypassed with a direct request.
+
+### TDD evidence
+
+- The backend regression first failed because anonymous `/api/v1/market` returned HTTP 200. It passed after one application-wide middleware restricted all market, analysis, refresh, and personal routes while leaving only registration and login anonymous.
+- The frontend regression first failed because the sidebar, main navigation, refresh control, and Today query mounted without a token. It passed after the root session gate rendered the standalone authentication page instead.
+- Session regressions cover registration, bearer-authenticated business requests, valid stored-session restoration, expired-token cleanup, immediate logout, and query-cache clearing.
+
+### Local browser acceptance
+
+| Check | Result |
+| --- | --- |
+| Anonymous desktop | 1,440px viewport and 1,440px document width; standalone login visible; no main navigation or market conclusion |
+| Anonymous mobile | 390px viewport and 390px document width; standalone login visible; no main navigation or full-market content |
+| Anonymous network | Zero `/api/v1/*` requests before login on both direct Stock Lab and Market URLs |
+| Registration | Created an isolated local QA account, then mounted the existing shell and loaded preferences, Today, and market events |
+| Logout | Immediately removed the shell, navigation, and market content and returned to the standalone login page |
+| Browser runtime | Zero page errors before login, after registration, and after logout |

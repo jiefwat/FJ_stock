@@ -30,28 +30,12 @@ const nav = [
   ["/data", "数据", Database],
 ] as const;
 
-function AuthPanel() {
+function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: AuthResult) => void }) {
   const client = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
-  const [sessionUser, setSessionUser] = useState<UserAccount | null>(null);
-  const [tokenVersion, setTokenVersion] = useState(0);
-  const hasToken = Boolean(getAuthToken());
-  const me = useQuery({
-    queryKey: ["auth-me", tokenVersion],
-    queryFn: () => api<UserAccount>("/api/v1/auth/me"),
-    enabled: hasToken,
-    retry: false,
-  });
-  const user = sessionUser ?? me.data ?? null;
-  const preferences = useQuery({
-    queryKey: ["preferences", user?.id],
-    queryFn: () => api<UserPreferences>("/api/v1/preferences"),
-    enabled: Boolean(user),
-  });
   const authenticate = useMutation({
     mutationFn: () => api<AuthResult>(mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login", {
       method: "POST",
@@ -63,11 +47,42 @@ function AuthPanel() {
     }),
     onSuccess: (result) => {
       setAuthToken(result.access_token);
-      setSessionUser(result.user);
-      setOpen(false);
-      setTokenVersion((value) => value + 1);
-      client.invalidateQueries();
+      client.clear();
+      onAuthenticated(result);
     },
+  });
+
+  return (
+    <main className="auth-screen" aria-label="账号登录">
+      <section className="auth-intro">
+        <div className="auth-brand"><span>MD</span><strong>MARKET DESK</strong></div>
+        <p className="eyebrow">PRIVATE RESEARCH WORKSPACE</p>
+        <h1>登录 <span>Market Desk</span></h1>
+        <p>行情、个股分析、持仓与跟踪记录仅对当前账号开放。登录前不会加载任何市场或个人数据。</p>
+        <div className="auth-boundary-note"><strong>一人一套研究空间</strong><span>你的持仓、偏好和观察记录不会与其他账号共享。</span></div>
+      </section>
+      <form className="auth-form" onSubmit={(event) => { event.preventDefault(); authenticate.mutate(); }}>
+        <header><span>{mode === "register" ? "创建个人账号" : "欢迎回来"}</span><small>使用你的账号进入工作台</small></header>
+        <div className="auth-tabs">
+          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>登录</button>
+          <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>注册新账号</button>
+        </div>
+        <label>邮箱<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+        {mode === "register" ? <label>昵称<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="nickname" /></label> : null}
+        <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "register" ? "new-password" : "current-password"} required /></label>
+        {authenticate.isError ? <p role="alert">账号或密码不可用，请检查后重试。</p> : null}
+        <button className="button auth-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? "验证中…" : mode === "register" ? "创建账号" : "进入工作台"}</button>
+        <small className="auth-disclaimer">研究辅助工具，不构成投资建议。</small>
+      </form>
+    </main>
+  );
+}
+
+function AccountPanel({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
+  const client = useQueryClient();
+  const preferences = useQuery({
+    queryKey: ["preferences", user.id],
+    queryFn: () => api<UserPreferences>("/api/v1/preferences"),
   });
   const updatePreferences = useMutation({
     mutationFn: (risk_profile: string) => api<UserPreferences>("/api/v1/preferences", {
@@ -76,67 +91,32 @@ function AuthPanel() {
     }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["preferences", user?.id] }),
   });
-  const logout = () => {
-    api("/api/v1/auth/logout", { method: "POST" }).catch(() => undefined);
-    clearAuthToken();
-    setSessionUser(null);
-    setTokenVersion((value) => value + 1);
-    client.clear();
-  };
-
-  useEffect(() => {
-    if (me.data) setSessionUser(me.data);
-    if (me.isError) clearAuthToken();
-  }, [me.data, me.isError]);
 
   return (
     <div className="account-box">
-      {user ? (
-        <details className="account-menu">
-          <summary><UserRound size={15} /><span>{user.display_name}</span></summary>
-          <div className="account-popover">
-            <strong>{user.email}</strong>
-            <label>风险偏好
-              <select
-                value={preferences.data?.risk_profile ?? "balanced"}
-                onChange={(event) => updatePreferences.mutate(event.target.value)}
-              >
-                <option value="defensive">防守</option>
-                <option value="balanced">均衡</option>
-                <option value="active">积极</option>
-              </select>
-            </label>
-            <small>持仓、跟踪池和偏好只保存在当前账号下。</small>
-            <button type="button" onClick={logout}>退出账号</button>
-          </div>
-        </details>
-      ) : (
-        <button className="account-trigger" type="button" onClick={() => setOpen(true)}>注册/登录</button>
-      )}
-      {open && (
-        <div className="auth-dialog" role="dialog" aria-label="账号登录">
-          <form onSubmit={(event) => { event.preventDefault(); authenticate.mutate(); }}>
-            <header>
-              <strong>{mode === "register" ? "创建个人账号" : "登录账号"}</strong>
-              <button type="button" aria-label="关闭账号窗口" onClick={() => setOpen(false)}>×</button>
-            </header>
-            <div className="auth-tabs">
-              <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>登录</button>
-              <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>注册新账号</button>
-            </div>
-            <label>邮箱<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-            {mode === "register" && <label>昵称<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>}
-            <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-            {authenticate.isError && <p role="alert">账号或密码不可用，请检查后重试。</p>}
-            <button className="button" type="submit" disabled={authenticate.isPending}>{mode === "register" ? "创建账号" : "登录"}</button>
-          </form>
+      <details className="account-menu">
+        <summary><UserRound size={15} /><span>{user.display_name}</span></summary>
+        <div className="account-popover">
+          <strong>{user.email}</strong>
+          <label>风险偏好
+            <select
+              value={preferences.data?.risk_profile ?? "balanced"}
+              onChange={(event) => updatePreferences.mutate(event.target.value)}
+            >
+              <option value="defensive">防守</option>
+              <option value="balanced">均衡</option>
+              <option value="active">积极</option>
+            </select>
+          </label>
+          <small>持仓、跟踪池和偏好只保存在当前账号下。</small>
+          <button type="button" onClick={onLogout}>退出账号</button>
         </div>
-      )}
+      </details>
     </div>
   );
 }
 
-function Shell() {
+function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
   const client = useQueryClient();
   const refresh = useMutation({
     mutationFn: () => api("/api/v1/refresh", { method: "POST" }),
@@ -171,7 +151,7 @@ function Shell() {
         <div className="topbar">
           <div className="session"><i />A 股 · 最近交易快照</div>
           <div className="topbar-actions">
-            <AuthPanel />
+            <AccountPanel user={user} onLogout={onLogout} />
             <button className="refresh-button" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
               <RefreshCw size={15} className={refresh.isPending ? "spin" : ""} />
               {refresh.isPending ? "刷新中" : "刷新"}
@@ -194,11 +174,48 @@ function Shell() {
   );
 }
 
+function SessionGate() {
+  const client = useQueryClient();
+  const [token, setToken] = useState<string | null>(() => getAuthToken());
+  const [sessionUser, setSessionUser] = useState<UserAccount | null>(null);
+  const me = useQuery({
+    queryKey: ["auth-me", token],
+    queryFn: () => api<UserAccount>("/api/v1/auth/me"),
+    enabled: Boolean(token),
+    retry: false,
+  });
+  const user = sessionUser ?? me.data ?? null;
+
+  useEffect(() => {
+    if (!me.isError) return;
+    clearAuthToken();
+    setToken(null);
+    setSessionUser(null);
+    client.clear();
+  }, [client, me.isError]);
+
+  const authenticated = (result: AuthResult) => {
+    setToken(result.access_token);
+    setSessionUser(result.user);
+  };
+  const logout = () => {
+    api("/api/v1/auth/logout", { method: "POST" }).catch(() => undefined);
+    clearAuthToken();
+    setToken(null);
+    setSessionUser(null);
+    client.clear();
+  };
+
+  if (!token) return <AuthenticationPage onAuthenticated={authenticated} />;
+  if (!user) return <main className="auth-screen auth-loading" aria-label="验证登录状态"><div className="loader" /><span>正在验证登录状态…</span></main>;
+  return <Shell user={user} onLogout={logout} />;
+}
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <HashRouter>
-        <Shell />
+        <SessionGate />
       </HashRouter>
     </QueryClientProvider>
   );

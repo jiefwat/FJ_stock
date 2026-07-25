@@ -39,18 +39,19 @@ afterEach(() => {
   cleanup();
 });
 
-it("shows the market state, next actions, and data time", async () => {
+it("keeps the application unmounted before login", () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    requests.push(String(input));
+    return { ok: true, status: 200, json: async () => today };
+  }));
+
   render(<App />);
-  expect(await screen.findByText("市场状态")).toBeInTheDocument();
-  expect(screen.getByText("今天先做什么")).toBeInTheDocument();
-  expect(screen.getByText("今日市场异动")).toBeInTheDocument();
-  expect(screen.getByText("两家央企宣布增持")).toBeInTheDocument();
-  expect(screen.getByText("今日投研路线图")).toBeInTheDocument();
-  expect(screen.getByText("先看主线")).toBeInTheDocument();
-  expect(screen.getByText("风险哨兵")).toBeInTheDocument();
-  expect(screen.getByText("复盘清单")).toBeInTheDocument();
-  expect(screen.getByText(/数据时间/)).toBeInTheDocument();
-  expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
+  expect(screen.queryByText("市场状态")).not.toBeInTheDocument();
+  expect(requests).toEqual([]);
 });
 
 it("registers a user and sends the auth token with personal requests", async () => {
@@ -95,7 +96,6 @@ it("registers a user and sends the auth token with personal requests", async () 
   }));
 
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "注册/登录" }));
   fireEvent.click(screen.getByRole("button", { name: "注册新账号" }));
   fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "alpha@example.com" } });
   fireEvent.change(screen.getByLabelText("昵称"), { target: { value: "Alpha" } });
@@ -103,23 +103,57 @@ it("registers a user and sends the auth token with personal requests", async () 
   fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
 
   expect(await screen.findByText("Alpha")).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
   await waitFor(() => {
     expect(calls.some((call) => call.url.includes("/api/v1/preferences") && call.auth === "Bearer token-alpha")).toBe(true);
+    expect(calls.some((call) => call.url.includes("/api/v1/today") && call.auth === "Bearer token-alpha")).toBe(true);
   });
 });
 
-it("does not expose the default portfolio before login", async () => {
-  window.location.hash = "#/holdings";
+it("rejects an expired session without mounting business routes", async () => {
+  localStorage.setItem("marketdesk.accessToken", "expired-token");
+  const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/api/v1/holdings")) {
-      return { ok: false, status: 401, json: async () => ({ detail: "authentication required" }) };
-    }
-    return { ok: true, status: 200, json: async () => today };
+    calls.push(url);
+    return { ok: false, status: 401, json: async () => ({ detail: "invalid or expired token" }) };
   }));
 
   render(<App />);
 
-  expect(await screen.findByText("请先登录后查看个人持仓")).toBeInTheDocument();
-  expect(screen.queryByRole("list", { name: "持仓清单" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
+  expect(calls).toEqual(["/api/v1/auth/me"]);
+  expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
+});
+
+it("restores a valid session and removes the shell on logout", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-existing");
+  const calls: Array<{ url: string; auth: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    calls.push({ url, auth: headers.get("Authorization") ?? "" });
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 7, email: "owner@example.com", display_name: "Owner", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    if (url.includes("/api/v1/auth/logout")) {
+      return { ok: true, status: 204, json: async () => ({}) };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+
+  expect(await screen.findByText("市场状态")).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+  expect(calls[0]).toEqual({ url: "/api/v1/auth/me", auth: "Bearer token-existing" });
+  fireEvent.click(screen.getByText("Owner"));
+  fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
+  expect(screen.getByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
+  expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
 });

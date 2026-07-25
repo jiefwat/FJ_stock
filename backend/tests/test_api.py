@@ -199,8 +199,7 @@ class ResearchEnhancementProvider(FixtureProvider):
         return ["近三十日有分红相关公告", "研报关注现金流与渠道库存"]
 
 
-def client(tmp_path) -> TestClient:
-    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "test.db"))
+def authenticated_client(service: MarketService) -> TestClient:
     api = TestClient(create_app(service))
     result = api.post(
         "/api/v1/auth/register",
@@ -214,20 +213,47 @@ def client(tmp_path) -> TestClient:
     return api
 
 
-def test_personal_endpoints_require_authentication(tmp_path) -> None:
+def client(tmp_path) -> TestClient:
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "test.db"))
+    return authenticated_client(service)
+
+
+def test_application_routes_require_authentication(tmp_path) -> None:
     service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "auth-boundary.db"))
     api = TestClient(create_app(service))
 
     for path in (
         "/api/v1/auth/me",
         "/api/v1/preferences",
+        "/api/v1/market",
+        "/api/v1/equities",
+        "/api/v1/market-events",
+        "/api/v1/sectors/BK1",
+        "/api/v1/today",
+        "/api/v1/opportunities",
+        "/api/v1/search?q=SH.600519",
+        "/api/v1/stocks/SH.600519",
+        "/api/v1/data-status",
         "/api/v1/holdings",
         "/api/v1/watchlist",
         "/api/v1/equity-views",
     ):
         assert api.get(path).status_code == 401
 
-    assert api.get("/api/v1/market").status_code == 200
+    assert api.post("/api/v1/refresh").status_code == 401
+    registration = api.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "gate-user@example.com",
+            "password": "GatePass-0725",
+            "display_name": "Gate User",
+        },
+    )
+    assert registration.status_code == 201
+    assert api.post(
+        "/api/v1/auth/login",
+        json={"email": "gate-user@example.com", "password": "GatePass-0725"},
+    ).status_code == 200
 
 
 def test_market_today_and_stock_routes(tmp_path) -> None:
@@ -253,7 +279,7 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
 
 def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
     service = MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / "equities.db"))
-    api = TestClient(create_app(service))
+    api = authenticated_client(service)
 
     response = api.get(
         "/api/v1/equities",
@@ -303,7 +329,7 @@ def test_advanced_equity_filters_combine_and_report_real_sectors(tmp_path) -> No
     service = MarketService(
         provider=EquityBrowserProvider(), store=Store(tmp_path / "advanced-equities.db")
     )
-    api = TestClient(create_app(service))
+    api = authenticated_client(service)
 
     response = api.get(
         "/api/v1/equities",
@@ -338,10 +364,8 @@ def test_advanced_equity_filters_combine_and_report_real_sectors(tmp_path) -> No
 def test_advanced_equity_filters_reject_inverted_ranges(
     tmp_path, minimum: str, maximum: str
 ) -> None:
-    api = TestClient(
-        create_app(
-            MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / f"{minimum}.db"))
-        )
+    api = authenticated_client(
+        MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / f"{minimum}.db"))
     )
 
     response = api.get("/api/v1/equities", params={minimum: 2, maximum: 1})
@@ -456,7 +480,7 @@ def test_stock_route_backfills_sector_and_capital_when_snapshot_is_older(tmp_pat
     service = MarketService(
         provider=StockEnhancementProvider(), store=Store(tmp_path / "enhanced.db")
     )
-    api = TestClient(create_app(service))
+    api = authenticated_client(service)
 
     payload = api.get("/api/v1/stocks/SH.600519").json()
 
@@ -470,7 +494,7 @@ def test_stock_route_uses_research_enrichment_without_branding(tmp_path) -> None
     service = MarketService(
         provider=ResearchEnhancementProvider(), store=Store(tmp_path / "research.db")
     )
-    api = TestClient(create_app(service))
+    api = authenticated_client(service)
 
     payload = api.get("/api/v1/stocks/SH.600519").json()
 
