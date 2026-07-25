@@ -49,4 +49,4 @@
 - [x] Render a standalone login/register page before mounting the application shell.
 - [x] Require a valid session for every market, analysis, refresh, and personal API.
 - [x] Clear the application shell and query cache immediately on logout or session expiry.
-- [ ] Verify anonymous, authenticated, desktop, mobile, and production boundaries.
+- [x] Verify anonymous, authenticated, desktop, mobile, and production boundaries.

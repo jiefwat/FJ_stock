@@ -341,3 +341,19 @@ The application shell no longer doubles as the login surface. Anonymous visitors
 | Registration | Created an isolated local QA account, then mounted the existing shell and loaded preferences, Today, and market events |
 | Logout | Immediately removed the shell, navigation, and market content and returned to the standalone login page |
 | Browser runtime | Zero page errors before login, after registration, and after logout |
+
+### Production smoke
+
+Release `20260725-122901-4f16a16` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health and service | Public `/healthz` returned `status=ok`; systemd service active |
+| Anonymous research APIs | Market, Today, equities, opportunities, stock dossier, search, and data status all returned HTTP 401 |
+| Anonymous write and personal APIs | Refresh, holdings, watchlist, preferences, and equity views all returned HTTP 401 |
+| Authentication entry points | Empty registration and login payloads reached request validation and returned HTTP 422 rather than the application gate's 401 |
+| Desktop browser | Direct Stock Lab URL rendered only `登录 Market Desk`; 1,440px viewport and document width; zero business API requests and page errors |
+| Mobile browser | Direct Market URL rendered only `登录 Market Desk`; 390px viewport and document width; zero business API requests and page errors |
+| Persistent data boundary | Data-directory inode `1204950` was unchanged; the release contained no `data` path |
+
+The rollback tag `release-2026-07-25` remains the application rollback anchor at `b1c7a80`; `/opt/aster-market/data` remains outside application rollback scope.
