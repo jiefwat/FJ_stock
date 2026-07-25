@@ -357,3 +357,45 @@ Release `20260725-122901-4f16a16` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Persistent data boundary | Data-directory inode `1204950` was unchanged; the release contained no `data` path |
 
 The rollback tag `release-2026-07-25` remains the application rollback anchor at `b1c7a80`; `/opt/aster-market/data` remains outside application rollback scope.
+
+## Ask Stock Workbench — 2026-07-25
+
+The authenticated workbench now includes a separate `问股` route without changing the existing module layouts. Questions containing one A-share name or six-digit code reuse the current full-market snapshot and deterministic Stock Lab dossier. Broad natural-language screens use the optional semantic provider and fail explicitly when it is not configured.
+
+### TDD evidence
+
+- The analysis test first failed because `marketdesk.analysis.ask_stock` did not exist, then passed with code/name resolution, ambiguity protection, five deterministic intents, and bounded evidence composition.
+- The provider test first failed on missing `normalize_stock_screen`, then passed with code/name-first columns, scalar-only cells, and 20-row/12-column limits.
+- The semantic request test first failed on missing `query_stocks`, then passed with server-side bearer authentication and a maximum result limit of 20.
+- The API tests first received HTTP 405 because `/api/v1/ask-stock` was absent, then passed for authentication, validation, local analysis, ambiguity, semantic fallback, and HTTP 503 degradation.
+- The page test first failed because `AskStockPage` did not exist, then passed for suggested questions, named-stock evidence, semantic tables, and preserved input on an unavailable response.
+- The route test first logged `No routes matched location "/ask"`, then passed after the route and sidebar entry were added behind `SessionGate`.
+
+### Repository verification
+
+`make verify` passed with:
+
+| Gate | Result |
+| --- | --- |
+| Ruff | Passed, no findings |
+| mypy | Passed, 21 source files |
+| Backend pytest | Passed, 106 tests |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 28 tests in 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,530 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+### Production-build browser acceptance
+
+Chrome loaded the FastAPI-served production bundle at the direct `#/ask` URL.
+
+| Check | Result |
+| --- | --- |
+| Anonymous boundary | Standalone login rendered; zero business API requests before registration |
+| Authenticated route | `问股` appeared in the existing sidebar and remained inside the authenticated shell |
+| Named-stock question | `贵州茅台现在主要风险是什么` returned `SH.600519`, the local deterministic source, market observation time, evidence, risks, next actions, and disclaimer |
+| Provider unavailable | `低估值白酒股` retained the typed question and rendered the explicit HTTP 503 configuration message |
+| Desktop 1280 px | Document width remained 1,280 px with zero console errors on the successful named-stock path |
+| Mobile 390 px | Document and viewport widths both remained 390 px; composer, answer, and three evidence sections stacked without document overflow |
+
+The unavailable semantic request produces the browser's expected failed-resource console entry for HTTP 503; the application renders that response as a controlled error state. No credential, Cookie, or provider payload is exposed to browser code.

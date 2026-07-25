@@ -50,3 +50,12 @@
 - [x] Require a valid session for every market, analysis, refresh, and personal API.
 - [x] Clear the application shell and query cache immediately on logout or session expiry.
 - [x] Verify anonymous, authenticated, desktop, mobile, and production boundaries.
+
+## Ask Stock Workbench
+
+- [x] Resolve one A-share name or six-digit code from the full-market snapshot.
+- [x] Reuse the deterministic Stock Lab dossier for risk, trend, valuation, action, and overview answers.
+- [x] Add bounded optional Wencai semantic screening behind the provider layer.
+- [x] Add an authenticated Ask Stock page without changing the existing page composition.
+- [x] Preserve typed questions and render explicit validation and provider-unavailable states.
+- [x] Pass `make verify` and complete production-build browser and API acceptance.
