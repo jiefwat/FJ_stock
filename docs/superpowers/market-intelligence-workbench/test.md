@@ -509,3 +509,18 @@ Verification evidence:
 
 Real Chrome at 1,280 x 900 rendered the Ask Stock metric strip for `贵州茅台现在主要风险是什么`: `综合分72`, `建议动作持有观察`, `证据覆盖90%`, `置信度82%`, `最新价1297.41`, and `涨跌幅+0.42%`. The Stock Lab link resolved to `#/stocks?symbol=SH.600519`; desktop and 390px mobile viewports had matching document scroll width.
 
+
+### Production smoke
+
+Release `20260725-170200-df69673` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| HTML shell | Public `/` returned the production HTML with viewport metadata |
+| Anonymous Ask Stock | `POST /api/v1/ask-stock` without a bearer token returned HTTP 401 |
+| Metric API | Temporary smoke account asked `茅台主要风险`; response returned `symbol=SH.600519`, `intent=risk`, and metrics `综合分72`, `建议动作持有观察`, `证据覆盖90%` |
+| Browser metrics | Real Chrome at 1,280 x 900 rendered `综合分72`, `建议动作持有观察`, `证据覆盖90%`, `置信度82%`, `最新价1297.41`, and `涨跌幅+0.42%` |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width; mobile metric grid collapsed to two columns |
+| Stock Lab link | Ask answer link resolved to `#/stocks?symbol=SH.600519` |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-ask-metric-%@marketdesk.local` users were removed from the production database |
