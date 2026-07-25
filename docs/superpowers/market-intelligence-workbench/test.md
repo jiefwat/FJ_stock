@@ -302,3 +302,21 @@ The production build was served through FastAPI and checked with Chrome against 
 | Anonymous account boundary | No `/api/v1/watchlist` request, disabled `登录后加入跟踪` action, zero browser console errors |
 
 Generated screenshots remain under the ignored local `.run/` directory and are not committed.
+
+### Production smoke
+
+Release `20260725-120422-d576575` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health and service | Public `/healthz` returned `status=ok`; systemd service active |
+| V3 stock contract | `SH.600519` returned `technical.macd_histogram`, `technical.atr_pct`, and a populated `signal_validation` object |
+| New score evidence | The live response included `macd_momentum`, `atr_risk`, `bollinger_position`, and `drawdown_risk` |
+| Historical validation | 36 rolling samples; 19% positive rate, -3.19% average return, and -10.04% worst return, with the overlap and no-score caveats preserved |
+| Anonymous personal APIs | Holdings, watchlist, preferences, and equity views all returned HTTP 401 |
+| Desktop browser | 1,440px viewport and 1,440px document width; historical validation visible; zero page errors |
+| Mobile browser | 390px viewport and 390px document width; future trend, historical validation, and comparison remained in order; zero page errors |
+| Anonymous Stock Lab | Only public stock and search APIs were requested; the private tracking action stayed disabled |
+| Persistent data boundary | `/opt/aster-market/data` remained outside the release and `/opt/aster-market/current/data` was absent |
+
+The rollback tag `release-2026-07-25` remains fixed at `b1c7a80`. Rolling back this application release must continue to leave `/opt/aster-market/data` untouched.
