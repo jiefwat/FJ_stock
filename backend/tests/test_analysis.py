@@ -107,6 +107,23 @@ def trending_bars(count: int = 160) -> list[Bar]:
     ]
 
 
+def volatile_bars(count: int = 140) -> list[Bar]:
+    start = date(2025, 1, 1)
+    closes = [100 + (8 if index % 2 else -8) + index * 0.05 for index in range(count)]
+    return [
+        Bar(
+            date=start + timedelta(days=index),
+            open=close,
+            high=close + 5,
+            low=close - 5,
+            close=close,
+            volume=1_000_000 + index,
+            amount=200_000_000 + index,
+        )
+        for index, close in enumerate(closes)
+    ]
+
+
 def test_market_analysis_renormalizes_missing_external_factor() -> None:
     result = analyse_market(snapshot())
 
@@ -357,12 +374,43 @@ def test_macd_roundoff_near_zero_is_not_treated_as_negative_momentum() -> None:
     ]
 
     result = analyse_stock(equity(), bars)
-    momentum = next(
-        item for item in result.score_factors if item.key == "macd_momentum"
-    )
+    momentum = next(item for item in result.score_factors if item.key == "macd_momentum")
 
     assert momentum.impact == 0
     assert "接近零" in momentum.evidence
+
+
+def test_atr_changes_stop_and_caps_position_for_high_volatility() -> None:
+    bars = volatile_bars()
+    result = analyse_stock(equity(price=bars[-1].close, pe=22), bars)
+
+    assert result.technical and result.technical.atr_pct
+    assert result.technical.atr_pct > 5
+    assert "ATR" in result.investment_advice.stop_loss
+    assert "5%" in result.investment_advice.position_hint
+    risk_control = next(item for item in result.analysis_dimensions if item.key == "risk_controls")
+    assert "ATR" in risk_control.summary
+
+
+def test_atr_target_is_used_when_resistance_is_not_above_price() -> None:
+    start = date(2026, 1, 1)
+    closes = [100.0] * 79 + [120.0]
+    bars = [
+        Bar(
+            date=start + timedelta(days=index),
+            open=close,
+            high=close + 1,
+            low=close - 1,
+            close=close,
+            volume=1_000_000 + index,
+            amount=200_000_000 + index,
+        )
+        for index, close in enumerate(closes)
+    ]
+
+    result = analyse_stock(equity(price=120, pe=22), bars)
+
+    assert "ATR" in result.investment_advice.take_profit
 
 
 def test_stock_analysis_generates_a_conclusion_from_visible_evidence() -> None:

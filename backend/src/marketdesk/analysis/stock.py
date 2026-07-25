@@ -214,6 +214,7 @@ def analyse_stock(
     vertical = _vertical_comparison(closes, technical)
     advice = _investment_advice(
         quote=quote,
+        close=closes[-1],
         stance=stance,
         score=score,
         coverage=round(min(evidence_coverage, 1), 2),
@@ -733,6 +734,7 @@ def _vertical_comparison(
 
 def _investment_advice(
     quote: EquityQuote,
+    close: float,
     stance: str,
     score: float,
     coverage: float,
@@ -758,16 +760,40 @@ def _investment_advice(
         action = "暂不参与"
         position = "0-5% 观察仓即可，把资金留给证据更完整的机会"
 
-    stop_loss = (
-        f"跌破 {technical.support:.2f} 且无法快速收回，放弃本轮跟踪"
-        if technical.support is not None
-        else "支撑位暂缺，先不设置交易"
+    if technical.atr_pct is not None and technical.atr_pct > 5:
+        position = (
+            "ATR 波动偏高，新仓控制在 5% 以内；已有仓位优先降低波动暴露"
+            if stance in {"strong_watch", "watch"}
+            else position
+        )
+    elif technical.atr_pct is not None and technical.atr_pct > 3:
+        position = (
+            "ATR 波动偏高，新仓控制在 10% 以内，确认趋势后再评估"
+            if stance in {"strong_watch", "watch"}
+            else position
+        )
+
+    atr_stop = (
+        close - 2 * technical.atr14
+        if technical.atr14 is not None and close > 2 * technical.atr14
+        else None
     )
-    take_profit = (
-        f"接近 {technical.resistance:.2f} 时至少复核量能、资金流和板块温度"
-        if technical.resistance is not None
-        else "压力位暂缺，先不做止盈判断"
-    )
+    if technical.support is not None and atr_stop is not None:
+        stop_loss = f"结构支撑 {technical.support:.2f}；2 ATR 风险线 {atr_stop:.2f}，跌破后重新评估"
+    elif atr_stop is not None:
+        stop_loss = f"跌破 2 ATR 风险线 {atr_stop:.2f} 后重新评估"
+    elif technical.support is not None:
+        stop_loss = f"跌破 {technical.support:.2f} 且无法快速收回，放弃本轮跟踪"
+    else:
+        stop_loss = "支撑位和 ATR 暂缺，先不设置交易"
+
+    if technical.resistance is not None and technical.resistance > close:
+        take_profit = f"接近 {technical.resistance:.2f} 时至少复核量能、资金流和板块温度"
+    elif technical.atr14 is not None:
+        atr_target = close + 3 * technical.atr14
+        take_profit = f"结构压力空间不足，接近 3 ATR 复核位 {atr_target:.2f} 时重新评估"
+    else:
+        take_profit = "压力位和 ATR 暂缺，先不做止盈判断"
     entry = next_actions[0] if next_actions else "等待趋势、估值、资金和事件证据共振"
     confidence = round(max(0.0, min(1.0, coverage * (0.55 + score / 200))), 2)
     rationale = [
@@ -1070,8 +1096,9 @@ def _analysis_dimensions(
         f"波动率 {technical.volatility20:.1f}%"
         if technical.volatility20 is not None
         else "波动率暂缺",
+        f"ATR 占现价 {technical.atr_pct:.1f}%" if technical.atr_pct is not None else "ATR 暂缺",
     ]
-    risk_control_summary = "交易计划先定义放弃线、压力位和复核节奏；" + "，".join(
+    risk_control_summary = "交易计划先定义结构位、ATR 风险线和复核节奏；" + "，".join(
         risk_control_evidence
     )
 
