@@ -452,3 +452,27 @@ Release `20260725-163418-776c1a4` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Authenticated follow-up | The carried-context request `贵州茅台 那估值呢` returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, `intent=valuation` |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, `/opt/aster-market/current/data` was absent, and `/opt/aster-market/data` remained external |
 | Cleanup | Temporary `codex-chat-smoke-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-25 Ask Stock Conversation Refinement
+
+The Ask Stock workbench now keeps the current tab's authenticated conversation thread, supports quick follow-up prompts after each stock answer, retries failed turns inline, submits with Enter while preserving Shift+Enter for drafting, and links stock answers directly back to Stock Lab.
+
+Analysis refinement:
+
+- Local stock resolution now accepts unique short aliases such as `茅台主要风险` for `SH.600519` while preserving the existing one-stock-only boundary for mixed questions.
+- Ambiguous local questions still return the explicit `一次只问一只股票` validation path instead of blending multiple dossiers.
+- Broad semantic-screening questions still use the optional provider layer when no unique local stock is identified.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 19 ask-stock tests |
+| Focused frontend Ask tests | Passed: 6 tests |
+| Frontend typecheck | Passed |
+| Full frontend Vitest | Passed: 31 tests across 8 files |
+| Production build | Passed: 1,653 modules transformed |
+| `make verify` | Passed: 106 backend tests, 31 frontend tests, live data 5,530 equities, 6 indices, 100 sectors |
+
+Real Chrome at 1,280 x 900 opened Ask Stock with an authenticated token, asked `贵州茅台现在主要风险是什么`, used the inline `继续问估值` follow-up, refreshed the page, and restored the thread plus active stock context. The Stock Lab link resolved to `#/stocks?symbol=SH.600519`. Desktop and 390px mobile viewports both measured no document-level horizontal overflow.
+

@@ -27,6 +27,11 @@ def resolve_stock_question(question: str, quotes: list[EquityQuote]) -> EquityQu
         name = _compact(quote.name).casefold()
         if len(name) >= 2 and name in normalized:
             matched[quote.symbol] = quote
+    alias_counts = _alias_counts(quotes)
+    for quote in quotes:
+        name = _compact(quote.name).casefold()
+        if any(alias_counts.get(alias) == 1 and alias in normalized for alias in _name_aliases(name)):
+            matched[quote.symbol] = quote
     if not matched:
         raise StockQuestionNotFound("问题中没有可识别的股票名称或代码")
     if len(matched) > 1:
@@ -125,6 +130,21 @@ def build_stock_answer(
 
 def _compact(value: str) -> str:
     return "".join(value.split())
+
+
+def _name_aliases(name: str) -> list[str]:
+    if len(name) <= 2:
+        return []
+    aliases = {name[:2], name[-2:]}
+    return [alias for alias in aliases if len(alias) >= 2]
+
+
+def _alias_counts(quotes: list[EquityQuote]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for quote in quotes:
+        for alias in _name_aliases(_compact(quote.name).casefold()):
+            counts[alias] = counts.get(alias, 0) + 1
+    return counts
 
 
 def _unique(values: list[str]) -> list[str]:

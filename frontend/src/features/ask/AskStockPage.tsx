@@ -1,8 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUpRight, MessageSquareText, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, api, type AskStockResponse } from "../../lib/api";
+import { ApiError, api, getAuthToken, type AskStockResponse } from "../../lib/api";
 
 const prompts = [
   "贵州茅台现在主要风险是什么",
@@ -19,6 +19,17 @@ const intentLabel: Record<AskStockResponse["intent"], string> = {
   overview: "综合研究",
   screening: "问财筛选",
 };
+const storageVersion = 1;
+const maxStoredMessages = 24;
+const followUpPrompts = [
+  { label: "继续问估值", question: "那估值呢" },
+  { label: "继续问趋势", question: "趋势呢" },
+  { label: "继续问风险", question: "还有哪些风险" },
+  { label: "仓位怎么定", question: "仓位和止损怎么定" },
+];
+const stockCodePattern = /\b(?:SH|SZ|BJ)?\.?\d{6}\b/i;
+const followUpPrefixPattern = /^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/;
+const followUpTopicPattern = /(风险|趋势|估值|仓位|止损|支撑|压力|能买吗|怎么样)/;
 
 function observedTime(value: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "时间未提供";
@@ -28,7 +39,7 @@ type StockAnchor = { name: string; symbol: string };
 type AskMessage =
   | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
   | { id: string; role: "assistant"; result: AskStockResponse }
-  | { id: string; role: "error"; content: string };
+  | { id: string; role: "error"; content: string; retryValue: string };
 
 function messageId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -39,7 +50,8 @@ function stockLabel(stock: StockAnchor) {
 }
 
 function latestStock(messages: AskMessage[]): StockAnchor | null {
-  for (const message of [...messages].reverse()) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
     if (message.role === "assistant" && message.result.kind === "stock_analysis" && message.result.symbol && message.result.name) {
       return { name: message.result.name, symbol: message.result.symbol };
     }
@@ -50,9 +62,48 @@ function latestStock(messages: AskMessage[]): StockAnchor | null {
 function shouldCarryStock(question: string, stock: StockAnchor | null) {
   if (!stock) return false;
   if (question.includes(stock.name) || question.includes(stock.symbol) || question.includes(stock.symbol.slice(-6))) return false;
-  if (/\b(?:SH|SZ|BJ)?\.?\d{6}\b/i.test(question)) return false;
-  if (/^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/.test(question)) return true;
-  return question.length <= 6 && /(风险|趋势|估值|仓位|止损|支撑|压力|能买吗|怎么样)/.test(question);
+  if (stockCodePattern.test(question)) return false;
+  if (followUpPrefixPattern.test(question)) return true;
+  return question.length <= 6 && followUpTopicPattern.test(question);
+}
+
+function storageKey() {
+  const token = getAuthToken();
+  return `marketdesk.askStockThread.v${storageVersion}.${token ? token.slice(-16) : "anonymous"}`;
+}
+
+function canUseSessionStorage() {
+  return typeof sessionStorage !== "undefined" && typeof sessionStorage.getItem === "function";
+}
+
+function loadStoredMessages(): AskMessage[] {
+  if (!canUseSessionStorage()) return [];
+  try {
+    const raw = sessionStorage.getItem(storageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { version?: number; messages?: unknown };
+    if (parsed.version !== storageVersion || !Array.isArray(parsed.messages)) return [];
+    return parsed.messages.filter((message): message is AskMessage => {
+      if (!message || typeof message !== "object") return false;
+      const candidate = message as { role?: unknown; content?: unknown; result?: unknown; retryValue?: unknown };
+      if (candidate.role === "user") return typeof candidate.content === "string";
+      if (candidate.role === "assistant") return typeof candidate.result === "object" && candidate.result !== null;
+      if (candidate.role === "error") return typeof candidate.content === "string" && typeof candidate.retryValue === "string";
+      return false;
+    }).slice(-maxStoredMessages);
+  } catch {
+    return [];
+  }
+}
+
+function storeMessages(messages: AskMessage[]) {
+  if (!canUseSessionStorage()) return;
+  const key = storageKey();
+  if (messages.length === 0) {
+    sessionStorage.removeItem(key);
+    return;
+  }
+  sessionStorage.setItem(key, JSON.stringify({ version: storageVersion, messages: messages.slice(-maxStoredMessages) }));
 }
 
 function EvidenceList({ title, items, tone }: { title: string; items: string[]; tone: string }) {
@@ -74,6 +125,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
       <div className="ask-provenance">
         <span>{result.source}</span>
         <small>数据时间 {observedTime(result.observed_at)}</small>
+        {result.symbol ? <a className="ask-stock-link" href={`#/stocks?symbol=${encodeURIComponent(result.symbol)}`}>打开个股研究</a> : null}
       </div>
     </header>
     <article className="ask-answer">
@@ -99,7 +151,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
 
 export function AskStockPage() {
   const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<AskMessage[]>([]);
+  const [messages, setMessages] = useState<AskMessage[]>(() => loadStoredMessages());
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const ask = useMutation({
     mutationFn: (value: string) => api<AskStockResponse>("/api/v1/ask-stock", {
@@ -115,6 +167,10 @@ export function AskStockPage() {
     }
   }, [messages, ask.isPending]);
 
+  useEffect(() => {
+    storeMessages(messages);
+  }, [messages]);
+
   const submitQuestion = async (value: string) => {
     const normalized = value.trim();
     if (normalized.length < 2 || ask.isPending) return;
@@ -129,7 +185,7 @@ export function AskStockPage() {
       setMessages((current) => [...current, { id: messageId(), role: "assistant", result }]);
     } catch (error) {
       const detail = error instanceof ApiError ? error.detail : "问股请求失败，请稍后重试。";
-      setMessages((current) => [...current, { id: messageId(), role: "error", content: detail }]);
+      setMessages((current) => [...current, { id: messageId(), role: "error", content: detail, retryValue: requestQuestion }]);
       setQuestion(value);
     }
   };
@@ -137,6 +193,17 @@ export function AskStockPage() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void submitQuestion(question);
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    void submitQuestion(question);
+  };
+
+  const clearThread = () => {
+    setMessages([]);
+    setQuestion("");
   };
 
   return <>
@@ -155,7 +222,7 @@ export function AskStockPage() {
             <span>{prompt}</span><ArrowUpRight size={14} />
           </button>)}
         </div>
-        <button className="ask-reset" type="button" onClick={() => setMessages([])} disabled={messages.length === 0 || ask.isPending}>
+        <button className="ask-reset" type="button" onClick={clearThread} disabled={messages.length === 0 || ask.isPending}>
           <RotateCcw size={14} />清空对话
         </button>
       </aside>
@@ -172,11 +239,17 @@ export function AskStockPage() {
               </article>;
             }
             if (message.role === "error") {
-              return <article className="ask-message error" key={message.id} role="alert">{message.content}</article>;
+              return <article className="ask-message error" key={message.id} role="alert">
+                <span>{message.content}</span>
+                <button type="button" onClick={() => void submitQuestion(message.retryValue)} disabled={ask.isPending}>重试</button>
+              </article>;
             }
             return <article className="ask-message assistant" key={message.id}>
               <span>Market Desk</span>
               <AskResult result={message.result} />
+              {message.result.kind === "stock_analysis" ? <div className="ask-followups" aria-label="追问建议">
+                {followUpPrompts.map((prompt) => <button type="button" key={prompt.label} onClick={() => void submitQuestion(prompt.question)} disabled={ask.isPending}>{prompt.label}</button>)}
+              </div> : null}
             </article>;
           })}
           {ask.isPending ? <article className="ask-message assistant pending"><span>Market Desk</span><p>正在整理行情证据...</p></article> : null}
@@ -189,6 +262,7 @@ export function AskStockPage() {
               id="ask-question"
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
               maxLength={160}
               placeholder={activeStock ? `继续问 ${activeStock.name}：例如 那估值呢` : "例如：贵州茅台现在主要风险是什么"}
             />

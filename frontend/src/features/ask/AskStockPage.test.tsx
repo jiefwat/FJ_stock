@@ -28,10 +28,16 @@ function renderPage() {
 
 beforeEach(() => {
   const storage = new Map<string, string>([["marketdesk.accessToken", "token-ask"]]);
+  const session = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
     removeItem: (key: string) => storage.delete(key),
+  });
+  vi.stubGlobal("sessionStorage", {
+    getItem: (key: string) => session.get(key) ?? null,
+    setItem: (key: string, value: string) => session.set(key, value),
+    removeItem: (key: string) => session.delete(key),
   });
 });
 
@@ -62,6 +68,8 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(screen.getByText("等待下一交易日确认")).toBeInTheDocument();
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  expect(screen.getByRole("button", { name: "继续问估值" })).toBeInTheDocument();
   expect(requests).toEqual([{
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),
     auth: "Bearer token-ask",
@@ -96,6 +104,47 @@ it("keeps multiple turns and carries the previous stock into a follow-up", async
   expect(screen.getByText("那估值呢")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(requests).toEqual(["贵州茅台现在主要风险是什么", "贵州茅台 那估值呢"]);
+});
+
+it("restores the current tab conversation for the same session", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => stockAnswer })));
+
+  const { unmount } = renderPage();
+  fireEvent.click(screen.getByRole("button", { name: "贵州茅台现在主要风险是什么" }));
+  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  unmount();
+
+  renderPage();
+  expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
+});
+
+it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns", async () => {
+  const requests: string[] = [];
+  let failed = false;
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    if (!failed) {
+      failed = true;
+      return { ok: false, status: 503, json: async () => ({ detail: "问财筛选暂不可用，请在问题中包含一个 A 股股票名称或代码。" }) };
+    }
+    return { ok: true, status: 200, json: async () => stockAnswer };
+  }));
+
+  renderPage();
+  const input = screen.getByLabelText("继续追问");
+  fireEvent.change(input, { target: { value: "低估值白酒股" } });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  expect(input).toHaveValue("低估值白酒股");
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("问财筛选暂不可用");
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(requests).toEqual(["低估值白酒股", "低估值白酒股"]);
 });
 
 it("renders bounded semantic screening rows", async () => {

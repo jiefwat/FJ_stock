@@ -72,6 +72,7 @@ def dossier():
 def test_resolves_one_stock_by_code_or_name() -> None:
     assert resolve_stock_question("600519 的趋势怎么样", quotes()).symbol == "SH.600519"
     assert resolve_stock_question("贵州茅台主要风险", quotes()).symbol == "SH.600519"
+    assert resolve_stock_question("茅台主要风险", quotes()).symbol == "SH.600519"
 
 
 def test_requires_exactly_one_local_stock() -> None:
@@ -79,6 +80,8 @@ def test_requires_exactly_one_local_stock() -> None:
         resolve_stock_question("低估值白酒股", quotes())
     with pytest.raises(AmbiguousStockQuestion):
         resolve_stock_question("贵州茅台和五粮液哪个更好", quotes())
+    with pytest.raises(AmbiguousStockQuestion):
+        resolve_stock_question("茅台和五粮液哪个更好", quotes())
 
 
 @pytest.mark.parametrize(

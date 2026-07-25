@@ -60,3 +60,4 @@
 - [x] Preserve typed questions and render explicit validation and provider-unavailable states.
 - [x] Pass `make verify` and complete production-build browser and API acceptance.
 - [x] Convert Ask Stock into a multi-turn chat surface with previous-stock follow-up context.
+- [x] Persist Ask Stock tab conversations, add follow-up prompts, retry failed turns, and accept unique short stock aliases.
