@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import Literal
+
+from marketdesk.models import AskStockResponse, EquityQuote, StockDossier
+
+AskStockIntent = Literal["risk", "trend", "valuation", "action", "overview"]
+
+
+class StockQuestionNotFound(ValueError):
+    """Raised when a question does not identify a local stock."""
+
+
+class AmbiguousStockQuestion(ValueError):
+    """Raised when a question identifies more than one local stock."""
+
+
+def resolve_stock_question(question: str, quotes: list[EquityQuote]) -> EquityQuote:
+    normalized = _compact(question).casefold()
+    codes = set(re.findall(r"(?<!\d)\d{6}(?!\d)", normalized))
+    matched: dict[str, EquityQuote] = {
+        quote.symbol: quote for quote in quotes if quote.code in codes
+    }
+    for quote in quotes:
+        name = _compact(quote.name).casefold()
+        if len(name) >= 2 and name in normalized:
+            matched[quote.symbol] = quote
+    if not matched:
+        raise StockQuestionNotFound("问题中没有可识别的股票名称或代码")
+    if len(matched) > 1:
+        raise AmbiguousStockQuestion("一次只问一只股票")
+    return next(iter(matched.values()))
+
+
+def classify_stock_question(question: str) -> AskStockIntent:
+    normalized = _compact(question).casefold()
+    keyword_groups: tuple[tuple[AskStockIntent, tuple[str, ...]], ...] = (
+        ("risk", ("风险", "利空", "隐患", "下跌", "回撤")),
+        ("trend", ("趋势", "技术", "走势", "均线", "动量", "macd", "rsi")),
+        ("valuation", ("估值", "市盈率", "市净率", "贵不贵", "便宜", "对比")),
+        ("action", ("买", "卖", "仓位", "止损", "止盈", "操作", "入场")),
+    )
+    for intent, keywords in keyword_groups:
+        if any(keyword in normalized for keyword in keywords):
+            return intent
+    return "overview"
+
+
+def build_stock_answer(
+    *,
+    question: str,
+    intent: AskStockIntent,
+    dossier: StockDossier,
+    observed_at: datetime,
+) -> AskStockResponse:
+    quote = dossier.quote
+    risks = _unique([*dossier.bear_case, *dossier.invalidation])[:4]
+    next_actions = _unique(dossier.next_actions)[:4]
+    evidence: list[str]
+
+    if intent == "risk":
+        evidence = _unique([*dossier.bear_case, *dossier.invalidation, *dossier.missing_evidence])
+        answer = _lead(quote.name, "当前主要风险", dossier.bear_case, "风险证据不足")
+    elif intent == "trend":
+        evidence = _unique(
+            [dossier.trend_forecast.summary, *dossier.trend_forecast.drivers]
+            + [factor.evidence for factor in dossier.score_factors if factor.available]
+        )
+        answer = (
+            f"{quote.name}的{dossier.trend_forecast.horizon}趋势判断为"
+            f"{dossier.trend_forecast.direction}：{dossier.trend_forecast.summary}"
+        )
+    elif intent == "valuation":
+        valuation = next(
+            (item for item in dossier.analysis_dimensions if item.key == "valuation"), None
+        )
+        comparisons = [
+            item.summary
+            for item in [*dossier.horizontal_comparison, *dossier.vertical_comparison]
+            if item.available and item.key in {"valuation", "pe", "pb"}
+        ]
+        evidence = _unique(
+            ([valuation.summary, *valuation.evidence] if valuation else []) + comparisons
+        )
+        answer = (
+            f"{quote.name}的估值判断：{valuation.summary}"
+            if valuation
+            else f"{quote.name}当前缺少足够的估值比较证据。"
+        )
+    elif intent == "action":
+        advice = dossier.investment_advice
+        evidence = _unique(
+            [*advice.rationale, advice.entry_plan, advice.stop_loss, advice.take_profit]
+        )
+        answer = (
+            f"{quote.name}当前建议为{advice.action}。{advice.position_hint}；"
+            f"入场纪律：{advice.entry_plan}；止损纪律：{advice.stop_loss}。"
+        )
+    else:
+        evidence = _unique(
+            [*dossier.bull_case, *dossier.bear_case]
+            + [factor.evidence for factor in dossier.score_factors if factor.available]
+        )
+        answer = dossier.conclusion
+
+    if not evidence:
+        evidence = ["当前证据覆盖不足，暂不形成更强结论。"]
+    return AskStockResponse(
+        kind="stock_analysis",
+        question=" ".join(question.split()),
+        intent=intent,
+        symbol=quote.symbol,
+        name=quote.name,
+        answer=answer,
+        evidence=evidence[:5],
+        risks=risks,
+        next_actions=next_actions,
+        observed_at=observed_at,
+        source="本地行情快照 + 确定性分析",
+        disclaimer="研究辅助信息，不构成投资建议。",
+    )
+
+
+def _compact(value: str) -> str:
+    return "".join(value.split())
+
+
+def _unique(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        normalized = " ".join(value.split())
+        if normalized and normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _lead(name: str, label: str, values: list[str], fallback: str) -> str:
+    selected = _unique(values)[:2]
+    return f"{name}{label}：{'；'.join(selected) if selected else fallback}。"

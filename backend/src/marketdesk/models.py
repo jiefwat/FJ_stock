@@ -389,6 +389,31 @@ class StockDossier(StrictModel):
     bars: list[Bar]
 
 
+JsonScalar = str | int | float | bool | None
+
+
+class SemanticScreenResult(StrictModel):
+    columns: list[str] = Field(max_length=12)
+    rows: list[dict[str, JsonScalar]] = Field(max_length=20)
+
+
+class AskStockResponse(StrictModel):
+    kind: Literal["stock_analysis", "semantic_screen"]
+    question: str
+    intent: Literal["risk", "trend", "valuation", "action", "overview", "screening"]
+    symbol: str | None = None
+    name: str | None = None
+    answer: str
+    evidence: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    observed_at: datetime | None = None
+    source: str
+    disclaimer: str
+    columns: list[str] = Field(default_factory=list, max_length=12)
+    rows: list[dict[str, JsonScalar]] = Field(default_factory=list, max_length=20)
+
+
 class HoldingItem(StrictModel):
     id: int
     symbol: str
