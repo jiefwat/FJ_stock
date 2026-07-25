@@ -439,3 +439,16 @@ Chrome loaded the FastAPI-served production bundle at `http://127.0.0.1:8765/#/a
 | Follow-up | `贵州茅台现在主要风险是什么` then `那估值呢` returned two HTTP 200 Ask Stock answers and displayed the carried-stock marker |
 | Mobile chat | 390px viewport and 390px document width after adding the missing viewport meta tag |
 | Cleanup | Temporary `local-ask-chat-%@marketdesk.local` users were removed from the local database |
+
+### Production smoke
+
+Release `20260725-163418-776c1a4` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| HTML shell | Public `/` returned the production HTML with `meta name="viewport"` |
+| Anonymous Ask Stock | `POST /api/v1/ask-stock` without a bearer token returned HTTP 401 |
+| Authenticated first turn | Temporary smoke account asked `贵州茅台现在主要风险是什么`; response returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, `intent=risk` |
+| Authenticated follow-up | The carried-context request `贵州茅台 那估值呢` returned HTTP 200, `kind=stock_analysis`, `symbol=SH.600519`, `intent=valuation` |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, `/opt/aster-market/current/data` was absent, and `/opt/aster-market/data` remained external |
+| Cleanup | Temporary `codex-chat-smoke-%@marketdesk.local` users were removed from the production database |
