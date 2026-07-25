@@ -34,3 +34,12 @@
 - [x] Add advanced full-market filters, URL-restorable state, and account-scoped saved views.
 - [x] Make the Market shell and advanced filter workflow usable without document overflow at 390px.
 - [x] Require authentication for holdings, watchlists, preferences, and saved views without default-owner fallback.
+
+## Stock Analysis Engine V3
+
+- [x] Extract EMA, MACD, ATR, Bollinger, and drawdown calculations into a pure indicator module.
+- [x] Add visible momentum, volatility, price-extension, drawdown, and signal-confluence evidence.
+- [x] Add descriptive 20-day rolling signal validation without feeding it back into the live score.
+- [x] Make stop and trial-position guidance adapt to ATR while retaining structural support levels.
+- [x] Keep anonymous stock research independent from private watchlist requests.
+- [x] Preserve the desktop layout and remove Stock Lab horizontal overflow at 390px.

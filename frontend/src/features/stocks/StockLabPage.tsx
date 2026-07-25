@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
-import { api, fmt, pct, percent, type Quote, type WatchlistItem } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, percent, type Quote, type WatchlistItem } from "../../lib/api";
 import { StockTrend } from "./StockTrend";
 
 type ScoreFactor = {
@@ -284,6 +284,7 @@ function ComparisonSection({ horizontal, vertical }: { horizontal: ComparisonIte
 
 export function StockLabPage() {
   const client = useQueryClient();
+  const authenticated = Boolean(getAuthToken());
   const [params, setParams] = useSearchParams();
   const [term, setTerm] = useState(params.get("symbol") ?? "600519");
   const [symbol, setSymbol] = useState(params.get("symbol") ?? "SH.600519");
@@ -300,6 +301,7 @@ export function StockLabPage() {
   const watchlist = useQuery({
     queryKey: ["watchlist"],
     queryFn: () => api<WatchlistItem[]>("/api/v1/watchlist"),
+    enabled: authenticated,
   });
   const existing = watchlist.data?.find((item) => item.symbol === symbol);
   const addWatch = useMutation({
@@ -347,7 +349,7 @@ export function StockLabPage() {
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       <section className="stock-hero">
         <div><span>{query.data.quote.symbol} · {query.data.quote.sector ?? "行业待补"}</span><h2>{query.data.quote.name}</h2><p>{fmt(query.data.quote.price)} <b className={(query.data.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(query.data.quote.change_pct)}</b></p></div>
-        <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button>}</div>
+        <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}</div>
       </section>
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />

@@ -66,9 +66,15 @@ const dossier = {
   bars: Array.from({ length: 65 }, (_, index) => ({ date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`, close: 1200 + index })),
 };
 
-function renderPage(watchlist: object[] = []) {
+function renderPage(watchlist: object[] = [], authenticated = true) {
   const currentWatchlist = [...watchlist];
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  let accessToken = authenticated ? "fixture-token" : null;
+  vi.stubGlobal("localStorage", {
+    getItem: () => accessToken,
+    setItem: (_key: string, value: string) => { accessToken = value; },
+    removeItem: () => { accessToken = null; },
+  });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === "POST") {
       currentWatchlist.push({ id: 1, symbol: "SH.600519", name: "贵州茅台", thesis: "新逻辑", invalidation: "新失效条件", status: "new", updated_at: "2026-07-19T10:00:00Z" });
@@ -77,9 +83,13 @@ function renderPage(watchlist: object[] = []) {
     if (url.includes("/watchlist")) return { ok: true, status: 200, json: async () => currentWatchlist };
     if (url.includes("/search")) return { ok: true, status: 200, json: async () => [] };
     return { ok: true, status: 200, json: async () => dossier };
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/stocks?symbol=SH.600519"]}><StockLabPage /></MemoryRouter></QueryClientProvider>);
+  return {
+    fetchMock,
+    ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/stocks?symbol=SH.600519"]}><StockLabPage /></MemoryRouter></QueryClientProvider>),
+  };
 }
 
 afterEach(() => {
@@ -230,4 +240,15 @@ it("recognizes an existing watchlist item before another post", async () => {
 
   expect(await screen.findByRole("link", { name: "已跟踪 · 编辑记录" })).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByRole("button", { name: "加入跟踪" })).not.toBeInTheDocument());
+});
+
+it("does not request the private watchlist before login", async () => {
+  const { fetchMock } = renderPage([], false);
+
+  expect(await screen.findByText("贵州茅台")).toBeInTheDocument();
+  const loginButton = screen.getByRole("button", { name: "登录后加入跟踪" });
+  expect(loginButton).toBeDisabled();
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/watchlist"))).toBe(false);
+  });
 });

@@ -348,6 +348,7 @@ def test_historical_validation_is_descriptive_and_does_not_change_live_score() -
     assert result.signal_validation.available is True
     assert result.signal_validation.horizon_days == 20
     assert result.signal_validation.sample_count >= 3
+    assert "MA5/MA20 与 MACD 共振条件" in result.signal_validation.summary
     assert "不直接计入实时评分" in result.signal_validation.summary
 
 

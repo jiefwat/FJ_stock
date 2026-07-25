@@ -260,3 +260,45 @@ Release `20260724-203821-9e7277f` was deployed and activated by `stock-ts.servic
 | Browser boundary | Logged-out Holdings page showed the login requirement, zero holding rows, and the register/login action |
 
 This proves the deployed system distinguishes `unauthenticated`, `account A`, `account B`, and the existing owner instead of routing them to one shared portfolio.
+
+## Stock Analysis Engine V3 — 2026-07-25
+
+### Open-source method review
+
+The implementation was informed by primary-source review of Qlib, vn.py, Backtrader, QuantConnect LEAN, and FinRL. The adopted boundary is deterministic and dependency-free: indicator math is isolated, risk management is separate from signal generation, and historical validation is descriptive rather than a promise of future performance. Full notes are in `docs/tech-specs/2026-07-25-open-source-stock-analysis-review.md`.
+
+### TDD evidence
+
+- Indicator tests failed first because `marketdesk.analysis.indicators` did not exist, then passed after EMA, MACD, ATR, Bollinger, and maximum-drawdown implementations were added.
+- Stock analysis tests failed first on missing technical fields, factors, confluence, and validation, then passed after the V3 response contract and deterministic logic were added.
+- A full backend run exposed MACD floating-point noise (`-0.000`) as a false negative signal. A dedicated regression test failed, then passed after near-zero histogram values were classified as neutral.
+- ATR guidance tests failed against structural-only stop and target copy, then passed after adding two-ATR risk lines, three-ATR review targets, and volatility-aware trial-size caps.
+- The Stock Lab test failed before the historical validation panel existed, then passed with the compact panel in the original section order.
+- The anonymous Stock Lab test failed while the page still requested the private watchlist, then passed after the query was disabled without an access token and the action was labelled `登录后加入跟踪`.
+
+### Repository verification
+
+`make verify` passed before final documentation with:
+
+- backend lint and types clean across 20 source files;
+- 83 backend tests passed;
+- 22 frontend tests passed;
+- production frontend build completed;
+- live-data gate returned 5,530 equities, six indices, 100 sectors, and 100% equity coverage.
+
+The final gate passed again after this record was updated: 83 backend tests and 23 frontend tests passed, the production build completed, and the live-data gate remained at 5,530 equities with 100% coverage.
+
+### Real-browser acceptance
+
+The production build was served through FastAPI and checked with Chrome against `SH.600519`.
+
+| Check | Result |
+| --- | --- |
+| V3 evidence | MACD, ATR, Bollinger/drawdown factors and signal confluence rendered from the stock API |
+| Historical validation | Rendered between future trend and horizontal/vertical comparison; stated sample count, 20-day result distribution, overlapping-sample caveat, and no-score boundary |
+| Desktop 1440 x 900 | `scrollWidth=1440`, no horizontal overflow; existing section order preserved |
+| Mobile 390 x 844 before review fix | `scrollWidth=603`; fixed-grid Stock Lab sections caused overflow |
+| Mobile 390 x 844 after review fix | `scrollWidth=390`, no horizontal overflow; advice, forecast, comparison, evidence, and validation grids collapse cleanly |
+| Anonymous account boundary | No `/api/v1/watchlist` request, disabled `登录后加入跟踪` action, zero browser console errors |
+
+Generated screenshots remain under the ignored local `.run/` directory and are not committed.

@@ -75,7 +75,7 @@ def _historical_signal_validation(bars: list[Bar], horizon_days: int = 20) -> St
         average_return=round(average_return, 2),
         worst_return=round(worst_return, 2),
         summary=(
-            f"当前技术条件在历史中出现 {sample_count} 个滚动样本；"
+            f"MA5/MA20 与 MACD 共振条件在历史中出现 {sample_count} 个滚动样本；"
             f"{horizon_days} 日后上涨比例 {positive_rate:.0%}，"
             f"平均收益 {average_return:.2f}%，最差收益 {worst_return:.2f}%。"
             "样本可能重叠，只作描述，不直接计入实时评分。"
