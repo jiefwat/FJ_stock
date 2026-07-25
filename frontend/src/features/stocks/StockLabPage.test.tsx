@@ -44,6 +44,15 @@ const dossier = {
     drivers: ["MA5/MA20 短线结构占优", "资金流仍需连续确认", "接近压力位，追高性价比一般"],
     invalidation: "跌破 1168.00 后趋势判断失效",
   },
+  signal_validation: {
+    available: true,
+    horizon_days: 20,
+    sample_count: 18,
+    positive_rate: 0.67,
+    average_return: 3.2,
+    worst_return: -6.4,
+    summary: "历史滚动样本仅作描述，不直接计入实时评分。",
+  },
   horizontal_comparison: [
     { key: "sector_change_rank", label: "涨跌强弱", signal: "neutral", value: "-0.48%", benchmark: "白酒同业", summary: "相对行业涨跌强度处于约 42 分位", percentile: 42, available: true },
     { key: "sector_pe_position", label: "估值位置", signal: "positive", value: "PE 20.2", benchmark: "白酒同业 PE 中位 28.1", summary: "PE 20.2 相对行业估值吸引力约 68 分位", percentile: 68, available: true },
@@ -193,6 +202,27 @@ it("shows a future trend forecast before detailed evidence", async () => {
   const forecastSection = await screen.findByLabelText("未来趋势判断");
   const evidenceLedger = await screen.findByText("证据账本");
   expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("shows descriptive historical validation without changing the page structure", async () => {
+  renderPage();
+
+  const validationElement = await screen.findByLabelText("历史信号验证");
+  const validation = within(validationElement);
+  expect(validation.getByText("18 个样本")).toBeInTheDocument();
+  expect(validation.getByText("67%")).toBeInTheDocument();
+  expect(validation.getByText("+3.20%")).toBeInTheDocument();
+  expect(validation.getByText("-6.40%")).toBeInTheDocument();
+  expect(validation.getByText(/不直接计入实时评分/)).toBeInTheDocument();
+
+  const forecast = await screen.findByLabelText("未来趋势判断");
+  const comparison = await screen.findByLabelText("横向纵向对比");
+  expect(
+    forecast.compareDocumentPosition(validationElement) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    validationElement.compareDocumentPosition(comparison) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 it("recognizes an existing watchlist item before another post", async () => {

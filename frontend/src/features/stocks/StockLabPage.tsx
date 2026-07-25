@@ -47,6 +47,16 @@ type TrendForecast = {
   invalidation: string;
 };
 
+type SignalValidation = {
+  available: boolean;
+  horizon_days: number;
+  sample_count: number;
+  positive_rate: number | null;
+  average_return: number | null;
+  worst_return: number | null;
+  summary: string;
+};
+
 type ComparisonItem = {
   key: string;
   label: string;
@@ -68,6 +78,7 @@ type Dossier = {
   analysis_dimensions: AnalysisDimension[];
   investment_advice: InvestmentAdvice;
   trend_forecast: TrendForecast;
+  signal_validation: SignalValidation;
   horizontal_comparison: ComparisonItem[];
   vertical_comparison: ComparisonItem[];
   next_actions: string[];
@@ -233,6 +244,22 @@ function TrendForecastPanel({ forecast }: { forecast: TrendForecast }) {
   </section>;
 }
 
+function SignalValidationPanel({ validation }: { validation: SignalValidation }) {
+  return <section className="panel signal-validation-panel" aria-label="历史信号验证">
+    <div className="panel-title">
+      <span>历史信号验证</span>
+      <small>同类技术条件 · {validation.horizon_days} 个交易日后</small>
+    </div>
+    {validation.available ? <div className="signal-validation-metrics">
+      <article><span>历史样本</span><strong>{validation.sample_count} 个样本</strong></article>
+      <article><span>上涨比例</span><strong>{percent((validation.positive_rate ?? 0) * 100)}</strong></article>
+      <article><span>平均收益</span><strong>{pct(validation.average_return)}</strong></article>
+      <article><span>最差收益</span><strong>{pct(validation.worst_return)}</strong></article>
+    </div> : <div className="signal-validation-empty">样本不足，暂不展示统计结论。</div>}
+    <p>{validation.summary}</p>
+  </section>;
+}
+
 function ComparisonSection({ horizontal, vertical }: { horizontal: ComparisonItem[]; vertical: ComparisonItem[] }) {
   const renderItems = (items: ComparisonItem[]) => items.map((item) => <article key={item.key} className={item.signal}>
     <header><span>{item.label}</span><strong>{item.value}</strong></header>
@@ -324,6 +351,7 @@ export function StockLabPage() {
       </section>
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
+      <SignalValidationPanel validation={query.data.signal_validation} />
       <ComparisonSection horizontal={query.data.horizontal_comparison} vertical={query.data.vertical_comparison} />
       <AnalystActionMap dossier={query.data} />
       <ConclusionBrief dossier={query.data} />
