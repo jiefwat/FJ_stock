@@ -68,3 +68,4 @@
 - [x] Carry single-stock Ask follow-up context for natural questions and hide provider branding from user-facing messages.
 - [x] Separate market observation time from latest refresh time in user-facing timestamp labels.
 - [x] Keep the refreshed timestamp chip and Today risk rail from causing document overflow at 390px.
+- [x] Prevent weak two-character suffix aliases from making `青龙股份` look like multiple stocks.

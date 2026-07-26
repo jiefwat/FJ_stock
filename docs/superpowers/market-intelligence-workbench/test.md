@@ -656,3 +656,28 @@ Release `20260726-205803-612b618` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Browser runtime | Zero console warnings or page errors on the authenticated Today route |
 | Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260726-205803-612b618`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-refresh-time-%@marketdesk.local` and `codex-overflow-debug-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-26 Ask Stock Qinglong Alias Disambiguation
+
+Ask Stock no longer treats weak two-character suffix aliases such as `龙股` from ex-dividend names like `XD腾龙股` as reliable stock identifiers. A colloquial question such as `为什么是青龙股份` now resolves through the unique prefix alias `青龙` to `SZ.002457 青龙管业` instead of failing with `一次只问一只股票`.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused resolver regression | Passed: `青龙股份怎么样`, `为什么是青龙股份`, `青龙股份`, and `青龙` resolve to `SZ.002457 青龙管业` with the current local market snapshot |
+| Focused backend Ask tests | Passed: 25 Ask Stock API/analysis tests, including the existing multi-stock rejection and the new Qinglong colloquial-name acceptance |
+| `make verify` | Passed: 112 backend tests, 36 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+### Production smoke
+
+Release `20260726-215448-d7d25de` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| API Ask Stock | Temporary authenticated account asked `为什么是青龙股份`; response returned HTTP 200, `kind=stock_analysis`, `symbol=SZ.002457`, and `name=青龙管业` |
+| Browser Ask Stock | Real Chrome submitted `为什么是青龙股份`; the conversation rendered `青龙管业`, `SZ.002457`, local deterministic evidence, and did not render `一次只问一只股票` |
+| Provider branding | The browser body did not contain `问财`, `WenCai`, or `iWenCai` |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
+| Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260726-215448-d7d25de`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-qinglong-%@marketdesk.local` users were removed from the production database |
