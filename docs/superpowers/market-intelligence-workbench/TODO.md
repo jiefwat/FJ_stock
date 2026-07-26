@@ -67,3 +67,4 @@
 - [x] Generate account-scoped Ask Stock rebalance plans with target drift, adjustment value, shares, and priority.
 - [x] Carry single-stock Ask follow-up context for natural questions and hide provider branding from user-facing messages.
 - [x] Separate market observation time from latest refresh time in user-facing timestamp labels.
+- [x] Keep the refreshed timestamp chip and Today risk rail from causing document overflow at 390px.

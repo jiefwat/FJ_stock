@@ -642,3 +642,17 @@ Verification evidence:
 | App shell timestamp test | Passed: the authenticated Today route renders both `行情时间` and `更新`, and a manual refresh changes the displayed update year to `2030` in the fixture |
 | Data Center timestamp test | Passed: the audit grid uses `行情时间` and `更新时间`, and manual refresh status reports `更新时间` |
 | `make verify` | Passed: 111 backend tests, 36 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+### Production smoke
+
+Release `20260726-205803-612b618` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Timestamp API boundary | Authenticated refresh returned HTTP 200; `observed_at=2026-07-24T07:00:00Z` stayed on the latest completed A-share session while `fetched_at=2026-07-26T13:04:50.432568Z` advanced to the latest refresh |
+| Top timestamp chip | Real Chrome rendered `行情时间 2026/7/24 15:00:00` and `更新 2026/7/26 21:04:50` on both desktop and 390px mobile |
+| Desktop layout | 1,280px viewport and document width both measured 1,280px |
+| Mobile layout | 390px viewport and document width both measured 390px after constraining sidebar overflow and collapsing the Today risk rail |
+| Browser runtime | Zero console warnings or page errors on the authenticated Today route |
+| Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260726-205803-612b618`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-refresh-time-%@marketdesk.local` and `codex-overflow-debug-%@marketdesk.local` users were removed from the production database |
