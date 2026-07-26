@@ -45,12 +45,12 @@ def resolve_stock_question(question: str, quotes: list[EquityQuote]) -> EquityQu
         quote.symbol: quote for quote in quotes if quote.code in codes
     }
     for quote in quotes:
-        name = _compact(quote.name).casefold()
+        name = _stock_name_key(quote.name)
         if len(name) >= 2 and name in normalized:
             matched[quote.symbol] = quote
     alias_counts = _alias_counts(quotes)
     for quote in quotes:
-        name = _compact(quote.name).casefold()
+        name = _stock_name_key(quote.name)
         if any(alias_counts.get(alias) == 1 and alias in normalized for alias in _name_aliases(name)):
             matched[quote.symbol] = quote
     if not matched:
@@ -404,17 +404,30 @@ def _compact(value: str) -> str:
     return "".join(value.split())
 
 
+def _stock_name_key(name: str) -> str:
+    normalized = _compact(name).casefold()
+    return re.sub(r"^(\*?st|xd|xr|dr|n|c)", "", normalized)
+
+
 def _name_aliases(name: str) -> list[str]:
     if len(name) <= 2:
         return []
-    aliases = {name[:2], name[-2:]}
+    aliases = {name[:2]}
+    suffix = name[-2:]
+    if not _is_generic_name_suffix(suffix):
+        aliases.add(suffix)
     return [alias for alias in aliases if len(alias) >= 2]
+
+
+def _is_generic_name_suffix(value: str) -> bool:
+    weak_suffixes = {"股份", "控股", "集团", "证券", "银行", "科技", "管业"}
+    return "股" in value or value in weak_suffixes
 
 
 def _alias_counts(quotes: list[EquityQuote]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for quote in quotes:
-        for alias in _name_aliases(_compact(quote.name).casefold()):
+        for alias in _name_aliases(_stock_name_key(quote.name)):
             counts[alias] = counts.get(alias, 0) + 1
     return counts
 

@@ -46,6 +46,36 @@ def quotes() -> list[EquityQuote]:
             net_flow=-20_000_000,
             sector="白酒",
         ),
+        EquityQuote(
+            symbol="SZ.002457",
+            code="002457",
+            name="青龙管业",
+            price=11.2,
+            change_pct=1.8,
+            amount=520_000_000,
+            turnover_rate=7.2,
+            volume_ratio=1.6,
+            pe=28,
+            pb=2.4,
+            market_cap=3_700_000_000,
+            net_flow=15_000_000,
+            sector="水泥建材",
+        ),
+        EquityQuote(
+            symbol="SH.603158",
+            code="603158",
+            name="XD腾龙股",
+            price=8.9,
+            change_pct=-0.3,
+            amount=210_000_000,
+            turnover_rate=2.1,
+            volume_ratio=0.9,
+            pe=31,
+            pb=1.9,
+            market_cap=4_100_000_000,
+            net_flow=-3_000_000,
+            sector="汽车零部件",
+        ),
     ]
 
 
@@ -75,6 +105,8 @@ def test_resolves_one_stock_by_code_or_name() -> None:
     assert resolve_stock_question("600519 的趋势怎么样", quotes()).symbol == "SH.600519"
     assert resolve_stock_question("贵州茅台主要风险", quotes()).symbol == "SH.600519"
     assert resolve_stock_question("茅台主要风险", quotes()).symbol == "SH.600519"
+    assert resolve_stock_question("青龙股份怎么样", quotes()).symbol == "SZ.002457"
+    assert resolve_stock_question("为什么是青龙股份", quotes()).symbol == "SZ.002457"
 
 
 def test_requires_exactly_one_local_stock() -> None:

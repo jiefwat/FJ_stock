@@ -176,6 +176,40 @@ class EquityBrowserProvider(FixtureProvider):
         )
 
 
+class QinglongAskProvider(EquityBrowserProvider):
+    async def fetch_equities(self):
+        dataset = await super().fetch_equities()
+        return dataset.model_copy(
+            update={
+                "items": [
+                    *dataset.items,
+                    EquityQuote(
+                        symbol="SZ.002457",
+                        code="002457",
+                        name="青龙管业",
+                        price=11.2,
+                        change_pct=1.8,
+                        amount=520_000_000,
+                        turnover_rate=7.2,
+                        market_cap=3_700_000_000,
+                        sector="水泥建材",
+                    ),
+                    EquityQuote(
+                        symbol="SH.603158",
+                        code="603158",
+                        name="XD腾龙股",
+                        price=8.9,
+                        change_pct=-0.3,
+                        amount=210_000_000,
+                        turnover_rate=2.1,
+                        market_cap=4_100_000_000,
+                        sector="汽车零部件",
+                    ),
+                ]
+            }
+        )
+
+
 class StockEnhancementProvider(FixtureProvider):
     async def fetch_equities(self):
         dataset = await super().fetch_equities()
@@ -519,6 +553,21 @@ def test_ask_stock_rejects_multiple_local_stocks(tmp_path) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "一次只问一只股票"
+
+
+def test_ask_stock_accepts_colloquial_qinglong_share_name(tmp_path) -> None:
+    service = MarketService(
+        provider=QinglongAskProvider(), store=Store(tmp_path / "ask-qinglong.db")
+    )
+    api = authenticated_client(service)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "为什么是青龙股份"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "stock_analysis"
+    assert payload["symbol"] == "SZ.002457"
+    assert payload["name"] == "青龙管业"
 
 
 def test_ask_stock_uses_optional_semantic_screen(tmp_path) -> None:
