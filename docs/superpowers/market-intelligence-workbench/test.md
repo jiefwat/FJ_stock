@@ -586,3 +586,17 @@ Verification evidence:
 | `make verify` | Passed: 111 backend tests, 34 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
 
 Local API regression created Account A with three holdings and asked `帮我生成调仓计划`; the API returned `kind=portfolio_analysis`, metrics `需调仓` and `净调整`, columns `偏离金额`, `建议股数`, and `优先级`, a high-priority first row, and a guardrail reminding the user not to trade mechanically from the table. Account B asked the same question and received `持仓数量=0` with no rows.
+
+### Production smoke
+
+Release `20260726-134428-fb7d4c8` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health and auth boundary | `/healthz` returned HTTP 200; anonymous `POST /api/v1/ask-stock` returned HTTP 401 |
+| Account A rebalance plan | Temporary Account A created three holdings; `帮我生成调仓计划` returned `kind=portfolio_analysis`, metrics `需调仓`, `净调整`, `最大单票`, and a first row with `建议股数` and `优先级=高` |
+| Account B isolation | Temporary Account B asked the same rebalance question and received `持仓数量=0` with no rows |
+| Browser workflow | Real Chrome at 1,280 x 900 rendered the Ask Stock rebalance plan, `建议股数`, `调仓执行量`, and the guardrail `不按表格机械交易` |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-rebalance-%@marketdesk.local` and `codex-rebalance-ui-%@marketdesk.local` users and holdings were removed from the production database |
