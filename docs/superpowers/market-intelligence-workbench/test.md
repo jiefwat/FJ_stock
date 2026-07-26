@@ -617,3 +617,16 @@ Regression details:
 
 - The frontend request sequence for the natural follow-up is now `贵州茅台现在主要风险是什么` then `贵州茅台 你觉得多少合理`.
 - Error and success states assert that `问财` is absent from rendered Ask Stock UI.
+
+### Production smoke
+
+Release `20260726-204031-2b6e17f` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Neutral unavailable copy | Authenticated `低估值白酒股` returned HTTP 503 with `条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。` |
+| Follow-up context | Real Chrome asked `贵州茅台现在主要风险是什么`, then `你觉得多少合理`; the captured API requests were `贵州茅台现在主要风险是什么` and `贵州茅台 你觉得多少合理` |
+| Provider branding | Real Chrome body text did not contain `问财`, `WenCai`, or `iWenCai` after the follow-up workflow |
+| Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
+| Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-followup-%@marketdesk.local` users were removed from the production database |
