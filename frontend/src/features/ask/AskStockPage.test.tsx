@@ -167,6 +167,43 @@ it("restores the current tab conversation for the same session", async () => {
   expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
 });
 
+it("keeps separate left-side history conversations and switches between them", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    const isPingan = parsed.question.includes("平安银行");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        symbol: isPingan ? "SZ.000001" : "SH.600519",
+        name: isPingan ? "平安银行" : "贵州茅台",
+        answer: isPingan ? "平安银行估值不贵，但要看息差风险。" : "贵州茅台风险来自估值和需求节奏。",
+        intent: isPingan ? "valuation" : "risk",
+      }),
+    };
+  }));
+
+  renderPage();
+  expect(screen.getByLabelText("历史对话")).toHaveTextContent("新对话");
+  fireEvent.click(screen.getByRole("button", { name: "贵州茅台现在主要风险是什么" }));
+  expect(await screen.findByText("贵州茅台风险来自估值和需求节奏。")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "打开历史对话：贵州茅台现在主要风险是什么" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "新建问股对话" }));
+  expect(screen.queryByText("贵州茅台风险来自估值和需求节奏。")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "平安银行的估值贵不贵" }));
+  expect(await screen.findByText("平安银行估值不贵，但要看息差风险。")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "打开历史对话：平安银行的估值贵不贵" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "打开历史对话：贵州茅台现在主要风险是什么" }));
+
+  expect(screen.getByText("贵州茅台风险来自估值和需求节奏。")).toBeInTheDocument();
+  expect(screen.queryByText("平安银行估值不贵，但要看息差风险。")).not.toBeInTheDocument();
+  expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
+});
+
 it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns", async () => {
   const requests: string[] = [];
   let failed = false;

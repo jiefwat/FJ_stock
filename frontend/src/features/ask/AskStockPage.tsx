@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { ArrowUpRight, MessageSquareText, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowUpRight, History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api, getAuthToken, type AskStockResponse } from "../../lib/api";
@@ -23,6 +23,7 @@ const intentLabel: Record<AskStockResponse["intent"], string> = {
 };
 const storageVersion = 1;
 const maxStoredMessages = 24;
+const maxStoredThreads = 12;
 const followUpPrompts = [
   { label: "继续问估值", question: "那估值呢" },
   { label: "继续问趋势", question: "趋势呢" },
@@ -62,6 +63,8 @@ type AskMessage =
   | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
   | { id: string; role: "assistant"; result: AskStockResponse }
   | { id: string; role: "error"; content: string; retryValue: string };
+type AskThread = { id: string; title: string; updatedAt: number; messages: AskMessage[] };
+type AskThreadState = { activeThreadId: string; threads: AskThread[] };
 
 function messageId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -91,43 +94,218 @@ function shouldCarryStock(question: string, stock: StockAnchor | null) {
   return question.length <= 16 && followUpTopicPattern.test(question);
 }
 
-function storageKey() {
+function legacyStorageKey() {
   const token = getAuthToken();
   return `marketdesk.askStockThread.v${storageVersion}.${token ? token.slice(-16) : "anonymous"}`;
+}
+
+function threadStorageKey() {
+  const token = getAuthToken();
+  return `marketdesk.askStockThreads.v${storageVersion}.${token ? token.slice(-16) : "anonymous"}`;
 }
 
 function canUseSessionStorage() {
   return typeof sessionStorage !== "undefined" && typeof sessionStorage.getItem === "function";
 }
 
-function loadStoredMessages(): AskMessage[] {
+function canUseLocalStorage() {
+  return typeof localStorage !== "undefined" && typeof localStorage.getItem === "function";
+}
+
+function sanitizeMessages(messages: unknown): AskMessage[] {
+  if (!Array.isArray(messages)) return [];
+  return messages.filter((message): message is AskMessage => {
+    if (!message || typeof message !== "object") return false;
+    const candidate = message as { role?: unknown; content?: unknown; result?: unknown; retryValue?: unknown };
+    if (candidate.role === "user") return typeof candidate.content === "string";
+    if (candidate.role === "assistant") return typeof candidate.result === "object" && candidate.result !== null;
+    if (candidate.role === "error") return typeof candidate.content === "string" && typeof candidate.retryValue === "string";
+    return false;
+  }).slice(-maxStoredMessages);
+}
+
+function threadTitle(messages: AskMessage[]) {
+  const firstUser = messages.find((message) => message.role === "user");
+  if (!firstUser || firstUser.role !== "user") return "新对话";
+  return firstUser.content.length > 18 ? `${firstUser.content.slice(0, 18)}…` : firstUser.content;
+}
+
+function threadMeta(thread: AskThread) {
+  const stock = latestStock(thread.messages);
+  if (stock) return stockLabel(stock);
+  const turns = thread.messages.filter((message) => message.role === "assistant").length;
+  return turns > 0 ? `${turns} 条回答` : "未开始";
+}
+
+function createThread(messages: AskMessage[] = []): AskThread {
+  return {
+    id: messageId(),
+    title: threadTitle(messages),
+    updatedAt: Date.now(),
+    messages,
+  };
+}
+
+function loadLegacyMessages(): AskMessage[] {
   if (!canUseSessionStorage()) return [];
   try {
-    const raw = sessionStorage.getItem(storageKey());
+    const raw = sessionStorage.getItem(legacyStorageKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { version?: number; messages?: unknown };
-    if (parsed.version !== storageVersion || !Array.isArray(parsed.messages)) return [];
-    return parsed.messages.filter((message): message is AskMessage => {
-      if (!message || typeof message !== "object") return false;
-      const candidate = message as { role?: unknown; content?: unknown; result?: unknown; retryValue?: unknown };
-      if (candidate.role === "user") return typeof candidate.content === "string";
-      if (candidate.role === "assistant") return typeof candidate.result === "object" && candidate.result !== null;
-      if (candidate.role === "error") return typeof candidate.content === "string" && typeof candidate.retryValue === "string";
-      return false;
-    }).slice(-maxStoredMessages);
+    if (parsed.version !== storageVersion) return [];
+    return sanitizeMessages(parsed.messages);
   } catch {
     return [];
   }
 }
 
-function storeMessages(messages: AskMessage[]) {
-  if (!canUseSessionStorage()) return;
-  const key = storageKey();
-  if (messages.length === 0) {
-    sessionStorage.removeItem(key);
+function loadThreadState(): AskThreadState {
+  if (canUseLocalStorage()) {
+    try {
+      const raw = localStorage.getItem(threadStorageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw) as { version?: number; activeThreadId?: unknown; threads?: unknown };
+        const threads = Array.isArray(parsed.threads)
+          ? parsed.threads.map((item): AskThread | null => {
+            if (!item || typeof item !== "object") return null;
+            const candidate = item as { id?: unknown; title?: unknown; updatedAt?: unknown; messages?: unknown };
+            if (typeof candidate.id !== "string") return null;
+            const messages = sanitizeMessages(candidate.messages);
+            return {
+              id: candidate.id,
+              title: typeof candidate.title === "string" && candidate.title.trim() ? candidate.title : threadTitle(messages),
+              updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : Date.now(),
+              messages,
+            };
+          }).filter((item): item is AskThread => item !== null)
+          : [];
+        if (parsed.version === storageVersion && threads.length > 0) {
+          const activeThreadId = typeof parsed.activeThreadId === "string" && threads.some((thread) => thread.id === parsed.activeThreadId)
+            ? parsed.activeThreadId
+            : threads[0].id;
+          return { activeThreadId, threads };
+        }
+      }
+    } catch {
+      // Ignore malformed local history and fall back to a fresh conversation.
+    }
+  }
+
+  const migrated = loadLegacyMessages();
+  const thread = createThread(migrated);
+  return { activeThreadId: thread.id, threads: [thread] };
+}
+
+function storeThreadState(state: AskThreadState) {
+  if (!canUseLocalStorage()) return;
+  const threads = state.threads
+    .filter((thread) => thread.messages.length > 0 || thread.id === state.activeThreadId)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, maxStoredThreads);
+  localStorage.setItem(threadStorageKey(), JSON.stringify({
+    version: storageVersion,
+    activeThreadId: state.activeThreadId,
+    threads,
+  }));
+}
+
+function trimThreads(threads: AskThread[], activeThreadId: string) {
+  return threads
+    .filter((thread) => thread.messages.length > 0 || thread.id === activeThreadId)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, maxStoredThreads);
+}
+
+function updateThreadMessages(state: AskThreadState, threadId: string, updater: (messages: AskMessage[]) => AskMessage[]) {
+  const fallback = state.threads[0] ?? createThread();
+  const threads = state.threads.map((thread) => {
+    if (thread.id !== threadId) return thread;
+    const messages = updater(thread.messages).slice(-maxStoredMessages);
+    return {
+      ...thread,
+      messages,
+      title: threadTitle(messages),
+      updatedAt: Date.now(),
+    };
+  });
+  if (!threads.some((thread) => thread.id === threadId)) {
+    const messages = updater([]).slice(-maxStoredMessages);
+    threads.push({ ...fallback, id: threadId, messages, title: threadTitle(messages), updatedAt: Date.now() });
+  }
+  return { ...state, threads: trimThreads(threads, state.activeThreadId) };
+}
+
+function activeThreadFrom(state: AskThreadState) {
+  return state.threads.find((thread) => thread.id === state.activeThreadId) ?? state.threads[0] ?? createThread();
+}
+
+function removeLegacyThread() {
+  if (!canUseSessionStorage() || typeof sessionStorage.removeItem !== "function") return;
+  sessionStorage.removeItem(legacyStorageKey());
+}
+
+function clearEmptyDraftThread(state: AskThreadState) {
+  const active = activeThreadFrom(state);
+  if (active.messages.length > 0) return state;
+  const remaining = state.threads.filter((thread) => thread.id !== active.id);
+  if (remaining.length === 0) return state;
+  return { activeThreadId: remaining[0].id, threads: remaining };
+}
+
+function startFreshThread(state: AskThreadState) {
+  const cleaned = clearEmptyDraftThread(state);
+  const thread = createThread();
+  return {
+    activeThreadId: thread.id,
+    threads: trimThreads([thread, ...cleaned.threads], thread.id),
+  };
+}
+
+function resetActiveThread(state: AskThreadState) {
+  const thread = activeThreadFrom(state);
+  if (thread.messages.length === 0) return state;
+  const empty = { ...thread, title: "新对话", updatedAt: Date.now(), messages: [] };
+  return { ...state, threads: trimThreads([empty, ...state.threads.filter((item) => item.id !== thread.id)], thread.id) };
+}
+
+function removeThread(state: AskThreadState, threadId: string) {
+  const remaining = state.threads.filter((thread) => thread.id !== threadId);
+  if (remaining.length === 0) {
+    const thread = createThread();
+    return { activeThreadId: thread.id, threads: [thread] };
+  }
+  const activeThreadId = state.activeThreadId === threadId ? remaining[0].id : state.activeThreadId;
+  return { activeThreadId, threads: remaining };
+}
+
+function restoreThread(state: AskThreadState, threadId: string) {
+  if (!state.threads.some((thread) => thread.id === threadId)) return state;
+  return clearEmptyDraftThread({ ...state, activeThreadId: threadId });
+}
+
+function sortedThreads(threads: AskThread[]) {
+  return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function shouldShowThread(thread: AskThread, activeThreadId: string) {
+  return thread.messages.length > 0 || thread.id === activeThreadId;
+}
+
+function clearStoredThreads() {
+  if (!canUseLocalStorage() || typeof localStorage.removeItem !== "function") return;
+  localStorage.removeItem(threadStorageKey());
+}
+
+function isThreadStateEmpty(state: AskThreadState) {
+  return state.threads.every((thread) => thread.messages.length === 0);
+}
+
+function saveIfUseful(state: AskThreadState) {
+  if (isThreadStateEmpty(state)) {
+    clearStoredThreads();
     return;
   }
-  sessionStorage.setItem(key, JSON.stringify({ version: storageVersion, messages: messages.slice(-maxStoredMessages) }));
+  storeThreadState(state);
 }
 
 function symbolFromCode(value: unknown) {
@@ -244,7 +422,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
 
 export function AskStockPage() {
   const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<AskMessage[]>(() => loadStoredMessages());
+  const [threadState, setThreadState] = useState<AskThreadState>(() => loadThreadState());
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const ask = useMutation({
     mutationFn: (value: string) => api<AskStockResponse>("/api/v1/ask-stock", {
@@ -252,33 +430,50 @@ export function AskStockPage() {
       body: JSON.stringify({ question: value }),
     }),
   });
+  const activeThread = useMemo(() => activeThreadFrom(threadState), [threadState]);
+  const messages = activeThread.messages;
   const activeStock = useMemo(() => latestStock(messages), [messages]);
+  const visibleThreads = useMemo(
+    () => sortedThreads(threadState.threads).filter((thread) => shouldShowThread(thread, threadState.activeThreadId)),
+    [threadState],
+  );
 
   useEffect(() => {
     if (typeof threadEndRef.current?.scrollIntoView === "function") {
       threadEndRef.current.scrollIntoView({ block: "end" });
     }
-  }, [messages, ask.isPending]);
+  }, [activeThread.id, messages, ask.isPending]);
 
   useEffect(() => {
-    storeMessages(messages);
-  }, [messages]);
+    saveIfUseful(threadState);
+    removeLegacyThread();
+  }, [threadState]);
 
   const submitQuestion = async (value: string) => {
     const normalized = value.trim();
     if (normalized.length < 2 || ask.isPending) return;
 
+    const threadId = activeThread.id;
     const carriedStock = shouldCarryStock(normalized, activeStock) ? activeStock : null;
     const requestQuestion = carriedStock ? `${carriedStock.name} ${normalized}` : normalized;
-    setMessages((current) => [...current, { id: messageId(), role: "user", content: normalized, carriedStock }]);
+    setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
+      ...currentMessages,
+      { id: messageId(), role: "user", content: normalized, carriedStock },
+    ]));
     setQuestion("");
 
     try {
       const result = await ask.mutateAsync(requestQuestion);
-      setMessages((current) => [...current, { id: messageId(), role: "assistant", result }]);
+      setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
+        ...currentMessages,
+        { id: messageId(), role: "assistant", result },
+      ]));
     } catch (error) {
       const detail = error instanceof ApiError ? error.detail : "问股请求失败，请稍后重试。";
-      setMessages((current) => [...current, { id: messageId(), role: "error", content: detail, retryValue: requestQuestion }]);
+      setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
+        ...currentMessages,
+        { id: messageId(), role: "error", content: detail, retryValue: requestQuestion },
+      ]));
       setQuestion(value);
     }
   };
@@ -295,7 +490,22 @@ export function AskStockPage() {
   };
 
   const clearThread = () => {
-    setMessages([]);
+    setThreadState((current) => resetActiveThread(current));
+    setQuestion("");
+  };
+
+  const newThread = () => {
+    setThreadState((current) => startFreshThread(current));
+    setQuestion("");
+  };
+
+  const openThread = (threadId: string) => {
+    setThreadState((current) => restoreThread(current, threadId));
+    setQuestion("");
+  };
+
+  const deleteThread = (threadId: string) => {
+    setThreadState((current) => removeThread(current, threadId));
     setQuestion("");
   };
 
@@ -310,6 +520,36 @@ export function AskStockPage() {
           <span><Sparkles size={15} />对话上下文</span>
           <p>{activeStock ? `正在围绕 ${stockLabel(activeStock)} 追问` : "先问一只股票，或直接问“我的持仓里风险最大的是哪个”。"}</p>
         </div>
+        <section className="ask-history" aria-label="历史对话">
+          <header>
+            <span><History size={15} />历史对话</span>
+            <button type="button" onClick={newThread} disabled={ask.isPending} aria-label="新建问股对话"><Plus size={13} />新对话</button>
+          </header>
+          <div>
+            {visibleThreads.map((thread) => (
+              <article className={`ask-history-row ${thread.id === activeThread.id ? "active" : ""}`} key={thread.id}>
+                <button
+                  type="button"
+                  className="ask-history-item"
+                  onClick={() => openThread(thread.id)}
+                  disabled={ask.isPending}
+                  aria-current={thread.id === activeThread.id ? "true" : undefined}
+                  aria-label={`打开历史对话：${thread.title}`}
+                >
+                  <strong>{thread.title}</strong>
+                  <small>{threadMeta(thread)}</small>
+                </button>
+                {thread.messages.length > 0 ? <button
+                  type="button"
+                  className="ask-history-delete"
+                  onClick={() => deleteThread(thread.id)}
+                  disabled={ask.isPending}
+                  aria-label={`删除历史对话：${thread.title}`}
+                >×</button> : null}
+              </article>
+            ))}
+          </div>
+        </section>
         <div className="ask-prompts" aria-label="问题示例">
           {prompts.map((prompt) => <button type="button" key={prompt} onClick={() => void submitQuestion(prompt)} disabled={ask.isPending}>
             <span>{prompt}</span><ArrowUpRight size={14} />
