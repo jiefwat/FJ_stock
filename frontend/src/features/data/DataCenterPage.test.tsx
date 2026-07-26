@@ -16,11 +16,12 @@ it("shows audit timestamps and confirms a manual refresh", async () => {
 
   render(<QueryClientProvider client={client}><DataCenterPage /></QueryClientProvider>);
 
-  expect(await screen.findByText("数据时间")).toBeInTheDocument();
+  expect(await screen.findByText("行情时间")).toBeInTheDocument();
   expect(screen.getByText("语义研究增强未配置不会影响核心行情、机会漏斗、个股价格和跟踪清单。配置后可增强财务、公告、研报与行业信息。")).toBeInTheDocument();
   expect(screen.queryByText(/iWenCai|WenCai|问财/i)).not.toBeInTheDocument();
-  expect(screen.getByText("抓取时间")).toBeInTheDocument();
+  expect(screen.getByText("更新时间")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "刷新核心数据" }));
 
   expect(await screen.findByText(/刷新完成/)).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("更新时间");
 });

@@ -37,12 +37,12 @@ export function DataCenterPage() {
 
   return <>
     <header className="page-head"><div><p className="eyebrow">DATA CENTER / 数据审计</p><h1>先知道数据状态，<br /><em>再相信分析结果。</em></h1></div><button className="button" onClick={() => refresh.mutate()} disabled={refresh.isPending}><RefreshCw size={16} />{refresh.isPending ? "刷新中…" : "刷新核心数据"}</button></header>
-    {refresh.isSuccess && <p className="refresh-result" role="status">刷新完成 · 抓取时间 {time(refresh.data.meta.fetched_at)}</p>}
+    {refresh.isSuccess && <p className="refresh-result" role="status">刷新完成 · 更新时间 {time(refresh.data.meta.fetched_at)}</p>}
     {refresh.isError && <p className="refresh-result error" role="alert">刷新失败，已保留上一份有效快照，请稍后重试。</p>}
     <section className="provider-grid">{query.data && Object.entries(query.data.providers).map(([name, provider]) => <article key={name}><span className={`provider-status ${provider.status}`} /><div><strong>{providerLabel[name] ?? name}</strong><small>{provider.description ?? (provider.required ? "核心数据源" : "可选增强")}{provider.error ? ` · ${provider.error}` : ""}</small></div><b>{provider.status.replaceAll("_", " ")}</b></article>)}</section>
     {snapshot && <section className="audit-grid">
-      <article><span>数据时间</span><strong>{time(snapshot.observed_at)}</strong><small>行情所代表的市场时点</small></article>
-      <article><span>抓取时间</span><strong>{time(snapshot.fetched_at)}</strong><small>本地最后成功获取时间</small></article>
+      <article><span>行情时间</span><strong>{time(snapshot.observed_at)}</strong><small>行情所代表的市场时点，非交易日会停在最近收盘</small></article>
+      <article><span>更新时间</span><strong>{time(snapshot.fetched_at)}</strong><small>本地最后成功获取行情的时间</small></article>
       <article><span>新鲜度</span><strong>{freshnessLabel[snapshot.freshness] ?? snapshot.freshness}</strong><small>{snapshot.freshness === "stale" ? "正在使用缓存" : "状态来自标准化契约"}</small></article>
       <article><span>字段覆盖</span><strong>{percent(snapshot.coverage * 100, 1)}</strong><small>核心字段非空比例</small></article>
     </section>}

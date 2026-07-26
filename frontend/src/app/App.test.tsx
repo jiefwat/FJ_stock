@@ -159,6 +159,44 @@ it("restores a valid session and removes the shell on logout", async () => {
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
 });
 
+it("shows market observation time separately from the latest refresh time", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-refresh");
+  let refreshed = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 9, email: "refresh@example.com", display_name: "Refresh User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    if (url.includes("/api/v1/refresh") && init?.method === "POST") {
+      refreshed = true;
+      return { ok: true, status: 200, json: async () => ({ status: "ok", meta: { ...today.meta, fetched_at: "2030-01-02T03:04:05Z" } }) };
+    }
+    if (url.includes("/api/v1/market-events")) {
+      return { ok: true, status: 200, json: async () => events };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...today,
+        meta: { ...today.meta, fetched_at: refreshed ? "2030-01-02T03:04:05Z" : today.meta.fetched_at },
+      }),
+    };
+  }));
+
+  render(<App />);
+
+  expect(await screen.findByText(/行情时间/)).toBeInTheDocument();
+  expect(screen.getByText(/更新/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+
+  await waitFor(() => expect(screen.getByText(/2030/)).toBeInTheDocument());
+  expect(screen.getByText(/行情时间/)).toBeInTheDocument();
+});
+
 it("keeps the Ask Stock route behind the authenticated shell", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-ask-route");
   window.location.hash = "#/ask";

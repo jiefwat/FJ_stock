@@ -630,3 +630,15 @@ Release `20260726-204031-2b6e17f` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-followup-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-26 Refresh Timestamp Clarity
+
+The top timestamp chip now separates `行情时间` from `更新`, using `observed_at` for the market session represented by the quotes and `fetched_at` for the latest successful local refresh. This avoids making a weekend or post-close snapshot look stale just because the latest market session remains the previous trading day's 15:00 close.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| App shell timestamp test | Passed: the authenticated Today route renders both `行情时间` and `更新`, and a manual refresh changes the displayed update year to `2030` in the fixture |
+| Data Center timestamp test | Passed: the audit grid uses `行情时间` and `更新时间`, and manual refresh status reports `更新时间` |
+| `make verify` | Passed: 111 backend tests, 36 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |

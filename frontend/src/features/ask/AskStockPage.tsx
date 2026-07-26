@@ -221,7 +221,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
       </div>
       <div className="ask-provenance">
         <span>{result.source}</span>
-        <small>数据时间 {observedTime(result.observed_at)}</small>
+        <small>行情时间 {observedTime(result.observed_at)}</small>
         {result.symbol ? <a className="ask-stock-link" href={`#/stocks?symbol=${encodeURIComponent(result.symbol)}`}>打开个股研究</a> : null}
       </div>
     </header>
