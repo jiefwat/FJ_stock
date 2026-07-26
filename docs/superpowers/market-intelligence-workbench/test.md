@@ -600,3 +600,20 @@ Release `20260726-134428-fb7d4c8` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
 | Service and data boundary | `/opt/aster-market/current` pointed to the new release, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-rebalance-%@marketdesk.local` and `codex-rebalance-ui-%@marketdesk.local` users and holdings were removed from the production database |
+
+## 2026-07-26 Ask Stock Follow-up Context And Neutral Provider Copy
+
+Ask Stock now carries the previous single-stock context for natural follow-up questions such as `你觉得多少合理`, `目标价多少`, `还能买吗`, and `要不要卖`, while still not carrying context for portfolio questions or broad screening-style queries such as `低估值白酒股`. User-facing copy no longer exposes the optional semantic provider name; the page and API use `条件选股增强` instead.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 10 API ask-stock tests, including neutral provider success and unavailable messages |
+| Focused frontend Ask tests | Passed: 10 tests, including `贵州茅台` followed by `你觉得多少合理` carrying `SH.600519` context |
+| `make verify` | Passed: 111 backend tests, 35 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+Regression details:
+
+- The frontend request sequence for the natural follow-up is now `贵州茅台现在主要风险是什么` then `贵州茅台 你觉得多少合理`.
+- Error and success states assert that `问财` is absent from rendered Ask Stock UI.

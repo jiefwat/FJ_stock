@@ -533,12 +533,15 @@ def test_ask_stock_uses_optional_semantic_screen(tmp_path) -> None:
     payload = response.json()
     assert payload["kind"] == "semantic_screen"
     assert payload["intent"] == "screening"
+    assert payload["answer"] == "条件选股增强返回 1 个候选结果。"
+    assert payload["source"] == "条件选股增强（可选）"
     assert payload["metrics"] == [
         {"label": "候选数量", "value": "1", "tone": "neutral"},
-        {"label": "增强来源", "value": "问财", "tone": "neutral"},
+        {"label": "增强来源", "value": "条件选股", "tone": "neutral"},
     ]
     assert payload["columns"] == ["股票代码", "股票简称", "市盈率"]
     assert payload["rows"][0]["股票代码"] == "600519"
+    assert "问财" not in str(payload)
 
 
 def test_ask_stock_semantic_unavailable_does_not_break_market(tmp_path) -> None:
@@ -547,7 +550,8 @@ def test_ask_stock_semantic_unavailable_does_not_break_market(tmp_path) -> None:
     response = api.post("/api/v1/ask-stock", json={"question": "低估值白酒股"})
 
     assert response.status_code == 503
-    assert "股票名称或代码" in response.json()["detail"]
+    assert response.json()["detail"] == "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"
+    assert "问财" not in response.json()["detail"]
     assert api.get("/api/v1/today").status_code == 200
 
 

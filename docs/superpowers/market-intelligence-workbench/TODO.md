@@ -65,3 +65,4 @@
 - [x] Refactor Ask Stock into stock, holding-context, and portfolio-analysis answer paths without cross-account leakage.
 - [x] Add portfolio concentration, sector concentration, target-drift, and risk-record diagnostics to Ask Stock.
 - [x] Generate account-scoped Ask Stock rebalance plans with target drift, adjustment value, shares, and priority.
+- [x] Carry single-stock Ask follow-up context for natural questions and hide provider branding from user-facing messages.

@@ -422,7 +422,7 @@ def create_app(
         except ProviderUnavailable as error:
             raise HTTPException(
                 status_code=503,
-                detail="问财筛选暂不可用，请在问题中包含一个 A 股股票名称或代码。",
+                detail="条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。",
             ) from error
 
     @app.get("/api/v1/data-status")
