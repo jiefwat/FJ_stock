@@ -71,6 +71,9 @@ def is_portfolio_question(question: str) -> bool:
         "仓位里",
         "我持有",
         "我买的",
+        "调仓",
+        "再平衡",
+        "仓位调整",
     )
     return any(keyword in normalized for keyword in keywords)
 
@@ -97,6 +100,27 @@ def is_portfolio_diagnostic_question(question: str) -> bool:
         "分散",
         "配置",
         "调仓",
+    )
+    return any(keyword in normalized for keyword in keywords)
+
+
+def is_rebalance_plan_question(question: str) -> bool:
+    normalized = _compact(question)
+    if not is_portfolio_question(normalized):
+        return False
+    keywords = (
+        "调仓计划",
+        "生成调仓",
+        "怎么调仓",
+        "如何调仓",
+        "调仓",
+        "再平衡",
+        "仓位调整",
+        "调整仓位",
+        "目标仓位",
+        "减到",
+        "加到",
+        "补到",
     )
     return any(keyword in normalized for keyword in keywords)
 
@@ -211,12 +235,18 @@ def build_portfolio_answer(
     observed_at: datetime,
     focus_symbol: str | None = None,
 ) -> AskStockResponse:
+    rebalance_mode = is_rebalance_plan_question(question)
     if not holdings:
+        empty_answer = (
+            "当前账户没有持仓记录，无法生成调仓计划。先在持仓页录入股票、成本、目标仓位后再问调仓。"
+            if rebalance_mode
+            else "当前账户没有持仓记录，无法生成组合风险排序。先在持仓页录入股票、成本、目标仓位后再问组合问题。"
+        )
         return AskStockResponse(
             kind="portfolio_analysis",
             question=" ".join(question.split()),
             intent="portfolio",
-            answer="当前账户没有持仓记录，无法生成组合风险排序。先在持仓页录入股票、成本、目标仓位后再问组合问题。",
+            answer=empty_answer,
             evidence=["账户持仓为空，未使用默认账户或其他用户数据。"],
             risks=["缺少个人持仓上下文"],
             next_actions=["在持仓页新增至少一条持仓", "录入成本价、目标仓位、持仓逻辑和失效条件"],
@@ -231,6 +261,7 @@ def build_portfolio_answer(
         )
 
     ranked = sorted(holdings, key=_holding_risk_score, reverse=True)
+    plan_rows = sorted(holdings, key=_rebalance_priority, reverse=True)
     total_value = sum(item.market_value or 0 for item in holdings)
     concentration = _portfolio_concentration(holdings)
     risky = sum(1 for item in holdings if item.risk_flags)
@@ -238,7 +269,17 @@ def build_portfolio_answer(
     overweight = sum(1 for item in holdings if item.drift is not None and item.drift > 0.1)
     missing_invalidation = sum(1 for item in holdings if not item.item.invalidation.strip())
     focused = next((item for item in holdings if item.item.symbol == focus_symbol), None)
-    if focus_symbol and focused is None:
+    actionable = sum(1 for item in holdings if _rebalance_abs_value(item) >= 1_000)
+    net_rebalance = sum(item.rebalance_value or 0 for item in holdings)
+    if rebalance_mode:
+        priority = plan_rows[0]
+        answer = (
+            f"调仓计划先处理 {priority.item.name}（{priority.item.symbol}）："
+            f"当前占比 {_percent(priority.portfolio_weight)}，目标 {_percent(priority.item.target_weight)}，"
+            f"偏离金额 {_money(priority.rebalance_value)}，建议股数 {_signed_shares(priority.rebalance_quantity)}。"
+            f"全组合共有 {actionable} 个持仓偏离金额超过 1,000 元。"
+        )
+    elif focus_symbol and focused is None:
         answer = (
             f"当前账户没有 {focus_symbol} 的持仓记录；组合诊断仍按你的账户现有持仓生成，"
             f"最需要先复核的是 {top.item.name}（{top.item.symbol}）。"
@@ -260,6 +301,11 @@ def build_portfolio_answer(
         f"{answer} 最大单票占比 {concentration['max_weight_text']}，"
         f"最高行业集中在 {concentration['top_sector_text']}。"
     )
+    next_actions = (
+        _rebalance_next_actions(plan_rows)
+        if rebalance_mode
+        else _unique(action for item in ranked[:3] for action in item.next_actions)[:5]
+    )
     return AskStockResponse(
         kind="portfolio_analysis",
         question=" ".join(question.split()),
@@ -272,10 +318,26 @@ def build_portfolio_answer(
             *[item.conclusion for item in ranked[:3]],
         ][:5],
         risks=_unique(flag for item in ranked for flag in item.risk_flags)[:5],
-        next_actions=_unique(action for item in ranked[:3] for action in item.next_actions)[:5],
+        next_actions=next_actions,
         metrics=[
             AskStockMetric(label="持仓数量", value=str(len(holdings)), tone="neutral"),
             AskStockMetric(label="总市值", value=_money(total_value or None), tone="neutral"),
+            *(
+                [
+                    AskStockMetric(
+                        label="需调仓",
+                        value=str(actionable),
+                        tone="negative" if actionable else "positive",
+                    ),
+                    AskStockMetric(
+                        label="净调整",
+                        value=_money(net_rebalance),
+                        tone=_rebalance_tone(net_rebalance),
+                    ),
+                ]
+                if rebalance_mode
+                else []
+            ),
             AskStockMetric(
                 label="最大单票",
                 value=concentration["max_weight_text"],
@@ -298,9 +360,40 @@ def build_portfolio_answer(
             risky=risky,
             overweight=overweight,
             missing_invalidation=missing_invalidation,
+            actionable=actionable,
+            rebalance_mode=rebalance_mode,
         ),
-        rows=[_holding_row(item) for item in ranked[:8]],
-        columns=["股票代码", "股票简称", "行业", "组合占比", "目标仓位", "偏离", "盈亏", "动作", "风险"],
+        rows=[
+            _rebalance_row(item) if rebalance_mode else _holding_row(item)
+            for item in (plan_rows if rebalance_mode else ranked)[:8]
+        ],
+        columns=(
+            [
+                "股票代码",
+                "股票简称",
+                "行业",
+                "组合占比",
+                "目标仓位",
+                "偏离",
+                "偏离金额",
+                "建议股数",
+                "优先级",
+                "动作",
+                "风险",
+            ]
+            if rebalance_mode
+            else [
+                "股票代码",
+                "股票简称",
+                "行业",
+                "组合占比",
+                "目标仓位",
+                "偏离",
+                "盈亏",
+                "动作",
+                "风险",
+            ]
+        ),
         observed_at=observed_at,
         source="账户持仓 + 本地行情快照 + 确定性分析",
         disclaimer="研究辅助信息，不构成投资建议。",
@@ -383,6 +476,23 @@ def _money(value: float | None) -> str:
     if abs(value) >= 10_000:
         return f"{value / 10_000:.0f} 万"
     return f"{value:.0f}"
+
+
+def _signed_money(value: float | None) -> str:
+    if value is None:
+        return "—"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{_money(value)}"
+
+
+def _signed_shares(value: float | None) -> str:
+    if value is None:
+        return "—"
+    shares = round(value)
+    if shares == 0:
+        return "0 股"
+    sign = "+" if shares > 0 else ""
+    return f"{sign}{shares:g} 股"
 
 
 def _stock_metrics(dossier: StockDossier, holding: HoldingDossier | None) -> list[AskStockMetric]:
@@ -487,6 +597,22 @@ def _holding_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
     }
 
 
+def _rebalance_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
+    return {
+        "股票代码": holding.item.symbol,
+        "股票简称": holding.item.name,
+        "行业": holding.quote.sector or "待补",
+        "组合占比": _percent(holding.portfolio_weight),
+        "目标仓位": _percent(holding.item.target_weight),
+        "偏离": _signed_percent(holding.drift),
+        "偏离金额": _signed_money(holding.rebalance_value),
+        "建议股数": _signed_shares(holding.rebalance_quantity),
+        "优先级": _rebalance_priority_label(holding),
+        "动作": holding.action,
+        "风险": "；".join(holding.risk_flags) if holding.risk_flags else "未触发",
+    }
+
+
 def _portfolio_concentration(holdings: list[HoldingDossier]) -> PortfolioConcentration:
     weighted = [item for item in holdings if item.portfolio_weight is not None]
     max_holding = max(weighted, key=lambda item: item.portfolio_weight or 0, default=None)
@@ -521,10 +647,12 @@ def _portfolio_factors(
     risky: int,
     overweight: int,
     missing_invalidation: int,
+    actionable: int,
+    rebalance_mode: bool,
 ) -> list[AskStockFactor]:
     max_weight = concentration["max_weight"]
     top_sector_weight = concentration["top_sector_weight"]
-    return [
+    factors = [
         AskStockFactor(
             label="最大单票集中度",
             impact=-10 if max_weight > 0.35 else 3,
@@ -556,6 +684,56 @@ def _portfolio_factors(
             evidence=f"{risky} 个持仓触发风险旗标。",
         ),
     ]
+    if rebalance_mode:
+        factors.insert(
+            0,
+            AskStockFactor(
+                label="调仓执行量",
+                impact=-6 if actionable else 3,
+                signal="negative" if actionable else "positive",
+                evidence=f"{actionable} 个持仓偏离金额超过 1,000 元，建议先处理高优先级项。",
+            ),
+        )
+    return factors[:12]
+
+
+def _rebalance_abs_value(holding: HoldingDossier) -> float:
+    return abs(holding.rebalance_value or 0.0)
+
+
+def _rebalance_priority(holding: HoldingDossier) -> float:
+    return _rebalance_abs_value(holding) + _holding_risk_score(holding) * 500
+
+
+def _rebalance_priority_label(holding: HoldingDossier) -> str:
+    value = _rebalance_abs_value(holding)
+    if value >= 20_000 or holding.risk_flags:
+        return "高"
+    if value >= 5_000:
+        return "中"
+    return "低"
+
+
+def _rebalance_tone(value: float | None) -> AskStockMetricTone:
+    if value is None:
+        return "missing"
+    if abs(value) < 1_000:
+        return "positive"
+    return "negative"
+
+
+def _rebalance_next_actions(holdings: list[HoldingDossier]) -> list[str]:
+    actions = []
+    for item in holdings[:3]:
+        shares = _signed_shares(item.rebalance_quantity)
+        if item.rebalance_value is None or abs(item.rebalance_value) < 1_000:
+            actions.append(f"{item.item.name} 接近目标仓位，暂不因微小偏离交易")
+        elif item.rebalance_value < 0:
+            actions.append(f"{item.item.name} 优先减仓 {shares}，先把单票/目标偏离降下来")
+        else:
+            actions.append(f"{item.item.name} 可补仓 {shares}，但需先确认个股证据未恶化")
+    actions.append("调仓前核对流动性、失效条件和是否触发止损，不按表格机械交易")
+    return _unique(actions)[:5]
 
 
 def _unique(values: Iterable[object]) -> list[str]:

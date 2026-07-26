@@ -420,6 +420,85 @@ def test_ask_stock_named_portfolio_diagnostic_uses_current_account_holdings(tmp_
     assert payload_b["rows"] == []
 
 
+def test_ask_stock_generates_account_scoped_rebalance_plan(tmp_path) -> None:
+    service = MarketService(
+        provider=EquityBrowserProvider(), store=Store(tmp_path / "ask-rebalance-plan.db")
+    )
+    api_a = authenticated_client(service, "rebalance-a@example.com")
+    api_b = authenticated_client(service, "rebalance-b@example.com")
+    for payload in (
+        {
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 10,
+            "cost_price": 1700,
+            "target_weight": 0.2,
+            "thesis": "白酒龙头",
+            "invalidation": "跌破支撑",
+        },
+        {
+            "symbol": "SZ.000001",
+            "name": "平安银行",
+            "quantity": 1000,
+            "cost_price": 12,
+            "target_weight": 0.5,
+            "thesis": "低估值银行",
+            "invalidation": "净息差继续下行",
+        },
+        {
+            "symbol": "BJ.430047",
+            "name": "诺思兰德",
+            "quantity": 1000,
+            "cost_price": 13,
+            "target_weight": 0.3,
+            "thesis": "北交所成长观察",
+            "invalidation": "成交萎缩",
+        },
+    ):
+        assert api_a.post("/api/v1/holdings", json=payload).status_code == 201
+
+    response_a = api_a.post("/api/v1/ask-stock", json={"question": "帮我生成调仓计划"})
+    response_b = api_b.post("/api/v1/ask-stock", json={"question": "帮我生成调仓计划"})
+
+    assert response_a.status_code == 200
+    payload_a = response_a.json()
+    assert payload_a["kind"] == "portfolio_analysis"
+    assert "调仓计划先处理" in payload_a["answer"]
+    assert "建议股数" in payload_a["answer"]
+    assert [item["label"] for item in payload_a["metrics"]] == [
+        "持仓数量",
+        "总市值",
+        "需调仓",
+        "净调整",
+        "最大单票",
+        "行业集中",
+        "风险持仓",
+        "最需复核",
+    ]
+    assert payload_a["columns"] == [
+        "股票代码",
+        "股票简称",
+        "行业",
+        "组合占比",
+        "目标仓位",
+        "偏离",
+        "偏离金额",
+        "建议股数",
+        "优先级",
+        "动作",
+        "风险",
+    ]
+    assert payload_a["rows"][0]["优先级"] == "高"
+    assert any(item["label"] == "调仓执行量" for item in payload_a["factors"])
+    assert any("不按表格机械交易" in item for item in payload_a["next_actions"])
+
+    assert response_b.status_code == 200
+    payload_b = response_b.json()
+    assert payload_b["kind"] == "portfolio_analysis"
+    assert payload_b["metrics"][0] == {"label": "持仓数量", "value": "0", "tone": "missing"}
+    assert payload_b["rows"] == []
+
+
 def test_ask_stock_validates_question_length(tmp_path) -> None:
     api = client(tmp_path)
     assert api.post("/api/v1/ask-stock", json={"question": " "}).status_code == 422

@@ -9,6 +9,7 @@ const prompts = [
   "600519 的技术趋势怎么样",
   "平安银行的估值贵不贵",
   "我的持仓里风险最大的是哪个",
+  "帮我生成调仓计划",
 ];
 
 const intentLabel: Record<AskStockResponse["intent"], string> = {

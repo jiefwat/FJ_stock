@@ -244,6 +244,47 @@ it("renders portfolio analysis rows with Stock Lab links", async () => {
   expect(screen.getByRole("cell", { name: "亏损超过 10%" })).toBeInTheDocument();
 });
 
+it("renders rebalance plan rows and priority evidence", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ...stockAnswer,
+      kind: "portfolio_analysis",
+      intent: "portfolio",
+      symbol: null,
+      name: null,
+      answer: "调仓计划先处理 贵州茅台（SH.600519）：当前占比 54%，目标 20%，偏离金额 -1.0 万，建议股数 -8 股。",
+      source: "账户持仓 + 本地行情快照 + 确定性分析",
+      metrics: [
+        { label: "持仓数量", value: "3", tone: "neutral" },
+        { label: "总市值", value: "2 万", tone: "neutral" },
+        { label: "需调仓", value: "3", tone: "negative" },
+        { label: "净调整", value: "0", tone: "positive" },
+        { label: "最大单票", value: "54%", tone: "negative" },
+        { label: "行业集中", value: "54%", tone: "negative" },
+        { label: "风险持仓", value: "3", tone: "negative" },
+        { label: "最需复核", value: "贵州茅台", tone: "negative" },
+      ],
+      factors: [
+        { label: "调仓执行量", impact: -6, signal: "negative", evidence: "3 个持仓偏离金额超过 1,000 元。" },
+      ],
+      columns: ["股票代码", "股票简称", "行业", "组合占比", "目标仓位", "偏离", "偏离金额", "建议股数", "优先级", "动作", "风险"],
+      rows: [{ 股票代码: "SH.600519", 股票简称: "贵州茅台", 行业: "白酒", 组合占比: "54%", 目标仓位: "20%", 偏离: "+33.9%", 偏离金额: "-1.0 万", 建议股数: "-8 股", 优先级: "高", 动作: "exit_watch", 风险: "组合占比高于目标" }],
+    }),
+  })));
+
+  renderPage();
+  fireEvent.click(screen.getByRole("button", { name: "帮我生成调仓计划" }));
+
+  expect(await screen.findByText(/调仓计划先处理/)).toBeInTheDocument();
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("需调仓3");
+  expect(screen.getByRole("columnheader", { name: "建议股数" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "-8 股" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "高" })).toBeInTheDocument();
+  expect(screen.getByText("调仓执行量")).toBeInTheDocument();
+});
+
 it("renders bounded semantic screening rows", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: true,

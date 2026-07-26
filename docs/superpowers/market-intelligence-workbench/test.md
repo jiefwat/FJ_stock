@@ -570,3 +570,19 @@ Verification evidence:
 | `make verify` | Passed: 110 backend tests, 33 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
 
 Local API regression created Account A with three holdings across `SH.600519`, `SZ.000001`, and `BJ.430047`; `我的持仓里贵州茅台占比是不是太高` returned `kind=portfolio_analysis`, named `SH.600519` in the answer, exposed metrics for `最大单票` and `行业集中`, and returned rows with `行业`, `目标仓位`, and `偏离`. Account B asked the same question and received `持仓数量=0` with no rows, proving the diagnostic still does not fall back to default-owner data.
+
+## 2026-07-26 Ask Stock Rebalance Plan
+
+Ask Stock now treats questions such as `帮我生成调仓计划`, `组合怎么调仓`, and `仓位调整` as account-scoped portfolio questions even when no stock name is present. The response uses existing holding analysis to build a deterministic rebalance plan with target-weight drift, adjustment value, suggested shares, priority, and guardrail next actions.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused backend Ask tests | Passed: 24 ask-stock tests, including rebalance intent detection, account-scoped plan rows, and empty-account isolation |
+| Focused frontend Ask tests | Passed: 9 tests, including the new quick prompt, rebalance metrics, suggested-share column, and priority cells |
+| Backend ruff and mypy | Passed: 21 source files, no lint findings |
+| Frontend typecheck | Passed |
+| `make verify` | Passed: 111 backend tests, 34 frontend tests, production build, live data 5,530 equities, 6 indices, 100 sectors |
+
+Local API regression created Account A with three holdings and asked `帮我生成调仓计划`; the API returned `kind=portfolio_analysis`, metrics `需调仓` and `净调整`, columns `偏离金额`, `建议股数`, and `优先级`, a high-priority first row, and a guardrail reminding the user not to trade mechanically from the table. Account B asked the same question and received `持仓数量=0` with no rows.
