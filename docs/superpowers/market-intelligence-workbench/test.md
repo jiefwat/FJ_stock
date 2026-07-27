@@ -718,3 +718,15 @@ Release `20260727-115819-e9d9dbf` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Frontend asset | Current JS asset contained `可能暂不参与`, `高风险线索`, `为什么是这个建议`, and `来自机会选股的研究线索` |
 | Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-115819-e9d9dbf`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-prejudge-%@marketdesk.local` user was removed from the production database |
+
+## 2026-07-27 Stock Lab Opportunity Review Outcome
+
+When a user opens Stock Lab from an Opportunity lead, the dossier now shows a `线索复核结果` block after the stock hero and before the direct advice. The block translates the final direct advice into a path-aware outcome: upgraded to trial, watch-only, or not upgraded to participation.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend Stock Lab test | Passed: 9 StockLabPage tests, including the new `线索仅保留观察` review outcome for an Opportunity-sourced dossier |
+| Frontend typecheck | Passed after adding the review outcome component |
+| `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |

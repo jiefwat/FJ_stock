@@ -233,6 +233,27 @@ function InvestmentAdvicePanel({ advice }: { advice: InvestmentAdvice }) {
   </section>;
 }
 
+function OpportunityReviewOutcome({ advice }: { advice: InvestmentAdvice }) {
+  const upgraded = advice.action === "可小仓试错";
+  const watchOnly = advice.action === "持有观察" || advice.action === "等待回踩";
+  const verdict = upgraded ? "线索已升级为可试错" : watchOnly ? "线索仅保留观察" : "线索未升级为参与";
+  const tone = upgraded ? "positive" : watchOnly ? "caution" : "negative";
+  const reason = advice.rationale[0] ?? advice.position_hint;
+
+  return <section className={`opportunity-review-outcome ${tone}`} aria-label="线索复核结果">
+    <div>
+      <span>线索复核结果</span>
+      <strong>{verdict}</strong>
+      <p>机会页只说明它值得进入短名单；当前直接建议是 <b>{advice.action}</b>。</p>
+    </div>
+    <ol>
+      <li>{advice.position_hint}</li>
+      <li>{reason}</li>
+      <li>若证据账本继续转弱，以失效条件为准，不因为曾入选线索而参与。</li>
+    </ol>
+  </section>;
+}
+
 function TrendForecastPanel({ forecast }: { forecast: TrendForecast }) {
   return <section className="trend-forecast-panel" aria-label="未来趋势判断">
     <article className="trend-forecast-verdict">
@@ -362,6 +383,7 @@ export function StockLabPage() {
         <div><span>{query.data.quote.symbol} · {query.data.quote.sector ?? "行业待补"}</span><h2>{query.data.quote.name}</h2><p>{fmt(query.data.quote.price)} <b className={(query.data.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(query.data.quote.change_pct)}</b></p></div>
         <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}</div>
       </section>
+      {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
       <SignalValidationPanel validation={query.data.signal_validation} />

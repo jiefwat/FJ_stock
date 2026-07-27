@@ -105,6 +105,11 @@ it("explains when a stock dossier is opened from opportunity leads", async () =>
   expect(sourceNote.getByText(/线索页只负责短名单排序/)).toBeInTheDocument();
   expect(sourceNote.getByText(/直接建议和证据账本才用于判断是否参与/)).toBeInTheDocument();
   expect(sourceNote.getByText("来源策略：趋势延续")).toBeInTheDocument();
+  const reviewOutcome = within(await screen.findByLabelText("线索复核结果"));
+  expect(reviewOutcome.getByText("线索仅保留观察")).toBeInTheDocument();
+  expect(reviewOutcome.getByText(/当前直接建议是/)).toBeInTheDocument();
+  expect(reviewOutcome.getByText("等待回踩")).toBeInTheDocument();
+  expect(reviewOutcome.getByText(/不因为曾入选线索而参与/)).toBeInTheDocument();
   expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
 });
 
