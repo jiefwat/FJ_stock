@@ -730,3 +730,15 @@ Verification evidence:
 | Focused frontend Stock Lab test | Passed: 9 StockLabPage tests, including the new `线索仅保留观察` review outcome for an Opportunity-sourced dossier |
 | Frontend typecheck | Passed after adding the review outcome component |
 | `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |
+
+### Production smoke
+
+Release `20260727-120614-677bb2e` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health | Public `/healthz` returned `{"status":"ok"}` |
+| Stock API | Authenticated `SH.600519` dossier returned action `持有观察` with 4 rationale items |
+| Frontend asset | Current JS asset contained `线索复核结果`, `线索仅保留观察`, `线索未升级为参与`, and `不因为曾入选线索而参与` |
+| Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-120614-677bb2e`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-review-outcome-%@marketdesk.local` user was removed from the production database |
