@@ -754,3 +754,15 @@ Verification evidence:
 | Focused frontend Opportunities test | Passed: 2 OpportunitiesPage tests, including layer counts, `优先复核` filtering, `可能暂不参与` filtering, and source link preservation into Stock Lab |
 | Frontend typecheck | Passed after adding memoized lead-layer counts and visible candidate filtering |
 | `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |
+
+### Production smoke
+
+Release `20260727-122335-e0822be` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health | Public `/healthz` returned `{"status":"ok"}` |
+| Opportunity API | Authenticated `trend` request returned `available=true`, 494 ranked leads, and 50 candidate cards |
+| Frontend asset | Current JS asset `/assets/index-4iBx8lBc.js` contained `线索分层筛选`, `全部线索`, `优先复核`, `高风险线索`, and the empty-layer copy |
+| Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-122335-e0822be`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-lead-layer-%@marketdesk.local` users were removed from the production database |
