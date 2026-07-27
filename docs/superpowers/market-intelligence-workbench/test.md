@@ -706,3 +706,15 @@ Verification evidence:
 | Focused frontend Opportunities and Stock Lab tests | Passed: 11 tests, including the `可能暂不参与` lead badge and `为什么是这个建议` rationale block |
 | Frontend typecheck | Passed after the lead badge and advice-rationale UI changes |
 | `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |
+
+### Production smoke
+
+Release `20260727-115819-e9d9dbf` was deployed to `stock.jiewat-kaka-fj.com`, linked from `/opt/aster-market/current`, and activated by `stock-ts.service`.
+
+| Check | Production result |
+| --- | --- |
+| Health | Public `/healthz` returned `{"status":"ok"}` |
+| Opportunity API semantics | Authenticated `trend` request returned `available=true`, 494 ranked leads, and response text included `线索策略`, `筛出线索`, and `是否参与以个股证据账本为准` |
+| Frontend asset | Current JS asset contained `可能暂不参与`, `高风险线索`, `为什么是这个建议`, and `来自机会选股的研究线索` |
+| Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-115819-e9d9dbf`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
+| Cleanup | Temporary `codex-prejudge-%@marketdesk.local` user was removed from the production database |
