@@ -74,3 +74,4 @@
 - [x] Add opportunity lead pre-judgement badges so users can see likely review risk before opening Stock Lab.
 - [x] Move the top three Stock Lab advice reasons directly under the direct suggestion.
 - [x] Add a Stock Lab opportunity-review outcome so leads explicitly upgrade, stay watch-only, or fail participation review.
+- [x] Add Opportunity lead-layer filtering so users can focus on priority, watch-only, or high-risk leads.

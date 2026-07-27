@@ -742,3 +742,15 @@ Release `20260727-120614-677bb2e` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Frontend asset | Current JS asset contained `线索复核结果`, `线索仅保留观察`, `线索未升级为参与`, and `不因为曾入选线索而参与` |
 | Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-120614-677bb2e`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-review-outcome-%@marketdesk.local` user was removed from the production database |
+
+## 2026-07-27 Opportunity Lead Layer Filtering
+
+Opportunities now keeps the existing research-lead card layout but adds a compact lead-layer filter above the candidate list. Users can jump between `全部线索`, `优先复核`, `待复核`, `可能暂不参与`, and `高风险线索` without changing strategy presets, so the page better matches the earlier rule that opportunity output is a lead queue, not an automatic participation list.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend Opportunities test | Passed: 2 OpportunitiesPage tests, including layer counts, `优先复核` filtering, `可能暂不参与` filtering, and source link preservation into Stock Lab |
+| Frontend typecheck | Passed after adding memoized lead-layer counts and visible candidate filtering |
+| `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |

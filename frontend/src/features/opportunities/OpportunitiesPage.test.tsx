@@ -44,6 +44,21 @@ it("shows professional strategy diagnostics and candidate decision cards", async
         invalidation: ["跌回策略涨幅区间外", "成交额低于策略门槛"],
         next_actions: ["打开个股证据账本复核均线与资金", "加入跟踪前写清关注理由"],
         risk_flags: ["市场偏弱"],
+      }, {
+        quote: { symbol: "SZ.300750", code: "300750", name: "宁德时代", price: 218.6, change_pct: 4.1, amount: 12800000000, turnover_rate: 3.8, volume_ratio: 1.9, pe: 24, pb: 4.2, market_cap: 950000000000, net_flow: 690000000, sector: "电池" },
+        base_score: 88,
+        context_penalty: 0,
+        score: 88,
+        evidence_coverage: 0.86,
+        components: [{ key: "trend", label: "价格趋势", raw_value: 4.1, score: 89, weight: 0.25, weighted_score: 22.25 }],
+        dimensions: [
+          { key: "trigger", label: "触发逻辑", signal: "positive", score: 88, summary: "趋势和成交同步改善", evidence: ["涨幅 4.1%", "成交额 128 亿"] },
+          { key: "risk_control", label: "风险控制", signal: "positive", score: 68, summary: "环境没有扣分", evidence: ["环境扣分 0"] },
+        ],
+        thesis: "趋势延续线索：价格和资金同步走强；是否参与以个股证据账本为准。",
+        invalidation: ["放量失败", "跌回策略涨幅区间外"],
+        next_actions: ["打开个股证据账本复核均线与资金"],
+        risk_flags: [],
       }],
       excluded: [{ reasons: ["strategy_mismatch"] }],
     }),
@@ -56,21 +71,35 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getByText(/候选线索，不是参与建议/)).toBeInTheDocument();
   expect(screen.getAllByText(/是否参与以个股证据账本为准/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("待复核线索")).toBeInTheDocument();
-  expect(screen.getByText("可能暂不参与")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /全部线索\s*2/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /优先复核\s*1/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /可能暂不参与\s*1/ })).toBeInTheDocument();
+  expect(screen.getAllByText("可能暂不参与").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("优先复核").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText(/市场或风险收益可能压低最终建议/)).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
+  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
   expect(screen.getByText("市场适配")).toBeInTheDocument();
   expect(screen.getByText("筛选压力")).toBeInTheDocument();
   expect(screen.getByText("线索处理清单")).toBeInTheDocument();
-  expect(screen.getByText("触发逻辑")).toBeInTheDocument();
-  expect(screen.getByText("风险控制")).toBeInTheDocument();
+  expect(screen.getAllByText("触发逻辑").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("风险控制").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("资金态度")).toBeInTheDocument();
   expect(screen.getByText("板块位置")).toBeInTheDocument();
   expect(screen.getByText("催化核验")).toBeInTheDocument();
-  expect(screen.getByText("线索理由")).toBeInTheDocument();
+  expect(screen.getAllByText("线索理由").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText(/趋势延续线索/).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("失效条件")).toBeInTheDocument();
-  expect(screen.getByText(/跌回策略涨幅区间外/)).toBeInTheDocument();
+  expect(screen.getAllByText("失效条件").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText(/跌回策略涨幅区间外/).length).toBeGreaterThanOrEqual(1);
+
+  fireEvent.click(screen.getByRole("button", { name: /优先复核\s*1/ }));
+  expect(screen.getByText("优先复核 · 按复核优先级排序")).toBeInTheDocument();
+  expect(screen.getByText("宁德时代")).toBeInTheDocument();
+  expect(screen.queryByText("星网锐捷")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /可能暂不参与\s*1/ }));
+  expect(screen.getByText("可能暂不参与 · 按复核优先级排序")).toBeInTheDocument();
+  expect(screen.getByText("星网锐捷")).toBeInTheDocument();
+  expect(screen.queryByText("宁德时代")).not.toBeInTheDocument();
 });
 
 it("offers only effective primary strategies instead of data-blocked presets", async () => {
