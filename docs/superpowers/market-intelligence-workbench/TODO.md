@@ -69,3 +69,5 @@
 - [x] Separate market observation time from latest refresh time in user-facing timestamp labels.
 - [x] Keep the refreshed timestamp chip and Today risk rail from causing document overflow at 390px.
 - [x] Prevent weak two-character suffix aliases from making `青龙股份` look like multiple stocks.
+- [x] Clarify Opportunities as research leads, not participation advice, with Stock Lab as the final participation gate.
+- [x] Carry Opportunity source context into Stock Lab so lead review and final participation advice stay connected.

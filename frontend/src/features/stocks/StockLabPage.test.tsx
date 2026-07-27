@@ -66,7 +66,7 @@ const dossier = {
   bars: Array.from({ length: 65 }, (_, index) => ({ date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`, close: 1200 + index })),
 };
 
-function renderPage(watchlist: object[] = [], authenticated = true) {
+function renderPage(watchlist: object[] = [], authenticated = true, route = "/stocks?symbol=SH.600519") {
   const currentWatchlist = [...watchlist];
   let accessToken = authenticated ? "fixture-token" : null;
   vi.stubGlobal("localStorage", {
@@ -88,13 +88,24 @@ function renderPage(watchlist: object[] = [], authenticated = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
     fetchMock,
-    ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/stocks?symbol=SH.600519"]}><StockLabPage /></MemoryRouter></QueryClientProvider>),
+    ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><StockLabPage /></MemoryRouter></QueryClientProvider>),
   };
 }
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it("explains when a stock dossier is opened from opportunity leads", async () => {
+  renderPage([], true, "/stocks?symbol=SH.600519&from=opportunities&preset=trend");
+
+  const sourceNote = within(await screen.findByLabelText("线索复核说明"));
+  expect(sourceNote.getByText("来自机会选股的研究线索")).toBeInTheDocument();
+  expect(sourceNote.getByText(/线索页只负责短名单排序/)).toBeInTheDocument();
+  expect(sourceNote.getByText(/直接建议和证据账本才用于判断是否参与/)).toBeInTheDocument();
+  expect(sourceNote.getByText("来源策略：趋势延续")).toBeInTheDocument();
+  expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
 });
 
 it("shows the evidence ledger and edits the thesis before adding to watchlist", async () => {

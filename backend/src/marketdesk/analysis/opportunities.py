@@ -214,12 +214,12 @@ def _strategy_summary(preset: str, market_regime: str, funnel: dict[str, int]) -
     universe = funnel.get("universe", 0)
     rate = ranked / universe * 100 if universe else 0
     regime_text = {
-        "risk_off": "防守市况下只适合做证据复核，不适合扩大进攻",
+        "risk_off": "防守市况下只适合把线索放进证据复核，不适合扩大进攻",
         "cautious": "谨慎市况下需要提高确认标准",
-        "balanced": "均衡市况下可按研究优先级推进短名单",
+        "balanced": "均衡市况下可按复核优先级推进线索短名单",
         "risk_on": "积极市况下可放宽观察范围，但仍需控制追高",
     }.get(market_regime, "市场环境待确认")
-    return f"{label}策略当前可运行，入选 {ranked}/{universe}（{rate:.1f}%）；{regime_text}。"
+    return f"{label}线索策略当前可运行，筛出线索 {ranked}/{universe}（{rate:.1f}%）；{regime_text}。"
 
 
 def _strategy_diagnostics(
@@ -262,9 +262,9 @@ def _strategy_diagnostics(
             signal=_signal(selection_score, available),
             score=round(selection_score, 1) if available else None,
             summary=(
-                f"入选率 {selection_rate:.1f}%，{'短名单足够收敛' if selection_rate <= 8 else '候选偏多，需要二次确认'}"
+                f"线索率 {selection_rate:.1f}%，{'短名单足够收敛' if selection_rate <= 8 else '线索偏多，需要二次确认'}"
                 if available
-                else "当前没有可排序候选，先修复策略所需数据"
+                else "当前没有可排序线索，先修复策略所需数据"
             ),
             evidence=[f"ranked={ranked}", f"universe={universe}"],
             available=available,
@@ -283,9 +283,9 @@ def _strategy_diagnostics(
             signal=_signal(risk_score),
             score=round(risk_score, 1),
             summary=(
-                "防守或谨慎市况下，候选必须先看失效条件和流动性"
+                "防守或谨慎市况下，线索必须先看失效条件和流动性"
                 if market_regime in {"risk_off", "cautious"}
-                else "市场环境允许研究扩散，但仍需排除追高和低流动性"
+                else "市场环境允许线索扩散，但仍需排除追高和低流动性"
             ),
             evidence=["硬排除 ST/退市/低流动性", "市场环境扣分直接体现在最终分"],
         ),
@@ -300,23 +300,23 @@ def _strategy_next_actions(
 ) -> list[str]:
     if not available:
         return [
-            "先切换到可运行的趋势延续策略，避免使用伪候选",
+            "先切换到可运行的趋势延续策略，避免使用伪线索",
             "补齐策略依赖的数据后再回到当前策略复核",
         ]
     actions = ["先核对前 10 名的资金、行业和流动性证据"]
     data_quality = next((item for item in diagnostics if item.key == "data_quality"), None)
     if data_quality and data_quality.score is not None and data_quality.score < 70:
-        actions.append("数据完整度不足的候选只进入跟踪，不直接升级为重点研究")
+        actions.append("数据完整度不足的线索只进入跟踪，不直接升级为参与判断")
     if market_regime in {"risk_off", "cautious"}:
-        actions.append("市场偏弱时优先保留有资金确认和成交额支撑的候选")
+        actions.append("市场偏弱时优先保留有资金确认和成交额支撑的线索")
     if preset == "oversold_repair":
-        actions.append("超跌修复候选必须等待止跌确认，不能只因便宜而加入")
+        actions.append("超跌修复线索必须等待止跌确认，不能只因便宜而参与")
     elif preset == "value_rebound":
-        actions.append("低估反弹候选必须复核基本面和估值陷阱，不因低 PE 直接升级")
+        actions.append("低估反弹线索必须复核基本面和估值陷阱，不因低 PE 直接升级为参与")
     elif preset == "volume_breakout":
-        actions.append("放量突破候选必须复核是否有真实催化，避免单日放量骗线")
+        actions.append("放量突破线索必须复核是否有真实催化，避免单日放量骗线")
     else:
-        actions.append("风险收益不足的候选不追高，等待回踩后的新证据")
+        actions.append("风险收益不足的线索不追高，等待回踩后的新证据")
     return actions[:4]
 
 
@@ -346,7 +346,7 @@ def _candidate_dimensions(
     if quote.sector:
         confirmation_bits.append(f"行业 {quote.sector}")
     capital_summary = (
-        f"资金净流入 {_signed_money(quote.net_flow)}，可作为入选确认"
+        f"资金净流入 {_signed_money(quote.net_flow)}，可作为线索确认"
         if quote.net_flow is not None and quote.net_flow > 0
         else f"资金净流出 {_signed_money(quote.net_flow)}，只适合观察不升级"
         if quote.net_flow is not None
@@ -368,7 +368,7 @@ def _candidate_dimensions(
         if quote.pe is not None and quote.pb is not None
         else "PE/PB 不完整，不能只凭涨跌幅排序"
     )
-    catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的候选只进入观察池"
+    catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的线索只进入观察池"
     follow_up_summary = "先打开个股证据账本，再写关注理由、失效条件和下次复盘触发点"
     return [
         OpportunityDimension(
@@ -401,7 +401,7 @@ def _candidate_dimensions(
             signal=_signal(valuation_score if valuation_score is not None else liquidity_score),
             score=valuation_score if valuation_score is not None else liquidity_score,
             summary=(
-                f"PE {quote.pe:.1f}，流动性 {_money(quote.amount)}，适合先做研究优先级排序"
+                f"PE {quote.pe:.1f}，流动性 {_money(quote.amount)}，适合先做复核优先级排序"
                 if quote.pe is not None
                 else f"估值暂缺，先按流动性 {_money(quote.amount)} 控制观察仓位"
             ),
@@ -480,7 +480,7 @@ def _candidate_thesis(quote: EquityQuote, preset: str) -> str:
     if quote.net_flow is not None:
         pieces.append(f"资金 {_signed_money(quote.net_flow)}")
     evidence = "，".join(pieces) if pieces else "核心行情证据待补齐"
-    return f"{label}候选：{evidence}，先进入证据复核。"
+    return f"{label}线索：{evidence}，先进入证据复核；是否参与以个股证据账本为准。"
 
 
 def _candidate_invalidation(quote: EquityQuote, preset: str) -> list[str]:
@@ -510,5 +510,5 @@ def _candidate_next_actions(quote: EquityQuote, context_penalty: float) -> list[
         actions.append("复核资金流是否连续，而不是只看单日净流入")
     actions.append("补读公告、业绩预告和研报摘要，确认是否存在真实催化")
     actions.append("比较同行估值和市值风格，避免只按涨幅排序")
-    actions.append("加入跟踪前写清关注理由和放弃条件")
+    actions.append("加入跟踪前写清关注理由、参与条件和放弃条件")
     return actions[:6]

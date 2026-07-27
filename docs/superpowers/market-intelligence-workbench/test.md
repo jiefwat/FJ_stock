@@ -681,3 +681,16 @@ Release `20260726-215448-d7d25de` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Responsive boundary | Real Chrome measured 1,280px desktop width and 390px mobile width with matching document scroll width |
 | Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260726-215448-d7d25de`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-qinglong-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-27 Opportunity Lead Semantics
+
+Opportunities now presents strategy output as `研究线索 / 待复核线索` instead of an implied participation signal. The page explicitly states that candidates are not participation advice and carries source context into Stock Lab, where a source note explains that the direct advice and evidence ledger are the final participation gate. A candidate that later says `暂不参与` is therefore no longer contradictory.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend Opportunities test | Passed: 2 OpportunitiesPage tests, including the explicit lead/not-participation boundary, `复核是否参与` CTA, and source query link into Stock Lab |
+| Focused backend opportunity tests | Passed: 6 opportunity analysis tests, including the new thesis participation boundary |
+| Focused frontend Stock Lab test | Passed: 9 StockLabPage tests, including Opportunity source note and final-participation boundary |
+| `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |

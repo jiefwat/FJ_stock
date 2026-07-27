@@ -18,14 +18,14 @@ it("shows professional strategy diagnostics and candidate decision cards", async
       preset: "trend",
       available: true,
       unavailable_reason: null,
-      summary: "趋势延续策略当前可运行，样本压力适中，适合先做短名单。",
+      summary: "趋势延续线索策略当前可运行，样本压力适中，适合先做短名单。",
       rules: ["涨幅 0.5% 至 7%", "成交额至少 3 亿元"],
       funnel: { universe: 5527, excluded: 5350, ranked: 177 },
       diagnostics: [
-        { key: "market_fit", label: "市场适配", signal: "neutral", score: 58, summary: "市场偏谨慎，候选需要扣减环境分", evidence: ["环境扣分 8"] },
-        { key: "selection_pressure", label: "筛选压力", signal: "positive", score: 72, summary: "入选率 3.2%，短名单足够收敛", evidence: ["177 / 5527"] },
+        { key: "market_fit", label: "市场适配", signal: "neutral", score: 58, summary: "市场偏谨慎，线索需要扣减环境分", evidence: ["环境扣分 8"] },
+        { key: "selection_pressure", label: "筛选压力", signal: "positive", score: 72, summary: "线索率 3.2%，短名单足够收敛", evidence: ["177 / 5527"] },
       ],
-      next_actions: ["先核对前 10 名的资金和板块证据", "风险收益不足的候选不追高"],
+      next_actions: ["先核对前 10 名的资金和板块证据", "风险收益不足的线索不追高"],
       candidates: [{
         quote: { symbol: "SZ.002396", code: "002396", name: "星网锐捷", price: 18.8, change_pct: 3.2, amount: 680000000, turnover_rate: 5.2, volume_ratio: 1.8, pe: 32, pb: 2.6, market_cap: 12000000000, net_flow: 26000000, sector: "通信设备" },
         base_score: 86,
@@ -40,7 +40,7 @@ it("shows professional strategy diagnostics and candidate decision cards", async
           { key: "sector_context", label: "板块位置", signal: "neutral", score: 58, summary: "通信设备板块需要联动复核", evidence: ["通信设备"] },
           { key: "catalyst_check", label: "催化核验", signal: "missing", score: null, summary: "公告和研报催化待补齐", evidence: ["公告待读", "研报待补"] },
         ],
-        thesis: "趋势延续候选：价格温和走强，流动性可验证。",
+        thesis: "趋势延续线索：价格温和走强，流动性可验证；是否参与以个股证据账本为准。",
         invalidation: ["跌回策略涨幅区间外", "成交额低于策略门槛"],
         next_actions: ["打开个股证据账本复核均线与资金", "加入跟踪前写清关注理由"],
         risk_flags: ["市场偏弱"],
@@ -53,16 +53,20 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   render(<QueryClientProvider client={client}><MemoryRouter><OpportunitiesPage /></MemoryRouter></QueryClientProvider>);
 
   expect(await screen.findByText("策略诊断")).toBeInTheDocument();
+  expect(screen.getByText(/候选线索，不是参与建议/)).toBeInTheDocument();
+  expect(screen.getAllByText(/是否参与以个股证据账本为准/).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("待复核线索")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
   expect(screen.getByText("市场适配")).toBeInTheDocument();
   expect(screen.getByText("筛选压力")).toBeInTheDocument();
-  expect(screen.getByText("机会处理清单")).toBeInTheDocument();
+  expect(screen.getByText("线索处理清单")).toBeInTheDocument();
   expect(screen.getByText("触发逻辑")).toBeInTheDocument();
   expect(screen.getByText("风险控制")).toBeInTheDocument();
   expect(screen.getByText("资金态度")).toBeInTheDocument();
   expect(screen.getByText("板块位置")).toBeInTheDocument();
   expect(screen.getByText("催化核验")).toBeInTheDocument();
-  expect(screen.getByText("入选理由")).toBeInTheDocument();
-  expect(screen.getByText(/趋势延续候选/)).toBeInTheDocument();
+  expect(screen.getByText("线索理由")).toBeInTheDocument();
+  expect(screen.getAllByText(/趋势延续线索/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("失效条件")).toBeInTheDocument();
   expect(screen.getByText(/跌回策略涨幅区间外/)).toBeInTheDocument();
 });
@@ -75,7 +79,7 @@ it("offers only effective primary strategies instead of data-blocked presets", a
       preset: "trend",
       available: true,
       unavailable_reason: null,
-      summary: "当前策略可运行。",
+      summary: "当前线索策略可运行。",
       rules: ["使用当前行情字段"],
       funnel: { universe: 5527, excluded: 5400, ranked: 127 },
       diagnostics: [],

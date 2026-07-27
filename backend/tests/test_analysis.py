@@ -829,7 +829,8 @@ def test_opportunity_result_has_strategy_diagnostics_and_candidate_playbook() ->
     }
     assert result.next_actions
     candidate = result.candidates[0]
-    assert candidate.thesis.startswith("趋势延续候选")
+    assert candidate.thesis.startswith("趋势延续线索")
+    assert "是否参与以个股证据账本为准" in candidate.thesis
     assert {item.key for item in candidate.dimensions} >= {
         "trigger",
         "confirmation",
@@ -846,7 +847,8 @@ def test_opportunity_candidate_thesis_has_clean_readable_punctuation() -> None:
         [equity(change_pct=3.2, amount=680_000_000, net_flow=26_000_000)], "balanced", "trend"
     )
 
-    assert result.candidates[0].thesis.startswith("趋势延续候选：价格变化")
+    assert result.candidates[0].thesis.startswith("趋势延续线索：价格变化")
+    assert "是否参与以个股证据账本为准" in result.candidates[0].thesis
     assert "：，" not in result.candidates[0].thesis
 
 
