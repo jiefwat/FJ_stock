@@ -190,6 +190,10 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   expect(advice.getByText("入场计划")).toBeInTheDocument();
   expect(advice.getByText("止损纪律")).toBeInTheDocument();
   expect(advice.getByText("止盈复核")).toBeInTheDocument();
+  expect(advice.getByText("为什么是这个建议")).toBeInTheDocument();
+  expect(advice.getByText("趋势结构中性")).toBeInTheDocument();
+  expect(advice.getByText("横向同业估值一般")).toBeInTheDocument();
+  expect(advice.getByText("过去 60 日累计涨跌 12.4%")).toBeInTheDocument();
   expect(advice.getByText(/研究建议不是保证收益/)).toBeInTheDocument();
 
   const comparison = within(await screen.findByLabelText("横向纵向对比"));

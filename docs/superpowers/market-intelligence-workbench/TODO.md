@@ -71,3 +71,5 @@
 - [x] Prevent weak two-character suffix aliases from making `青龙股份` look like multiple stocks.
 - [x] Clarify Opportunities as research leads, not participation advice, with Stock Lab as the final participation gate.
 - [x] Carry Opportunity source context into Stock Lab so lead review and final participation advice stay connected.
+- [x] Add opportunity lead pre-judgement badges so users can see likely review risk before opening Stock Lab.
+- [x] Move the top three Stock Lab advice reasons directly under the direct suggestion.

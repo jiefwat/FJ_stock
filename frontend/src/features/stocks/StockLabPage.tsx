@@ -227,7 +227,7 @@ function InvestmentAdvicePanel({ advice }: { advice: InvestmentAdvice }) {
         <article><span>止盈复核</span><p>{advice.take_profit}</p></article>
         <article><span>复盘周期</span><p>{advice.time_horizon}</p></article>
       </div>
-      {advice.rationale.length > 0 && <ul>{advice.rationale.map((item) => <li key={item}>{item}</li>)}</ul>}
+      {advice.rationale.length > 0 && <div className="advice-rationale"><strong>为什么是这个建议</strong><ul>{advice.rationale.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul></div>}
       <small>{advice.disclaimer}</small>
     </div>
   </section>;

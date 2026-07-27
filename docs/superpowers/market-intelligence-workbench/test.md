@@ -694,3 +694,15 @@ Verification evidence:
 | Focused backend opportunity tests | Passed: 6 opportunity analysis tests, including the new thesis participation boundary |
 | Focused frontend Stock Lab test | Passed: 9 StockLabPage tests, including Opportunity source note and final-participation boundary |
 | `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |
+
+## 2026-07-27 Opportunity Pre-Judgement And Advice Reasons
+
+Opportunity cards now show a deterministic lead pre-judgement badge such as `优先复核`, `待复核`, `可能暂不参与`, or `高风险线索` based on score, evidence coverage, market penalty, and risk flags. Stock Lab also moves the top three advice reasons directly under the direct suggestion so `暂不参与` or `等待回踩` explains itself before the deeper evidence sections.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend Opportunities and Stock Lab tests | Passed: 11 tests, including the `可能暂不参与` lead badge and `为什么是这个建议` rationale block |
+| Frontend typecheck | Passed after the lead badge and advice-rationale UI changes |
+| `make verify` | Passed: 112 backend tests, 38 frontend tests, production build, live data 5,532 equities, 6 indices, 100 sectors |

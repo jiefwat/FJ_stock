@@ -26,6 +26,19 @@ const presets = [
   ["oversold_repair", "超跌修复"],
 ];
 
+function leadBadge(item: Candidate) {
+  if (item.evidence_coverage < 0.65 || item.risk_flags.length >= 3 || item.context_penalty >= 15) {
+    return { label: "高风险线索", tone: "negative", reason: "证据或环境约束偏弱，优先看失效条件" };
+  }
+  if (item.score >= 75 && item.evidence_coverage >= 0.75 && item.context_penalty === 0) {
+    return { label: "优先复核", tone: "positive", reason: "线索质量较高，但仍需个股页确认" };
+  }
+  if (item.score < 60 || item.context_penalty > 0) {
+    return { label: "可能暂不参与", tone: "caution", reason: "市场或风险收益可能压低最终建议" };
+  }
+  return { label: "待复核", tone: "neutral", reason: "进入证据账本后再定是否参与" };
+}
+
 export function OpportunitiesPage() {
   const [preset, setPreset] = useState("trend");
   const query = useQuery({
@@ -59,18 +72,22 @@ export function OpportunitiesPage() {
       </section> : <>
         <section className="funnel"><div><span>全市场</span><strong>{query.data.funnel.universe}</strong></div><i>→</i><div><span>未通过规则</span><strong>{query.data.funnel.excluded}</strong></div><i>→</i><div className="accent"><span>待复核线索</span><strong>{query.data.funnel.ranked}</strong></div></section>
         <section className="panel opportunity-actions"><div className="panel-title"><span>线索处理清单</span><small>从短名单变成可复盘的复核动作</small></div><ol>{query.data.next_actions.map((action) => <li key={action}>{action}</li>)}</ol></section>
-        <section className="panel"><div className="panel-title"><span>按复核优先级排序</span><small>最终分只是线索排序，是否参与看个股证据</small></div><div className="candidate-table opportunity-table">{query.data.candidates.map((item, index) => <article key={item.quote.symbol}>
+        <section className="panel"><div className="panel-title"><span>按复核优先级排序</span><small>最终分只是线索排序，是否参与看个股证据</small></div><div className="candidate-table opportunity-table">{query.data.candidates.map((item, index) => {
+          const badge = leadBadge(item);
+          return <article key={item.quote.symbol}>
           <b className="rank">{String(index + 1).padStart(2, "0")}</b>
           <span className="identity"><strong>{item.quote.name}</strong><small>{item.quote.symbol} · {item.quote.sector ?? "行业待补"}</small></span>
           <span><small>最终分</small><strong>{fmt(item.score, 0)}</strong></span>
           <span><small>涨跌</small><b className={(item.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.quote.change_pct)}</b></span>
           <div className="score-context"><span>基础 {fmt(item.base_score, 0)}</span>{item.context_penalty > 0 && <b>环境 -{fmt(item.context_penalty, 0)}</b>}<em>证据 {percent(item.evidence_coverage * 100)}</em></div>
+          <div className={`lead-badge ${badge.tone}`}><strong>{badge.label}</strong><span>{badge.reason}</span></div>
           <div className="candidate-thesis"><strong>线索理由</strong><p>{item.thesis}</p></div>
           <div className="candidate-dimensions">{item.dimensions.map((dimension) => <div key={dimension.key} className={dimension.signal}><span>{dimension.label}</span><p>{dimension.summary}</p></div>)}</div>
           <div className="candidate-playbook"><div><strong>失效条件</strong>{item.invalidation.map((rule) => <p key={rule}>× {rule}</p>)}</div><div><strong>下一步</strong>{item.next_actions.map((action) => <p key={action}>→ {action}</p>)}</div></div>
           <div className="risk-tags">{item.risk_flags.map((flag) => <i key={flag}>{flag}</i>)}</div>
           <Link className="text-link" to={`/stocks?symbol=${item.quote.symbol}&from=opportunities&preset=${preset}`}>复核是否参与 →</Link>
-        </article>)}</div></section>
+        </article>;
+        })}</div></section>
       </>}
     </>}</AsyncState>
   </>;

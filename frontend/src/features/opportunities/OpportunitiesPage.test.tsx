@@ -56,6 +56,8 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getByText(/候选线索，不是参与建议/)).toBeInTheDocument();
   expect(screen.getAllByText(/是否参与以个股证据账本为准/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("待复核线索")).toBeInTheDocument();
+  expect(screen.getByText("可能暂不参与")).toBeInTheDocument();
+  expect(screen.getByText(/市场或风险收益可能压低最终建议/)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
   expect(screen.getByText("市场适配")).toBeInTheDocument();
   expect(screen.getByText("筛选压力")).toBeInTheDocument();
