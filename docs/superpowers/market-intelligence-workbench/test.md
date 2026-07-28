@@ -791,6 +791,7 @@ Local browser acceptance:
 | Local production service | Running at `http://127.0.0.1:8765`; `/healthz` returned `{"status":"ok"}` |
 | Auth boundary | Registered temporary local account `codex-a-evidence-20260728-1526@marketdesk.local` and entered the authenticated workbench |
 | Stock Lab | `SH.600519` rendered 20 CNINFO announcement links, 20 Eastmoney research links, instrument themes, and the no-score-change boundary copy |
+| Theme clickthrough | Clicking the `食品饮料` theme opened `#/market?theme=BK0438...`, rendered `食品饮料题材简析`, and listed 30 related stocks including `SH.600519` |
 | Market | Rendered A-share market intelligence, sector-flow leaders, latest Dragon-Tiger observations, and Stock Lab links |
 | Data Center | Rendered company filings, research, themes, Dragon-Tiger, Eastmoney fast news, and CLS fallback capability states |
 | Responsive layout | Stock Lab, Market, and Data Center each measured `scrollWidth=390` at 390 x 844 and `scrollWidth=1280` at desktop width |

@@ -87,3 +87,4 @@
 - [x] Expose source-specific ready, partial, empty, and unavailable states in Data Center.
 - [x] Pass backend/frontend tests, production build, and live provider contract checks.
 - [x] Complete authenticated local browser acceptance for Stock Lab, Market, Data Center, and 390px mobile width.
+- [x] Make Stock Lab themes clickable into a Market theme dossier with related stocks.

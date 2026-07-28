@@ -44,6 +44,7 @@ from marketdesk.models import (
     MarketSummarySnapshot,
     OpportunityResult,
     SectorDossier,
+    SectorSnapshot,
     StockDossier,
     TradingAnomaly,
 )
@@ -418,6 +419,41 @@ class MarketService:
             except Exception as error:
                 self._provider_errors["sector_constituents"] = str(error)
         return analyse_sector(sector, constituents)
+
+    @staticmethod
+    def _require_board_code(code: str) -> str:
+        normalized = code.strip().upper()
+        if not re.fullmatch(r"BK\d{1,8}", normalized):
+            raise ValueError("Eastmoney board code required")
+        return normalized
+
+    async def theme(
+        self,
+        code: str,
+        name: str | None = None,
+        change_pct: float | None = None,
+    ) -> SectorDossier:
+        normalized = self._require_board_code(code)
+        theme_name = (name or normalized).strip() or normalized
+        constituents: list[EquityQuote] = []
+        fetcher = getattr(self.provider, "fetch_sector_constituents", None)
+        if callable(fetcher):
+            try:
+                constituents = [
+                    quote.model_copy(update={"sector": theme_name})
+                    if isinstance(quote, EquityQuote)
+                    else quote
+                    for quote in await fetcher(normalized)
+                ]
+            except Exception as error:
+                self._provider_errors["theme_constituents"] = str(error)
+        snapshot = SectorSnapshot(
+            code=normalized,
+            name=theme_name,
+            change_pct=change_pct,
+            net_flow=None,
+        )
+        return analyse_sector(snapshot, constituents)
 
     async def opportunities(self, preset: str = "trend", limit: int = 50) -> OpportunityResult:
         if preset not in {

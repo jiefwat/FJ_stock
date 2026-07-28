@@ -314,6 +314,12 @@ function evidenceDate(value: string) {
   return new Date(value).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
 }
 
+function themeHref(theme: { code: string; name: string; change_pct: number | null }) {
+  const params = new URLSearchParams({ theme: theme.code, themeName: theme.name });
+  if (theme.change_pct != null) params.set("themeChange", String(theme.change_pct));
+  return `/market?${params.toString()}`;
+}
+
 function EvidenceDocuments({ title, items, unavailable }: { title: string; items: EvidenceDocument[]; unavailable: boolean }) {
   return <div className="company-evidence-stream">
     <header><span>{title}</span><b>{items.length} 条</b></header>
@@ -339,7 +345,7 @@ function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvid
     {loading && <div className="capability-empty">正在读取公告与研报元数据…</div>}
     {failed && <div className="capability-warning">公司证据接口暂不可用，价格、技术结构和原有分析仍可继续使用。</div>}
     {data && <>
-      <div className="theme-row"><span>题材归属</span>{data.themes.length ? data.themes.slice(0, 12).map((theme) => <b key={theme.code}>{theme.name}<small>{pct(theme.change_pct)}</small></b>) : <em>{data.capabilities.themes?.status === "unavailable" ? "题材源暂不可用" : "暂无题材映射"}</em>}</div>
+      <div className="theme-row"><span>题材归属</span>{data.themes.length ? data.themes.slice(0, 12).map((theme) => <Link key={theme.code} to={themeHref(theme)}>{theme.name}<small>{pct(theme.change_pct)}</small></Link>) : <em>{data.capabilities.themes?.status === "unavailable" ? "题材源暂不可用" : "暂无题材映射"}</em>}</div>
       <div className="company-evidence-grid">
         <EvidenceDocuments title="公司公告" items={data.filings} unavailable={filingsUnavailable} />
         <EvidenceDocuments title="机构研报" items={data.research} unavailable={researchUnavailable} />

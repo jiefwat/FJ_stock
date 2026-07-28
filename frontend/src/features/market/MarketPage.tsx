@@ -13,6 +13,9 @@ export function MarketPage() {
   const [showAllSectors, setShowAllSectors] = useState(false);
   const [params, setParams] = useSearchParams();
   const selectedSector = params.get("sector");
+  const selectedTheme = params.get("theme");
+  const selectedThemeName = params.get("themeName") ?? selectedTheme ?? "";
+  const selectedThemeChange = params.get("themeChange");
   const query = useQuery({ queryKey: ["market"], queryFn: () => api<MarketData>("/api/v1/market") });
   const eventsQuery = useQuery({ queryKey: ["market-events"], queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=30") });
   const intelligenceQuery = useQuery({ queryKey: ["cn-market-intelligence"], queryFn: () => api<MarketIntelligenceResult>("/api/v1/markets/CN/intelligence?limit=20") });
@@ -20,6 +23,15 @@ export function MarketPage() {
     queryKey: ["sector", selectedSector],
     queryFn: () => api<SectorDossier>(`/api/v1/sectors/${selectedSector}`),
     enabled: Boolean(selectedSector),
+  });
+  const themeQuery = useQuery({
+    queryKey: ["theme", selectedTheme, selectedThemeName, selectedThemeChange],
+    queryFn: () => {
+      const search = new URLSearchParams({ name: selectedThemeName });
+      if (selectedThemeChange != null) search.set("change_pct", selectedThemeChange);
+      return api<SectorDossier>(`/api/v1/themes/${selectedTheme}?${search.toString()}`);
+    },
+    enabled: Boolean(selectedTheme),
   });
   const openSector = (code: string) => setParams({ sector: code });
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
@@ -40,6 +52,12 @@ export function MarketPage() {
       <div className="sector-digest"><article><span>板块涨跌</span><strong className={(sectorQuery.data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(sectorQuery.data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{sectorQuery.data.sector.net_flow == null ? "待增强" : `${fmt(sectorQuery.data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(sectorQuery.data.evidence_coverage * 100)}</strong></article></div>
       <div className="sector-summary">{sectorQuery.data.summary.map((item) => <p key={item}>{item}</p>)}{sectorQuery.data.missing_evidence.length > 0 && <small>缺口：{sectorQuery.data.missing_evidence.join("、")}</small>}</div>
       <div className="sector-constituents">{sectorQuery.data.constituents.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div>
+    </>}</AsyncState></section>}
+    {selectedTheme && <section className="panel sector-detail"><AsyncState loading={themeQuery.isLoading} error={themeQuery.error as Error | null}>{themeQuery.data && <>
+      <div className="sector-detail-head"><div><span>THEME DOSSIER</span><h2>{themeQuery.data.sector.name}题材简析</h2></div><button className="text-button" onClick={() => setParams({})}>关闭</button></div>
+      <div className="sector-digest"><article><span>题材涨跌</span><strong className={(themeQuery.data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(themeQuery.data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{themeQuery.data.sector.net_flow == null ? "待增强" : `${fmt(themeQuery.data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(themeQuery.data.evidence_coverage * 100)}</strong></article></div>
+      <div className="sector-summary">{themeQuery.data.summary.map((item) => <p key={item}>{item}</p>)}{themeQuery.data.missing_evidence.length > 0 && <small>缺口：{themeQuery.data.missing_evidence.join("、")}</small>}</div>
+      <div className="sector-constituents">{themeQuery.data.constituents.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div>
     </>}</AsyncState></section>}
   </>}</AsyncState>;
 }

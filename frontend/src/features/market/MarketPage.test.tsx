@@ -24,6 +24,16 @@ const sector = {
   ],
 };
 
+const theme = {
+  sector: { code: "BK0896", name: "酿酒概念", change_pct: 1.8, net_flow: null },
+  summary: ["题材涨跌 1.80%，热度中性，资金流仍待增强源确认。"],
+  evidence_coverage: 2 / 3,
+  missing_evidence: ["板块资金流"],
+  constituents: [
+    { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 2000000000, turnover_rate: 0.8, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: null, sector: "酿酒概念" },
+  ],
+};
+
 const events = {
   meta: { source: "eastmoney_fast_news", observed_at: "2026-07-19T14:00:00Z", fetched_at: "2026-07-19T14:01:00Z", freshness: "fresh", coverage: 1, errors: [] },
   summary: ["央企改革出现政策支持信号，银行板块受到资金关注。"],
@@ -120,6 +130,7 @@ function renderPage(initialPath = "/market") {
       return { ok: true, status: 200, json: async () => savedViews };
     }
     if (url.includes("/api/v1/sectors/BK1")) return { ok: true, status: 200, json: async () => sector };
+    if (url.includes("/api/v1/themes/BK0896")) return { ok: true, status: 200, json: async () => theme };
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
     if (url.includes("/api/v1/markets/CN/intelligence")) return { ok: true, status: 200, json: async () => intelligence };
     if (url.includes("/api/v1/equities")) return { ok: true, status: 200, json: async () => equityPage };
@@ -154,6 +165,19 @@ it("opens a sector research panel with constituents and stock links", async () =
   const row = within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ });
   expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
+});
+
+it("opens a theme research panel from Stock Lab theme links", async () => {
+  const requests = renderPage("/market?theme=BK0896&themeName=酿酒概念&themeChange=1.8");
+
+  expect(await screen.findByText("酿酒概念题材简析")).toBeInTheDocument();
+  await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/themes/BK0896"))).toBe(true));
+  expect(requests.some((url) => url.includes("name=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5"))).toBe(true);
+  const detail = screen.getByText("酿酒概念题材简析").closest("section");
+  expect(detail).not.toBeNull();
+  expect(within(detail as HTMLElement).getByText("题材涨跌")).toBeInTheDocument();
+  expect(within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
+  expect(within(detail as HTMLElement).getByText("缺口：板块资金流")).toBeInTheDocument();
 });
 
 it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {

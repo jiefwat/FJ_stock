@@ -172,6 +172,10 @@ it("shows cited filings, research reports, and themes without changing the score
   expect(panel.getByText("渠道韧性延续，长期价值稳固")).toBeInTheDocument();
   expect(panel.getByText(/测试证券 · 增持 · 白酒/)).toBeInTheDocument();
   expect(panel.getByText("酿酒概念")).toBeInTheDocument();
+  expect(panel.getByRole("link", { name: /酿酒概念/ })).toHaveAttribute(
+    "href",
+    "/market?theme=BK0896&themeName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&themeChange=1.8",
+  );
   expect(panel.getByText(/仅作研究上下文，不直接改写评分/)).toBeInTheDocument();
   expect(screen.getAllByText("57/100").length).toBeGreaterThan(0);
 });

@@ -69,7 +69,7 @@ class FixtureProvider:
         return [SectorSnapshot(code="BK1", name="白酒", change_pct=1.4, net_flow=100_000_000)]
 
     async def fetch_sector_constituents(self, sector_code: str):
-        assert sector_code == "BK1"
+        assert sector_code in {"BK1", "BK0896"}
         return [
             EquityQuote(
                 symbol="SH.600519",
@@ -923,6 +923,32 @@ def test_sector_route_returns_analysis_and_constituents(tmp_path) -> None:
     assert payload["evidence_coverage"] == 1
     assert "主力净流入" in payload["summary"][0]
     assert payload["constituents"][0]["symbol"] == "SH.600519"
+
+
+def test_theme_route_returns_board_constituents_for_clickthrough(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get(
+        "/api/v1/themes/BK0896",
+        params={"name": "酿酒概念", "change_pct": 1.8},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sector"]["code"] == "BK0896"
+    assert payload["sector"]["name"] == "酿酒概念"
+    assert payload["sector"]["change_pct"] == 1.8
+    assert payload["constituents"][0]["symbol"] == "SH.600519"
+    assert payload["constituents"][0]["sector"] == "酿酒概念"
+
+
+def test_theme_route_rejects_non_board_codes(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/themes/BAD123")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Eastmoney board code required"
 
 
 def test_data_status_lists_eastmoney_fund_flow_as_optional(tmp_path) -> None:

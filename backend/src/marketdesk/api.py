@@ -362,6 +362,17 @@ def create_app(
         except KeyError as error:
             raise HTTPException(status_code=404, detail="sector not found") from error
 
+    @app.get("/api/v1/themes/{code}")
+    async def theme(
+        code: str,
+        name: str | None = Query(default=None, max_length=40),
+        change_pct: float | None = Query(default=None),
+    ) -> SectorDossier:
+        try:
+            return await market_service.theme(code, name=name, change_pct=change_pct)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.get("/api/v1/today")
     async def today() -> dict[str, Any]:
         return await market_service.today()
