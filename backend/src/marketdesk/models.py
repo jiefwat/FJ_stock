@@ -16,6 +16,14 @@ class Freshness(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class CapabilityStatus(StrEnum):
+    NOT_CHECKED = "not_checked"
+    READY = "ready"
+    PARTIAL = "partial"
+    EMPTY = "empty"
+    UNAVAILABLE = "unavailable"
+
+
 class DatasetMeta(StrictModel):
     source: str
     observed_at: datetime
@@ -30,6 +38,84 @@ class DatasetMeta(StrictModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("timestamps must be timezone-aware")
         return value
+
+
+class SourceRef(StrictModel):
+    provider: str
+    label: str
+    capability: str
+    source_url: str | None = None
+    observed_at: datetime
+    fetched_at: datetime
+    freshness: Freshness
+
+    @field_validator("observed_at", "fetched_at")
+    @classmethod
+    def require_source_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class CapabilityState(StrictModel):
+    status: CapabilityStatus
+    provider: str
+    error: str | None = None
+    fetched_at: datetime | None = None
+
+    @field_validator("fetched_at")
+    @classmethod
+    def require_capability_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return DatasetMeta.require_timezone(value)
+
+
+class EvidenceDocument(StrictModel):
+    id: str
+    kind: Literal["filing", "research"]
+    symbol: str
+    title: str
+    category: str
+    publisher: str
+    published_at: datetime
+    url: str
+    rating: str | None = None
+    eps_forecasts: dict[str, float] = Field(default_factory=dict)
+    source: SourceRef
+
+    @field_validator("published_at")
+    @classmethod
+    def require_document_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class InstrumentTheme(StrictModel):
+    code: str
+    name: str
+    change_pct: float | None = None
+    lead_stock: str | None = None
+    source: SourceRef
+
+
+class TradingAnomaly(StrictModel):
+    symbol: str
+    name: str
+    trade_date: date
+    reason: str
+    close: float | None = None
+    change_pct: float | None = None
+    net_buy: float | None = None
+    buy_amount: float | None = None
+    sell_amount: float | None = None
+    turnover_rate: float | None = None
+    source: SourceRef
+
+
+class InstrumentEvidenceResult(StrictModel):
+    symbol: str
+    filings: list[EvidenceDocument] = Field(default_factory=list)
+    research: list[EvidenceDocument] = Field(default_factory=list)
+    themes: list[InstrumentTheme] = Field(default_factory=list)
+    capabilities: dict[str, CapabilityState] = Field(default_factory=dict)
 
 
 class IndexQuote(StrictModel):
@@ -61,6 +147,13 @@ class SectorSnapshot(StrictModel):
     name: str
     change_pct: float | None = None
     net_flow: float | None = None
+
+
+class MarketIntelligenceResult(StrictModel):
+    meta: DatasetMeta
+    sector_flows: list[SectorSnapshot] = Field(default_factory=list)
+    anomalies: list[TradingAnomaly] = Field(default_factory=list)
+    capabilities: dict[str, CapabilityState] = Field(default_factory=dict)
 
 
 class SectorDossier(StrictModel):

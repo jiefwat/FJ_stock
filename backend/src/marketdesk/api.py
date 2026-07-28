@@ -26,7 +26,9 @@ from marketdesk.models import (
     EquityQuote,
     EquityViewFilters,
     HoldingDossier,
+    InstrumentEvidenceResult,
     MarketEventResult,
+    MarketIntelligenceResult,
     MarketPayload,
     OpportunityResult,
     SavedEquityView,
@@ -411,6 +413,21 @@ def create_app(
             return await market_service.stock(symbol.upper())
         except KeyError as error:
             raise HTTPException(status_code=404, detail="stock not found") from error
+
+    @app.get("/api/v1/instruments/{symbol}/evidence")
+    async def instrument_evidence(
+        symbol: str, limit: int = Query(default=20, ge=1, le=50)
+    ) -> InstrumentEvidenceResult:
+        try:
+            return await market_service.instrument_evidence(symbol, limit)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/api/v1/markets/CN/intelligence")
+    async def cn_market_intelligence(
+        limit: int = Query(default=20, ge=1, le=50),
+    ) -> MarketIntelligenceResult:
+        return await market_service.cn_market_intelligence(limit)
 
     @app.post("/api/v1/ask-stock")
     async def ask_stock(payload: AskStockRequest, request: Request) -> AskStockResponse:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import time
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
 from marketdesk.analysis.ask_stock import (
@@ -22,19 +25,27 @@ from marketdesk.config import Settings
 from marketdesk.models import (
     AskStockMetric,
     AskStockResponse,
+    CapabilityState,
+    CapabilityStatus,
     EquityDataset,
     EquityPage,
     EquityQuote,
+    EvidenceDocument,
+    Freshness,
     HoldingDossier,
     HoldingItem,
+    InstrumentEvidenceResult,
+    InstrumentTheme,
     MarketEventRaw,
     MarketEventResult,
+    MarketIntelligenceResult,
     MarketPayload,
     MarketSnapshot,
     MarketSummarySnapshot,
     OpportunityResult,
     SectorDossier,
     StockDossier,
+    TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.public_market import PublicMarketProvider
@@ -51,6 +62,16 @@ class MarketProvider(Protocol):
     ) -> list[str]: ...
     async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]: ...
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Any]: ...
+    async def fetch_filings(
+        self, symbol: str, limit: int = 20
+    ) -> list[EvidenceDocument]: ...
+    async def fetch_research_documents(
+        self, symbol: str, limit: int = 20
+    ) -> list[EvidenceDocument]: ...
+    async def fetch_themes(
+        self, symbol: str, limit: int = 30
+    ) -> list[InstrumentTheme]: ...
+    async def fetch_dragon_tiger(self, limit: int = 20) -> list[TradingAnomaly]: ...
 
 
 class MarketService:
@@ -60,6 +81,8 @@ class MarketService:
         self.store = store or Store(settings.database_path)
         self._snapshot: MarketSnapshot | None = None
         self._provider_errors: dict[str, str] = {}
+        self._capability_cache: dict[str, tuple[float, Any]] = {}
+        self._capability_cache_lock = asyncio.Lock()
 
     async def refresh(self) -> MarketSnapshot:
         equities = await self.provider.fetch_equities()
@@ -212,6 +235,162 @@ class MarketService:
             self._provider_errors["eastmoney_fast_news"] = str(error)
             raw_events = []
         return analyse_market_events(raw_events[:limit])
+
+    @staticmethod
+    def _require_a_share_symbol(symbol: str) -> str:
+        normalized = symbol.strip().upper()
+        match = re.fullmatch(r"(SH|SZ|BJ)\.(\d{6})", normalized)
+        if match is None:
+            raise ValueError("A-share symbol required")
+        market, code = match.groups()
+        expected = (
+            "BJ"
+            if code.startswith(("4", "8"))
+            else "SH"
+            if code.startswith(("5", "6", "9"))
+            else "SZ"
+        )
+        if market != expected:
+            raise ValueError("A-share symbol required")
+        return normalized
+
+    async def _cached_capability(
+        self, key: str, ttl_seconds: float, loader: Any
+    ) -> Any:
+        cached = self._capability_cache.get(key)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < ttl_seconds:
+            return cached[1]
+        async with self._capability_cache_lock:
+            cached = self._capability_cache.get(key)
+            now = time.monotonic()
+            if cached is not None and now - cached[0] < ttl_seconds:
+                return cached[1]
+            value = await loader()
+            self._capability_cache[key] = (time.monotonic(), value)
+            return value
+
+    @staticmethod
+    def _capability_state(
+        provider: str,
+        fetched_at: datetime,
+        items: list[Any] | None = None,
+        error: Exception | None = None,
+    ) -> CapabilityState:
+        if error is not None:
+            return CapabilityState(
+                status=CapabilityStatus.UNAVAILABLE,
+                provider=provider,
+                error=str(error),
+                fetched_at=fetched_at,
+            )
+        return CapabilityState(
+            status=CapabilityStatus.READY if items else CapabilityStatus.EMPTY,
+            provider=provider,
+            fetched_at=fetched_at,
+        )
+
+    async def instrument_evidence(
+        self, symbol: str, limit: int = 20
+    ) -> InstrumentEvidenceResult:
+        normalized = self._require_a_share_symbol(symbol)
+
+        async def load() -> InstrumentEvidenceResult:
+            fetched_at = datetime.now(UTC)
+
+            async def fetch(name: str, provider: str, method_name: str) -> tuple[str, list[Any], CapabilityState]:
+                fetcher = getattr(self.provider, method_name, None)
+                if not callable(fetcher):
+                    error = ProviderUnavailable(f"{name} capability is not supported")
+                    return name, [], self._capability_state(provider, fetched_at, error=error)
+                try:
+                    items = await fetcher(normalized, limit)
+                except Exception as error:
+                    self._provider_errors[name] = str(error)
+                    return name, [], self._capability_state(provider, fetched_at, error=error)
+                return name, list(items), self._capability_state(provider, fetched_at, list(items))
+
+            rows = await asyncio.gather(
+                fetch("filings", "cninfo", "fetch_filings"),
+                fetch("research", "eastmoney_report", "fetch_research_documents"),
+                fetch("themes", "eastmoney_theme", "fetch_themes"),
+            )
+            by_name = {name: items for name, items, _state in rows}
+            states = {name: state for name, _items, state in rows}
+            return InstrumentEvidenceResult(
+                symbol=normalized,
+                filings=cast(list[EvidenceDocument], by_name["filings"]),
+                research=cast(list[EvidenceDocument], by_name["research"]),
+                themes=cast(list[InstrumentTheme], by_name["themes"]),
+                capabilities=states,
+            )
+
+        return cast(
+            InstrumentEvidenceResult,
+            await self._cached_capability(
+                f"instrument-evidence:{normalized}:{limit}", 15 * 60, load
+            ),
+        )
+
+    async def cn_market_intelligence(self, limit: int = 20) -> MarketIntelligenceResult:
+        async def load() -> MarketIntelligenceResult:
+            snapshot = await self.market()
+            fetched_at = datetime.now(UTC)
+            flows = sorted(
+                (item for item in snapshot.sectors if item.net_flow is not None),
+                key=lambda item: item.net_flow or 0,
+                reverse=True,
+            )[:limit]
+            flow_state = self._capability_state(
+                "eastmoney_sector_flow", fetched_at, list(flows)
+            )
+            anomalies: list[TradingAnomaly] = []
+            anomaly_error: Exception | None = None
+            fetcher = getattr(self.provider, "fetch_dragon_tiger", None)
+            if callable(fetcher):
+                try:
+                    anomalies = list(await fetcher(limit))
+                except Exception as error:
+                    anomaly_error = error
+                    self._provider_errors["dragon_tiger"] = str(error)
+            else:
+                anomaly_error = ProviderUnavailable("dragon_tiger capability is not supported")
+            anomaly_state = self._capability_state(
+                "eastmoney_datacenter", fetched_at, anomalies, anomaly_error
+            )
+            errors = [
+                state.error
+                for state in (flow_state, anomaly_state)
+                if state.error is not None
+            ]
+            available_count = int(bool(flows)) + int(bool(anomalies))
+            freshness = (
+                snapshot.meta.freshness if available_count else Freshness.UNAVAILABLE
+            )
+            return MarketIntelligenceResult(
+                meta=snapshot.meta.model_copy(
+                    update={
+                        "source": "eastmoney_sector_flow+eastmoney_dragon_tiger",
+                        "fetched_at": fetched_at,
+                        "freshness": freshness,
+                        "coverage": available_count / 2,
+                        "errors": errors,
+                    }
+                ),
+                sector_flows=flows,
+                anomalies=anomalies,
+                capabilities={
+                    "sector_flows": flow_state,
+                    "dragon_tiger": anomaly_state,
+                },
+            )
+
+        return cast(
+            MarketIntelligenceResult,
+            await self._cached_capability(
+                f"cn-market-intelligence:{limit}", 10 * 60, load
+            ),
+        )
 
     async def sector(self, code: str) -> SectorDossier:
         snapshot = await self.market()

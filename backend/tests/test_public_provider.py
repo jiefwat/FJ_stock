@@ -121,3 +121,37 @@ def test_weekend_observation_uses_previous_market_close() -> None:
     observed = _market_observed_at(sunday)
 
     assert observed == datetime(2026, 7, 17, 7, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_market_events_fall_back_to_cls_when_eastmoney_is_unavailable() -> None:
+    class BrokenEastmoneyClient:
+        async def get(self, *args, **kwargs):
+            raise httpx.ConnectError("eastmoney unavailable")
+
+    class ClsFallback:
+        async def fetch_cls_events(self, limit: int):
+            from marketdesk.models import MarketEventRaw
+
+            return [
+                MarketEventRaw(
+                    id="cls:1",
+                    title="财联社备源事件",
+                    summary="主源不可用时仍保留独立事件来源。",
+                    source="财联社电报",
+                    url="https://www.cls.cn/detail/1",
+                    published_at=datetime.now(UTC),
+                )
+            ][:limit]
+
+        def provider_status(self):
+            return {"cls_fast_news": {"status": "ready", "required": False}}
+
+    provider = PublicMarketProvider(BrokenEastmoneyClient())
+    provider.evidence_provider = ClsFallback()
+
+    events = await provider.fetch_market_events(10)
+
+    assert events[0].source == "财联社电报"
+    assert provider.provider_status()["eastmoney_fast_news"]["status"] == "partial"
+    assert provider.provider_status()["cls_fast_news"]["status"] == "ready"

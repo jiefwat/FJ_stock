@@ -16,7 +16,12 @@ const freshnessLabel: Record<string, string> = {
   unavailable: "不可用",
 };
 const providerLabel: Record<string, string> = {
+  cls_fast_news: "快讯独立备源",
+  cninfo_filings: "公司公告",
+  eastmoney_dragon_tiger: "龙虎榜观察",
   eastmoney_fund_flow: "资金流增强",
+  eastmoney_research: "机构研报",
+  eastmoney_themes: "题材归属",
   semantic_research: "语义研究增强",
   sina: "核心行情",
   tencent: "指数与历史行情",
@@ -46,6 +51,6 @@ export function DataCenterPage() {
       <article><span>新鲜度</span><strong>{freshnessLabel[snapshot.freshness] ?? snapshot.freshness}</strong><small>{snapshot.freshness === "stale" ? "正在使用缓存" : "状态来自标准化契约"}</small></article>
       <article><span>字段覆盖</span><strong>{percent(snapshot.coverage * 100, 1)}</strong><small>核心字段非空比例</small></article>
     </section>}
-    <section className="panel data-note"><h3>覆盖与降级规则</h3><p>行情失败时使用最后一次有效快照并标记为 stale；没有快照时显示不可用，不把空值当作 0。</p><p>语义研究增强未配置不会影响核心行情、机会漏斗、个股价格和跟踪清单。配置后可增强财务、公告、研报与行业信息。</p>{snapshot?.errors.length ? <div className="provider-errors"><strong>最近错误</strong>{snapshot.errors.map((error) => <p key={error}>{error}</p>)}</div> : <p className="positive">当前快照没有标准化错误。</p>}</section>
+    <section className="panel data-note"><h3>覆盖与降级规则</h3><p>行情失败时使用最后一次有效快照并标记为 stale；没有快照时显示不可用，不把空值当作 0。</p><p>公告、研报、题材、龙虎榜与快讯都是可选增强；任一来源失败都不会阻断核心行情。外部证据不直接改变评分，空结果与上游不可用会分别标记。</p><p>语义研究增强未配置不会影响核心行情、机会漏斗、个股价格和跟踪清单。</p>{snapshot?.errors.length ? <div className="provider-errors"><strong>最近错误</strong>{snapshot.errors.map((error) => <p key={error}>{error}</p>)}</div> : <p className="positive">当前快照没有标准化错误。</p>}</section>
   </>;
 }

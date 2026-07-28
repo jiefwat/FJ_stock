@@ -766,3 +766,39 @@ Release `20260727-122335-e0822be` was deployed to `stock.jiewat-kaka-fj.com`, li
 | Frontend asset | Current JS asset `/assets/index-4iBx8lBc.js` contained `线索分层筛选`, `全部线索`, `优先复核`, `高风险线索`, and the empty-layer copy |
 | Service and data boundary | `/opt/aster-market/current` pointed to `/opt/aster-market/releases/20260727-122335-e0822be`, `stock-ts.service` was active, and `/opt/aster-market/current/data` was absent |
 | Cleanup | Temporary `codex-lead-layer-%@marketdesk.local` users were removed from the production database |
+
+## 2026-07-28 A-share Evidence And Market Intelligence
+
+The pre-integration product is frozen by the annotated remote tag `v2`, whose peeled target remains `ec6f063d12580a23a33475763008b6b457ae8b13`. The release adds normalized A-share filings, research metadata, instrument themes, sector-flow leaders, Dragon-Tiger observations, and a CLS fast-news fallback without feeding any of those fields into deterministic scores.
+
+Verification evidence:
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend | Passed: 18 tests across Stock Lab, Market, and Data Center |
+| Backend lint and types | Ruff passed; mypy passed across 22 source files |
+| Backend tests | Passed: 126 tests, including provider schema, partial aggregation, auth, TTL cache, and fallback coverage |
+| Frontend tests | Passed: 41 tests across 8 files |
+| Production build | Passed: Vite transformed 1,653 modules |
+| Live market gate | Passed: 5,532 equities, 100.0% coverage, 6 indices, 100 sectors, fresh snapshot |
+| Live evidence providers | `SH.600519` returned 5 CNINFO filings, 5 Eastmoney reports, and 8 themes; the latest Dragon-Tiger list and fast-news checks each returned 5 records |
+| Capability health | CNINFO filings, Eastmoney research, themes, Dragon-Tiger, and Eastmoney fast news all reported `ready` during the live check |
+
+Local browser acceptance:
+
+| Check | Result |
+| --- | --- |
+| Local production service | Running at `http://127.0.0.1:8765`; `/healthz` returned `{"status":"ok"}` |
+| Auth boundary | Registered temporary local account `codex-a-evidence-20260728-1526@marketdesk.local` and entered the authenticated workbench |
+| Stock Lab | `SH.600519` rendered 20 CNINFO announcement links, 20 Eastmoney research links, instrument themes, and the no-score-change boundary copy |
+| Market | Rendered A-share market intelligence, sector-flow leaders, latest Dragon-Tiger observations, and Stock Lab links |
+| Data Center | Rendered company filings, research, themes, Dragon-Tiger, Eastmoney fast news, and CLS fallback capability states |
+| Responsive layout | Stock Lab, Market, and Data Center each measured `scrollWidth=390` at 390 x 844 and `scrollWidth=1280` at desktop width |
+| Browser runtime | Playwright reported zero console errors and zero warnings after the authenticated desktop and mobile workflow |
+
+Provider and product boundaries:
+
+- The reviewed `a-stock-data` repository remains implementation research only and is not imported as a runtime dependency.
+- Evidence endpoints cache only normalized in-memory values for bounded TTLs; raw payloads, document bodies, and PDFs are not persisted.
+- `partial`, `empty`, and `unavailable` remain distinct, so a provider error cannot be interpreted as proof that no evidence exists.
+- Public or commercial deployment still requires a fresh licensing review for CNINFO, Eastmoney, and CLS.

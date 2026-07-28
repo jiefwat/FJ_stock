@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
-import { api, fmt, getAuthToken, pct, percent, type Quote, type WatchlistItem } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, percent, type EvidenceDocument, type InstrumentEvidenceResult, type Quote, type WatchlistItem } from "../../lib/api";
 import { StockTrend } from "./StockTrend";
 
 type ScoreFactor = {
@@ -310,6 +310,44 @@ function ComparisonSection({ horizontal, vertical }: { horizontal: ComparisonIte
   </section>;
 }
 
+function evidenceDate(value: string) {
+  return new Date(value).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+}
+
+function EvidenceDocuments({ title, items, unavailable }: { title: string; items: EvidenceDocument[]; unavailable: boolean }) {
+  return <div className="company-evidence-stream">
+    <header><span>{title}</span><b>{items.length} 条</b></header>
+    {unavailable && <p className="capability-warning">{title === "机构研报" ? "研报源暂不可用，公告与题材仍可继续核验。" : "公告源暂不可用，研报与题材仍可继续核验。"}</p>}
+    {!unavailable && items.length === 0 && <p className="capability-empty">当前没有返回可用记录，不代表没有历史资料。</p>}
+    {items.map((item) => <article key={item.id}>
+      <time>{evidenceDate(item.published_at)}</time>
+      <div>
+        <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
+        <small>{item.publisher}{item.rating ? ` · ${item.rating}` : ""} · {item.category}</small>
+      </div>
+      <em className={item.source.freshness}>{item.source.label}</em>
+    </article>)}
+  </div>;
+}
+
+function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvidenceResult; loading: boolean; failed: boolean }) {
+  const filingsUnavailable = data?.capabilities.filings?.status === "unavailable";
+  const researchUnavailable = data?.capabilities.research?.status === "unavailable";
+  return <section className="panel company-evidence" aria-label="公司证据包">
+    <div className="panel-title"><span>公告 / 研报 / 题材</span><small>有出处的外部证据 · 不进入确定性评分</small></div>
+    <p className="evidence-boundary">公告、机构观点和题材归属仅作研究上下文，不直接改写评分；点击标题回到原始来源核验。</p>
+    {loading && <div className="capability-empty">正在读取公告与研报元数据…</div>}
+    {failed && <div className="capability-warning">公司证据接口暂不可用，价格、技术结构和原有分析仍可继续使用。</div>}
+    {data && <>
+      <div className="theme-row"><span>题材归属</span>{data.themes.length ? data.themes.slice(0, 12).map((theme) => <b key={theme.code}>{theme.name}<small>{pct(theme.change_pct)}</small></b>) : <em>{data.capabilities.themes?.status === "unavailable" ? "题材源暂不可用" : "暂无题材映射"}</em>}</div>
+      <div className="company-evidence-grid">
+        <EvidenceDocuments title="公司公告" items={data.filings} unavailable={filingsUnavailable} />
+        <EvidenceDocuments title="机构研报" items={data.research} unavailable={researchUnavailable} />
+      </div>
+    </>}
+  </section>;
+}
+
 export function StockLabPage() {
   const client = useQueryClient();
   const authenticated = Boolean(getAuthToken());
@@ -327,6 +365,11 @@ export function StockLabPage() {
   const query = useQuery({
     queryKey: ["stock", symbol],
     queryFn: () => api<Dossier>(`/api/v1/stocks/${symbol}`),
+    enabled: Boolean(symbol),
+  });
+  const evidenceQuery = useQuery({
+    queryKey: ["instrument-evidence", symbol],
+    queryFn: () => api<InstrumentEvidenceResult>(`/api/v1/instruments/${symbol}/evidence?limit=20`),
     enabled: Boolean(symbol),
   });
   const watchlist = useQuery({
@@ -390,6 +433,7 @@ export function StockLabPage() {
       <ComparisonSection horizontal={query.data.horizontal_comparison} vertical={query.data.vertical_comparison} />
       <AnalystActionMap dossier={query.data} />
       <ConclusionBrief dossier={query.data} />
+      <CompanyEvidencePanel data={evidenceQuery.data} loading={evidenceQuery.isLoading} failed={evidenceQuery.isError} />
       {query.data.analysis_dimensions.length > 0 && <section className="panel analysis-breakdown">
         <div className="panel-title"><span>分析拆解</span><small>趋势、风险收益、估值、流动性、资金和行业一起看</small></div>
         <div className="dimension-grid">{query.data.analysis_dimensions.map((item) => <article key={item.key} className={item.signal}>

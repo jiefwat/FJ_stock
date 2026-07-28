@@ -66,7 +66,28 @@ const dossier = {
   bars: Array.from({ length: 65 }, (_, index) => ({ date: `2026-04-${String((index % 28) + 1).padStart(2, "0")}`, close: 1200 + index })),
 };
 
-function renderPage(watchlist: object[] = [], authenticated = true, route = "/stocks?symbol=SH.600519") {
+const evidence = {
+  symbol: "SH.600519",
+  filings: [{
+    id: "cninfo:1", kind: "filing", symbol: "SH.600519", title: "年度权益分派实施公告", category: "权益分派", publisher: "巨潮资讯", published_at: "2026-07-27T08:00:00Z", url: "https://example.com/filing", rating: null, eps_forecasts: {},
+    source: { provider: "cninfo", label: "巨潮资讯", capability: "filings", source_url: "https://example.com/filing", observed_at: "2026-07-27T08:00:00Z", fetched_at: "2026-07-28T08:00:00Z", freshness: "fresh" },
+  }],
+  research: [{
+    id: "eastmoney-report:1", kind: "research", symbol: "SH.600519", title: "渠道韧性延续，长期价值稳固", category: "白酒", publisher: "测试证券", published_at: "2026-07-26T08:00:00Z", url: "https://example.com/report.pdf", rating: "增持", eps_forecasts: { current_year: 68.2 },
+    source: { provider: "eastmoney_report", label: "东方财富研报", capability: "research", source_url: "https://example.com/report.pdf", observed_at: "2026-07-26T08:00:00Z", fetched_at: "2026-07-28T08:00:00Z", freshness: "fresh" },
+  }],
+  themes: [{
+    code: "BK0896", name: "酿酒概念", change_pct: 1.8, lead_stock: "贵州茅台",
+    source: { provider: "eastmoney_theme", label: "东方财富题材归属", capability: "themes", source_url: "https://example.com/themes", observed_at: "2026-07-28T08:00:00Z", fetched_at: "2026-07-28T08:00:00Z", freshness: "fresh" },
+  }],
+  capabilities: {
+    filings: { status: "ready", provider: "cninfo", error: null, fetched_at: "2026-07-28T08:00:00Z" },
+    research: { status: "ready", provider: "eastmoney_report", error: null, fetched_at: "2026-07-28T08:00:00Z" },
+    themes: { status: "ready", provider: "eastmoney_theme", error: null, fetched_at: "2026-07-28T08:00:00Z" },
+  },
+};
+
+function renderPage(watchlist: object[] = [], authenticated = true, route = "/stocks?symbol=SH.600519", evidencePayload: object = evidence) {
   const currentWatchlist = [...watchlist];
   let accessToken = authenticated ? "fixture-token" : null;
   vi.stubGlobal("localStorage", {
@@ -82,6 +103,7 @@ function renderPage(watchlist: object[] = [], authenticated = true, route = "/st
     }
     if (url.includes("/watchlist")) return { ok: true, status: 200, json: async () => currentWatchlist };
     if (url.includes("/search")) return { ok: true, status: 200, json: async () => [] };
+    if (url.includes("/evidence")) return { ok: true, status: 200, json: async () => evidencePayload };
     return { ok: true, status: 200, json: async () => dossier };
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -139,6 +161,34 @@ it("shows the evidence ledger and edits the thesis before adding to watchlist", 
 
   expect(await screen.findByRole("link", { name: "已跟踪 · 编辑记录" })).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("已加入跟踪");
+});
+
+it("shows cited filings, research reports, and themes without changing the score", async () => {
+  renderPage();
+
+  const panel = within(await screen.findByLabelText("公司证据包"));
+  expect(panel.getByText("年度权益分派实施公告")).toBeInTheDocument();
+  expect(panel.getByRole("link", { name: "年度权益分派实施公告" })).toHaveAttribute("href", "https://example.com/filing");
+  expect(panel.getByText("渠道韧性延续，长期价值稳固")).toBeInTheDocument();
+  expect(panel.getByText(/测试证券 · 增持 · 白酒/)).toBeInTheDocument();
+  expect(panel.getByText("酿酒概念")).toBeInTheDocument();
+  expect(panel.getByText(/仅作研究上下文，不直接改写评分/)).toBeInTheDocument();
+  expect(screen.getAllByText("57/100").length).toBeGreaterThan(0);
+});
+
+it("keeps available evidence visible when one source is unavailable", async () => {
+  renderPage([], true, "/stocks?symbol=SH.600519", {
+    ...evidence,
+    research: [],
+    capabilities: {
+      ...evidence.capabilities,
+      research: { status: "unavailable", provider: "eastmoney_report", error: "upstream timeout", fetched_at: "2026-07-28T08:00:00Z" },
+    },
+  });
+
+  const panel = within(await screen.findByLabelText("公司证据包"));
+  expect(panel.getByText("年度权益分派实施公告")).toBeInTheDocument();
+  expect(panel.getByText("研报源暂不可用，公告与题材仍可继续核验。")).toBeInTheDocument();
 });
 
 it("formats the generated stock conclusion into a scannable analyst brief", async () => {

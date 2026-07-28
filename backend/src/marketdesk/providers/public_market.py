@@ -17,13 +17,17 @@ from marketdesk.models import (
     DatasetMeta,
     EquityDataset,
     EquityQuote,
+    EvidenceDocument,
     Freshness,
     IndexQuote,
+    InstrumentTheme,
     MarketEventRaw,
     SectorSnapshot,
     SemanticScreenResult,
+    TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
+from marketdesk.providers.cn_evidence import AshareEvidenceProvider
 from marketdesk.providers.iwencai import IwencaiProvider
 
 
@@ -82,6 +86,7 @@ class PublicMarketProvider:
             },
         }
         self.research_provider = IwencaiProvider(client=self.client)
+        self.evidence_provider = AshareEvidenceProvider(client=self.client)
         if self.research_provider.configured:
             self._mark_research_status("configured")
 
@@ -142,7 +147,7 @@ class PublicMarketProvider:
             ) from curl_error
 
     def provider_status(self) -> dict[str, dict[str, Any]]:
-        return self._enhancement_status
+        return {**self._enhancement_status, **self.evidence_provider.provider_status()}
 
     def _mark_fund_flow_status(self, status: str, error: str | None = None) -> None:
         payload: dict[str, Any] = {
@@ -587,6 +592,7 @@ class PublicMarketProvider:
         return result
 
     async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]:
+        events: list[MarketEventRaw] = []
         try:
             response = await self.client.get(
                 self.eastmoney_fast_news_url,
@@ -607,9 +613,32 @@ class PublicMarketProvider:
             events = self.normalize_fast_news(response.json())
         except (httpx.HTTPError, ValueError) as error:
             self._mark_fast_news_status("partial", str(error))
+        else:
+            self._mark_fast_news_status("ready" if events else "empty")
+        if events:
+            return events[:limit]
+        try:
+            return await self.evidence_provider.fetch_cls_events(limit)
+        except ProviderUnavailable:
             return []
-        self._mark_fast_news_status("ready" if events else "empty")
-        return events[:limit]
+
+    async def fetch_filings(
+        self, symbol: str, limit: int = 20
+    ) -> list[EvidenceDocument]:
+        return await self.evidence_provider.fetch_filings(symbol, limit)
+
+    async def fetch_research_documents(
+        self, symbol: str, limit: int = 20
+    ) -> list[EvidenceDocument]:
+        return await self.evidence_provider.fetch_research(symbol, limit)
+
+    async def fetch_themes(
+        self, symbol: str, limit: int = 30
+    ) -> list[InstrumentTheme]:
+        return await self.evidence_provider.fetch_themes(symbol, limit)
+
+    async def fetch_dragon_tiger(self, limit: int = 20) -> list[TradingAnomaly]:
+        return await self.evidence_provider.fetch_dragon_tiger(limit)
 
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Bar]:
         market, code = symbol.split(".", 1)

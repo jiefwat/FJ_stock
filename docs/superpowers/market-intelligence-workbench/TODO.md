@@ -75,3 +75,15 @@
 - [x] Move the top three Stock Lab advice reasons directly under the direct suggestion.
 - [x] Add a Stock Lab opportunity-review outcome so leads explicitly upgrade, stay watch-only, or fail participation review.
 - [x] Add Opportunity lead-layer filtering so users can focus on priority, watch-only, or high-risk leads.
+
+## A-share Evidence And Market Intelligence
+
+- [x] Freeze the pre-integration product as the remote annotated `v2` rollback tag.
+- [x] Add strict source, document, theme, anomaly, and capability-state contracts.
+- [x] Add CNINFO filings plus Eastmoney research metadata and instrument themes to Stock Lab.
+- [x] Add sector-flow leaders and the latest available Dragon-Tiger observations to Market.
+- [x] Add CLS as an independent fallback for market fast news.
+- [x] Keep external evidence display-only and isolated from deterministic scores.
+- [x] Expose source-specific ready, partial, empty, and unavailable states in Data Center.
+- [x] Pass backend/frontend tests, production build, and live provider contract checks.
+- [x] Complete authenticated local browser acceptance for Stock Lab, Market, Data Center, and 390px mobile width.

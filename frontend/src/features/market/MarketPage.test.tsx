@@ -37,6 +37,22 @@ const events = {
   ],
 };
 
+const intelligence = {
+  meta: { source: "eastmoney_sector_flow+eastmoney_dragon_tiger", observed_at: "2026-07-28T07:00:00Z", fetched_at: "2026-07-28T08:00:00Z", freshness: "fresh", coverage: 1, errors: [] },
+  sector_flows: [
+    { code: "BK1031", name: "电力设备", change_pct: 2.4, net_flow: 6466000000 },
+    { code: "BK0475", name: "银行", change_pct: 0.8, net_flow: 1210000000 },
+  ],
+  anomalies: [{
+    symbol: "SZ.002475", name: "立讯精密", trade_date: "2026-07-25", reason: "日涨幅偏离值达 7%", close: 42.5, change_pct: 9.99, net_buy: 120000000, buy_amount: 350000000, sell_amount: 230000000, turnover_rate: 8.5,
+    source: { provider: "eastmoney_datacenter", label: "东方财富龙虎榜", capability: "dragon_tiger", source_url: "https://data.eastmoney.com/stock/lhb.html", observed_at: "2026-07-25T07:00:00Z", fetched_at: "2026-07-28T08:00:00Z", freshness: "delayed" },
+  }],
+  capabilities: {
+    sector_flows: { status: "ready", provider: "eastmoney_sector_flow", error: null, fetched_at: "2026-07-28T08:00:00Z" },
+    dragon_tiger: { status: "ready", provider: "eastmoney_datacenter", error: null, fetched_at: "2026-07-28T08:00:00Z" },
+  },
+};
+
 const equityPage = {
   meta: market.snapshot.meta,
   total: 27,
@@ -105,6 +121,7 @@ function renderPage(initialPath = "/market") {
     }
     if (url.includes("/api/v1/sectors/BK1")) return { ok: true, status: 200, json: async () => sector };
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
+    if (url.includes("/api/v1/markets/CN/intelligence")) return { ok: true, status: 200, json: async () => intelligence };
     if (url.includes("/api/v1/equities")) return { ok: true, status: 200, json: async () => equityPage };
     return { ok: true, status: 200, json: async () => market };
   }));
@@ -137,6 +154,19 @@ it("opens a sector research panel with constituents and stock links", async () =
   const row = within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ });
   expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
+});
+
+it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {
+  renderPage();
+
+  const panel = within(await screen.findByLabelText("A股市场情报"));
+  expect(panel.getByText("板块资金确认")).toBeInTheDocument();
+  expect(panel.getByText("电力设备")).toBeInTheDocument();
+  expect(panel.getByText("+64.66 亿")).toBeInTheDocument();
+  expect(panel.getByText("龙虎榜观察")).toBeInTheDocument();
+  expect(panel.getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
+  expect(panel.getByText(/日涨幅偏离值达 7%/)).toBeInTheDocument();
+  expect(panel.getByText(/供应商算法与交易异动仅作展示/)).toBeInTheDocument();
 });
 
 it("browses, ranks, and searches the full market without loading every quote", async () => {

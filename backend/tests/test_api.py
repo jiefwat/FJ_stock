@@ -7,12 +7,17 @@ from marketdesk.api import create_app
 from marketdesk.models import (
     DatasetMeta,
     EquityQuote,
+    EvidenceDocument,
     Freshness,
     IndexQuote,
+    InstrumentTheme,
     MarketEventRaw,
     SectorSnapshot,
     SemanticScreenResult,
+    SourceRef,
+    TradingAnomaly,
 )
+from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.services import MarketService
 from marketdesk.store import Store
 
@@ -232,6 +237,88 @@ class ResearchEnhancementProvider(FixtureProvider):
         assert symbol == "SH.600519"
         assert name == "贵州茅台"
         return ["近三十日有分红相关公告", "研报关注现金流与渠道库存"]
+
+
+class EvidenceCapabilityProvider(FixtureProvider):
+    def __init__(self) -> None:
+        self.filing_calls = 0
+        self.research_calls = 0
+        self.theme_calls = 0
+        self.anomaly_calls = 0
+
+    @staticmethod
+    def source(provider: str, capability: str) -> SourceRef:
+        now = datetime.now(UTC)
+        return SourceRef(
+            provider=provider,
+            label=provider,
+            capability=capability,
+            source_url="https://example.com/source",
+            observed_at=now,
+            fetched_at=now,
+            freshness=Freshness.FRESH,
+        )
+
+    async def fetch_filings(self, symbol: str, limit: int = 20):
+        self.filing_calls += 1
+        now = datetime.now(UTC)
+        return [
+            EvidenceDocument(
+                id="cninfo:1",
+                kind="filing",
+                symbol=symbol,
+                title="年度权益分派实施公告",
+                category="权益分派",
+                publisher="巨潮资讯",
+                published_at=now,
+                url="https://example.com/filing",
+                source=self.source("cninfo", "filings"),
+            )
+        ][:limit]
+
+    async def fetch_research_documents(self, symbol: str, limit: int = 20):
+        self.research_calls += 1
+        raise ProviderUnavailable("research endpoint unavailable")
+
+    async def fetch_themes(self, symbol: str, limit: int = 30):
+        self.theme_calls += 1
+        return [
+            InstrumentTheme(
+                code="BK0896",
+                name="酿酒概念",
+                change_pct=1.8,
+                lead_stock="贵州茅台",
+                source=self.source("eastmoney_theme", "themes"),
+            )
+        ][:limit]
+
+    async def fetch_dragon_tiger(self, limit: int = 20):
+        self.anomaly_calls += 1
+        return [
+            TradingAnomaly(
+                symbol="SZ.002475",
+                name="立讯精密",
+                trade_date=datetime.now(UTC).date(),
+                reason="日涨幅偏离值达 7%",
+                net_buy=120_000_000,
+                source=self.source("eastmoney_datacenter", "dragon_tiger"),
+            )
+        ][:limit]
+
+    def provider_status(self):
+        return {
+            "cninfo_filings": {
+                "status": "ready",
+                "required": False,
+                "description": "巨潮公告元数据",
+            },
+            "eastmoney_research": {
+                "status": "unavailable",
+                "required": False,
+                "description": "东方财富研报元数据",
+                "error": "research endpoint unavailable",
+            },
+        }
 
 
 class SemanticScreenProvider(FixtureProvider):
@@ -614,6 +701,8 @@ def test_application_routes_require_authentication(tmp_path) -> None:
         "/api/v1/market",
         "/api/v1/equities",
         "/api/v1/market-events",
+        "/api/v1/instruments/SH.600519/evidence",
+        "/api/v1/markets/CN/intelligence",
         "/api/v1/sectors/BK1",
         "/api/v1/today",
         "/api/v1/opportunities",
@@ -774,6 +863,55 @@ def test_market_events_route_returns_classified_hot_events(tmp_path) -> None:
     assert any("公告/政策原文" in item for item in payload["next_actions"])
 
 
+def test_instrument_evidence_returns_partial_sources_and_uses_ttl_cache(tmp_path) -> None:
+    provider = EvidenceCapabilityProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "evidence.db"))
+    api = authenticated_client(service)
+
+    first = api.get("/api/v1/instruments/SH.600519/evidence", params={"limit": 10})
+    second = api.get("/api/v1/instruments/SH.600519/evidence", params={"limit": 10})
+
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["symbol"] == "SH.600519"
+    assert payload["filings"][0]["source"]["provider"] == "cninfo"
+    assert payload["research"] == []
+    assert payload["themes"][0]["name"] == "酿酒概念"
+    assert payload["capabilities"]["filings"]["status"] == "ready"
+    assert payload["capabilities"]["research"]["status"] == "unavailable"
+    assert "research endpoint unavailable" in payload["capabilities"]["research"]["error"]
+    assert second.json() == payload
+    assert (provider.filing_calls, provider.research_calls, provider.theme_calls) == (1, 1, 1)
+
+
+def test_cn_market_intelligence_returns_flow_and_latest_anomalies(tmp_path) -> None:
+    provider = EvidenceCapabilityProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "intelligence.db"))
+    api = authenticated_client(service)
+
+    first = api.get("/api/v1/markets/CN/intelligence", params={"limit": 10})
+    second = api.get("/api/v1/markets/CN/intelligence", params={"limit": 10})
+
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["meta"]["source"] == "eastmoney_sector_flow+eastmoney_dragon_tiger"
+    assert payload["sector_flows"][0]["name"] == "白酒"
+    assert payload["anomalies"][0]["symbol"] == "SZ.002475"
+    assert payload["capabilities"]["sector_flows"]["status"] == "ready"
+    assert payload["capabilities"]["dragon_tiger"]["status"] == "ready"
+    assert second.json() == payload
+    assert provider.anomaly_calls == 1
+
+
+def test_instrument_evidence_rejects_non_a_share_symbols(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/instruments/US.AAPL/evidence")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A-share symbol required"
+
+
 def test_sector_route_returns_analysis_and_constituents(tmp_path) -> None:
     api = client(tmp_path)
 
@@ -793,6 +931,18 @@ def test_data_status_lists_eastmoney_fund_flow_as_optional(tmp_path) -> None:
     provider = status.json()["providers"]["eastmoney_fund_flow"]
     assert provider["required"] is False
     assert provider["status"] in {"not_checked", "ready"}
+
+
+def test_data_status_lists_company_evidence_capabilities_separately(tmp_path) -> None:
+    provider = EvidenceCapabilityProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "capabilities.db"))
+    status = authenticated_client(service).get("/api/v1/data-status")
+
+    assert status.status_code == 200
+    providers = status.json()["providers"]
+    assert providers["cninfo_filings"]["description"] == "巨潮公告元数据"
+    assert providers["eastmoney_research"]["status"] == "unavailable"
+    assert providers["eastmoney_research"]["required"] is False
 
 
 def test_search_and_watchlist_crud(tmp_path) -> None:
