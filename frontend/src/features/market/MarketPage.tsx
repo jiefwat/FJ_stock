@@ -38,7 +38,7 @@ export function MarketPage() {
     <header className="page-head"><div><p className="eyebrow">MARKET / 全市场体检</p><h1>市场不是一个点数，<br /><em>而是一组证据。</em></h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
     <section className="breadth-board"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
     <div className="two-column"><section className="panel"><div className="panel-title"><span>指数</span></div><div className="market-table">{query.data.snapshot.indices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}</div></section><section className="panel"><div className="panel-title"><span>评分证据</span><small>分数 · 权重 · 事实</small></div><div className="factor-ledger">{query.data.analysis.factors.map((factor) => <article key={factor.key} className={factor.available ? "available" : "missing"}><span>{factor.label}<small>{factor.evidence}</small></span><strong>{factor.available ? fmt(factor.score, 0) : "未计入"}</strong><em>{factor.available ? `权重 ${percent(factor.weight * 100)}` : "权重 0%"}</em></article>)}</div></section></div>
-    <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} />
+    <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
     <EquityBrowser />
     <section className="panel event-radar">
       <div className="panel-title"><span>市场异动雷达</span><small>今天股市正在发生什么</small></div>
@@ -68,7 +68,7 @@ function flowAmount(value: number | null) {
   return `${amount > 0 ? "+" : ""}${fmt(amount)} 亿`;
 }
 
-function MarketIntelligencePanel({ data, loading, failed }: { data?: MarketIntelligenceResult; loading: boolean; failed: boolean }) {
+function MarketIntelligencePanel({ data, loading, failed, onOpenSector }: { data?: MarketIntelligenceResult; loading: boolean; failed: boolean; onOpenSector: (code: string) => void }) {
   return <section className="panel market-intelligence" aria-label="A股市场情报">
     <div className="panel-title"><span>A 股市场情报</span><small>板块资金 + 交易异动 · 只作核验线索</small></div>
     <p className="intelligence-boundary">供应商算法与交易异动仅作展示，不直接形成推荐或改变个股评分。</p>
@@ -78,11 +78,11 @@ function MarketIntelligencePanel({ data, loading, failed }: { data?: MarketIntel
       <div className="flow-leaders">
         <header><span>板块资金确认</span><b>{data.sector_flows.length} 个</b></header>
         {data.capabilities.sector_flows?.status === "unavailable" && <p className="capability-warning">板块资金源暂不可用。</p>}
-        {data.sector_flows.slice(0, 8).map((sector, index) => <article key={sector.code}>
+        {data.sector_flows.slice(0, 8).map((sector, index) => <button key={sector.code} type="button" onClick={() => onOpenSector(sector.code)}>
           <em>{String(index + 1).padStart(2, "0")}</em>
           <span>{sector.name}<small>{pct(sector.change_pct)}</small></span>
           <strong className={(sector.net_flow ?? 0) >= 0 ? "up" : "down"}>{flowAmount(sector.net_flow)}</strong>
-        </article>)}
+        </button>)}
       </div>
       <div className="anomaly-list">
         <header><span>龙虎榜观察</span><b>{data.anomalies.length} 条</b></header>

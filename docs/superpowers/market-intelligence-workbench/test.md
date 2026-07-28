@@ -792,7 +792,9 @@ Local browser acceptance:
 | Auth boundary | Registered temporary local account `codex-a-evidence-20260728-1526@marketdesk.local` and entered the authenticated workbench |
 | Stock Lab | `SH.600519` rendered 20 CNINFO announcement links, 20 Eastmoney research links, instrument themes, and the no-score-change boundary copy |
 | Theme clickthrough | Clicking the `食品饮料` theme opened `#/market?theme=BK0438...`, rendered `食品饮料题材简析`, and listed 30 related stocks including `SH.600519` |
+| Theme flow summary | The theme dossier now derives its funding temperature from related-stock net-flow rows when the board endpoint supplies constituent flows |
 | Market | Rendered A-share market intelligence, sector-flow leaders, latest Dragon-Tiger observations, and Stock Lab links |
+| Flow leader clickthrough | Market sector-flow leaders are clickable and open the same sector dossier and stock-link list used by the board heatmap |
 | Data Center | Rendered company filings, research, themes, Dragon-Tiger, Eastmoney fast news, and CLS fallback capability states |
 | Responsive layout | Stock Lab, Market, and Data Center each measured `scrollWidth=390` at 390 x 844 and `scrollWidth=1280` at desktop width |
 | Browser runtime | Playwright reported zero console errors and zero warnings after the authenticated desktop and mobile workflow |

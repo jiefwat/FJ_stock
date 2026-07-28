@@ -938,6 +938,9 @@ def test_theme_route_returns_board_constituents_for_clickthrough(tmp_path) -> No
     assert payload["sector"]["code"] == "BK0896"
     assert payload["sector"]["name"] == "酿酒概念"
     assert payload["sector"]["change_pct"] == 1.8
+    assert payload["sector"]["net_flow"] == 80_000_000
+    assert payload["evidence_coverage"] == 1
+    assert "主力净流入" in payload["summary"][0]
     assert payload["constituents"][0]["symbol"] == "SH.600519"
     assert payload["constituents"][0]["sector"] == "酿酒概念"
 

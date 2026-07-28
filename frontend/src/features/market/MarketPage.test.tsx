@@ -34,6 +34,16 @@ const theme = {
   ],
 };
 
+const flowSector = {
+  sector: { code: "BK1031", name: "电力设备", change_pct: 2.4, net_flow: 6466000000 },
+  summary: ["主力净流入 64.66 亿，板块热度偏强。"],
+  evidence_coverage: 1,
+  missing_evidence: [],
+  constituents: [
+    { symbol: "SZ.002475", code: "002475", name: "立讯精密", price: 42.5, change_pct: 9.99, amount: 2000000000, turnover_rate: 8.5, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: 120000000, sector: "电力设备" },
+  ],
+};
+
 const events = {
   meta: { source: "eastmoney_fast_news", observed_at: "2026-07-19T14:00:00Z", fetched_at: "2026-07-19T14:01:00Z", freshness: "fresh", coverage: 1, errors: [] },
   summary: ["央企改革出现政策支持信号，银行板块受到资金关注。"],
@@ -129,6 +139,7 @@ function renderPage(initialPath = "/market") {
       }
       return { ok: true, status: 200, json: async () => savedViews };
     }
+    if (url.includes("/api/v1/sectors/BK1031")) return { ok: true, status: 200, json: async () => flowSector };
     if (url.includes("/api/v1/sectors/BK1")) return { ok: true, status: 200, json: async () => sector };
     if (url.includes("/api/v1/themes/BK0896")) return { ok: true, status: 200, json: async () => theme };
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
@@ -191,6 +202,20 @@ it("renders sourced sector flows and dragon-tiger observations as market intelli
   expect(panel.getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
   expect(panel.getByText(/日涨幅偏离值达 7%/)).toBeInTheDocument();
   expect(panel.getByText(/供应商算法与交易异动仅作展示/)).toBeInTheDocument();
+});
+
+it("opens sector details from market intelligence flow leaders", async () => {
+  const requests = renderPage();
+
+  const panel = within(await screen.findByLabelText("A股市场情报"));
+  fireEvent.click(panel.getByRole("button", { name: /电力设备/ }));
+
+  expect(await screen.findByText("电力设备板块简析")).toBeInTheDocument();
+  await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/sectors/BK1031"))).toBe(true));
+  const detail = screen.getByText("电力设备板块简析").closest("section");
+  expect(detail).not.toBeNull();
+  expect(within(detail as HTMLElement).getByText("主力净流入 64.66 亿，板块热度偏强。")).toBeInTheDocument();
+  expect(within(detail as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
 });
 
 it("browses, ranks, and searches the full market without loading every quote", async () => {

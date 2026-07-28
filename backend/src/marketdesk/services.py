@@ -447,11 +447,12 @@ class MarketService:
                 ]
             except Exception as error:
                 self._provider_errors["theme_constituents"] = str(error)
+        net_flows = [quote.net_flow for quote in constituents if quote.net_flow is not None]
         snapshot = SectorSnapshot(
             code=normalized,
             name=theme_name,
             change_pct=change_pct,
-            net_flow=None,
+            net_flow=sum(net_flows) if net_flows else None,
         )
         return analyse_sector(snapshot, constituents)
 
