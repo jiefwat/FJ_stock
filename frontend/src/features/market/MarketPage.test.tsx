@@ -189,11 +189,14 @@ it("opens a sector research panel with constituents and stock links", async () =
   expect(handoff.getByText("STOCK HANDOFF")).toBeInTheDocument();
   expect(handoff.getByText("优先点开这几只")).toBeInTheDocument();
   expect(handoff.getByText(/价格与资金同向/)).toBeInTheDocument();
-  expect(handoff.getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97");
+  expect(handoff.getByText("先看交易计划")).toBeInTheDocument();
+  expect(handoff.getByText(/先复核入场/)).toBeInTheDocument();
+  expect(handoff.getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
   const row = within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ });
-  expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97");
+  expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
   expect(within(row).getByText(/价格与资金同向/)).toBeInTheDocument();
+  expect(within(row).getByText("先看交易计划")).toBeInTheDocument();
 });
 
 it("opens a theme research panel from Stock Lab theme links", async () => {
@@ -211,8 +214,10 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
   expect(within(detail as HTMLElement).getByText("题材涨跌")).toBeInTheDocument();
   const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
   expect(constituents).not.toBeNull();
-  expect(within(await screen.findByLabelText("酿酒概念题材优先个股线索")).getByText(/价格走强但资金缺口待补/)).toBeInTheDocument();
-  expect(within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK0896&boardName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&boardType=%E9%A2%98%E6%9D%90");
+  const handoff = within(await screen.findByLabelText("酿酒概念题材优先个股线索"));
+  expect(handoff.getByText(/价格走强但资金缺口待补/)).toBeInTheDocument();
+  expect(handoff.getByText("先看证据总账")).toBeInTheDocument();
+  expect(within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK0896&boardName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&boardType=%E9%A2%98%E6%9D%90#stock-evidence-audit");
   expect(within(detail as HTMLElement).getAllByText("缺口：板块资金流").length).toBeGreaterThan(0);
 });
 
@@ -253,8 +258,10 @@ it("opens sector details from market intelligence flow leaders", async () => {
   expect(within(detail as HTMLElement).getAllByText("主力净流入 64.66 亿，板块热度偏强。").length).toBeGreaterThan(0);
   const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
   expect(constituents).not.toBeNull();
-  expect(within(await screen.findByLabelText("电力设备板块优先个股线索")).getByText(/优先点开这几只/)).toBeInTheDocument();
-  expect(within(constituents as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475&from=market&board=BK1031&boardName=%E7%94%B5%E5%8A%9B%E8%AE%BE%E5%A4%87&boardType=%E6%9D%BF%E5%9D%97");
+  const handoff = within(await screen.findByLabelText("电力设备板块优先个股线索"));
+  expect(handoff.getByText(/优先点开这几只/)).toBeInTheDocument();
+  expect(handoff.getAllByText("先看交易计划").length).toBeGreaterThan(0);
+  expect(within(constituents as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475&from=market&board=BK1031&boardName=%E7%94%B5%E5%8A%9B%E8%AE%BE%E5%A4%87&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
 });
 
 it("sorts and filters dossier constituents like a compact screener", async () => {

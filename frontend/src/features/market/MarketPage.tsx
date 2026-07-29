@@ -135,6 +135,45 @@ function stockLeadReason(item: Quote) {
   return "证据较弱，先保留观察";
 }
 
+function stockLeadTarget(item: Quote) {
+  const up = (item.change_pct ?? 0) > 0;
+  const inflow = (item.net_flow ?? 0) > 0;
+
+  if (up && inflow) {
+    return {
+      anchor: "stock-investment-advice",
+      label: "先看交易计划",
+      detail: "进入 Stock Lab 后先复核入场、仓位和止损。",
+    };
+  }
+  if (up && item.net_flow == null) {
+    return {
+      anchor: "stock-evidence-audit",
+      label: "先看证据总账",
+      detail: "价格已动但资金缺口待补，先看支持、反方和缺口。",
+    };
+  }
+  if (inflow) {
+    return {
+      anchor: "stock-final-gate",
+      label: "先看 FINAL GATE",
+      detail: "资金先动但价格未确认，先判断是否只保留观察。",
+    };
+  }
+  if ((item.amount ?? 0) >= 1_000_000_000) {
+    return {
+      anchor: "stock-company-evidence",
+      label: "先补公告研报",
+      detail: "成交活跃但方向证据不足，先核验外部证据。",
+    };
+  }
+  return {
+    anchor: "stock-risk-controls",
+    label: "先看风控条件",
+    detail: "证据较弱，先确认放弃线和反方证据。",
+  };
+}
+
 function stockLeadTone(item: Quote) {
   if ((item.change_pct ?? 0) > 0 && (item.net_flow ?? 0) > 0) return "positive";
   if ((item.change_pct ?? 0) < 0 && (item.net_flow ?? 0) <= 0) return "negative";
@@ -148,9 +187,9 @@ function stockLeadScore(item: Quote) {
   return change * 2 + flow + amount;
 }
 
-function stockHref(item: Quote, source: SectorDossier, suffix: string) {
+function stockHref(item: Quote, source: SectorDossier, suffix: string, anchor = stockLeadTarget(item).anchor) {
   const params = new URLSearchParams({ symbol: item.symbol, from: "market", board: source.sector.code, boardName: source.sector.name, boardType: suffix });
-  return `/stocks?${params.toString()}`;
+  return `/stocks?${params.toString()}#${anchor}`;
 }
 
 function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string }) {
@@ -164,13 +203,18 @@ function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string
       <p>从板块进入个股页前，先看价格、资金和成交额是否给出点开理由。</p>
     </div>
     <div className="board-leads-grid">
-      {leads.map((item, index) => <Link key={item.symbol} className={stockLeadTone(item)} to={stockHref(item, data, suffix)}>
-        <em>{String(index + 1).padStart(2, "0")}</em>
-        <span>{item.name}<small>{item.symbol}</small></span>
-        <strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong>
-        <p>{stockLeadReason(item)}</p>
-        <b>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</b>
-      </Link>)}
+      {leads.map((item, index) => {
+        const target = stockLeadTarget(item);
+        return <Link key={item.symbol} className={stockLeadTone(item)} to={stockHref(item, data, suffix, target.anchor)}>
+          <em>{String(index + 1).padStart(2, "0")}</em>
+          <span>{item.name}<small>{item.symbol}</small></span>
+          <strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong>
+          <p>{stockLeadReason(item)}</p>
+          <i className="board-lead-route">{target.label}</i>
+          <small className="board-lead-detail">{target.detail}</small>
+          <b>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</b>
+        </Link>;
+      })}
     </div>
   </section>;
 }
@@ -192,7 +236,10 @@ function DossierPanel({ data, loading, error, variant, onClose }: { data?: Secto
         <label>范围<select aria-label="详情范围" value={filter} onChange={(event) => setFilter(event.target.value as DetailFilter)}><option value="all">全部</option><option value="net_inflow">只看净流入</option><option value="up">只看上涨</option></select></label>
         <span>显示 {rows.length} / {data.constituents.length}</span>
       </div>
-      {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => <Link key={item.symbol} to={stockHref(item, data, suffix)}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em><p>{stockLeadReason(item)}</p></Link>)}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
+      {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => {
+        const target = stockLeadTarget(item);
+        return <Link key={item.symbol} to={stockHref(item, data, suffix, target.anchor)}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em><p>{stockLeadReason(item)}</p><small className="stock-route-hint">{target.label}</small></Link>;
+      })}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
     </>}</AsyncState>
   </section>;
 }
