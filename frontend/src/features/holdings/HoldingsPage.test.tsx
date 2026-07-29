@@ -48,13 +48,36 @@ const holding = {
   next_actions: ["复核是否需要降仓"],
 };
 
-function renderPage() {
+const calmHolding = {
+  ...holding,
+  item: { ...holding.item, id: 2, symbol: "SZ.000001", name: "平安银行", quantity: 1000, cost_price: 11, target_weight: 0.2 },
+  quote: { ...holding.quote, symbol: "SZ.000001", code: "000001", name: "平安银行", price: 11.2, change_pct: 0.2, sector: "银行" },
+  market_value: 11200,
+  cost_value: 11000,
+  pnl: 200,
+  pnl_pct: 1.82,
+  day_pnl: 22,
+  day_pnl_pct: 0.2,
+  five_day_pnl: 80,
+  five_day_pnl_pct: 0.72,
+  portfolio_weight: 0.07,
+  drift: -0.13,
+  target_market_value: 32000,
+  rebalance_value: 20800,
+  rebalance_quantity: 1857,
+  action: "hold",
+  conclusion: "持仓结论：平安银行 暂无必须处理的持仓，等待更好的复核窗口。",
+  risk_flags: [],
+  next_actions: ["继续观察"],
+};
+
+function renderPage(items = [holding]) {
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === "PATCH") {
       const body = JSON.parse(String(init.body));
       return { ok: true, status: 200, json: async () => ({ ...holding, item: { ...holding.item, ...body, updated_at: "2026-07-19T10:00:00Z" }, conclusion: "持仓结论：贵州茅台 已更新持仓逻辑，继续观察。" }) };
     }
-    return { ok: true, status: 200, json: async () => [holding] };
+    return { ok: true, status: 200, json: async () => items };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -76,6 +99,13 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(screen.getByText(/1 笔持仓/)).toBeInTheDocument();
   expect(screen.getByText(/需要复核 1 笔/)).toBeInTheDocument();
   expect(screen.getAllByText(/组合占比高于目标/).length).toBeGreaterThan(0);
+  const actionDeck = within(screen.getByLabelText("组合处理台"));
+  expect(actionDeck.getByText("NEXT POSITION")).toBeInTheDocument();
+  expect(actionDeck.getByText("偏离金额")).toBeInTheDocument();
+  expect(actionDeck.getByText("-90,000")).toBeInTheDocument();
+  expect(actionDeck.getByRole("link", { name: "复核证据" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
+  expect(actionDeck.getByRole("link", { name: "问这笔持仓" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
+  expect(actionDeck.getByRole("link", { name: "问组合顺序" })).toHaveAttribute("href", "/ask?from=holdings&question=%E6%88%91%E7%9A%84%E7%BB%84%E5%90%88%E4%BB%8A%E5%A4%A9%E5%85%88%E5%A4%84%E7%90%86%E5%93%AA%E5%8F%AA%E6%8C%81%E4%BB%93");
 
   const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
   expect(within(row).getByText("贵州茅台")).toBeInTheDocument();
@@ -98,11 +128,21 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(within(row).getByText("60,000")).toBeInTheDocument();
   expect(within(row).queryByText("100.0%")).not.toBeInTheDocument();
   expect(within(row).queryByText("目标 40.0%")).not.toBeInTheDocument();
-  expect(within(row).getByRole("link", { name: "个股分析 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
+  expect(within(row).getByRole("link", { name: "个股复核 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
+  expect(within(row).getByRole("link", { name: "问持仓 →" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();
   expect(screen.queryByText("流动性承载")).not.toBeInTheDocument();
   expect(screen.queryByText("估值安全垫")).not.toBeInTheDocument();
+});
+
+it("orders holdings by action priority before the calmer rows", async () => {
+  renderPage([calmHolding, holding]);
+
+  const rows = within(await screen.findByRole("list", { name: "持仓清单" })).getAllByRole("listitem");
+
+  expect(rows[0]).toHaveAccessibleName(/贵州茅台/);
+  expect(rows[1]).toHaveAccessibleName(/平安银行/);
 });
 
 it("keeps editing lightweight from the list row", async () => {

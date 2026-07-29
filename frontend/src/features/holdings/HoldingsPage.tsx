@@ -76,6 +76,14 @@ function actionTone(dossier: HoldingDossier) {
   return "";
 }
 
+function holdingPriority(dossier: HoldingDossier) {
+  const actionScore = dossier.action === "exit_watch" ? 50 : dossier.action === "trim" ? 40 : dossier.action === "review" ? 30 : dossier.action === "add_watch" ? 20 : 10;
+  const rebalanceScore = Math.min(Math.abs(dossier.rebalance_value ?? 0) / 1000, 40);
+  const lossScore = Math.max(0, -(dossier.pnl_pct ?? 0));
+  const driftScore = Math.max(0, Math.abs(dossier.drift ?? 0) * 100);
+  return actionScore + rebalanceScore + lossScore + driftScore + dossier.risk_flags.length * 8;
+}
+
 function compactConclusion(dossier: HoldingDossier) {
   const escapedName = dossier.item.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return dossier.conclusion
@@ -84,17 +92,47 @@ function compactConclusion(dossier: HoldingDossier) {
     .trim();
 }
 
+function holdingAskHref(dossier: HoldingDossier) {
+  return `/ask?symbol=${encodeURIComponent(dossier.item.symbol)}&name=${encodeURIComponent(dossier.item.name)}&from=holdings&question=${encodeURIComponent(`我的${dossier.item.name}持仓风险怎么处理`)}`;
+}
+
 function portfolioSummary(items: HoldingDossier[]) {
   const totalValue = items.reduce((sum, item) => sum + (item.market_value ?? 0), 0);
   const totalCost = items.reduce((sum, item) => sum + item.cost_value, 0);
   const totalPnl = items.reduce((sum, item) => sum + (item.pnl ?? 0), 0);
   const totalPnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : null;
-  const reviewItems = items.filter((item) => item.action !== "hold" || Math.abs(item.rebalance_quantity ?? 0) > 1);
+  const reviewItems = items
+    .filter((item) => item.action !== "hold" || Math.abs(item.rebalance_quantity ?? 0) > 1 || item.risk_flags.length > 0)
+    .sort((left, right) => holdingPriority(right) - holdingPriority(left));
   const riskFlags = [...new Set(items.flatMap((item) => item.risk_flags))];
   const conclusion = items.length
     ? `${items.length} 笔持仓，${reviewItems.length ? `需要复核 ${reviewItems.length} 笔` : "暂无必须处理的持仓"}；${riskFlags[0] ?? "组合暴露接近目标"}。`
     : "还没有持仓，先录入真实数量、成本和目标仓位。";
   return { totalValue, totalPnl, totalPnlPct, reviewItems, riskFlags, conclusion };
+}
+
+function PortfolioActionDeck({ items }: { items: HoldingDossier[] }) {
+  const priority = items[0];
+  if (!priority) return null;
+  const reason = priority.risk_flags[0] ?? rebalanceText(priority);
+  return <section className={`portfolio-action-deck ${priority.action}`} aria-label="组合处理台">
+    <div>
+      <span>NEXT POSITION</span>
+      <strong>{priority.item.name}</strong>
+      <p>{reason}</p>
+      <small>{actionLabel[priority.action] ?? priority.action} · {rebalanceText(priority)}</small>
+    </div>
+    <div className="portfolio-action-numbers">
+      <article><span>偏离金额</span><strong className={(priority.rebalance_value ?? 0) >= 0 ? "up" : "down"}>{signedMoney(priority.rebalance_value, 0)}</strong></article>
+      <article><span>建议股数</span><strong className={actionTone(priority)}>{actionQuantity(priority)}</strong></article>
+      <article><span>持仓盈亏</span><strong className={(priority.pnl ?? 0) >= 0 ? "up" : "down"}>{signedMoney(priority.pnl, 0)}</strong></article>
+    </div>
+    <nav>
+      <Link to={`/stocks?symbol=${encodeURIComponent(priority.item.symbol)}#stock-final-gate`}>复核证据</Link>
+      <Link to={holdingAskHref(priority)}>问这笔持仓</Link>
+      <Link to={`/ask?from=holdings&question=${encodeURIComponent("我的组合今天先处理哪只持仓")}`}>问组合顺序</Link>
+    </nav>
+  </section>;
 }
 
 function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete: (id: number) => void }) {
@@ -157,7 +195,8 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
       {update.isError && <em className="negative" role="alert">保存失败</em>}
       <button className="icon-button" type="button" aria-label={`删除持仓 ${dossier.item.name}`} onClick={() => onDelete(dossier.item.id)}><Trash2 size={15} /></button>
       <button className="button secondary" type="button" aria-label={`保存 ${dossier.item.name}`} onClick={() => update.mutate()} disabled={update.isPending}><Save size={13} />保存</button>
-      <Link className="text-link" to={`/stocks?symbol=${dossier.item.symbol}`}>个股分析 →</Link>
+      <Link className="text-link" to={`/stocks?symbol=${encodeURIComponent(dossier.item.symbol)}#stock-final-gate`}>个股复核 →</Link>
+      <Link className="text-link ask-link" to={holdingAskHref(dossier)}>问持仓 →</Link>
     </div>
   </article>;
 }
@@ -165,8 +204,10 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
 export function HoldingsPage() {
   const client = useQueryClient();
   const [draft, setDraft] = useState<HoldingDraft>({ symbol: "SH.600519", name: "贵州茅台", quantity: "100", cost_price: "1400", target_weight: "20", thesis: "写下这笔持仓为什么还值得留在组合里", invalidation: "写下什么情况下必须降仓或退出" });
-  const query = useQuery({ queryKey: ["holdings"], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings"), retry: false });
+  const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
+  const query = useQuery({ queryKey: ["holdings", "page", authScope], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings"), retry: false });
   const holdings = query.data ?? [];
+  const orderedHoldings = useMemo(() => [...holdings].sort((left, right) => holdingPriority(right) - holdingPriority(left)), [holdings]);
   const summary = useMemo(() => portfolioSummary(holdings), [holdings]);
   const create = useMutation({
     mutationFn: () => api<HoldingDossier>("/api/v1/holdings", { method: "POST", body: JSON.stringify(toPayload(draft)) }),
@@ -203,12 +244,13 @@ export function HoldingsPage() {
         <p>{summary.conclusion}</p>
         {summary.riskFlags.length > 0 && <div>{summary.riskFlags.slice(0, 4).map((flag) => <i key={flag}>{flag}</i>)}</div>}
       </div>
+      <PortfolioActionDeck items={summary.reviewItems.length ? summary.reviewItems : orderedHoldings} />
     </section>
 
     <section className="panel holdings-table-panel">
       <div className="panel-title"><span>持仓列表</span><small>{holdings.length} 笔 · 每行只放结论、仓位和跳板</small></div>
       {holdings.length ? <div className="holdings-list" role="list" aria-label="持仓清单">
-        {holdings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}
+        {orderedHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}
       </div> : <div className="empty">还没有持仓。先新增一笔，系统会在上方生成组合结论，并在列表里给每只股票一个处理动作。</div>}
     </section>
 

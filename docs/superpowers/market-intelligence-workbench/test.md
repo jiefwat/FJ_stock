@@ -1547,3 +1547,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: App shell tests passed, 10 tests; frontend typecheck passed. Coverage asserts sentinel rendering, leading holding/risk flag/action copy, metrics, holdings route, Stock Lab deep link, Ask Stock holding-risk handoff URL, and account-scoped holdings cache behavior.
+
+## 2026-07-29 Holdings Triage Desk
+
+Holdings now behaves like a treatment desk after the Today sentinel. The page ranks holdings by action severity, rebalance value, drift, losses, and risk flags; surfaces the first item as a `NEXT POSITION` action deck; and adds direct handoffs to Stock Lab `FINAL GATE`, Ask Stock for the selected holding, and Ask Stock for portfolio ordering. The holdings page query key also includes the authenticated token scope to avoid stale account-scoped cache reuse.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/holdings/HoldingsPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Holdings page tests passed, 4 tests; frontend typecheck passed. Coverage asserts the action deck, rebalance metrics, Stock Lab deep link, holding-specific Ask Stock URL, portfolio-order Ask Stock URL, and risk-priority ordering before calmer holdings.
