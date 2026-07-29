@@ -268,6 +268,33 @@ it("shows recent research shortcuts in the global router", async () => {
   expect(recent.getByRole("link", { name: "问异动" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&question=%E6%9C%80%E8%BF%91%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%80%8E%E4%B9%88%E5%A4%A7%E8%B7%8C");
 });
 
+it("surfaces recent research on the Today desk", async () => {
+  localStorage.setItem("marketdesk.accessToken", "today-recent");
+  localStorage.setItem("marketdesk.recentResearch.v1.today-recent", JSON.stringify({
+    version: 1,
+    items: [{ symbol: "SH.600519", name: "贵州茅台", sector: "白酒", updatedAt: 1 }],
+  }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 12, email: "today@example.com", display_name: "Today User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+
+  const continueDesk = within(await screen.findByLabelText("继续研究"));
+  expect(continueDesk.getByText("CONTINUE")).toBeInTheDocument();
+  expect(continueDesk.getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "#/stocks?symbol=SH.600519#stock-final-gate");
+  expect(continueDesk.getByRole("link", { name: "问风险" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E7%8E%B0%E5%9C%A8%E4%B8%BB%E8%A6%81%E9%A3%8E%E9%99%A9%E6%98%AF%E4%BB%80%E4%B9%88");
+  expect(continueDesk.getByRole("link", { name: "问异动" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%9C%80%E8%BF%91%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%80%8E%E4%B9%88%E5%A4%A7%E8%B7%8C");
+  expect(continueDesk.getByRole("link", { name: "问基本面" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E5%9F%BA%E6%9C%AC%E9%9D%A2%E6%80%8E%E4%B9%88%E6%A0%B7");
+});
+
 it("keeps the Ask Stock route behind the authenticated shell", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-ask-route");
   window.location.hash = "#/ask";

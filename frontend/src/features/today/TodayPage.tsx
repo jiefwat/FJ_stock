@@ -1,10 +1,12 @@
 import { ArrowUpRight, Gauge, Radar, ShieldAlert } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
 import { api, fmt, pct, percent, type MarketEventResult, type TodayData } from "../../lib/api";
+import { loadRecentResearch, type RecentResearch } from "../../lib/recentResearch";
 
 const regimeLabel: Record<string, string> = { risk_off: "防守", cautious: "谨慎", balanced: "均衡", risk_on: "积极" };
 const actionRoutes = ["/market", "/market", "/opportunities"];
@@ -88,9 +90,38 @@ function OpeningDesk({ data, events }: { data: TodayData; events?: MarketEventRe
   </section>;
 }
 
+function ContinueResearch({ items }: { items: RecentResearch[] }) {
+  if (!items.length) return null;
+  return <section className="continue-research reveal delay-2" aria-label="继续研究">
+    <div className="continue-research-title">
+      <span>CONTINUE</span>
+      <strong>接着看昨天盯过的股票</strong>
+      <p>先回到 FINAL GATE，再按风险、异动或基本面继续追问。</p>
+    </div>
+    <div className="continue-research-list">
+      {items.slice(0, 3).map((item) => <article key={item.symbol}>
+        <Link className="continue-stock" to={`/stocks?symbol=${encodeURIComponent(item.symbol)}#stock-final-gate`}>
+          <b>{item.name}</b>
+          <span>{item.symbol}</span>
+          <small>{item.sector ?? "板块待补"}</small>
+        </Link>
+        <div>
+          <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&from=today&question=${encodeURIComponent(`${item.name}现在主要风险是什么`)}`}>问风险</Link>
+          <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&from=today&question=${encodeURIComponent(`最近${item.name}怎么大跌`)}`}>问异动</Link>
+          <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&from=today&question=${encodeURIComponent(`${item.name}基本面怎么样`)}`}>问基本面</Link>
+        </div>
+      </article>)}
+    </div>
+  </section>;
+}
+
 export function TodayPage() {
+  const [recentResearch, setRecentResearch] = useState<RecentResearch[]>(() => loadRecentResearch());
   const query = useQuery({ queryKey: ["today"], queryFn: () => api<TodayData>("/api/v1/today") });
   const eventsQuery = useQuery({ queryKey: ["market-events", "today"], queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=8") });
+  useEffect(() => {
+    setRecentResearch(loadRecentResearch());
+  }, []);
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
     <header className="page-head reveal">
       <div><p className="eyebrow">TODAY / 决策起点</p><h1>先判断环境，<br /><em>再寻找机会。</em></h1></div>
@@ -105,6 +136,7 @@ export function TodayPage() {
     </section>
     <p className="risk-caption">风险控制参考用于研究分层，不是仓位或交易建议。机会分会根据当前市场环境自动扣减。</p>
     <OpeningDesk data={query.data} events={eventsQuery.data} />
+    <ContinueResearch items={recentResearch} />
     <section className="market-evidence-strip"><div><span>为什么是这个市场状态</span><small>已按可用数据重新分配权重</small></div>{query.data.analysis.factors.filter((factor) => factor.available).slice(0, 3).map((factor) => <article key={factor.key}><span>{factor.label}</span><strong>{fmt(factor.score, 0)}</strong><small>{factor.evidence}</small></article>)}</section>
     <section className="panel today-events reveal delay-2">
       <div className="panel-title"><span>今日市场异动</span><Link to="/market">查看完整雷达 <ArrowUpRight size={14} /></Link></div>

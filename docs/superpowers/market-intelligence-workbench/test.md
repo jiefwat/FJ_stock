@@ -1521,3 +1521,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Stock Lab page tests passed, 15 tests; frontend typecheck passed. Coverage asserts all four Ask Stock route URLs, preserved stock/source context, and placement between `FINAL GATE` and the evidence audit desk.
+
+## 2026-07-29 Today Continue Research Desk
+
+Today now surfaces the account-scoped recent research trail directly on the opening desk. When recent Stock Lab dossiers exist, the page shows a `CONTINUE` strip with direct links back to each stock's `FINAL GATE` plus one-click Ask Stock routes for risk, movement, and fundamental questions. This makes the morning workflow resume yesterday's research before scanning new noise.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/app/App.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: App shell tests passed, 9 tests; frontend typecheck passed. Coverage asserts the Today continue-research region, FINAL GATE deep link, and risk/movement/fundamental Ask Stock handoff URLs.
