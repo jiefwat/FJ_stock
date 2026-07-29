@@ -594,6 +594,10 @@ def test_ask_stock_named_portfolio_diagnostic_uses_current_account_holdings(tmp_
     response_a = api_a.post(
         "/api/v1/ask-stock", json={"question": "我的持仓里贵州茅台占比是不是太高"}
     )
+    treatment_a = api_a.post(
+        "/api/v1/ask-stock",
+        json={"question": "我的持仓里贵州茅台风险怎么处理"},
+    )
     response_b = api_b.post(
         "/api/v1/ask-stock", json={"question": "我的持仓里贵州茅台占比是不是太高"}
     )
@@ -628,6 +632,13 @@ def test_ask_stock_named_portfolio_diagnostic_uses_current_account_holdings(tmp_
         "SZ.000001",
         "BJ.430047",
     }
+
+    assert treatment_a.status_code == 200
+    treatment_payload = treatment_a.json()
+    assert treatment_payload["kind"] == "portfolio_analysis"
+    assert treatment_payload["intent"] == "portfolio"
+    assert "贵州茅台（SH.600519）在当前组合风险排序第" in treatment_payload["answer"]
+    assert any(row["股票代码"] == "SH.600519" for row in treatment_payload["rows"])
 
     assert response_b.status_code == 200
     payload_b = response_b.json()

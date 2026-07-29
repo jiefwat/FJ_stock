@@ -132,6 +132,8 @@ type AskSourceContext = {
   detail: string;
   origin: string;
   promptSeeds: string[];
+  backHref?: string;
+  backLabel?: string;
 };
 type AskMessage =
   | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
@@ -166,6 +168,8 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
   const boardType = safeParam(params, "boardType") || "板块";
   const preset = safeParam(params, "preset");
   const presetLabel = sourcePresetLabels[preset] ?? preset;
+  const inboundQuestion = safeParam(params, "question");
+  const holdingBridge = from === "holdings" || (from === "today" && /(持仓|组合|调仓|仓位)/.test(inboundQuestion));
 
   if (from === "market") {
     return {
@@ -176,6 +180,22 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
         ? `默认围绕 ${stockLabel(stock)} 追问：先核验它是否真能代表板块，再问失效条件。`
         : "可以追问板块资金、前排样本和个股证据缺口。",
       promptSeeds: ["为什么它是板块前排样本", "板块资金是否确认它", "它的失效条件是什么"],
+    };
+  }
+
+  if (holdingBridge) {
+    return {
+      stock,
+      origin: "PORTFOLIO BRIDGE",
+      label: stock ? `处理${stockLabel(stock)}这笔持仓` : "处理账户组合",
+      detail: stock
+        ? "从持仓处理台带入上下文；优先回答这笔仓位的风险、偏离和调仓顺序。"
+        : "从持仓处理台带入上下文；优先回答组合风险、集中度和今天先处理谁。",
+      promptSeeds: stock
+        ? ["我的持仓里这只要先减仓吗", "我的持仓里这只如果风险触发怎么调仓", "它在组合里是不是太重"]
+        : ["我的持仓里风险最大的是哪个", "我的组合今天先处理哪只持仓", "帮我生成调仓计划"],
+      backHref: "#/holdings",
+      backLabel: "回到持仓处理 →",
     };
   }
 
@@ -811,7 +831,7 @@ export function AskStockPage() {
             <strong>{sourceContext.label}</strong>
           </header>
           <p>{sourceContext.detail}</p>
-          {sourceContext.stock ? <a href={`#/stocks?symbol=${encodeURIComponent(sourceContext.stock.symbol)}`}>回到个股证据 →</a> : null}
+          {sourceContext.stock || sourceContext.backHref ? <a href={sourceContext.backHref ?? `#/stocks?symbol=${encodeURIComponent(sourceContext.stock?.symbol ?? "")}`}>{sourceContext.backLabel ?? "回到个股证据 →"}</a> : null}
           <div>
             {sourceContext.promptSeeds.map((prompt) => <button
               type="button"

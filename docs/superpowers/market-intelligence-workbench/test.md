@@ -1560,3 +1560,17 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Holdings page tests passed, 4 tests; frontend typecheck passed. Coverage asserts the action deck, rebalance metrics, Stock Lab deep link, holding-specific Ask Stock URL, portfolio-order Ask Stock URL, and risk-priority ordering before calmer holdings.
+
+## 2026-07-29 Ask Stock Portfolio Bridge
+
+Ask Stock now treats `from=holdings` and Today holding-risk handoffs as a dedicated portfolio bridge instead of a generic stock bridge. Holding handoff questions use the stable wording `我的持仓里{股票}风险怎么处理，要不要调仓`, the source card displays `PORTFOLIO BRIDGE`, links back to the holdings treatment desk, and provides holding/portfolio-specific follow-up prompts. Backend intent detection also recognizes natural holding treatment questions such as `我的持仓里贵州茅台风险怎么处理` as account-scoped portfolio diagnostics.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx src/features/holdings/HoldingsPage.test.tsx src/app/App.test.tsx
+pnpm --dir frontend typecheck
+uv run --directory backend pytest -q tests/test_api.py -k 'ask_stock_named_portfolio_diagnostic or ask_stock_answers_portfolio_question_without_cross_account_leakage'
+```
+
+Result: Frontend focused tests passed, 30 tests; frontend typecheck passed; backend focused Ask Stock portfolio tests passed, 2 tests. Coverage asserts holdings/Today Ask Stock URLs, `PORTFOLIO BRIDGE` source context, holdings back-link, portfolio prompt carry behavior, and portfolio-analysis routing for named holding treatment questions.

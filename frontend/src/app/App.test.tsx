@@ -348,7 +348,7 @@ it("shows a holdings risk sentinel on Today when positions need action", async (
   expect(sentinel.getByText("+7.14%")).toBeInTheDocument();
   expect(sentinel.getByRole("link", { name: "处理持仓" })).toHaveAttribute("href", "#/holdings");
   expect(sentinel.getByRole("link", { name: "个股复核" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519#stock-final-gate");
-  expect(sentinel.getByRole("link", { name: "问持仓" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
+  expect(sentinel.getByRole("link", { name: "问持仓" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
 });
 
 it("keeps the Ask Stock route behind the authenticated shell", async () => {

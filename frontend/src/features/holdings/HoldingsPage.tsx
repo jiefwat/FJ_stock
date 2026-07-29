@@ -93,7 +93,7 @@ function compactConclusion(dossier: HoldingDossier) {
 }
 
 function holdingAskHref(dossier: HoldingDossier) {
-  return `/ask?symbol=${encodeURIComponent(dossier.item.symbol)}&name=${encodeURIComponent(dossier.item.name)}&from=holdings&question=${encodeURIComponent(`我的${dossier.item.name}持仓风险怎么处理`)}`;
+  return `/ask?symbol=${encodeURIComponent(dossier.item.symbol)}&name=${encodeURIComponent(dossier.item.name)}&from=holdings&question=${encodeURIComponent(`我的持仓里${dossier.item.name}风险怎么处理，要不要调仓`)}`;
 }
 
 function portfolioSummary(items: HoldingDossier[]) {

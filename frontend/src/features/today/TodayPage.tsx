@@ -152,7 +152,7 @@ function HoldingRiskSentinel({ items }: { items: HoldingDossier[] }) {
     <nav>
       <Link to="/holdings">处理持仓</Link>
       <Link to={`/stocks?symbol=${encodeURIComponent(leader.item.symbol)}#stock-final-gate`}>个股复核</Link>
-      <Link to={`/ask?symbol=${encodeURIComponent(leader.item.symbol)}&name=${encodeURIComponent(leader.item.name)}&from=today&question=${encodeURIComponent(`我的${leader.item.name}持仓风险怎么处理`)}`}>问持仓</Link>
+      <Link to={`/ask?symbol=${encodeURIComponent(leader.item.symbol)}&name=${encodeURIComponent(leader.item.name)}&from=today&question=${encodeURIComponent(`我的持仓里${leader.item.name}风险怎么处理，要不要调仓`)}`}>问持仓</Link>
     </nav>
   </section>;
 }

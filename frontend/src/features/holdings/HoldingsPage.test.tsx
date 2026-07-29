@@ -104,7 +104,7 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(actionDeck.getByText("偏离金额")).toBeInTheDocument();
   expect(actionDeck.getByText("-90,000")).toBeInTheDocument();
   expect(actionDeck.getByRole("link", { name: "复核证据" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
-  expect(actionDeck.getByRole("link", { name: "问这笔持仓" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
+  expect(actionDeck.getByRole("link", { name: "问这笔持仓" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
   expect(actionDeck.getByRole("link", { name: "问组合顺序" })).toHaveAttribute("href", "/ask?from=holdings&question=%E6%88%91%E7%9A%84%E7%BB%84%E5%90%88%E4%BB%8A%E5%A4%A9%E5%85%88%E5%A4%84%E7%90%86%E5%93%AA%E5%8F%AA%E6%8C%81%E4%BB%93");
 
   const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
@@ -129,7 +129,7 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(within(row).queryByText("100.0%")).not.toBeInTheDocument();
   expect(within(row).queryByText("目标 40.0%")).not.toBeInTheDocument();
   expect(within(row).getByRole("link", { name: "个股复核 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
-  expect(within(row).getByRole("link", { name: "问持仓 →" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
+  expect(within(row).getByRole("link", { name: "问持仓 →" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();
   expect(screen.queryByText("流动性承载")).not.toBeInTheDocument();

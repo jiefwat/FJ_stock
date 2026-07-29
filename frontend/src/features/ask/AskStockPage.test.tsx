@@ -166,6 +166,47 @@ it("uses opportunity context for lead upgrade prompts", async () => {
   expect(requests).toEqual(["宁德时代 这条趋势延续线索能升级吗"]);
 });
 
+it("uses holdings context for portfolio treatment handoffs", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        kind: "portfolio_analysis",
+        intent: "portfolio",
+        symbol: null,
+        name: null,
+        question: parsed.question,
+        answer: "结论：这笔持仓先按减仓复核，不急着补仓。",
+        evidence: ["组合占比高于目标"],
+        risks: ["持仓偏离目标仓位"],
+        next_actions: ["先复核调仓顺序"],
+      }),
+    };
+  }));
+
+  renderPage("/ask?symbol=SH.600519&name=贵州茅台&from=holdings&question=我的持仓里贵州茅台风险怎么处理，要不要调仓");
+
+  const context = screen.getByLabelText("问股来源上下文");
+  expect(context).toHaveTextContent("PORTFOLIO BRIDGE");
+  expect(context).toHaveTextContent("处理贵州茅台 SH.600519这笔持仓");
+  expect(context).toHaveTextContent("优先回答这笔仓位的风险、偏离和调仓顺序");
+  expect(within(context).getByRole("link", { name: "回到持仓处理 →" })).toHaveAttribute("href", "#/holdings");
+  expect(within(context).getByRole("button", { name: "我的持仓里这只要先减仓吗" })).toBeInTheDocument();
+  expect(await screen.findByText("结论：这笔持仓先按减仓复核，不急着补仓。")).toBeInTheDocument();
+
+  fireEvent.click(within(context).getByRole("button", { name: "我的持仓里这只要先减仓吗" }));
+
+  await waitFor(() => expect(requests).toEqual([
+    "我的持仓里贵州茅台风险怎么处理，要不要调仓",
+    "贵州茅台 我的持仓里这只要先减仓吗",
+  ]));
+});
+
 it("routes users through the Ask Stock playbook before submitting", async () => {
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

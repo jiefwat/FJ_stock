@@ -93,6 +93,23 @@ def is_portfolio_diagnostic_question(question: str) -> bool:
     normalized = _compact(question)
     if not is_portfolio_question(normalized):
         return False
+    if ("我持有" in normalized or "我买的" in normalized) and not any(
+        keyword in normalized
+        for keyword in (
+            "我的持仓",
+            "持仓里",
+            "持仓中",
+            "组合",
+            "账户",
+            "排序",
+            "排名",
+            "占比",
+            "调仓",
+            "再平衡",
+            "仓位调整",
+        )
+    ):
+        return False
     keywords = (
         "风险最大",
         "哪个",
@@ -111,6 +128,12 @@ def is_portfolio_diagnostic_question(question: str) -> bool:
         "分散",
         "配置",
         "调仓",
+        "怎么处理",
+        "如何处理",
+        "要不要减仓",
+        "要不要卖",
+        "减仓",
+        "补仓",
     )
     return any(keyword in normalized for keyword in keywords)
 
