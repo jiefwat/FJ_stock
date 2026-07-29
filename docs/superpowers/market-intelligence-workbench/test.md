@@ -1109,3 +1109,22 @@ pnpm --dir frontend typecheck
 ```
 
 Result: backend Ask/API focused tests passed 54 tests, Ask Stock frontend passed 13 tests, and frontend typecheck passed. The new assertions verify `FINAL GATE`, `LEDGER GATE`, `ASK GATE`, and that the next review action is visible before the detailed evidence lists.
+
+Full gate and public deployment after the Ask Stock decision-gate upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-125644-9c6b305` |
+| Commit | `9c6b305` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `ASK GATE`, `FINAL GATE`, `LEDGER GATE`, `问股决策闸口`, and `先过门，再追问` |
