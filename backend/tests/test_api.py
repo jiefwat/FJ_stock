@@ -1194,6 +1194,53 @@ def test_user_preferences_are_personal(tmp_path) -> None:
     )
 
 
+def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
+    api = client(tmp_path)
+    assert api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 10,
+            "cost_price": 1700,
+            "target_weight": 0.5,
+            "thesis": "白酒龙头现金流稳定",
+            "invalidation": "跌破长期均线",
+        },
+    ).status_code == 201
+    assert api.post(
+        "/api/v1/watchlist",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "thesis": "等待资金确认",
+            "invalidation": "跌破长期均线",
+        },
+    ).status_code == 201
+
+    response = api.get(
+        "/api/v1/morning-email/preview",
+        params={"base_url": "https://stock.example.com"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recipient"] == "fixture-user@example.com"
+    assert payload["enabled"] is True
+    assert payload["subject"].startswith("Market Desk 晨报")
+    assert "上涨" in payload["preheader"]
+    assert "一、开盘前结论" in payload["text"]
+    assert "三、资金主线" in payload["text"]
+    assert "四、事件与异动" in payload["text"]
+    assert "五、今日候选复核" in payload["text"]
+    assert "六、持仓和跟踪池" in payload["text"]
+    assert "贵州茅台 SH.600519" in payload["text"]
+    assert "https://stock.example.com/#/stocks?symbol=SH.600519" in payload["text"]
+    assert "不构成投资建议" in payload["text"]
+    assert "<html" in payload["html"]
+    assert "MARKET DESK MORNING BRIEF" in payload["html"]
+
+
 def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
     api = client(tmp_path)
     alpha = api.post(

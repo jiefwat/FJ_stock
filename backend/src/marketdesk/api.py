@@ -30,6 +30,7 @@ from marketdesk.models import (
     MarketEventResult,
     MarketIntelligenceResult,
     MarketPayload,
+    MorningEmailBrief,
     OpportunityResult,
     SavedEquityView,
     SectorDossier,
@@ -376,6 +377,15 @@ def create_app(
     @app.get("/api/v1/today")
     async def today() -> dict[str, Any]:
         return await market_service.today()
+
+    @app.get("/api/v1/morning-email/preview", response_model=MorningEmailBrief)
+    async def morning_email_preview(
+        request: Request,
+        base_url: str | None = Query(default=None, max_length=200),
+    ) -> MorningEmailBrief:
+        user = current_user(request.headers.get("authorization"))
+        resolved_base_url = (base_url or str(request.base_url)).rstrip("/")
+        return await market_service.morning_email_preview(user.id, resolved_base_url)
 
     @app.post("/api/v1/refresh")
     async def refresh() -> dict[str, object]:

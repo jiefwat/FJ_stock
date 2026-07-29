@@ -838,3 +838,37 @@ Final local gate before public deployment:
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
 
 Authenticated local browser acceptance passed on `http://127.0.0.1:8765/#/market` with a temporary Codex test account. A real Chrome session opened `食品饮料` from `板块资金确认`, rendered `详情排序` and `详情范围`, changed the detail ranking to gain-first, kept stock rows linked to Stock Lab, and reported no browser console/page errors. At 390 x 844 CSS pixels, document `scrollWidth` stayed 390 and the dossier controls stacked within a 320px panel.
+
+## 2026-07-29 Morning Email Brief Preview
+
+The morning email content layer now produces a deterministic text and HTML brief from existing authenticated market data. It does not add a new SMTP/provider dependency; the send channel can call the preview builder or `/api/v1/morning-email/preview` and keep provider access behind existing service boundaries.
+
+Content contract:
+
+- Subject and preheader summarize market regime, score, breadth, top sector flow, and top candidate.
+- Body groups the morning workflow into opening conclusion, key evidence, sector flows, events/anomalies, candidate review, holdings/watchlist, and next actions.
+- Candidate and personal sections include app deep links through the supplied `base_url`.
+- The disclaimer states that the brief is research support only and does not change deterministic scores.
+
+Focused checks:
+
+```text
+cd backend && uv run pytest -q tests/test_api.py -k morning_email_preview
+cd backend && uv run ruff check src tests --fix && uv run mypy src
+```
+
+Result: the morning email preview test passed, backend imports were formatted, and mypy passed across 23 source files.
+
+Full gate after adding the morning brief preview:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 44 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Production morning-email sender compatibility check: the existing `stock-ts-morning-email.timer` calls `/opt/stock-ts/scripts/send_user_morning_reports.py`. That legacy sender was backed up as `scripts/send_morning_report.py.bak.20260729-email-v2`, then its content template was reorganized into opening conclusion, holdings priority, market/opportunity review, event/data risk, prediction feedback, and three current app links. A dry-run dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)` without sending real email.

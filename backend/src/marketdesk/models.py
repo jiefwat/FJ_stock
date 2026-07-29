@@ -629,3 +629,18 @@ class UserPreferences(StrictModel):
     start_page: str = "today"
     risk_profile: str = "balanced"
     morning_email_enabled: bool = True
+
+
+class MorningEmailBrief(StrictModel):
+    recipient: str
+    enabled: bool
+    generated_at: datetime
+    subject: str
+    preheader: str
+    text: str
+    html: str
+
+    @field_validator("generated_at")
+    @classmethod
+    def require_generated_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)

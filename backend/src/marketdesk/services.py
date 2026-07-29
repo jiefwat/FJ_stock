@@ -18,6 +18,7 @@ from marketdesk.analysis.ask_stock import (
 from marketdesk.analysis.events import analyse_market_events
 from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
+from marketdesk.analysis.morning_brief import build_morning_email_brief
 from marketdesk.analysis.opportunities import rank_candidates
 from marketdesk.analysis.sector import analyse_sector
 from marketdesk.analysis.stock import analyse_stock
@@ -42,6 +43,7 @@ from marketdesk.models import (
     MarketPayload,
     MarketSnapshot,
     MarketSummarySnapshot,
+    MorningEmailBrief,
     OpportunityResult,
     SectorDossier,
     SectorSnapshot,
@@ -488,6 +490,29 @@ class MarketService:
             "risk_budget": risk_budget,
             "next_actions": ["核对市场广度与指数趋势", "查看强势板块的持续性", "打开候选股证据链"],
         }
+
+    async def morning_email_preview(self, user_id: int, base_url: str) -> MorningEmailBrief:
+        user = self.store.get_user(user_id)
+        preferences = self.store.get_preferences(user_id)
+        market_payload = await self.market_payload()
+        events, intelligence, opportunities, holdings = await asyncio.gather(
+            self.market_events(12),
+            self.cn_market_intelligence(12),
+            self.opportunities("trend", 5),
+            self.holdings(user_id),
+        )
+        watchlist = self.store.list_watchlist(user_id)
+        return build_morning_email_brief(
+            user=user,
+            preferences=preferences,
+            market=market_payload,
+            intelligence=intelligence,
+            events=events,
+            opportunities=opportunities,
+            holdings=holdings,
+            watchlist=watchlist,
+            base_url=base_url,
+        )
 
     async def search(self, query: str) -> list[EquityQuote]:
         snapshot = await self.market()

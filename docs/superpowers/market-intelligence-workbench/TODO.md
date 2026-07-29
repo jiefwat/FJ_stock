@@ -90,3 +90,4 @@
 - [x] Make Stock Lab themes clickable into a Market theme dossier with related stocks.
 - [x] Summarize theme constituent flows and make Market flow leaders open sector dossiers.
 - [x] Turn Market sector and theme dossiers into compact constituent screeners with sort and range filters.
+- [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.
