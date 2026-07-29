@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { AskStockPage } from "./AskStockPage";
@@ -34,9 +35,9 @@ const stockAnswer = {
   rows: [],
 };
 
-function renderPage() {
+function renderPage(route = "/ask") {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><AskStockPage /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><AskStockPage /></MemoryRouter></QueryClientProvider>);
 }
 
 beforeEach(() => {
@@ -91,6 +92,50 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),
     auth: "Bearer token-ask",
   }]);
+});
+
+it("uses market board context for focused Ask Stock prompts", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return { ok: true, status: 200, json: async () => ({ ...stockAnswer, question: parsed.question }) };
+  }));
+
+  renderPage("/ask?symbol=SH.600519&name=贵州茅台&from=market&board=BK1&boardName=白酒&boardType=板块");
+
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("BOARD BRIDGE");
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("从白酒板块复核继续问");
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("默认围绕 贵州茅台 SH.600519 追问");
+  expect(screen.getByRole("link", { name: "回到个股证据 →" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  fireEvent.click(screen.getByRole("button", { name: "为什么它是板块前排样本" }));
+
+  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
+  expect(requests).toEqual(["贵州茅台 为什么它是板块前排样本"]);
+});
+
+it("uses opportunity context for lead upgrade prompts", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ...stockAnswer, symbol: "SZ.300750", name: "宁德时代", question: parsed.question, answer: "宁德时代这条线索仍需补齐资金确认。" }),
+    };
+  }));
+
+  renderPage("/ask?symbol=SZ.300750&name=宁德时代&from=opportunities&preset=trend");
+
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("QUEUE BRIDGE");
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("从机会线索继续问");
+  expect(screen.getByRole("button", { name: "这条趋势延续线索能升级吗" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "这条趋势延续线索能升级吗" }));
+
+  expect(await screen.findByText("宁德时代这条线索仍需补齐资金确认。")).toBeInTheDocument();
+  expect(requests).toEqual(["宁德时代 这条趋势延续线索能升级吗"]);
 });
 
 it("keeps multiple turns and carries the previous stock into a follow-up", async () => {

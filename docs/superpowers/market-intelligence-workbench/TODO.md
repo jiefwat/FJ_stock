@@ -93,4 +93,5 @@
 - [x] Summarize theme constituent flows and make Market flow leaders open sector dossiers.
 - [x] Turn Market sector and theme dossiers into compact constituent screeners with sort and range filters.
 - [x] Add Market board-to-stock handoff reasons and preserve board context when opening Stock Lab.
+- [x] Add Ask Stock source-context bridge from board/opportunity/stock workflows.
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.

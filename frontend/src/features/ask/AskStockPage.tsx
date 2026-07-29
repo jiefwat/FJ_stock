@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUpRight, History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { ApiError, api, getAuthToken, type AskStockResponse } from "../../lib/api";
 
@@ -36,6 +37,13 @@ const followUpTopicPattern = /(风险|趋势|估值|仓位|止损|止盈|支撑|
 const portfolioQuestionPattern = /(我的持仓|持仓里|持仓中|组合|账户|调仓|再平衡|仓位调整)/;
 const screeningQuestionPattern = /(低估值|高股息|龙头|行业|板块|概念|题材|筛选|选股|有哪些|哪些|推荐|找|寻找|排名|排行)/;
 const stockCodeColumnPattern = /(股票)?代码|证券代码|symbol/i;
+const contextualReferencePattern = /(它|这只|该股|这个标的|这条线索|这家公司)/;
+const sourcePresetLabels: Record<string, string> = {
+  trend: "趋势延续",
+  volume_breakout: "放量突破",
+  value_rebound: "低估反弹",
+  oversold_repair: "超跌修复",
+};
 
 function observedTime(value: string | null) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "时间未提供";
@@ -59,6 +67,13 @@ function moneyValue(value: number | null | undefined) {
 }
 
 type StockAnchor = { name: string; symbol: string };
+type AskSourceContext = {
+  stock: StockAnchor | null;
+  label: string;
+  detail: string;
+  origin: string;
+  promptSeeds: string[];
+};
 type AskMessage =
   | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
   | { id: string; role: "assistant"; result: AskStockResponse }
@@ -72,6 +87,66 @@ function messageId() {
 
 function stockLabel(stock: StockAnchor) {
   return `${stock.name} ${stock.symbol}`;
+}
+
+function safeParam(params: URLSearchParams, key: string) {
+  return (params.get(key) ?? "").trim();
+}
+
+function sourceStockFrom(params: URLSearchParams): StockAnchor | null {
+  const symbol = safeParam(params, "symbol");
+  const name = safeParam(params, "name") || symbol;
+  if (!symbol && !name) return null;
+  return { symbol, name };
+}
+
+function askSourceContext(params: URLSearchParams): AskSourceContext | null {
+  const from = safeParam(params, "from");
+  const stock = sourceStockFrom(params);
+  const boardName = safeParam(params, "boardName");
+  const boardType = safeParam(params, "boardType") || "板块";
+  const preset = safeParam(params, "preset");
+  const presetLabel = sourcePresetLabels[preset] ?? preset;
+
+  if (from === "market") {
+    return {
+      stock,
+      origin: "BOARD BRIDGE",
+      label: boardName ? `从${boardName}${boardType}复核继续问` : "从板块复核继续问",
+      detail: stock
+        ? `默认围绕 ${stockLabel(stock)} 追问：先核验它是否真能代表板块，再问失效条件。`
+        : "可以追问板块资金、前排样本和个股证据缺口。",
+      promptSeeds: ["为什么它是板块前排样本", "板块资金是否确认它", "它的失效条件是什么"],
+    };
+  }
+
+  if (from === "opportunities") {
+    return {
+      stock,
+      origin: "QUEUE BRIDGE",
+      label: "从机会线索继续问",
+      detail: stock
+        ? `默认围绕 ${stockLabel(stock)} 追问：线索是否能升级，仍以 Stock Lab 证据为准。`
+        : "可以追问线索升级条件、证据缺口和等待路线。",
+      promptSeeds: [
+        presetLabel ? `这条${presetLabel}线索能升级吗` : "这条机会线索能升级吗",
+        "证据缺口是什么",
+        "应该等回踩还是观察",
+      ],
+    };
+  }
+
+  if (stock) {
+    return {
+      stock,
+      origin: "STOCK BRIDGE",
+      label: `围绕${stockLabel(stock)}继续问`,
+      detail: "从个股证据页带入上下文；短句追问会自动补上股票，避免问答跑偏。",
+      promptSeeds: ["把证据总账翻译成人话", "现在最大风险是什么", "仓位和止损怎么定"],
+    };
+  }
+
+  return null;
 }
 
 function latestStock(messages: AskMessage[]): StockAnchor | null {
@@ -90,6 +165,17 @@ function shouldCarryStock(question: string, stock: StockAnchor | null) {
   if (stockCodePattern.test(question)) return false;
   if (portfolioQuestionPattern.test(question)) return false;
   if (screeningQuestionPattern.test(question)) return false;
+  if (followUpPrefixPattern.test(question)) return true;
+  return question.length <= 16 && followUpTopicPattern.test(question);
+}
+
+function shouldCarrySourceStock(question: string, stock: StockAnchor | null) {
+  if (!stock) return false;
+  if (question.includes(stock.name) || question.includes(stock.symbol) || question.includes(stock.symbol.slice(-6))) return false;
+  if (stockCodePattern.test(question)) return false;
+  if (portfolioQuestionPattern.test(question)) return false;
+  if (screeningQuestionPattern.test(question) && !contextualReferencePattern.test(question)) return false;
+  if (contextualReferencePattern.test(question)) return true;
   if (followUpPrefixPattern.test(question)) return true;
   return question.length <= 16 && followUpTopicPattern.test(question);
 }
@@ -421,6 +507,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
 }
 
 export function AskStockPage() {
+  const [searchParams] = useSearchParams();
   const [question, setQuestion] = useState("");
   const [threadState, setThreadState] = useState<AskThreadState>(() => loadThreadState());
   const threadEndRef = useRef<HTMLDivElement | null>(null);
@@ -433,6 +520,8 @@ export function AskStockPage() {
   const activeThread = useMemo(() => activeThreadFrom(threadState), [threadState]);
   const messages = activeThread.messages;
   const activeStock = useMemo(() => latestStock(messages), [messages]);
+  const sourceContext = useMemo(() => askSourceContext(searchParams), [searchParams]);
+  const focusStock = activeStock ?? sourceContext?.stock ?? null;
   const visibleThreads = useMemo(
     () => sortedThreads(threadState.threads).filter((thread) => shouldShowThread(thread, threadState.activeThreadId)),
     [threadState],
@@ -449,12 +538,16 @@ export function AskStockPage() {
     removeLegacyThread();
   }, [threadState]);
 
-  const submitQuestion = async (value: string) => {
+  const submitQuestion = async (value: string, options: { forceSourceStock?: boolean } = {}) => {
     const normalized = value.trim();
     if (normalized.length < 2 || ask.isPending) return;
 
     const threadId = activeThread.id;
-    const carriedStock = shouldCarryStock(normalized, activeStock) ? activeStock : null;
+    const carriedStock = shouldCarryStock(normalized, activeStock)
+      ? activeStock
+      : (options.forceSourceStock || shouldCarrySourceStock(normalized, sourceContext?.stock ?? null))
+          ? sourceContext?.stock ?? null
+          : null;
     const requestQuestion = carriedStock ? `${carriedStock.name} ${normalized}` : normalized;
     setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
       ...currentMessages,
@@ -518,8 +611,24 @@ export function AskStockPage() {
       <aside className="ask-context panel">
         <div>
           <span><Sparkles size={15} />对话上下文</span>
-          <p>{activeStock ? `正在围绕 ${stockLabel(activeStock)} 追问` : "先问一只股票，或直接问“我的持仓里风险最大的是哪个”。"}</p>
+          <p>{focusStock ? `正在围绕 ${stockLabel(focusStock)} 追问` : "先问一只股票，或直接问“我的持仓里风险最大的是哪个”。"}</p>
         </div>
+        {sourceContext ? <section className="ask-source-context" aria-label="问股来源上下文">
+          <header>
+            <span>{sourceContext.origin}</span>
+            <strong>{sourceContext.label}</strong>
+          </header>
+          <p>{sourceContext.detail}</p>
+          {sourceContext.stock ? <a href={`#/stocks?symbol=${encodeURIComponent(sourceContext.stock.symbol)}`}>回到个股证据 →</a> : null}
+          <div>
+            {sourceContext.promptSeeds.map((prompt) => <button
+              type="button"
+              key={prompt}
+              onClick={() => void submitQuestion(prompt, { forceSourceStock: true })}
+              disabled={ask.isPending}
+            >{prompt}</button>)}
+          </div>
+        </section> : null}
         <section className="ask-history" aria-label="历史对话">
           <header>
             <span><History size={15} />历史对话</span>
@@ -597,13 +706,13 @@ export function AskStockPage() {
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               maxLength={160}
-              placeholder={activeStock ? `继续问 ${activeStock.name}：例如 那估值呢` : "例如：贵州茅台现在主要风险是什么"}
+              placeholder={focusStock ? `继续问 ${focusStock.name}：例如 那估值呢` : "例如：贵州茅台现在主要风险是什么"}
             />
             <button className="button ask-submit" type="submit" disabled={ask.isPending || question.trim().length < 2}>
               <Send size={16} />{ask.isPending ? "分析中" : "发送"}
             </button>
           </div>
-          <small>{question.length}/160 · {activeStock ? `上文股票 ${stockLabel(activeStock)}` : "支持单股研究、账户持仓诊断；宽泛选股可走条件选股增强"}</small>
+          <small>{question.length}/160 · {focusStock ? `上下文股票 ${stockLabel(focusStock)}` : "支持单股研究、账户持仓诊断；宽泛选股可走条件选股增强"}</small>
         </form>
       </div>
     </section>

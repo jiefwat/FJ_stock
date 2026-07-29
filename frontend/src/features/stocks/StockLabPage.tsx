@@ -144,6 +144,19 @@ function splitEvidence(content: string) {
   return parts.length > 1 ? parts : [];
 }
 
+function askHref(dossier: Dossier, params: URLSearchParams) {
+  const askParams = new URLSearchParams({
+    symbol: dossier.quote.symbol,
+    name: dossier.quote.name,
+    from: params.get("from") ?? "stock",
+  });
+  ["preset", "board", "boardName", "boardType"].forEach((key) => {
+    const value = params.get(key);
+    if (value) askParams.set(key, value);
+  });
+  return `/ask?${askParams.toString()}`;
+}
+
 function ConclusionBrief({ dossier }: { dossier: Dossier }) {
   const brief = splitConclusion(dossier.conclusion);
   const visibleSections = brief.sections.filter((item) => !dedicatedConclusionLabels.has(item.label));
@@ -548,7 +561,7 @@ export function StockLabPage() {
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       <section className="stock-hero">
         <div><span>{query.data.quote.symbol} · {query.data.quote.sector ?? "行业待补"}</span><h2>{query.data.quote.name}</h2><p>{fmt(query.data.quote.price)} <b className={(query.data.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(query.data.quote.change_pct)}</b></p></div>
-        <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}</div>
+        <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}<Link className="watch-button ask-stock-entry" to={askHref(query.data, params)}>带着证据去问股</Link></div>
       </section>
       {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
       <StockDecisionDeck dossier={query.data} evidence={evidenceQuery.data} />

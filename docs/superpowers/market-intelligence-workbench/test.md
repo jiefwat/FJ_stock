@@ -1057,3 +1057,29 @@ Full gate and public deployment after the Market board-to-stock handoff upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS asset contained `STOCK HANDOFF`, `优先点开这几只`, `价格与资金同向`, `价格走强但资金缺口待补`, and `板块复核说明` |
+
+## 2026-07-29 Ask Stock Source Context Bridge
+
+Ask Stock now accepts source context from Stock Lab, Market board dossiers, and Opportunity leads. Stock Lab exposes a `带着证据去问股` handoff, Ask Stock shows the source bridge, preloads context-specific prompts, and prefixes the carried stock only for focused follow-ups so portfolio and broad screening questions remain separate.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock passed 13 focused tests, Stock Lab passed 12 focused tests, and frontend typecheck passed. The new assertions verify `BOARD BRIDGE`, `QUEUE BRIDGE`, `问股来源上下文`, context prompt prefixing, a return link to Stock Lab, and the Stock Lab `带着证据去问股` handoff preserving opportunity and board parameters.
+
+Full gate after the Ask Stock context bridge:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |

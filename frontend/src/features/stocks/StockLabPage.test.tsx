@@ -133,6 +133,10 @@ it("explains when a stock dossier is opened from opportunity leads", async () =>
   expect(reviewOutcome.getByText("等待回踩")).toBeInTheDocument();
   expect(reviewOutcome.getByText(/不因为曾入选线索而参与/)).toBeInTheDocument();
   expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "带着证据去问股" })).toHaveAttribute(
+    "href",
+    "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=opportunities&preset=trend",
+  );
 });
 
 it("explains when a stock dossier is opened from a market board", async () => {
@@ -144,6 +148,10 @@ it("explains when a stock dossier is opened from a market board", async () => {
   expect(sourceNote.getByText(/FINAL GATE 和证据总账/)).toBeInTheDocument();
   expect(sourceNote.getByText("来源：白酒板块")).toBeInTheDocument();
   expect(await screen.findByLabelText("证据总账")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "带着证据去问股" })).toHaveAttribute(
+    "href",
+    "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97",
+  );
 });
 
 it("shows the evidence ledger and edits the thesis before adding to watchlist", async () => {
