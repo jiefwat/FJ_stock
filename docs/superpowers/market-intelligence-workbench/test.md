@@ -914,3 +914,18 @@ cd backend && uv run ruff check src tests --fix && uv run mypy src
 Result: the preview route test passed, including HTML assertions for `今日大盘`, `大盘温度`, `推荐股票（需复核）`, `推荐股票 #1`, `板块资金主线`, and `开盘检查清单`; Ruff and mypy passed across 23 backend source files.
 
 Production sender compatibility: the live legacy renderer at `/opt/stock-ts/src/stock_ts/notification.py` was backed up as `notification.py.bak.20260729-layout-v1`, then replaced with a visual renderer that parses the existing morning report sections into a hero, summary metric cards, recommended-stock cards, holdings-risk cards, and an opening-checklist timeline. The production script compiles successfully, generated HTML contains the new visual markers, and a dry-run dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)` without sending real email.
+
+## 2026-07-29 Morning Email Decision Console Upgrade
+
+The visual morning email now behaves more like a pre-open decision console. The preview adds an opening-route strip, a market-breadth meter, candidate review priority labels, and a holdings-risk radar while keeping the original text fallback and app deep links intact.
+
+Focused checks:
+
+```text
+cd backend && uv run pytest -q tests/test_api.py -k morning_email_preview
+cd backend && uv run ruff check src tests --fix && uv run mypy src
+```
+
+Result: the preview route test passed with assertions for `今日开盘路线`, `市场广度仪表`, `上涨占比`, `复核级别`, and `持仓风险雷达`; Ruff and mypy passed across 23 backend source files.
+
+Production sender compatibility: the legacy production renderer was backed up as `notification.py.bak.20260729-layout-v2`, then upgraded with the same opening-route, market-breadth, and review-priority markers. The production virtualenv compiled `src/stock_ts/notification.py` and `scripts/send_morning_report.py`, the generated HTML contained all new markers, and a dry-run account dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)`.

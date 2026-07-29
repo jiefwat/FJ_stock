@@ -1245,10 +1245,15 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "<html" in payload["html"]
     assert "MARKET DESK MORNING BRIEF" in payload["html"]
     assert "今日大盘" in payload["html"]
+    assert "今日开盘路线" in payload["html"]
+    assert "市场广度仪表" in payload["html"]
+    assert "上涨占比" in payload["html"]
     assert "大盘温度" in payload["html"]
     assert "推荐股票（需复核）" in payload["html"]
     assert "推荐股票 #1" in payload["html"]
+    assert "复核级别" in payload["html"]
     assert "板块资金主线" in payload["html"]
+    assert "持仓风险雷达" in payload["html"]
     assert "开盘检查清单" in payload["html"]
 
 

@@ -77,6 +77,22 @@ def _button(url: str, label: str) -> str:
     )
 
 
+def _mini_button(url: str, label: str) -> str:
+    return (
+        f'<a href="{escape(url)}" style="display:inline-block;margin:0 6px 6px 0;padding:7px 10px;'
+        'border-radius:999px;background:#eef3ed;color:#17332c;text-decoration:none;font-size:12px;'
+        f'font-weight:750;">{escape(label)}</a>'
+    )
+
+
+def _priority_label(score: float, coverage: float, risk_flags: list[str]) -> tuple[str, str, str]:
+    if len(risk_flags) >= 2 or score < 50:
+        return ("高风险线索", "#8a4a27", "先看风险，不追开盘强拉。")
+    if score >= 70 and coverage >= 0.6 and not risk_flags:
+        return ("优先复核", "#1f7a4c", "只在大盘和板块继续确认时复核。")
+    return ("观察等待", "#b28a45", "等承接和相对强度，不急于动作。")
+
+
 def _top_market_factors(market: MarketPayload) -> list[str]:
     available = [factor for factor in market.analysis.factors if factor.available]
     available.sort(key=lambda factor: factor.weight, reverse=True)
@@ -156,6 +172,11 @@ def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> st
         url = _link(base_url, "stocks", {"symbol": quote.symbol})
         reasons = "；".join(candidate.thesis.split("；")[:2]) if candidate.thesis else "打开个股页复核证据链"
         risk = "；".join(candidate.risk_flags[:2]) if candidate.risk_flags else "等待开盘承接确认"
+        priority, priority_color, priority_note = _priority_label(
+            candidate.score,
+            candidate.evidence_coverage,
+            candidate.risk_flags,
+        )
         cards.append(
             '<article style="background:#fffaf2;border:1px solid #ead7b5;border-radius:16px;'
             'padding:16px;margin:10px 0;">'
@@ -163,10 +184,12 @@ def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> st
             f'<h3 style="margin:6px 0 4px;font-size:20px;line-height:1.25;color:#17332c;">{escape(quote.name)} '
             f'<span style="font-size:12px;color:#6f7c76;">{escape(quote.symbol)}</span></h3>'
             '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">'
+            f'<span style="padding:5px 8px;border-radius:999px;background:{priority_color};color:#fff;font-size:12px;">{escape(priority)}</span>'
             f'<span style="padding:5px 8px;border-radius:999px;background:#17332c;color:#fff;font-size:12px;">评分 {_fmt(candidate.score, 0)}</span>'
             f'<span style="padding:5px 8px;border-radius:999px;background:#edf5ee;color:#1f7a4c;font-size:12px;">涨跌 {_pct(quote.change_pct)}</span>'
             f'<span style="padding:5px 8px;border-radius:999px;background:#f2f4ef;color:#51605a;font-size:12px;">成交 {_amount_yi(quote.amount)}</span>'
             "</div>"
+            f'<p style="margin:0 0 6px;color:{priority_color};font-size:13px;line-height:1.7;"><b>复核级别：</b>{escape(priority_note)}</p>'
             f'<p style="margin:0;color:#33443e;font-size:13px;line-height:1.7;"><b>推荐理由：</b>{escape(reasons)}</p>'
             f'<p style="margin:6px 0 0;color:#8a4a27;font-size:13px;line-height:1.7;"><b>先看风险：</b>{escape(risk)}</p>'
             '<p style="margin:6px 0 0;color:#6f7c76;font-size:12px;line-height:1.7;">确认项：强于大盘、板块延续、回踩不破。</p>'
@@ -179,7 +202,19 @@ def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> st
 def _holding_lines(holdings: list[HoldingDossier], base_url: str) -> list[str]:
     if not holdings:
         return ["暂无持仓记录；如有实盘持仓，建议先补齐成本、仓位与失效条件。"]
-    ordered = sorted(
+    lines: list[str] = []
+    for item in _rank_holdings(holdings)[:3]:
+        risks = "；".join(item.risk_flags[:2]) if item.risk_flags else item.conclusion
+        url = _link(base_url, "holdings")
+        lines.append(
+            f"{item.item.name} {item.item.symbol}: 持仓占比 {_pct((item.portfolio_weight or 0) * 100)}，"
+            f"盈亏 {_pct(item.pnl_pct)}，动作 {item.action}，关注 {risks}。{url}"
+        )
+    return lines
+
+
+def _rank_holdings(holdings: list[HoldingDossier]) -> list[HoldingDossier]:
+    return sorted(
         holdings,
         key=lambda item: (
             len(item.risk_flags),
@@ -188,15 +223,36 @@ def _holding_lines(holdings: list[HoldingDossier], base_url: str) -> list[str]:
         ),
         reverse=True,
     )
-    lines: list[str] = []
-    for item in ordered[:3]:
-        risks = "；".join(item.risk_flags[:2]) if item.risk_flags else item.conclusion
-        url = _link(base_url, "holdings")
-        lines.append(
-            f"{item.item.name} {item.item.symbol}: 持仓占比 {_pct((item.portfolio_weight or 0) * 100)}，"
-            f"盈亏 {_pct(item.pnl_pct)}，动作 {item.action}，关注 {risks}。{url}"
+
+
+def _holding_cards_html(holdings: list[HoldingDossier], base_url: str) -> str:
+    if not holdings:
+        return (
+            '<p style="margin:0;color:#6f7c76;font-size:13px;">暂无持仓风险雷达；'
+            '如果有实盘仓位，先补齐持仓再看机会。</p>'
         )
-    return lines
+    url = _link(base_url, "holdings")
+    cells = []
+    for item in _rank_holdings(holdings)[:2]:
+        risk_text = "；".join(item.risk_flags[:2]) if item.risk_flags else item.conclusion
+        tone = "#b5522d" if item.risk_flags else "#1f7a4c"
+        cells.append(
+            '<td style="width:50%;padding:5px;vertical-align:top;">'
+            '<div style="background:#fff;border:1px solid #dfe4dc;border-radius:14px;padding:14px 15px;">'
+            f'<div style="font-size:13px;font-weight:850;color:#17332c;">{escape(item.item.name)} '
+            f'<span style="font-size:11px;color:#6f7c76;">{escape(item.item.symbol)}</span></div>'
+            f'<div style="margin-top:8px;color:{tone};font-size:18px;font-weight:850;">{escape(item.action)}</div>'
+            f'<div style="margin-top:5px;color:#6f7c76;font-size:12px;">仓位 {_pct((item.portfolio_weight or 0) * 100)} · 盈亏 {_pct(item.pnl_pct)}</div>'
+            f'<p style="margin:8px 0 0;color:#33443e;font-size:12px;line-height:1.65;">{escape(risk_text)}</p>'
+            f'{_button(url, "处理持仓")}'
+            "</div></td>"
+        )
+    return (
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="border-collapse:collapse;margin:0 -5px;"><tr>'
+        + "".join(cells)
+        + "</tr></table>"
+    )
 
 
 def _market_score_color(score: float) -> str:
@@ -236,6 +292,46 @@ def _metric_cards_html(
         'style="border-collapse:collapse;margin:14px -5px;"><tr>'
         + "".join(cells)
         + "</tr></table>"
+    )
+
+
+def _market_breadth_html(market: MarketPayload) -> str:
+    advancing = market.analysis.advancing
+    declining = market.analysis.declining
+    unchanged = market.analysis.unchanged
+    total = max(1, advancing + declining + unchanged)
+    adv_pct = advancing / total * 100
+    flat_pct = unchanged / total * 100
+    dec_pct = max(0.0, 100 - adv_pct - flat_pct)
+    return (
+        '<section style="background:#fff;border:1px solid #dfe4dc;border-radius:18px;padding:16px 18px;margin:14px 0;">'
+        '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;">'
+        '<h2 style="margin:0;font-size:16px;color:#17332c;">市场广度仪表</h2>'
+        f'<span style="color:#6f7c76;font-size:12px;">上涨占比 {_pct(adv_pct)}</span>'
+        "</div>"
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-top:12px;"><tr>'
+        f'<td style="width:{adv_pct:.2f}%;height:12px;background:#1f7a4c;border-radius:999px 0 0 999px;"></td>'
+        f'<td style="width:{flat_pct:.2f}%;height:12px;background:#d7dbd2;"></td>'
+        f'<td style="width:{dec_pct:.2f}%;height:12px;background:#b5522d;border-radius:0 999px 999px 0;"></td>'
+        "</tr></table>"
+        '<div style="margin-top:8px;color:#6f7c76;font-size:12px;line-height:1.7;">'
+        f'上涨 {advancing} · 平盘 {unchanged} · 下跌 {declining}。'
+        '上涨占比不过半时，候选自动降一级复核。</div>'
+        "</section>"
+    )
+
+
+def _opening_route_html(base_url: str, risk_budget: int) -> str:
+    return (
+        '<section style="background:#17332c;color:#fff;border-radius:18px;padding:16px 18px;margin:14px 0;">'
+        '<div style="font-size:12px;letter-spacing:.1em;color:#f0a77f;font-weight:850;">OPENING ROUTE</div>'
+        '<h2 style="margin:6px 0 10px;font-size:18px;color:#fff;">今日开盘路线</h2>'
+        '<p style="margin:0 0 12px;color:#d4ddd6;font-size:13px;line-height:1.7;">'
+        f'先锁定 {risk_budget}% 风险预算，再处理旧仓，最后只复核 1-3 只推荐股票。</p>'
+        f'{_mini_button(_link(base_url, "today"), "看今日")}'
+        f'{_mini_button(_link(base_url, "holdings"), "处理持仓")}'
+        f'{_mini_button(_link(base_url, "opportunities"), "复核机会")}'
+        "</section>"
     )
 
 
@@ -361,6 +457,8 @@ def build_morning_email_brief(
       <p style="margin:12px 0 0;color:#d4ddd6;line-height:1.7;">{escape(preheader)}</p>
     </section>
     { _metric_cards_html(market=market, regime_label=regime_label, risk_budget=risk_budget) }
+    { _opening_route_html(base_url, risk_budget) }
+    { _market_breadth_html(market) }
     { _section_html("大盘情况", summary_lines) }
     <section style="background:#fff;border:1px solid #dfe4dc;border-radius:18px;padding:18px 20px;margin:14px 0;">
       <h2 style="margin:0 0 12px;font-size:17px;color:#17332c;">推荐股票（需复核）</h2>
@@ -372,6 +470,10 @@ def build_morning_email_brief(
     </section>
     { _section_html("关键证据", factor_lines) }
     { _section_html("事件与异动", [*event_lines, *anomaly_lines[:2]]) }
+    <section style="background:#fff;border:1px solid #dfe4dc;border-radius:18px;padding:18px 20px;margin:14px 0;">
+      <h2 style="margin:0 0 12px;font-size:17px;color:#17332c;">持仓风险雷达</h2>
+      {_holding_cards_html(holdings, base_url)}
+    </section>
     { _section_html("持仓和跟踪池", [*holding_lines, *watchlist_lines]) }
     { _section_html("开盘检查清单", checklist_lines) }
     { _section_html("今日禁止动作", forbidden_lines) }
