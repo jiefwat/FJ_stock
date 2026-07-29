@@ -199,6 +199,22 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
     };
   }
 
+  if (from === "watchlist") {
+    return {
+      stock,
+      origin: "WATCH BRIDGE",
+      label: stock ? `复核${stockLabel(stock)}这条跟踪` : "复核跟踪清单",
+      detail: stock
+        ? "从跟踪池带入上下文；优先回答是否继续跟、失效条件和下一次复核点。"
+        : "从跟踪池带入上下文；优先清理已经失效或需要继续等待的线索。",
+      promptSeeds: stock
+        ? ["还值得继续跟踪吗", "这条跟踪的失效条件是什么", "下一次复核要看什么"]
+        : ["跟踪池里今天先复核哪些", "哪些跟踪项应该归档", "帮我整理跟踪池复盘顺序"],
+      backHref: "#/watchlist",
+      backLabel: "回到跟踪池 →",
+    };
+  }
+
   if (from === "opportunities") {
     return {
       stock,

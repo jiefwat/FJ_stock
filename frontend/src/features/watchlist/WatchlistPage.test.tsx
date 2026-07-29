@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -38,7 +38,12 @@ it("edits and saves an auditable research note", async () => {
   expect(screen.getByText("加入跟踪")).toBeInTheDocument();
   expect(screen.getByText(/圆点为加入跟踪日/)).toBeInTheDocument();
   expect(screen.getByText(/跟踪后表现/)).toBeInTheDocument();
-  expect(await screen.findByRole("link", { name: "贵州茅台" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
+  expect(await screen.findByRole("link", { name: "贵州茅台" })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=watchlist#stock-final-gate");
+  expect(screen.getByRole("link", { name: "打开完整个股分析" })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=watchlist#stock-final-gate");
+  const actions = within(screen.getByLabelText("贵州茅台 跟踪复核动作"));
+  expect(actions.getByRole("link", { name: "复核 FINAL GATE" })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=watchlist#stock-final-gate");
+  expect(actions.getByRole("link", { name: "问是否继续跟" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=watchlist&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E8%BF%98%E5%80%BC%E5%BE%97%E7%BB%A7%E7%BB%AD%E8%B7%9F%E8%B8%AA%E5%90%97");
+  expect(actions.getByRole("link", { name: "问失效条件" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=watchlist&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E8%BF%99%E6%9D%A1%E8%B7%9F%E8%B8%AA%E8%AE%B0%E5%BD%95%E7%9A%84%E5%A4%B1%E6%95%88%E6%9D%A1%E4%BB%B6%E6%98%AF%E4%BB%80%E4%B9%88");
   fireEvent.change(screen.getByLabelText("关注理由 贵州茅台"), { target: { value: "等待估值回落" } });
   fireEvent.click(screen.getByRole("button", { name: "保存跟踪记录" }));
 

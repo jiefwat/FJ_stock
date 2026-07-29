@@ -166,6 +166,40 @@ it("uses opportunity context for lead upgrade prompts", async () => {
   expect(requests).toEqual(["宁德时代 这条趋势延续线索能升级吗"]);
 });
 
+it("uses watchlist context for follow-up review handoffs", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        answer: "结论：贵州茅台还可以继续跟踪，但要等失效条件重新确认。",
+      }),
+    };
+  }));
+
+  renderPage("/ask?symbol=SH.600519&name=贵州茅台&from=watchlist&question=贵州茅台还值得继续跟踪吗");
+
+  const context = screen.getByLabelText("问股来源上下文");
+  expect(context).toHaveTextContent("WATCH BRIDGE");
+  expect(context).toHaveTextContent("复核贵州茅台 SH.600519这条跟踪");
+  expect(context).toHaveTextContent("是否继续跟、失效条件和下一次复核点");
+  expect(within(context).getByRole("link", { name: "回到跟踪池 →" })).toHaveAttribute("href", "#/watchlist");
+  expect(within(context).getByRole("button", { name: "还值得继续跟踪吗" })).toBeInTheDocument();
+  expect(await screen.findByText("结论：贵州茅台还可以继续跟踪，但要等失效条件重新确认。")).toBeInTheDocument();
+
+  fireEvent.click(within(context).getByRole("button", { name: "这条跟踪的失效条件是什么" }));
+
+  await waitFor(() => expect(requests).toEqual([
+    "贵州茅台还值得继续跟踪吗",
+    "贵州茅台 这条跟踪的失效条件是什么",
+  ]));
+});
+
 it("uses holdings context for portfolio treatment handoffs", async () => {
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

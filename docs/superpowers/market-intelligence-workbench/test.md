@@ -1587,3 +1587,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Opportunities page tests passed, 2 tests; frontend typecheck passed. Coverage asserts top-candidate quick actions, encoded Ask Stock upgrade/risk URLs, expanded candidate action bars, and existing compact candidate expansion behavior.
+
+## 2026-07-29 Watchlist Review Bridge
+
+Watchlist now acts as a follow-up review desk instead of a passive note list. Each tracked stock links directly to Stock Lab `FINAL GATE`, exposes actions for `问是否继续跟` and `问失效条件`, and sends Ask Stock the stock symbol/name plus `from=watchlist` context. Ask Stock renders a dedicated `WATCH BRIDGE` source card with a back-link to the watchlist and follow-up prompts for continued tracking, invalidation, and next review points. The watchlist page query key also includes the authenticated token scope to avoid stale account-scoped cache reuse.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/watchlist/WatchlistPage.test.tsx src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Focused frontend tests passed, 18 tests; frontend typecheck passed. Coverage asserts watchlist `FINAL GATE` deep links, Ask Stock tracking/invalidation URLs, `WATCH BRIDGE` context, watchlist back-link, and source-stock carry behavior for follow-up prompts.

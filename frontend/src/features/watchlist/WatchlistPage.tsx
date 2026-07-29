@@ -26,6 +26,10 @@ function trendReview(bars: WatchTrendDossier["bars"], trackedAt: string): string
   return `跟踪后表现：从 ${start.date} 的 ${fmt(start.close)} 到 ${latest.date} 的 ${fmt(latest.close)}，${direction} ${pct(move)}；期间高点 ${fmt(high)}、低点 ${fmt(low)}。`;
 }
 
+function watchAskHref(item: WatchlistItem, question: string) {
+  return `/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&from=watchlist&question=${encodeURIComponent(question)}`;
+}
+
 function ResearchCard({ item, onDelete }: { item: WatchlistItem; onDelete: (id: number) => void }) {
   const client = useQueryClient();
   const [status, setStatus] = useState(item.status);
@@ -53,7 +57,7 @@ function ResearchCard({ item, onDelete }: { item: WatchlistItem; onDelete: (id: 
   const review = trend.data ? trendReview(trend.data.bars, trackedAt) : null;
 
   return <article className="research-card">
-    <header><div><Link to={`/stocks?symbol=${item.symbol}`}>{item.name}</Link><small>{item.symbol}</small></div><label>跟踪状态<select value={status} onChange={(event) => { setStatus(event.target.value); update.reset(); }}><option value="new">刚加入</option><option value="researching">继续跟</option><option value="waiting">等条件</option><option value="invalidated">理由失效</option><option value="archived">已归档</option></select></label></header>
+    <header><div><Link to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=watchlist#stock-final-gate`}>{item.name}</Link><small>{item.symbol}</small></div><label>跟踪状态<select value={status} onChange={(event) => { setStatus(event.target.value); update.reset(); }}><option value="new">刚加入</option><option value="researching">继续跟</option><option value="waiting">等条件</option><option value="invalidated">理由失效</option><option value="archived">已归档</option></select></label></header>
     <div className="journal-fields">
       <label>关注理由<textarea aria-label={`关注理由 ${item.name}`} placeholder="一句话写清：为什么值得继续看？" value={thesis} onChange={(event) => { setThesis(event.target.value); update.reset(); }} /></label>
       <label>放弃条件<textarea aria-label={`放弃条件 ${item.name}`} placeholder="一句话写清：什么情况就不看了？" value={invalidation} onChange={(event) => { setInvalidation(event.target.value); update.reset(); }} /></label>
@@ -61,7 +65,7 @@ function ResearchCard({ item, onDelete }: { item: WatchlistItem; onDelete: (id: 
     <section className="watch-trend">
       <div className="watch-trend-head">
         <div><span>加入跟踪后的走势</span><small>圆点会标在你加入跟踪附近的交易日</small></div>
-        <Link to={`/stocks?symbol=${item.symbol}`}>打开完整个股分析</Link>
+        <Link to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=watchlist#stock-final-gate`}>打开完整个股分析</Link>
       </div>
       {trend.isLoading && <p className="watch-trend-state">走势加载中…</p>}
       {trend.isError && <p className="watch-trend-state negative">走势暂时加载失败，备注仍可编辑。</p>}
@@ -70,13 +74,19 @@ function ResearchCard({ item, onDelete }: { item: WatchlistItem; onDelete: (id: 
         <StockTrend bars={trend.data.bars} marker={{ date: trackedAt, label: "加入跟踪" }} compact />
       </>}
     </section>
+    <nav className="watch-action-bridge" aria-label={`${item.name} 跟踪复核动作`}>
+      <Link to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=watchlist#stock-final-gate`}>复核 FINAL GATE</Link>
+      <Link to={watchAskHref(item, `${item.name}还值得继续跟踪吗`)}>问是否继续跟</Link>
+      <Link to={watchAskHref(item, `${item.name}这条跟踪记录的失效条件是什么`)}>问失效条件</Link>
+    </nav>
     <footer><span>最近更新 {new Date(item.updated_at).toLocaleString("zh-CN", { hour12: false })}</span><div>{update.isSuccess && <em role="status">已保存</em>}{update.isError && <em className="negative" role="alert">保存失败，草稿仍在</em>}<button className="icon-button" aria-label={`删除 ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 size={16} /></button><button className="button" onClick={() => update.mutate()} disabled={update.isPending}><Save size={14} />{update.isPending ? "保存中…" : "保存跟踪记录"}</button></div></footer>
   </article>;
 }
 
 export function WatchlistPage() {
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ["watchlist"], queryFn: () => api<WatchlistItem[]>("/api/v1/watchlist"), retry: false });
+  const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
+  const query = useQuery({ queryKey: ["watchlist", "page", authScope], queryFn: () => api<WatchlistItem[]>("/api/v1/watchlist"), retry: false });
   const remove = useMutation({
     mutationFn: (id: number) => api(`/api/v1/watchlist/${id}`, { method: "DELETE" }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["watchlist"] }),
