@@ -1128,3 +1128,17 @@ Full gate and public deployment after the Ask Stock decision-gate upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `ASK GATE`, `FINAL GATE`, `LEDGER GATE`, `问股决策闸口`, and `先过门，再追问` |
+
+## 2026-07-29 Ask Stock Gate-Aware Deep Links
+
+Ask Stock gate cards now route the user back into the exact Stock Lab review section that matches the decision gate. Positive/ready gates open the trading-plan section, weak evidence opens the company-evidence section, and risk-dominant gates can open the invalidation/risk-control section. Stock Lab exposes stable section IDs and performs hash-based scrolling under the HashRouter shell.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock passed 13 focused tests, Stock Lab passed 12 focused tests, and frontend typecheck passed. The assertions verify that `去看交易计划 →` targets `#stock-investment-advice`, `打开个股研究` targets `#stock-final-gate`, and Stock Lab exposes stable IDs for `stock-final-gate`, `stock-evidence-audit`, `stock-investment-advice`, and `stock-company-evidence`.

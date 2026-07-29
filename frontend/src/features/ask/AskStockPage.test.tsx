@@ -91,9 +91,16 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(gate).toHaveTextContent("FINAL GATE进入交易计划");
   expect(gate).toHaveTextContent("LEDGER GATE证据够用");
   expect(gate).toHaveTextContent("NEXT CHECK等待下一交易日确认");
+  expect(screen.getByRole("link", { name: "去看交易计划 →" })).toHaveAttribute(
+    "href",
+    "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-investment-advice",
+  );
   expect(screen.getByText("展开评分因子")).toBeInTheDocument();
   expect(screen.getByText("价格与 MA20")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute(
+    "href",
+    "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-final-gate",
+  );
   expect(screen.getByRole("button", { name: "继续问估值" })).toBeInTheDocument();
   expect(requests).toEqual([{
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),

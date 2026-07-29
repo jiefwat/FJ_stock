@@ -166,6 +166,7 @@ it("shows the evidence ledger and edits the thesis before adding to watchlist", 
   expect(screen.getByText("语义研究增强")).toBeInTheDocument();
   expect(screen.getAllByText(/近三十日有分红相关公告/).length).toBeGreaterThan(0);
   const audit = within(await screen.findByLabelText("证据总账"));
+  expect(screen.getByLabelText("证据总账")).toHaveAttribute("id", "stock-evidence-audit");
   expect(audit.getByText("LEDGER GATE")).toBeInTheDocument();
   expect(audit.getByText("先补证据，不升级仓位")).toBeInTheDocument();
   expect(audit.getByText(/覆盖 55% · 支持 2 · 反方 2 · 缺口 0/)).toBeInTheDocument();
@@ -194,6 +195,7 @@ it("shows cited filings, research reports, and themes without changing the score
   renderPage();
 
   const panel = within(await screen.findByLabelText("公司证据包"));
+  expect(screen.getByLabelText("公司证据包")).toHaveAttribute("id", "stock-company-evidence");
   expect(panel.getByText("年度权益分派实施公告")).toBeInTheDocument();
   expect(panel.getByRole("link", { name: "年度权益分派实施公告" })).toHaveAttribute("href", "https://example.com/filing");
   expect(panel.getByText("渠道韧性延续，长期价值稳固")).toBeInTheDocument();
@@ -271,6 +273,7 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   renderPage();
 
   const deck = within(await screen.findByLabelText("个股复核作战台"));
+  expect(screen.getByLabelText("个股复核作战台")).toHaveAttribute("id", "stock-final-gate");
   expect(deck.getByText("FINAL GATE")).toBeInTheDocument();
   expect(deck.getByText("先看板块")).toBeInTheDocument();
   expect(deck.getByText("失效条件")).toBeInTheDocument();
@@ -282,6 +285,7 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   ));
 
   const advice = within(await screen.findByLabelText("直接投资建议"));
+  expect(screen.getByLabelText("直接投资建议")).toHaveAttribute("id", "stock-investment-advice");
   expect(advice.getByText("等待回踩")).toBeInTheDocument();
   expect(advice.getByText(/暂不追高/)).toBeInTheDocument();
   expect(advice.getByText("入场计划")).toBeInTheDocument();

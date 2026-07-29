@@ -452,6 +452,28 @@ function metricByLabel(result: AskStockResponse, label: string) {
   return (result.metrics ?? []).find((metric) => metric.label === label) ?? null;
 }
 
+function stockResearchHref(result: AskStockResponse, anchor = "stock-final-gate") {
+  if (!result.symbol) return "#/stocks";
+  const params = new URLSearchParams({ symbol: result.symbol, from: "ask" });
+  if (result.name) params.set("name", result.name);
+  return `#/stocks?${params.toString()}#${anchor}`;
+}
+
+function gateReviewRoute(result: AskStockResponse) {
+  const finalGate = metricByLabel(result, "FINAL GATE")?.value ?? "";
+  const ledgerGate = metricByLabel(result, "LEDGER GATE")?.value ?? "";
+  if (/反方|失效|守/.test(`${finalGate}${ledgerGate}`)) {
+    return { anchor: "stock-risk-controls", label: "去看失效条件", detail: "先核对反方证据和放弃线。" };
+  }
+  if (/补|不足|缺口/.test(`${finalGate}${ledgerGate}`)) {
+    return { anchor: "stock-company-evidence", label: "去补公告研报", detail: "先查公告、研报和题材来源。" };
+  }
+  if (/交易|够用|计划/.test(`${finalGate}${ledgerGate}`)) {
+    return { anchor: "stock-investment-advice", label: "去看交易计划", detail: "直接复核入场、止损、止盈纪律。" };
+  }
+  return { anchor: "stock-evidence-audit", label: "去看证据总账", detail: "先看支持、反方和缺口。" };
+}
+
 function AskGateBrief({ result }: { result: AskStockResponse }) {
   if (result.kind !== "stock_analysis") return null;
   const finalGate = metricByLabel(result, "FINAL GATE");
@@ -460,12 +482,14 @@ function AskGateBrief({ result }: { result: AskStockResponse }) {
   const action = metricByLabel(result, "建议动作");
   const coverage = metricByLabel(result, "证据覆盖");
   const nextCheck = result.next_actions[0] ?? "继续补齐证据后再复核";
+  const route = gateReviewRoute(result);
 
   return <section className="ask-gate-brief" aria-label="问股决策闸口">
     <div>
       <span>ASK GATE</span>
       <strong>先过门，再追问</strong>
       <p>把 Stock Lab 的最终建议和证据总账压缩到问股回答前面。</p>
+      <a className="ask-gate-link" href={stockResearchHref(result, route.anchor)}>{route.label} →</a>
     </div>
     <article className={finalGate.tone}>
       <small>FINAL GATE</small>
@@ -480,7 +504,7 @@ function AskGateBrief({ result }: { result: AskStockResponse }) {
     <article className="neutral">
       <small>NEXT CHECK</small>
       <b>{nextCheck}</b>
-      <p>追问可以继续拆风险、估值、趋势或仓位纪律。</p>
+      <p>{route.detail}</p>
     </article>
   </section>;
 }
@@ -523,7 +547,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
       <div className="ask-provenance">
         <span>{result.source}</span>
         <small>行情时间 {observedTime(result.observed_at)}</small>
-        {result.symbol ? <a className="ask-stock-link" href={`#/stocks?symbol=${encodeURIComponent(result.symbol)}`}>打开个股研究</a> : null}
+        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
       </div>
     </header>
     <AskMetrics result={result} />

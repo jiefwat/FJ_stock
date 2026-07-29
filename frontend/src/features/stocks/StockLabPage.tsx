@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { api, fmt, getAuthToken, pct, percent, type EvidenceDocument, type InstrumentEvidenceResult, type Quote, type WatchlistItem } from "../../lib/api";
@@ -226,7 +226,7 @@ function AnalystActionMap({ dossier }: { dossier: Dossier }) {
 }
 
 function InvestmentAdvicePanel({ advice }: { advice: InvestmentAdvice }) {
-  return <section className="investment-advice-panel" aria-label="直接投资建议">
+  return <section className="investment-advice-panel" id="stock-investment-advice" aria-label="直接投资建议">
     <article className="advice-verdict">
       <span>直接建议</span>
       <strong>{advice.action}</strong>
@@ -306,7 +306,7 @@ function EvidenceAuditDesk({ dossier, evidence }: { dossier: Dossier; evidence?:
   ];
   const gaps = dossier.missing_evidence.length > 0 ? dossier.missing_evidence : [gapCount > 0 ? "部分外部证据源未完全可用" : "暂无关键缺口，继续滚动复核"];
 
-  return <section className={`evidence-audit-desk ${route.tone}`} aria-label="证据总账">
+  return <section className={`evidence-audit-desk ${route.tone}`} id="stock-evidence-audit" aria-label="证据总账">
     <article className="audit-verdict">
       <span>LEDGER GATE</span>
       <strong>{route.text}</strong>
@@ -419,7 +419,7 @@ function StockDecisionDeck({ dossier, evidence }: { dossier: Dossier; evidence?:
   const nextAction = firstOrFallback(dossier.next_actions, dossier.investment_advice.entry_plan);
   const missing = firstOrFallback(dossier.missing_evidence, "暂无关键缺口，继续按证据账本复核");
 
-  return <section className={`stock-decision-deck ${tone}`} aria-label="个股复核作战台">
+  return <section className={`stock-decision-deck ${tone}`} id="stock-final-gate" aria-label="个股复核作战台">
     <article className="decision-primary">
       <span>FINAL GATE</span>
       <strong>{dossier.investment_advice.action}</strong>
@@ -466,7 +466,7 @@ function EvidenceDocuments({ title, items, unavailable }: { title: string; items
 function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvidenceResult; loading: boolean; failed: boolean }) {
   const filingsUnavailable = data?.capabilities.filings?.status === "unavailable";
   const researchUnavailable = data?.capabilities.research?.status === "unavailable";
-  return <section className="panel company-evidence" aria-label="公司证据包">
+  return <section className="panel company-evidence" id="stock-company-evidence" aria-label="公司证据包">
     <div className="panel-title"><span>公告 / 研报 / 题材</span><small>有出处的外部证据 · 不进入确定性评分</small></div>
     <p className="evidence-boundary">公告、机构观点和题材归属仅作研究上下文，不直接改写评分；点击标题回到原始来源核验。</p>
     {loading && <div className="capability-empty">正在读取公告与研报元数据…</div>}
@@ -484,6 +484,7 @@ function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvid
 export function StockLabPage() {
   const client = useQueryClient();
   const authenticated = Boolean(getAuthToken());
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [term, setTerm] = useState(params.get("symbol") ?? "600519");
   const [symbol, setSymbol] = useState(params.get("symbol") ?? "SH.600519");
@@ -544,6 +545,18 @@ export function StockLabPage() {
     setInvalidation(query.data.invalidation[0] ?? "关注理由不成立");
   }, [query.data]);
 
+  useEffect(() => {
+    if (!query.data || !location.hash) return;
+    const targetId = location.hash.slice(1);
+    const runAfterPaint = window.requestAnimationFrame ?? ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+    runAfterPaint(() => {
+      const target = document.getElementById(targetId);
+      if (typeof target?.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "start" });
+      }
+    });
+  }, [location.hash, query.data]);
+
   const choose = (quote: Quote) => {
     setSymbol(quote.symbol);
     setTerm(quote.name);
@@ -594,12 +607,12 @@ export function StockLabPage() {
         {addWatch.isError && <p className="form-error">保存失败，跟踪理由仍保留，请重试。</p>}
       </form>}
       <StockTrend bars={query.data.bars} />
-      <section className="panel evidence-ledger">
+      <section className="panel evidence-ledger" id="stock-score-ledger">
         <div className="panel-title"><span>证据账本</span><small>所有加减分都来自下列事实</small></div>
         <div className="ledger-list">{query.data.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
       </section>
       {query.data.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究增强</span><small>只作为证据补充，不直接改写评分</small></div>{query.data.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
-      <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{query.data.technical ? Object.entries(query.data.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis"><div><h3>支持证据</h3>{query.data.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{query.data.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{query.data.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{query.data.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
+      <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{query.data.technical ? Object.entries(query.data.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{query.data.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{query.data.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{query.data.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{query.data.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
     </>}</AsyncState>
   </>;
 }
