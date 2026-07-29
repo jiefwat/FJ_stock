@@ -1083,3 +1083,15 @@ Full gate after the Ask Stock context bridge:
 | Frontend Vitest | Passed, 47 tests across 8 files |
 | Vite production build | Passed, 1,653 modules transformed |
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Public deployment smoke after the Ask Stock context bridge:
+
+| Check | Result |
+| --- | --- |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-124201-82cc4a7` |
+| Commit | `82cc4a7` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `问股来源上下文`, `BOARD BRIDGE`, `QUEUE BRIDGE`, `带着证据去问股`, `为什么它是板块前排样本`, and `线索能升级吗` |
