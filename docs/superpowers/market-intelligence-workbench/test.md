@@ -1193,3 +1193,35 @@ Full gate and public deployment after the Stock Lab route-rail upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `REVIEW ROUTE`, `按这条顺序读`, `个股复核路线`, `stock-review-rail`, and `个股复核区块导航` |
+
+## 2026-07-29 Market Stock Handoff Review Routes
+
+Market board and theme dossiers now turn each `STOCK HANDOFF` stock into a guided Stock Lab review route. Strong price-plus-flow leads open the trading-plan section, price-only leads open the evidence-audit ledger, flow-only leads open `FINAL GATE`, high-turnover but weak-direction leads open company evidence, and weak leads open risk controls. Constituent rows show the same first-stop hint so the compact screener and top handoff cards stay consistent.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Market passed 9 focused tests and frontend typecheck passed. The assertions verify board and theme handoff links include `#stock-investment-advice` or `#stock-evidence-audit`, and that route labels such as `先看交易计划` and `先看证据总账` render in the handoff cards and constituent rows.
+
+Full gate and public deployment after the Market handoff route upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-132821-8516ebf` |
+| Commit | `8516ebf` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `先看交易计划`, `先看证据总账`, `先看 FINAL GATE`, `先补公告研报`, `先看风控条件`, `stock-investment-advice`, `stock-evidence-audit`, `stock-risk-controls`, and `board-lead-route` |
