@@ -20,6 +20,8 @@ const stockAnswer = {
     { label: "建议动作", value: "观察", tone: "positive" },
     { label: "证据覆盖", value: "80%", tone: "positive" },
     { label: "置信度", value: "70%", tone: "positive" },
+    { label: "FINAL GATE", value: "进入交易计划", tone: "positive" },
+    { label: "LEDGER GATE", value: "证据够用", tone: "positive" },
     { label: "最新价", value: "1500.00", tone: "neutral" },
     { label: "涨跌幅", value: "+1.20%", tone: "positive" },
   ],
@@ -79,11 +81,16 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(screen.getByText("SH.600519")).toBeInTheDocument();
   expect(screen.getByText("价格仍在 MA20 上方")).toBeInTheDocument();
   expect(screen.getByText("短期波动放大")).toBeInTheDocument();
-  expect(screen.getByText("等待下一交易日确认")).toBeInTheDocument();
+  expect(screen.getAllByText("等待下一交易日确认").length).toBeGreaterThan(0);
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("综合分62");
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("证据覆盖80%");
+  const gate = screen.getByLabelText("问股决策闸口");
+  expect(gate).toHaveTextContent("ASK GATE");
+  expect(gate).toHaveTextContent("FINAL GATE进入交易计划");
+  expect(gate).toHaveTextContent("LEDGER GATE证据够用");
+  expect(gate).toHaveTextContent("NEXT CHECK等待下一交易日确认");
   expect(screen.getByText("展开评分因子")).toBeInTheDocument();
   expect(screen.getByText("价格与 MA20")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");

@@ -379,9 +379,12 @@ def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> N
         "建议动作",
         "证据覆盖",
         "置信度",
+        "FINAL GATE",
+        "LEDGER GATE",
         "最新价",
         "涨跌幅",
     ]
+    assert payload["answer"].startswith("FINAL GATE：")
     assert payload["observed_at"]
 
 

@@ -1095,3 +1095,17 @@ Public deployment smoke after the Ask Stock context bridge:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `问股来源上下文`, `BOARD BRIDGE`, `QUEUE BRIDGE`, `带着证据去问股`, `为什么它是板块前排样本`, and `线索能升级吗` |
+
+## 2026-07-29 Ask Stock Decision Gates
+
+Ask Stock stock-analysis answers now expose the same decision discipline as Stock Lab. The backend prepends explicit `FINAL GATE` and `LEDGER GATE` summaries to each deterministic stock answer, adds gate metrics alongside score, evidence coverage, confidence, price, and change, and the frontend renders a compact `ASK GATE` block before the answer body.
+
+Focused checks:
+
+```text
+pytest -q backend/tests/test_ask_stock.py backend/tests/test_api.py -q
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: backend Ask/API focused tests passed 54 tests, Ask Stock frontend passed 13 tests, and frontend typecheck passed. The new assertions verify `FINAL GATE`, `LEDGER GATE`, `ASK GATE`, and that the next review action is visible before the detailed evidence lists.

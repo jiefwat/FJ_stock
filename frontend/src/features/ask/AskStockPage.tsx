@@ -448,6 +448,43 @@ function HoldingContext({ result }: { result: AskStockResponse }) {
   </aside>;
 }
 
+function metricByLabel(result: AskStockResponse, label: string) {
+  return (result.metrics ?? []).find((metric) => metric.label === label) ?? null;
+}
+
+function AskGateBrief({ result }: { result: AskStockResponse }) {
+  if (result.kind !== "stock_analysis") return null;
+  const finalGate = metricByLabel(result, "FINAL GATE");
+  const ledgerGate = metricByLabel(result, "LEDGER GATE");
+  if (!finalGate || !ledgerGate) return null;
+  const action = metricByLabel(result, "建议动作");
+  const coverage = metricByLabel(result, "证据覆盖");
+  const nextCheck = result.next_actions[0] ?? "继续补齐证据后再复核";
+
+  return <section className="ask-gate-brief" aria-label="问股决策闸口">
+    <div>
+      <span>ASK GATE</span>
+      <strong>先过门，再追问</strong>
+      <p>把 Stock Lab 的最终建议和证据总账压缩到问股回答前面。</p>
+    </div>
+    <article className={finalGate.tone}>
+      <small>FINAL GATE</small>
+      <b>{finalGate.value}</b>
+      <p>{action ? `当前动作：${action.value}` : "先看直接建议，再定仓位。"}</p>
+    </article>
+    <article className={ledgerGate.tone}>
+      <small>LEDGER GATE</small>
+      <b>{ledgerGate.value}</b>
+      <p>{coverage ? `证据覆盖：${coverage.value}` : "先确认支持、反方和缺口。"}</p>
+    </article>
+    <article className="neutral">
+      <small>NEXT CHECK</small>
+      <b>{nextCheck}</b>
+      <p>追问可以继续拆风险、估值、趋势或仓位纪律。</p>
+    </article>
+  </section>;
+}
+
 function AskFactors({ result }: { result: AskStockResponse }) {
   const factors = result.factors ?? [];
   if (factors.length === 0) return null;
@@ -491,6 +528,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
     </header>
     <AskMetrics result={result} />
     <HoldingContext result={result} />
+    <AskGateBrief result={result} />
     <article className="ask-answer">
       <span>回答</span>
       <p>{result.answer}</p>

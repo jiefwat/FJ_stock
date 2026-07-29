@@ -165,9 +165,13 @@ def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
         "建议动作",
         "证据覆盖",
         "置信度",
+        "FINAL GATE",
+        "LEDGER GATE",
         "最新价",
         "涨跌幅",
     ]
+    assert "FINAL GATE：" in answer.answer
+    assert "LEDGER GATE：" in answer.answer
     assert answer.source == "本地行情快照 + 确定性分析"
     assert answer.disclaimer == "研究辅助信息，不构成投资建议。"
 

@@ -197,6 +197,7 @@ def build_stock_answer(
         )
         answer = dossier.conclusion
 
+    answer = _with_gate_summary(answer, dossier)
     holding_context = _holding_context(holding)
     if holding is not None:
         answer = _with_holding_summary(answer, holding)
@@ -481,6 +482,59 @@ def _change_tone(value: float | None) -> AskStockMetricTone:
     return "neutral"
 
 
+def _risk_count(dossier: StockDossier) -> int:
+    return sum(1 for factor in dossier.score_factors if factor.available and factor.signal == "negative") + len(dossier.bear_case)
+
+
+def _support_count(dossier: StockDossier) -> int:
+    return sum(1 for factor in dossier.score_factors if factor.available and factor.signal == "positive") + len(dossier.bull_case)
+
+
+def _gap_count(dossier: StockDossier) -> int:
+    return len(dossier.missing_evidence)
+
+
+def _final_gate(dossier: StockDossier) -> tuple[str, AskStockMetricTone]:
+    action = dossier.investment_advice.action
+    score = dossier.stance_score
+    risk_count = _risk_count(dossier)
+    support_count = _support_count(dossier)
+    if score is None or dossier.evidence_coverage < 0.45:
+        return "证据不足", "missing"
+    if action in {"可小仓试错", "持有观察"} and support_count >= risk_count:
+        return "进入交易计划", "positive"
+    if action in {"等待回踩", "继续观察"}:
+        return "观察等确认", "neutral"
+    if risk_count > support_count:
+        return "先守失效线", "negative"
+    return action, _metric_tone(score, good=60, bad=45)
+
+
+def _ledger_gate(dossier: StockDossier) -> tuple[str, AskStockMetricTone]:
+    risk_count = _risk_count(dossier)
+    support_count = _support_count(dossier)
+    gap_count = _gap_count(dossier)
+    if dossier.evidence_coverage < 0.6 or gap_count >= 2:
+        return "先补证据", "missing"
+    if risk_count > support_count:
+        return "反方占优", "negative"
+    return "证据够用", "positive"
+
+
+def _gate_detail(dossier: StockDossier) -> str:
+    final_gate, _ = _final_gate(dossier)
+    ledger_gate, _ = _ledger_gate(dossier)
+    return (
+        f"FINAL GATE：{final_gate}；LEDGER GATE：{ledger_gate}"
+        f"（覆盖 {_percent(dossier.evidence_coverage)}，支持 {_support_count(dossier)}，"
+        f"反方 {_risk_count(dossier)}，缺口 {_gap_count(dossier)}）。"
+    )
+
+
+def _with_gate_summary(answer: str, dossier: StockDossier) -> str:
+    return f"{_gate_detail(dossier)}{answer}"
+
+
 def _money(value: float | None) -> str:
     if value is None:
         return "—"
@@ -512,6 +566,8 @@ def _stock_metrics(dossier: StockDossier, holding: HoldingDossier | None) -> lis
     quote = dossier.quote
     score = dossier.stance_score
     confidence = dossier.investment_advice.confidence
+    final_gate, final_gate_tone = _final_gate(dossier)
+    ledger_gate, ledger_gate_tone = _ledger_gate(dossier)
     metrics = [
         AskStockMetric(
             label="综合分",
@@ -533,6 +589,8 @@ def _stock_metrics(dossier: StockDossier, holding: HoldingDossier | None) -> lis
             value=_percent(confidence),
             tone=_metric_tone(confidence, good=0.65, bad=0.45),
         ),
+        AskStockMetric(label="FINAL GATE", value=final_gate, tone=final_gate_tone),
+        AskStockMetric(label="LEDGER GATE", value=ledger_gate, tone=ledger_gate_tone),
         AskStockMetric(label="最新价", value=_price(quote.price), tone="neutral"),
         AskStockMetric(
             label="涨跌幅",
@@ -543,6 +601,7 @@ def _stock_metrics(dossier: StockDossier, holding: HoldingDossier | None) -> lis
     if holding is not None:
         metrics = [
             *metrics[:4],
+            *metrics[4:6],
             AskStockMetric(label="持仓盈亏", value=_pct(holding.pnl_pct), tone=_change_tone(holding.pnl_pct)),
             AskStockMetric(label="组合占比", value=_percent(holding.portfolio_weight), tone="neutral"),
         ]
