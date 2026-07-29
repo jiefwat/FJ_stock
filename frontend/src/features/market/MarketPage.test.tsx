@@ -41,6 +41,8 @@ const flowSector = {
   missing_evidence: [],
   constituents: [
     { symbol: "SZ.002475", code: "002475", name: "立讯精密", price: 42.5, change_pct: 9.99, amount: 2000000000, turnover_rate: 8.5, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: 120000000, sector: "电力设备" },
+    { symbol: "SZ.300750", code: "300750", name: "宁德时代", price: 188.2, change_pct: -1.25, amount: 5200000000, turnover_rate: 2.4, volume_ratio: 0.9, pe: 18, pb: 4, market_cap: 890000000000, net_flow: -30000000, sector: "电力设备" },
+    { symbol: "SZ.300274", code: "300274", name: "阳光电源", price: 92.8, change_pct: 12.4, amount: 1100000000, turnover_rate: 5.2, volume_ratio: 1.7, pe: 22, pb: 5, market_cap: 210000000000, net_flow: 50000000, sector: "电力设备" },
   ],
 };
 
@@ -216,6 +218,37 @@ it("opens sector details from market intelligence flow leaders", async () => {
   expect(detail).not.toBeNull();
   expect(within(detail as HTMLElement).getByText("主力净流入 64.66 亿，板块热度偏强。")).toBeInTheDocument();
   expect(within(detail as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
+});
+
+it("sorts and filters dossier constituents like a compact screener", async () => {
+  renderPage();
+
+  const panel = within(await screen.findByLabelText("A股市场情报"));
+  fireEvent.click(panel.getByRole("button", { name: /电力设备/ }));
+
+  const detail = (await screen.findByText("电力设备板块简析")).closest("section");
+  expect(detail).not.toBeNull();
+  const scoped = within(detail as HTMLElement);
+  expect(scoped.getByText("显示 3 / 3")).toBeInTheDocument();
+  expect(scoped.getAllByRole("link").map((row) => row.textContent)).toEqual([
+    expect.stringContaining("立讯精密"),
+    expect.stringContaining("阳光电源"),
+    expect.stringContaining("宁德时代"),
+  ]);
+
+  fireEvent.change(scoped.getByLabelText("详情排序"), { target: { value: "change_pct" } });
+  expect(scoped.getAllByRole("link")[0]).toHaveTextContent("阳光电源");
+
+  fireEvent.change(scoped.getByLabelText("详情排序"), { target: { value: "amount" } });
+  expect(scoped.getAllByRole("link")[0]).toHaveTextContent("宁德时代");
+
+  fireEvent.change(scoped.getByLabelText("详情范围"), { target: { value: "net_inflow" } });
+  expect(scoped.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
+  expect(scoped.getByText("显示 2 / 3")).toBeInTheDocument();
+
+  fireEvent.change(scoped.getByLabelText("详情范围"), { target: { value: "up" } });
+  expect(scoped.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
+  expect(scoped.getAllByRole("link")).toHaveLength(2);
 });
 
 it("browses, ranks, and searches the full market without loading every quote", async () => {

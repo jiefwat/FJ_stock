@@ -805,3 +805,36 @@ Provider and product boundaries:
 - Evidence endpoints cache only normalized in-memory values for bounded TTLs; raw payloads, document bodies, and PDFs are not persisted.
 - `partial`, `empty`, and `unavailable` remain distinct, so a provider error cannot be interpreted as proof that no evidence exists.
 - Public or commercial deployment still requires a fresh licensing review for CNINFO, Eastmoney, and CLS.
+
+## 2026-07-29 Market Dossier Constituent Screener
+
+Market sector and theme dossiers now behave as compact stock screeners after a user drills into a board, theme, or sector-flow leader.
+
+Focused regression coverage:
+
+```text
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+```
+
+Result: 9 Market page tests passed, including a new interaction that opens a sector from `板块资金确认`, verifies default net-flow ranking, switches to gain-first and amount-first sorting, and applies `只看净流入` / `只看上涨` range filters with the visible result count updated.
+
+Browser acceptance to confirm before handoff:
+
+- Authenticated `/market` opens sector-flow leaders into a dossier with `详情排序` and `详情范围` controls.
+- Sorting changes the constituent order without changing the deterministic board summary or score evidence.
+- Filters hide non-matching rows, show `显示 n / total`, and keep each stock linked to Stock Lab.
+- 390px mobile width stacks the controls without document-level horizontal overflow.
+
+Final local gate before public deployment:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 22 source files |
+| Backend pytest | Passed, 128 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 44 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Authenticated local browser acceptance passed on `http://127.0.0.1:8765/#/market` with a temporary Codex test account. A real Chrome session opened `食品饮料` from `板块资金确认`, rendered `详情排序` and `详情范围`, changed the detail ranking to gain-first, kept stock rows linked to Stock Lab, and reported no browser console/page errors. At 390 x 844 CSS pixels, document `scrollWidth` stayed 390 and the dossier controls stacked within a 320px panel.

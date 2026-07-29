@@ -4,10 +4,12 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
-import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Sector, type SectorDossier } from "../../lib/api";
+import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
 import { EquityBrowser } from "./EquityBrowser";
 
 type MarketData = { snapshot: { meta: Meta; indices: IndexQuote[]; sectors: Sector[] }; analysis: Analysis };
+type DetailSort = "net_flow" | "change_pct" | "amount";
+type DetailFilter = "all" | "net_inflow" | "up";
 
 export function MarketPage() {
   const [showAllSectors, setShowAllSectors] = useState(false);
@@ -47,19 +49,45 @@ export function MarketPage() {
       </AsyncState>
     </section>
     <section className="panel"><div className="panel-title"><span>板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
-    {selectedSector && <section className="panel sector-detail"><AsyncState loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null}>{sectorQuery.data && <>
-      <div className="sector-detail-head"><div><span>SECTOR DOSSIER</span><h2>{sectorQuery.data.sector.name}板块简析</h2></div><button className="text-button" onClick={() => setParams({})}>关闭</button></div>
-      <div className="sector-digest"><article><span>板块涨跌</span><strong className={(sectorQuery.data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(sectorQuery.data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{sectorQuery.data.sector.net_flow == null ? "待增强" : `${fmt(sectorQuery.data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(sectorQuery.data.evidence_coverage * 100)}</strong></article></div>
-      <div className="sector-summary">{sectorQuery.data.summary.map((item) => <p key={item}>{item}</p>)}{sectorQuery.data.missing_evidence.length > 0 && <small>缺口：{sectorQuery.data.missing_evidence.join("、")}</small>}</div>
-      <div className="sector-constituents">{sectorQuery.data.constituents.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div>
-    </>}</AsyncState></section>}
-    {selectedTheme && <section className="panel sector-detail"><AsyncState loading={themeQuery.isLoading} error={themeQuery.error as Error | null}>{themeQuery.data && <>
-      <div className="sector-detail-head"><div><span>THEME DOSSIER</span><h2>{themeQuery.data.sector.name}题材简析</h2></div><button className="text-button" onClick={() => setParams({})}>关闭</button></div>
-      <div className="sector-digest"><article><span>题材涨跌</span><strong className={(themeQuery.data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(themeQuery.data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{themeQuery.data.sector.net_flow == null ? "待增强" : `${fmt(themeQuery.data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(themeQuery.data.evidence_coverage * 100)}</strong></article></div>
-      <div className="sector-summary">{themeQuery.data.summary.map((item) => <p key={item}>{item}</p>)}{themeQuery.data.missing_evidence.length > 0 && <small>缺口：{themeQuery.data.missing_evidence.join("、")}</small>}</div>
-      <div className="sector-constituents">{themeQuery.data.constituents.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div>
-    </>}</AsyncState></section>}
+    {selectedSector && <DossierPanel key={`sector-${selectedSector}`} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={() => setParams({})} />}
+    {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={() => setParams({})} />}
   </>}</AsyncState>;
+}
+
+function detailValue(item: Quote, sort: DetailSort) {
+  return item[sort] ?? Number.NEGATIVE_INFINITY;
+}
+
+function filterRows(items: Quote[], filter: DetailFilter) {
+  if (filter === "net_inflow") return items.filter((item) => (item.net_flow ?? 0) > 0);
+  if (filter === "up") return items.filter((item) => (item.change_pct ?? 0) > 0);
+  return items;
+}
+
+function sortedRows(items: Quote[], sort: DetailSort, filter: DetailFilter) {
+  return [...filterRows(items, filter)].sort(
+    (left, right) => detailValue(right, sort) - detailValue(left, sort),
+  );
+}
+
+function DossierPanel({ data, loading, error, variant, onClose }: { data?: SectorDossier; loading: boolean; error: Error | null; variant: "sector" | "theme"; onClose: () => void }) {
+  const [sort, setSort] = useState<DetailSort>("net_flow");
+  const [filter, setFilter] = useState<DetailFilter>("all");
+  const rows = data ? sortedRows(data.constituents, sort, filter) : [];
+  const suffix = variant === "theme" ? "题材" : "板块";
+  return <section className="panel sector-detail">
+    <AsyncState loading={loading} error={error}>{data && <>
+      <div className="sector-detail-head"><div><span>{variant === "theme" ? "THEME DOSSIER" : "SECTOR DOSSIER"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
+      <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待增强" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
+      <div className="sector-summary">{data.summary.map((item) => <p key={item}>{item}</p>)}{data.missing_evidence.length > 0 && <small>缺口：{data.missing_evidence.join("、")}</small>}</div>
+      <div className="dossier-tools" aria-label={`${data.sector.name}${suffix}筛选`}>
+        <label>排序<select aria-label="详情排序" value={sort} onChange={(event) => setSort(event.target.value as DetailSort)}><option value="net_flow">资金优先</option><option value="change_pct">涨幅优先</option><option value="amount">成交额优先</option></select></label>
+        <label>范围<select aria-label="详情范围" value={filter} onChange={(event) => setFilter(event.target.value as DetailFilter)}><option value="all">全部</option><option value="net_inflow">只看净流入</option><option value="up">只看上涨</option></select></label>
+        <span>显示 {rows.length} / {data.constituents.length}</span>
+      </div>
+      {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
+    </>}</AsyncState>
+  </section>;
 }
 
 function flowAmount(value: number | null) {
