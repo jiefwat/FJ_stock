@@ -1289,3 +1289,35 @@ Full gate and public deployment after the Stock Lab compact-core upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `完整证据包`, `展开技术图、公告研报、分析拆解和原始账本`, `核心结论已经在上方`, `stock-deep-dossier`, `FINAL GATE`, `LEDGER GATE`, `直接建议`, and `未来趋势` |
+
+## 2026-07-29 Today Opening Desk
+
+Today now starts with an `OPENING DESK` execution panel after the market risk rail. The panel turns the daily state into three first actions: market gate, priority review, and forbidden-action check. The gate adapts to regime, breadth, confidence, and risk budget: strong conditions allow opportunity review, cautious breadth keeps the user in market verification, and low risk budget sends the user to holdings risk first. The priority review deep-links the first candidate into Stock Lab `FINAL GATE` when available.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/app/App.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: App passed 6 focused tests and frontend typecheck passed. The authenticated Today route now asserts `今日开盘执行台`, `OPENING DESK`, `市场闸口`, `优先复核`, `今日禁区`, and the gate link into `#/opportunities`.
+
+Full gate and public deployment after the Today opening-desk upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 48 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-140654-03f1749` |
+| Commit | `03f1749` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `OPENING DESK`, `今日开盘执行台`, `市场闸口`, `优先复核`, `今日禁区`, `允许复核机会`, `只做前排复核`, `先守风险`, and `opening-desk` |
