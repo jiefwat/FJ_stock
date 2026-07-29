@@ -18,6 +18,7 @@ const intentLabel: Record<AskStockResponse["intent"], string> = {
   trend: "趋势判断",
   valuation: "估值比较",
   action: "操作纪律",
+  movement: "异动解释",
   overview: "综合研究",
   screening: "条件选股",
   portfolio: "持仓诊断",
@@ -33,7 +34,7 @@ const followUpPrompts = [
 ];
 const stockCodePattern = /\b(?:SH|SZ|BJ)?\.?\d{6}\b/i;
 const followUpPrefixPattern = /^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/;
-const followUpTopicPattern = /(风险|趋势|估值|仓位|止损|止盈|支撑|压力|目标价|价格|股价|合理|多少|能买吗|能不能|要不要|可以买|可以卖|怎么样|怎么看)/;
+const followUpTopicPattern = /(风险|趋势|估值|仓位|止损|止盈|支撑|压力|目标价|价格|股价|合理|多少|为什么|为啥|怎么跌|怎么涨|大跌|大涨|异动|发生了什么|能买吗|能不能|要不要|可以买|可以卖|怎么样|怎么看)/;
 const portfolioQuestionPattern = /(我的持仓|持仓里|持仓中|组合|账户|调仓|再平衡|仓位调整)/;
 const screeningQuestionPattern = /(低估值|高股息|龙头|行业|板块|概念|题材|筛选|选股|有哪些|哪些|推荐|找|寻找|排名|排行)/;
 const stockCodeColumnPattern = /(股票)?代码|证券代码|symbol/i;

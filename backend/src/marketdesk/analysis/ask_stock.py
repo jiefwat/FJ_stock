@@ -10,13 +10,14 @@ from marketdesk.models import (
     AskStockHoldingContext,
     AskStockMetric,
     AskStockResponse,
+    Bar,
     EquityQuote,
     HoldingDossier,
     JsonScalar,
     StockDossier,
 )
 
-AskStockIntent = Literal["risk", "trend", "valuation", "action", "overview"]
+AskStockIntent = Literal["risk", "trend", "valuation", "action", "movement", "overview"]
 AskStockMetricTone = Literal["positive", "neutral", "negative", "missing"]
 
 
@@ -127,8 +128,10 @@ def is_rebalance_plan_question(question: str) -> bool:
 
 def classify_stock_question(question: str) -> AskStockIntent:
     normalized = _compact(question).casefold()
+    if _is_movement_question(normalized):
+        return "movement"
     keyword_groups: tuple[tuple[AskStockIntent, tuple[str, ...]], ...] = (
-        ("risk", ("风险", "利空", "隐患", "下跌", "回撤")),
+        ("risk", ("风险", "利空", "隐患", "下跌风险", "回撤风险")),
         ("trend", ("趋势", "技术", "走势", "均线", "动量", "macd", "rsi")),
         ("valuation", ("估值", "市盈率", "市净率", "贵不贵", "便宜", "对比")),
         (
@@ -206,6 +209,26 @@ def build_stock_answer(
             if valuation
             else f"结论：{quote.name}当前缺少足够的估值比较证据，不能只凭 PE/PB 判断贵不贵。"
         )
+    elif intent == "movement":
+        direction = _movement_direction(question, dossier)
+        evidence = _movement_evidence(dossier, direction)
+        drivers = _movement_drivers(dossier, direction)
+        movement_text = "，".join(evidence[:3]) if evidence else "近端涨跌幅证据不足"
+        driver_text = "；".join(drivers[:3]) if drivers else "近期价格异动证据不足"
+        answer = (
+            f"结论：{quote.name}近期{direction}不能直接归因到单一消息，"
+            f"先按行情结构解释。{movement_text}；"
+            f"本地证据显示：{driver_text}。"
+            f"若要确认真正诱因，下一步核对公告、研报和{quote.sector or '所属板块'}新闻。"
+        )
+        next_actions = _unique(
+            [
+                f"核对{quote.name}最近公告、业绩预告和交易异动公告",
+                f"回到大盘页检查{quote.sector or '所属板块'}是否同步走弱",
+                "看后续 1-3 个交易日是否放量止跌或继续破位",
+                *next_actions,
+            ]
+        )[:4]
     elif intent == "action":
         advice = dossier.investment_advice
         evidence = _unique(
@@ -598,6 +621,111 @@ def _is_price_target_question(question: str) -> bool:
         keyword in normalized
         for keyword in ("涨到多少", "能涨多少", "目标价", "未来涨", "上涨空间", "压力位")
     )
+
+
+def _is_movement_question(normalized_question: str) -> bool:
+    movement_patterns = (
+        "为什么跌",
+        "为啥跌",
+        "怎么跌",
+        "大跌",
+        "暴跌",
+        "跌这么多",
+        "跌停",
+        "最近跌",
+        "近期跌",
+        "为什么涨",
+        "为啥涨",
+        "怎么涨",
+        "大涨",
+        "暴涨",
+        "涨这么多",
+        "涨停",
+        "最近涨",
+        "近期涨",
+        "异动",
+        "发生了什么",
+        "怎么回事",
+    )
+    return any(pattern in normalized_question for pattern in movement_patterns)
+
+
+def _movement_direction(question: str, dossier: StockDossier) -> str:
+    normalized = _compact(question)
+    if any(keyword in normalized for keyword in ("跌", "回落", "杀跌", "跳水")):
+        return "下跌"
+    if any(keyword in normalized for keyword in ("涨", "拉升", "走强", "反弹")):
+        return "上涨"
+    recent = _period_return(dossier.bars, 5)
+    if recent is None:
+        recent = dossier.quote.change_pct
+    if recent is not None and recent < 0:
+        return "下跌"
+    if recent is not None and recent > 0:
+        return "上涨"
+    return "异动"
+
+
+def _period_return(bars: list[Bar], days: int) -> float | None:
+    if len(bars) <= days:
+        return None
+    base = bars[-days - 1].close
+    latest = bars[-1].close
+    if base <= 0:
+        return None
+    return (latest / base - 1) * 100
+
+
+def _movement_evidence(dossier: StockDossier, direction: str) -> list[str]:
+    quote = dossier.quote
+    rows: list[str] = []
+    if quote.change_pct is not None:
+        rows.append(f"当日涨跌幅 {_pct(quote.change_pct)}")
+    for days in (5, 20):
+        value = _period_return(dossier.bars, days)
+        if value is not None:
+            rows.append(f"近{days}日涨跌幅 {_pct(value)}")
+    if quote.volume_ratio is not None:
+        rows.append(f"量比 {quote.volume_ratio:.1f}，{'放量波动' if quote.volume_ratio >= 1.5 else '量能未明显放大'}")
+    if quote.net_flow is not None:
+        rows.append(f"资金流 {_signed_money(quote.net_flow)}")
+    if not rows:
+        rows.append(f"本地行情暂不足以量化近期{direction}幅度")
+    return rows
+
+
+def _movement_drivers(dossier: StockDossier, direction: str) -> list[str]:
+    quote = dossier.quote
+    technical = dossier.technical
+    drivers: list[str] = []
+    if technical is not None and quote.price is not None:
+        if direction == "下跌":
+            if technical.ma20 is not None and quote.price < technical.ma20:
+                drivers.append(f"价格低于 MA20（{technical.ma20:.2f}），短线结构偏弱")
+            if technical.support is not None and quote.price <= technical.support * 1.01:
+                drivers.append(f"价格贴近近 20 日支撑 {technical.support:.2f}，破位压力上升")
+            if technical.max_drawdown60 is not None and technical.max_drawdown60 > 15:
+                drivers.append(f"60 日最大回撤 {technical.max_drawdown60:.1f}%，修复压力偏大")
+        elif direction == "上涨":
+            if technical.ma20 is not None and quote.price > technical.ma20:
+                drivers.append(f"价格站上 MA20（{technical.ma20:.2f}），短线结构转强")
+            if technical.resistance is not None and quote.price >= technical.resistance * 0.98:
+                drivers.append(f"价格接近近 20 日压力 {technical.resistance:.2f}，需要量能继续确认")
+        if technical.atr_pct is not None and technical.atr_pct > 3:
+            drivers.append(f"ATR 占现价 {technical.atr_pct:.1f}%，波动已经偏高")
+    if quote.net_flow is not None:
+        if quote.net_flow < 0:
+            drivers.append(f"净流出 {_money(abs(quote.net_flow))}，资金没有给价格提供支撑")
+        elif quote.net_flow > 0:
+            drivers.append(f"净流入 {_money(quote.net_flow)}，资金对价格有托举")
+    if quote.volume_ratio is not None and quote.volume_ratio >= 1.5:
+        drivers.append(f"量比 {quote.volume_ratio:.1f}，说明这不是安静波动，需要继续看承接")
+    factor_drivers = [
+        factor.evidence
+        for factor in dossier.score_factors
+        if factor.available and factor.signal == ("negative" if direction == "下跌" else "positive")
+    ]
+    return _unique([*drivers, *factor_drivers])[:5]
 
 
 def _short_text(value: str, limit: int = 72) -> str:

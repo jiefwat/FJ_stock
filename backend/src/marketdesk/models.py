@@ -535,7 +535,14 @@ class AskStockResponse(StrictModel):
     kind: Literal["stock_analysis", "semantic_screen", "portfolio_analysis"]
     question: str
     intent: Literal[
-        "risk", "trend", "valuation", "action", "overview", "screening", "portfolio"
+        "risk",
+        "trend",
+        "valuation",
+        "action",
+        "movement",
+        "overview",
+        "screening",
+        "portfolio",
     ]
     symbol: str | None = None
     name: str | None = None

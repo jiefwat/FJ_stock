@@ -126,6 +126,7 @@ def test_requires_exactly_one_local_stock() -> None:
         ("贵州茅台估值贵不贵", "valuation"),
         ("贵州茅台仓位和止损怎么定", "action"),
         ("贵州茅台未来可能涨到多少", "action"),
+        ("最近大业股份怎么大跌", "movement"),
         ("贵州茅台怎么样", "overview"),
     ],
 )
@@ -142,7 +143,7 @@ def test_detects_portfolio_diagnostics_without_swallowing_single_holding_questio
     assert not is_rebalance_plan_question("我的持仓里风险最大的是哪个")
 
 
-@pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "action", "overview"])
+@pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "action", "movement", "overview"])
 def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
     observed_at = datetime(2026, 7, 25, 1, tzinfo=UTC)
     answer = build_stock_answer(
@@ -174,6 +175,10 @@ def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
     assert answer.answer.startswith("结论：")
     assert "FINAL GATE：" not in answer.answer
     assert "LEDGER GATE：" not in answer.answer
+    if intent == "movement":
+        assert "近期" in answer.answer
+        assert "不能直接归因" in answer.answer
+        assert "暂不参与" not in answer.answer
     if intent == "overview":
         assert len(answer.answer) < 240
         assert "技术面：" not in answer.answer

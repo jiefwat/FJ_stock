@@ -1433,3 +1433,18 @@ pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
 ```
 
 Result: passed, 10 tests. Coverage asserts the new reading-order navigation, board/theme region placement before event radar, full-market browser placement after event verification, and existing sector/theme-to-stock handoff behavior.
+
+## 2026-07-29 Ask Stock Movement Intent Fix
+
+Ask Stock now treats recent price-move questions such as `最近大业股份怎么大跌` as a dedicated movement-explanation intent instead of falling through to generic risk or participation advice. The answer first quantifies recent 1/5/20-day movement, then explains only what local market evidence supports: moving-average break, drawdown, volume, fund flow, and board context. It explicitly avoids attributing the move to one unverified news item.
+
+Red/green regression:
+
+```text
+uv run --directory backend pytest -q tests/test_ask_stock.py -k 'classifies_question_intent or builds_bounded_evidence_answer'
+uv run --directory backend pytest -q tests/test_api.py -k 'recent_drop'
+uv run --directory backend pytest -q tests/test_ask_stock.py tests/test_api.py -k 'ask_stock'
+pnpm --dir frontend typecheck
+```
+
+Result: the first two tests initially failed because `最近大业股份怎么大跌` was not classified as movement and the response schema rejected that intent. After the fix, focused Ask Stock checks passed: 13 unit tests, 1 API regression, 30 combined Ask Stock API/unit tests, and frontend typecheck.

@@ -215,6 +215,55 @@ class QinglongAskProvider(EquityBrowserProvider):
         )
 
 
+class FallingAskProvider(FixtureProvider):
+    async def fetch_equities(self):
+        dataset = await super().fetch_equities()
+        return dataset.model_copy(
+            update={
+                "items": [
+                    *dataset.items,
+                    EquityQuote(
+                        symbol="SH.603278",
+                        code="603278",
+                        name="大业股份",
+                        price=8.08,
+                        change_pct=-8.2,
+                        amount=420_000_000,
+                        turnover_rate=9.4,
+                        volume_ratio=1.9,
+                        pe=29,
+                        pb=1.7,
+                        market_cap=2_800_000_000,
+                        net_flow=-36_000_000,
+                        sector="金属制品",
+                    ),
+                ]
+            }
+        )
+
+    async def fetch_kline(self, symbol: str, limit: int = 180):
+        from datetime import date, timedelta
+
+        from marketdesk.models import Bar
+
+        if symbol != "SH.603278":
+            return await super().fetch_kline(symbol, limit)
+        start = date(2026, 1, 1)
+        closes = [13.0 - index * 0.035 for index in range(64)] + [10.4, 10.1, 9.7, 9.2, 8.6, 8.08]
+        return [
+            Bar(
+                date=start + timedelta(days=index),
+                open=close + 0.12,
+                high=close + 0.28,
+                low=max(0.01, close - 0.26),
+                close=close,
+                volume=1000 + index * 8 + (800 if index >= 65 else 0),
+                amount=10_000 + index * 100,
+            )
+            for index, close in enumerate(closes)
+        ]
+
+
 class StockEnhancementProvider(FixtureProvider):
     async def fetch_equities(self):
         dataset = await super().fetch_equities()
@@ -387,6 +436,27 @@ def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> N
     assert payload["answer"].startswith("结论：")
     assert not payload["answer"].startswith("FINAL GATE：")
     assert payload["observed_at"]
+
+
+def test_ask_stock_answers_recent_drop_questions_with_movement_cause(tmp_path) -> None:
+    service = MarketService(
+        provider=FallingAskProvider(), store=Store(tmp_path / "ask-movement.db")
+    )
+    api = authenticated_client(service)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "最近大业股份怎么大跌"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "stock_analysis"
+    assert payload["intent"] == "movement"
+    assert payload["symbol"] == "SH.603278"
+    assert payload["name"] == "大业股份"
+    assert "近期" in payload["answer"]
+    assert "不能直接归因" in payload["answer"]
+    assert "近5日" in payload["answer"]
+    assert "暂不参与" not in payload["answer"]
+    assert any("近5日" in item for item in payload["evidence"])
 
 
 def test_ask_stock_includes_only_current_user_holding_context(tmp_path) -> None:
