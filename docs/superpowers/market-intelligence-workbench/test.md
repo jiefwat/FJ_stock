@@ -1006,3 +1006,22 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Stock Lab passed 11 focused tests and frontend typecheck passed. The new assertions verify `证据总账`, `LEDGER GATE`, the evidence-coverage route, support/risk/gap counts, and that the audit desk appears before forecast and deep ledger sections.
+
+Full gate and public deployment after the Stock Lab evidence-audit upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 44 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-121858-e905a0a` |
+| Commit | `e905a0a` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS asset contained `LEDGER GATE`, `证据总账`, `先补证据，不升级仓位`, `反方证据占优，先守失效线`, and `证据够用，进入交易计划复核` |
