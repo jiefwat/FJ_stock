@@ -272,6 +272,15 @@ it("surfaces an analyst action map before the deep evidence sections", async () 
 it("shows direct investment advice with horizontal and vertical comparisons", async () => {
   renderPage();
 
+  const route = within(await screen.findByLabelText("个股复核路线"));
+  expect(route.getByText("REVIEW ROUTE")).toBeInTheDocument();
+  expect(route.getByText("按这条顺序读")).toBeInTheDocument();
+  expect(route.getByRole("link", { name: /01\s*FINAL GATE/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
+  expect(route.getByRole("link", { name: /02\s*LEDGER GATE/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-evidence-audit");
+  expect(route.getByRole("link", { name: /03\s*交易计划/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-investment-advice");
+  expect(route.getByRole("link", { name: /04\s*公告研报/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-company-evidence");
+  expect(route.getByRole("link", { name: /05\s*风控条件/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-risk-controls");
+
   const deck = within(await screen.findByLabelText("个股复核作战台"));
   expect(screen.getByLabelText("个股复核作战台")).toHaveAttribute("id", "stock-final-gate");
   expect(deck.getByText("FINAL GATE")).toBeInTheDocument();

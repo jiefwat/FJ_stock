@@ -157,6 +157,10 @@ function askHref(dossier: Dossier, params: URLSearchParams) {
   return `/ask?${askParams.toString()}`;
 }
 
+function sectionHref(location: ReturnType<typeof useLocation>, anchor: string) {
+  return `${location.pathname}${location.search}#${anchor}`;
+}
+
 function ConclusionBrief({ dossier }: { dossier: Dossier }) {
   const brief = splitConclusion(dossier.conclusion);
   const visibleSections = brief.sections.filter((item) => !dedicatedConclusionLabels.has(item.label));
@@ -335,6 +339,64 @@ function EvidenceAuditDesk({ dossier, evidence }: { dossier: Dossier; evidence?:
         {(dossier.next_actions.length ? dossier.next_actions : [dossier.investment_advice.entry_plan]).slice(0, 2).map((item) => <p key={item}>→ {item}</p>)}
       </article>
     </div>
+  </section>;
+}
+
+function StockReviewRail({ dossier, evidence, location }: { dossier: Dossier; evidence?: InstrumentEvidenceResult; location: ReturnType<typeof useLocation> }) {
+  const route = evidenceRoute(dossier, evidence);
+  const docsCount = (evidence?.filings.length ?? 0) + (evidence?.research.length ?? 0);
+  const items = [
+    {
+      code: "01",
+      label: "FINAL GATE",
+      value: dossier.investment_advice.action,
+      detail: "先判断是否值得继续复核",
+      anchor: "stock-final-gate",
+    },
+    {
+      code: "02",
+      label: "LEDGER GATE",
+      value: route.text,
+      detail: `覆盖 ${percent(dossier.evidence_coverage * 100)}，先看支持/反方/缺口`,
+      anchor: "stock-evidence-audit",
+    },
+    {
+      code: "03",
+      label: "交易计划",
+      value: dossier.investment_advice.entry_plan,
+      detail: "把动作落到入场、止损、止盈",
+      anchor: "stock-investment-advice",
+    },
+    {
+      code: "04",
+      label: "公告研报",
+      value: docsCount > 0 ? `${docsCount} 条外部证据` : "外部证据待补",
+      detail: "只作上下文，不改写确定性评分",
+      anchor: "stock-company-evidence",
+    },
+    {
+      code: "05",
+      label: "风控条件",
+      value: firstOrFallback(dossier.invalidation, dossier.investment_advice.stop_loss),
+      detail: "最后确认放弃线和反方证据",
+      anchor: "stock-risk-controls",
+    },
+  ];
+
+  return <section className="stock-review-rail" aria-label="个股复核路线">
+    <div>
+      <span>REVIEW ROUTE</span>
+      <strong>按这条顺序读</strong>
+      <p>先过闸口，再看证据，最后落到交易纪律。</p>
+    </div>
+    <nav aria-label="个股复核区块导航">
+      {items.map((item) => <Link key={item.anchor} to={sectionHref(location, item.anchor)}>
+        <b>{item.code}</b>
+        <span>{item.label}</span>
+        <strong>{item.value}</strong>
+        <small>{item.detail}</small>
+      </Link>)}
+    </nav>
   </section>;
 }
 
@@ -577,6 +639,7 @@ export function StockLabPage() {
         <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}<Link className="watch-button ask-stock-entry" to={askHref(query.data, params)}>带着证据去问股</Link></div>
       </section>
       {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
+      <StockReviewRail dossier={query.data} evidence={evidenceQuery.data} location={location} />
       <StockDecisionDeck dossier={query.data} evidence={evidenceQuery.data} />
       <EvidenceAuditDesk dossier={query.data} evidence={evidenceQuery.data} />
       <InvestmentAdvicePanel advice={query.data.investment_advice} />

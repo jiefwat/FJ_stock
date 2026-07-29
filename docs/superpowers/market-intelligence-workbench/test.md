@@ -1161,3 +1161,16 @@ Full gate and public deployment after the Ask Stock deep-link upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `去看交易计划`, `stock-investment-advice`, `stock-final-gate`, `stock-evidence-audit`, `stock-company-evidence`, and `stock-risk-controls` |
+
+## 2026-07-29 Stock Lab Review Route Rail
+
+Stock Lab now shows a `REVIEW ROUTE` rail after the stock hero and source-context note. It turns the long-form dossier into an explicit reading path: `FINAL GATE`, `LEDGER GATE`, trading plan, company evidence, and risk controls. Each route item links to the stable section anchors already used by Ask Stock deep links.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Stock Lab passed 12 focused tests and frontend typecheck passed. The assertions verify `个股复核路线`, `REVIEW ROUTE`, `按这条顺序读`, and that all five route links target `#stock-final-gate`, `#stock-evidence-audit`, `#stock-investment-advice`, `#stock-company-evidence`, and `#stock-risk-controls`.

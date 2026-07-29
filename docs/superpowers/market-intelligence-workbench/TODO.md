@@ -96,4 +96,5 @@
 - [x] Add Ask Stock source-context bridge from board/opportunity/stock workflows.
 - [x] Add Ask Stock decision gates that mirror Stock Lab final advice and evidence ledger.
 - [x] Add Ask Stock gate-aware deep links into Stock Lab review sections.
+- [x] Add a Stock Lab review route rail so long-form dossiers have an explicit reading order.
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.
