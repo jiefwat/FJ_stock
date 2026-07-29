@@ -1257,3 +1257,35 @@ Full gate and public deployment after the Ask Stock review-route upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `问后复核路线`, `REVIEW ROUTE`, `Stock Lab 第一站`, `下一句追问`, `如果风险触发，我应该怎么处理仓位`, `ask-review-route`, `stock-evidence-audit`, and `stock-investment-advice` |
+
+## 2026-07-29 Stock Lab Compact Core View
+
+Stock Lab now keeps the decision-making core visible by default and moves long-form evidence into an expandable `完整证据包`. The default page keeps `FINAL GATE`, `LEDGER GATE`, direct investment advice, and the future trend panel in the main reading path. The expandable package preserves historical validation, horizontal/vertical comparisons, analyst action map, structured conclusion, company evidence, analysis dimensions, next actions, price chart, raw score ledger, semantic research evidence, technical metrics, and risk controls. Deep links to `#stock-company-evidence`, `#stock-risk-controls`, and `#stock-score-ledger` automatically open the package.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Stock Lab passed 13 focused tests and frontend typecheck passed. The assertions verify that `完整证据包` is collapsed by default, opens manually, and opens automatically when a deep evidence anchor such as `#stock-company-evidence` is requested.
+
+Full gate and public deployment after the Stock Lab compact-core upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 48 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-135725-c9e78ae` |
+| Commit | `c9e78ae` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `完整证据包`, `展开技术图、公告研报、分析拆解和原始账本`, `核心结论已经在上方`, `stock-deep-dossier`, `FINAL GATE`, `LEDGER GATE`, `直接建议`, and `未来趋势` |
