@@ -75,6 +75,7 @@
 - [x] Move the top three Stock Lab advice reasons directly under the direct suggestion.
 - [x] Add a Stock Lab opportunity-review outcome so leads explicitly upgrade, stay watch-only, or fail participation review.
 - [x] Add Opportunity lead-layer filtering so users can focus on priority, watch-only, or high-risk leads.
+- [x] Add an Opportunity queue gate so leads show review route, first dossier, and queue shortcuts before the candidate table.
 
 ## A-share Evidence And Market Intelligence
 

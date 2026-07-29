@@ -956,3 +956,28 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Market passed 9 tests and frontend typecheck passed. The new assertions verify `白酒板块复核工作台`, `酿酒概念题材复核工作台`, `BOARD GATE`, breadth/inflow spread metrics, lead-stock links into Stock Lab, missing-evidence copy, and that constituent sorting/filtering remains scoped to the screener rows rather than the review desk.
+
+## 2026-07-29 Opportunity Queue Workbench
+
+Opportunities now opens with a `QUEUE GATE` desk before diagnostics and the candidate table. The desk summarizes the active strategy, total candidates, reviewable vs observation-only counts, the top dossier to open first, and a deterministic handling route so the page behaves like a review queue rather than a raw stock list.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/opportunities/OpportunitiesPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Opportunities passed 2 focused tests and frontend typecheck passed. The new assertions verify `QUEUE GATE`, `线索队列`, the priority-first handling route, the top-candidate Stock Lab link, and queue shortcut filtering into the existing lead-layer table.
+
+Full gate after the opportunity-queue upgrade:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 44 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |

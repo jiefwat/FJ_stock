@@ -70,6 +70,12 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(await screen.findByText("策略诊断")).toBeInTheDocument();
   expect(screen.getByText(/候选线索，不是参与建议/)).toBeInTheDocument();
   expect(screen.getAllByText(/是否参与以个股证据账本为准/).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("QUEUE GATE")).toBeInTheDocument();
+  expect(screen.getByText("线索队列")).toBeInTheDocument();
+  expect(screen.getByText("先复核优先线索，再扫待复核")).toBeInTheDocument();
+  expect(screen.getByText("今日处理路线")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /第一张复核单\s*宁德时代/ })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
+  expect(screen.getByRole("button", { name: "队列筛选优先线索 1" })).toBeInTheDocument();
   expect(screen.getByText("待复核线索")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /全部线索\s*2/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /优先复核\s*1/ })).toBeInTheDocument();
@@ -91,15 +97,16 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getAllByText("失效条件").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText(/跌回策略涨幅区间外/).length).toBeGreaterThanOrEqual(1);
 
-  fireEvent.click(screen.getByRole("button", { name: /优先复核\s*1/ }));
+  fireEvent.click(screen.getByRole("button", { name: "队列筛选优先线索 1" }));
   expect(screen.getByText("优先复核 · 按复核优先级排序")).toBeInTheDocument();
-  expect(screen.getByText("宁德时代")).toBeInTheDocument();
+  expect(screen.getAllByText("宁德时代").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
   expect(screen.queryByText("星网锐捷")).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /可能暂不参与\s*1/ }));
   expect(screen.getByText("可能暂不参与 · 按复核优先级排序")).toBeInTheDocument();
   expect(screen.getByText("星网锐捷")).toBeInTheDocument();
-  expect(screen.queryByText("宁德时代")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
 });
 
 it("offers only effective primary strategies instead of data-blocked presets", async () => {

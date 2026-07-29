@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Download, Filter } from "lucide-react";
+import { AlertTriangle, Download, Filter, ListChecks } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -35,6 +35,95 @@ const leadLayers = [
 ] as const;
 
 type LeadLayer = typeof leadLayers[number][0];
+
+
+type CandidateRow = { item: Candidate; badge: ReturnType<typeof leadBadge> };
+
+type QueuePlan = { tone: "positive" | "caution" | "negative" | "neutral"; route: string; steps: string[] };
+
+function buildQueuePlan(counts: Record<LeadLayer, number>): QueuePlan {
+  if (counts.all === 0) {
+    return {
+      tone: "neutral",
+      route: "当前策略没有线索，不为了交易而交易",
+      steps: ["先切换策略或回到大盘作战台", "等待成交额、趋势或风险收益重新满足规则"],
+    };
+  }
+  if (counts.priority > 0) {
+    return {
+      tone: "positive",
+      route: "先复核优先线索，再扫待复核",
+      steps: ["第一批只打开优先复核线索", "确认板块/题材是否仍在主线", "进入个股页后以 FINAL GATE 决定是否参与"],
+    };
+  }
+  if (counts.high_risk >= Math.max(2, Math.ceil(counts.all * 0.5))) {
+    return {
+      tone: "negative",
+      route: "高风险占比高，今天先降级观察",
+      steps: ["先看高风险标签是否来自环境扣分", "只保留少量待复核样本", "不要把线索排序当作参与建议"],
+    };
+  }
+  if (counts.review > 0) {
+    return {
+      tone: "caution",
+      route: "没有优先线索，只看待复核",
+      steps: ["先补齐证据覆盖缺口", "只处理板块配合更好的个股", "个股页若仍无确认就保留观察"],
+    };
+  }
+  return {
+    tone: "neutral",
+    route: "线索偏弱，只做观察名单清理",
+    steps: ["先过滤可能暂不参与与高风险线索", "等待市场环境或个股证据改善", "必要时回到大盘路线重新选策略"],
+  };
+}
+
+function OpportunityQueueDesk({
+  preset,
+  presetLabel,
+  candidateRows,
+  layerCounts,
+  onSelectLayer,
+}: {
+  preset: string;
+  presetLabel: string | undefined;
+  candidateRows: CandidateRow[];
+  layerCounts: Record<LeadLayer, number>;
+  onSelectLayer: (layer: LeadLayer) => void;
+}) {
+  const topRow = candidateRows.reduce<CandidateRow | undefined>((best, row) => (!best || row.item.score > best.item.score ? row : best), undefined);
+  const plan = buildQueuePlan(layerCounts);
+  const topHref = topRow ? `/stocks?symbol=${topRow.item.quote.symbol}&from=opportunities&preset=${preset}` : "";
+  const reviewTotal = layerCounts.priority + layerCounts.review;
+  const riskTotal = layerCounts.watch_only + layerCounts.high_risk;
+
+  return <section className={`panel opportunity-queue ${plan.tone}`} aria-label="机会线索队列">
+    <div className="queue-gate">
+      <span><ListChecks size={14} />QUEUE GATE</span>
+      <strong>线索队列</strong>
+      <p>{plan.route}</p>
+    </div>
+    <div className="queue-metrics" aria-label="线索队列统计">
+      <div><span>策略</span><strong>{presetLabel ?? preset}</strong></div>
+      <div><span>候选</span><strong>{layerCounts.all}</strong></div>
+      <div><span>需复核</span><strong>{reviewTotal}</strong></div>
+      <div><span>先观察</span><strong>{riskTotal}</strong></div>
+    </div>
+    {topRow ? <Link className="queue-top-card" to={topHref}>
+      <small>第一张复核单</small>
+      <strong>{topRow.item.quote.name}</strong>
+      <span>{topRow.item.quote.symbol} · 最终分 {fmt(topRow.item.score, 0)} · 证据 {percent(topRow.item.evidence_coverage * 100)} · {topRow.badge.label}</span>
+    </Link> : <div className="queue-top-card empty-card"><small>第一张复核单</small><strong>暂无候选</strong><span>切换策略或等待下一次行情刷新</span></div>}
+    <div className="queue-route">
+      <strong>今日处理路线</strong>
+      <ol>{plan.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+    </div>
+    <div className="queue-shortcuts" aria-label="队列快捷筛选">
+      <button aria-label={`队列筛选优先线索 ${layerCounts.priority}`} onClick={() => onSelectLayer("priority")}>只看优先复核 <b>{layerCounts.priority}</b></button>
+      <button aria-label={`队列筛选待复核线索 ${layerCounts.review}`} onClick={() => onSelectLayer("review")}>只看待复核 <b>{layerCounts.review}</b></button>
+      <button aria-label={`队列筛选高风险线索 ${layerCounts.high_risk}`} onClick={() => onSelectLayer("high_risk")}>只看高风险 <b>{layerCounts.high_risk}</b></button>
+    </div>
+  </section>;
+}
 
 function leadBadge(item: Candidate): { key: LeadLayer; label: string; tone: string; reason: string } {
   if (item.evidence_coverage < 0.65 || item.risk_flags.length >= 3 || item.context_penalty >= 15) {
@@ -77,6 +166,7 @@ export function OpportunitiesPage() {
       <section className="opportunity-boundary" aria-label="机会页说明">
         这里筛出的是候选线索，不是参与建议；是否参与以个股证据账本为准。
       </section>
+      {query.data.available && <OpportunityQueueDesk preset={preset} presetLabel={presetLabel} candidateRows={candidateRows} layerCounts={layerCounts} onSelectLayer={setLeadLayer} />}
       <section className="panel opportunity-diagnostics">
         <div className="panel-title"><span>策略诊断</span><small>{query.data.summary || "先看这项策略是否适合今天使用"}</small></div>
         <div className="opportunity-diagnostic-grid">{query.data.diagnostics.map((item) => <article key={item.key} className={item.signal}>
