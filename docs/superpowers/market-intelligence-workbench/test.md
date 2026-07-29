@@ -1321,3 +1321,35 @@ Full gate and public deployment after the Today opening-desk upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `OPENING DESK`, `今日开盘执行台`, `市场闸口`, `优先复核`, `今日禁区`, `允许复核机会`, `只做前排复核`, `先守风险`, and `opening-desk` |
+
+## 2026-07-29 Market Execution Console
+
+Market now starts with a `MARKET PULSE / 大盘执行台` console before the broader evidence tables. The console turns the broad-market review into a compact execution read: gate verdict, breadth check, capital mainline, risk brake, and the next instruction. It preserves the existing `MARKET GATE`, sector-flow open action, event-risk summary, and opportunity funnel handoff, while adding adaptive states for `允许复核机会`, `只看前排板块`, and `先守风险`.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Market passed 9 focused tests and frontend typecheck passed. The assertions verify `MARKET PULSE · 大盘执行台`, `盘面三问`, breadth/mainline/risk checks, `执行指令`, `ORDER TAPE`, sector-flow action, event-risk summary, and the `/opportunities` handoff.
+
+Full gate and public deployment after the Market execution-console upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 48 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-141838-6e977de` |
+| Commit | `6e977de` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `MARKET PULSE`, `大盘执行台`, `允许复核机会`, `只看前排板块`, `先守风险`, `执行指令`, `盘面三问`, and `ORDER TAPE` |
