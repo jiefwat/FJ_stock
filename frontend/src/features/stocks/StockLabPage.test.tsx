@@ -192,7 +192,12 @@ it("shows the evidence ledger and edits the thesis before adding to watchlist", 
 });
 
 it("shows cited filings, research reports, and themes without changing the score", async () => {
-  renderPage();
+  const { container } = renderPage();
+
+  await screen.findByText("完整证据包");
+  expect(container.querySelector(".stock-deep-dossier")).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText("完整证据包"));
+  expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
 
   const panel = within(await screen.findByLabelText("公司证据包"));
   expect(screen.getByLabelText("公司证据包")).toHaveAttribute("id", "stock-company-evidence");
@@ -207,6 +212,14 @@ it("shows cited filings, research reports, and themes without changing the score
   );
   expect(panel.getByText(/仅作研究上下文，不直接改写评分/)).toBeInTheDocument();
   expect(screen.getAllByText("57/100").length).toBeGreaterThan(0);
+});
+
+it("opens the compact evidence package automatically for deep evidence anchors", async () => {
+  const { container } = renderPage([], true, "/stocks?symbol=SH.600519#stock-company-evidence");
+
+  await screen.findByText("完整证据包");
+  expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
+  expect(await screen.findByLabelText("公司证据包")).toHaveAttribute("id", "stock-company-evidence");
 });
 
 it("keeps available evidence visible when one source is unavailable", async () => {

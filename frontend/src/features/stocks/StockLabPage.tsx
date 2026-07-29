@@ -543,6 +543,54 @@ function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvid
   </section>;
 }
 
+function StockDeepDossier({
+  dossier,
+  evidence,
+  evidenceLoading,
+  evidenceFailed,
+  open,
+}: {
+  dossier: Dossier;
+  evidence?: InstrumentEvidenceResult;
+  evidenceLoading: boolean;
+  evidenceFailed: boolean;
+  open: boolean;
+}) {
+  return <details className="stock-deep-dossier" open={open}>
+    <summary>
+      <span>完整证据包</span>
+      <strong>展开技术图、公告研报、分析拆解和原始账本</strong>
+      <small>核心结论已经在上方；这里保留可追溯细节。</small>
+    </summary>
+    <div className="stock-deep-stack">
+      <SignalValidationPanel validation={dossier.signal_validation} />
+      <ComparisonSection horizontal={dossier.horizontal_comparison} vertical={dossier.vertical_comparison} />
+      <AnalystActionMap dossier={dossier} />
+      <ConclusionBrief dossier={dossier} />
+      <CompanyEvidencePanel data={evidence} loading={evidenceLoading} failed={evidenceFailed} />
+      {dossier.analysis_dimensions.length > 0 && <section className="panel analysis-breakdown">
+        <div className="panel-title"><span>分析拆解</span><small>趋势、风险收益、估值、流动性、资金和行业一起看</small></div>
+        <div className="dimension-grid">{dossier.analysis_dimensions.map((item) => <article key={item.key} className={item.signal}>
+          <header><span>{item.label}</span><strong>{item.score == null ? "缺数据" : `${fmt(item.score, 0)}/100`}</strong></header>
+          <p>{item.summary}</p>
+          <ul>{item.evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
+        </article>)}</div>
+      </section>}
+      {dossier.next_actions.length > 0 && <section className="panel next-actions-panel">
+        <div className="panel-title"><span>下一步看什么</span><small>把结论变成可复盘动作</small></div>
+        <ol>{dossier.next_actions.map((item) => <li key={item}>{item}</li>)}</ol>
+      </section>}
+      <StockTrend bars={dossier.bars} />
+      <section className="panel evidence-ledger" id="stock-score-ledger">
+        <div className="panel-title"><span>证据账本</span><small>所有加减分都来自下列事实</small></div>
+        <div className="ledger-list">{dossier.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
+      </section>
+      {dossier.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究增强</span><small>只作为证据补充，不直接改写评分</small></div>{dossier.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
+      <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{dossier.technical ? Object.entries(dossier.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{dossier.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{dossier.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{dossier.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{dossier.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
+    </div>
+  </details>;
+}
+
 export function StockLabPage() {
   const client = useQueryClient();
   const authenticated = Boolean(getAuthToken());
@@ -577,6 +625,7 @@ export function StockLabPage() {
     enabled: authenticated,
   });
   const existing = watchlist.data?.find((item) => item.symbol === symbol);
+  const deepDossierOpen = ["#stock-company-evidence", "#stock-risk-controls", "#stock-score-ledger"].includes(location.hash);
   const addWatch = useMutation({
     mutationFn: (dossier: Dossier) => api<WatchlistItem>("/api/v1/watchlist", {
       method: "POST",
@@ -644,23 +693,7 @@ export function StockLabPage() {
       <EvidenceAuditDesk dossier={query.data} evidence={evidenceQuery.data} />
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
-      <SignalValidationPanel validation={query.data.signal_validation} />
-      <ComparisonSection horizontal={query.data.horizontal_comparison} vertical={query.data.vertical_comparison} />
-      <AnalystActionMap dossier={query.data} />
-      <ConclusionBrief dossier={query.data} />
-      <CompanyEvidencePanel data={evidenceQuery.data} loading={evidenceQuery.isLoading} failed={evidenceQuery.isError} />
-      {query.data.analysis_dimensions.length > 0 && <section className="panel analysis-breakdown">
-        <div className="panel-title"><span>分析拆解</span><small>趋势、风险收益、估值、流动性、资金和行业一起看</small></div>
-        <div className="dimension-grid">{query.data.analysis_dimensions.map((item) => <article key={item.key} className={item.signal}>
-          <header><span>{item.label}</span><strong>{item.score == null ? "缺数据" : `${fmt(item.score, 0)}/100`}</strong></header>
-          <p>{item.summary}</p>
-          <ul>{item.evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
-        </article>)}</div>
-      </section>}
-      {query.data.next_actions.length > 0 && <section className="panel next-actions-panel">
-        <div className="panel-title"><span>下一步看什么</span><small>把结论变成可复盘动作</small></div>
-        <ol>{query.data.next_actions.map((item) => <li key={item}>{item}</li>)}</ol>
-      </section>}
+      <StockDeepDossier dossier={query.data} evidence={evidenceQuery.data} evidenceLoading={evidenceQuery.isLoading} evidenceFailed={evidenceQuery.isError} open={deepDossierOpen} />
       {addWatch.isSuccess && <p className="save-confirmation" role="status">已加入跟踪 · 关注理由已经保存</p>}
       {composerOpen && !existing && <form className="watch-composer" onSubmit={(event) => { event.preventDefault(); addWatch.mutate(query.data!); }}>
         <div><span>先说清楚为什么要盯它</span><small>跟踪不是买入，只是把“值得继续看”的理由记下来。</small></div>
@@ -669,13 +702,6 @@ export function StockLabPage() {
         <div className="composer-actions"><button type="button" className="button secondary" onClick={() => setComposerOpen(false)}>取消</button><button className="button" disabled={addWatch.isPending}>{addWatch.isPending ? "保存中…" : "保存到跟踪清单"}</button></div>
         {addWatch.isError && <p className="form-error">保存失败，跟踪理由仍保留，请重试。</p>}
       </form>}
-      <StockTrend bars={query.data.bars} />
-      <section className="panel evidence-ledger" id="stock-score-ledger">
-        <div className="panel-title"><span>证据账本</span><small>所有加减分都来自下列事实</small></div>
-        <div className="ledger-list">{query.data.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
-      </section>
-      {query.data.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究增强</span><small>只作为证据补充，不直接改写评分</small></div>{query.data.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
-      <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{query.data.technical ? Object.entries(query.data.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{query.data.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{query.data.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{query.data.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{query.data.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
     </>}</AsyncState>
   </>;
 }
