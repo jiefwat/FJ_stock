@@ -1421,3 +1421,15 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Ask Stock backend/API passed 27 focused tests, the Ask Stock page passed 13 focused tests, and frontend typecheck passed. The new assertions verify `未来可能涨到多少` is classified as an action question, returns a bounded direct answer under 180 characters, includes pressure/take-profit discipline, and does not include long Stock Lab sections like `技术面：` or `基本面：`.
+
+## 2026-07-29 Market Page Structure Pass
+
+The Market route now follows the research workflow instead of the raw component order: market gate, board/theme workbench, event verification, then full-market search. Sector/theme dossier panels are colocated with board heat so clicking a board no longer lands users above a separated full-market browser.
+
+Focused regression:
+
+```text
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+```
+
+Result: passed, 10 tests. Coverage asserts the new reading-order navigation, board/theme region placement before event radar, full-market browser placement after event verification, and existing sector/theme-to-stock handoff behavior.

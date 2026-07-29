@@ -239,6 +239,11 @@ it("scrolls directly to the selected theme dossier when landing from deep links"
 it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {
   renderPage();
 
+  const routeMap = await screen.findByRole("navigation", { name: "大盘页阅读顺序" });
+  expect(within(routeMap).getByRole("link", { name: /先看大盘闸口/ })).toHaveAttribute("href", "#market-gate");
+  expect(within(routeMap).getByRole("link", { name: /再看板块\/题材/ })).toHaveAttribute("href", "#market-board-workbench");
+  expect(within(routeMap).getByRole("link", { name: /最后做全市场检索/ })).toHaveAttribute("href", "#market-browser");
+
   const command = within(await screen.findByLabelText("市场作战台"));
   expect(command.getByText("MARKET PULSE · 大盘执行台")).toBeInTheDocument();
   expect(command.getByText("MARKET GATE")).toBeInTheDocument();
@@ -266,6 +271,12 @@ it("renders sourced sector flows and dragon-tiger observations as market intelli
   expect(panel.getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
   expect(panel.getByText(/日涨幅偏离值达 7%/)).toBeInTheDocument();
   expect(panel.getByText(/供应商算法与交易异动仅作展示/)).toBeInTheDocument();
+
+  const boardZone = screen.getByRole("region", { name: "板块和题材工作区" });
+  const eventRadar = screen.getByRole("region", { name: "市场异动雷达" });
+  const browser = screen.getByText("全市场行情").closest("section");
+  expect(boardZone.compareDocumentPosition(eventRadar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(eventRadar.compareDocumentPosition(browser as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("opens sector details from market intelligence flow leaders", async () => {

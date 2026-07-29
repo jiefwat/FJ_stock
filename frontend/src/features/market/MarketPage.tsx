@@ -44,7 +44,22 @@ export function MarketPage() {
     },
     enabled: Boolean(selectedTheme),
   });
-  const openSector = (code: string) => setParams({ sector: code });
+  const openSector = (code: string) => {
+    const next = new URLSearchParams(params);
+    next.set("sector", code);
+    next.delete("theme");
+    next.delete("themeName");
+    next.delete("themeChange");
+    setParams(next);
+  };
+  const closeDossier = () => {
+    const next = new URLSearchParams(params);
+    next.delete("sector");
+    next.delete("theme");
+    next.delete("themeName");
+    next.delete("themeChange");
+    setParams(next, { replace: true });
+  };
   const activeDossierKey = selectedTheme ? `theme:${selectedTheme}:${selectedThemeName}` : selectedSector ? `sector:${selectedSector}` : null;
   const activeDossierReady = selectedTheme ? Boolean(themeQuery.data) : selectedSector ? Boolean(sectorQuery.data) : false;
 
@@ -61,19 +76,30 @@ export function MarketPage() {
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
     <header className="page-head"><div><p className="eyebrow">MARKET / 全市场体检</p><h1>市场不是一个点数，<br /><em>而是一组证据。</em></h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
     <MarketCommandCenter market={query.data} intelligence={intelligenceQuery.data} events={eventsQuery.data} onOpenSector={openSector} />
-    <section className="breadth-board"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
+    <nav className="market-page-map" aria-label="大盘页阅读顺序">
+      <a href="#market-gate"><span>01</span><strong>先看大盘闸口</strong><small>决定今天进攻、防守还是只观察</small></a>
+      <a href="#market-board-workbench"><span>02</span><strong>再看板块/题材</strong><small>资金主线、热度和成分股放在一起看</small></a>
+      <a href="#market-events"><span>03</span><strong>核验事件风险</strong><small>新闻必须回到板块和个股证据</small></a>
+      <a href="#market-browser"><span>04</span><strong>最后做全市场检索</strong><small>需要深挖时再打开筛选器</small></a>
+    </nav>
+    <section className="breadth-board" aria-label="市场广度"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
     <div className="two-column"><section className="panel"><div className="panel-title"><span>指数</span></div><div className="market-table">{query.data.snapshot.indices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}</div></section><section className="panel"><div className="panel-title"><span>评分证据</span><small>分数 · 权重 · 事实</small></div><div className="factor-ledger">{query.data.analysis.factors.map((factor) => <article key={factor.key} className={factor.available ? "available" : "missing"}><span>{factor.label}<small>{factor.evidence}</small></span><strong>{factor.available ? fmt(factor.score, 0) : "未计入"}</strong><em>{factor.available ? `权重 ${percent(factor.weight * 100)}` : "权重 0%"}</em></article>)}</div></section></div>
-    <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
-    <EquityBrowser />
-    <section className="panel event-radar">
-      <div className="panel-title"><span>市场异动雷达</span><small>今天股市正在发生什么</small></div>
+    <section id="market-board-workbench" className="market-board-zone" aria-label="板块和题材工作区">
+      <div className="section-bridge"><span>BOARD WORKBENCH</span><strong>板块和题材先在这里闭环</strong><p>从资金主线、板块热度点进去后，相关股票列表会紧跟在下方；全市场检索被移到页面底部，避免挡住板块工作流。</p></div>
+      <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
+      <section className="panel" aria-labelledby="sector-heat-title"><div className="panel-title"><span id="sector-heat-title">板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
+      {selectedSector && <DossierPanel key={`sector-${selectedSector}`} containerRef={dossierRef} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={closeDossier} />}
+      {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} containerRef={dossierRef} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={closeDossier} />}
+    </section>
+    <section id="market-events" className="panel event-radar" aria-labelledby="market-events-title">
+      <div className="panel-title"><span id="market-events-title">市场异动雷达</span><small>今天股市正在发生什么</small></div>
       <AsyncState loading={eventsQuery.isLoading} error={eventsQuery.error as Error | null}>
         {eventsQuery.data && <MarketEventRadar data={eventsQuery.data} />}
       </AsyncState>
     </section>
-    <section className="panel"><div className="panel-title"><span>板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
-    {selectedSector && <DossierPanel key={`sector-${selectedSector}`} containerRef={dossierRef} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={() => setParams({})} />}
-    {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} containerRef={dossierRef} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={() => setParams({})} />}
+    <div id="market-browser" className="market-browser-zone">
+      <EquityBrowser />
+    </div>
   </>}</AsyncState>;
 }
 
@@ -88,7 +114,7 @@ function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { m
   const command = marketCommandDecision(market, breadth, Boolean(riskEvent), topFlow?.code);
   const mainline = topFlow ? `${topFlow.name} ${pct(topFlow.change_pct)} · ${flowAmount(topFlow.net_flow)}` : "资金主线未确认";
 
-  return <section className={`market-command-center ${command.tone}`} aria-label="市场作战台">
+  return <section id="market-gate" className={`market-command-center ${command.tone}`} aria-label="市场作战台">
     <article className="market-command-verdict">
       <span>MARKET PULSE · 大盘执行台</span>
       <strong>{regime.label} · {fmt(market.analysis.score, 0)}/100</strong>

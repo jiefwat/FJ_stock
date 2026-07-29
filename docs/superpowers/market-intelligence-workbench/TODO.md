@@ -107,3 +107,4 @@
 - [x] Add Market STOCK HANDOFF review-section routing into Stock Lab.
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.
 - [x] Add a Market execution console so broad-market review starts with breadth, capital line, risk brake, and next instruction.
+- [x] Reorder Market page structure so board/theme dossiers stay next to sector heat and the full-market browser moves to deep-scan position.
