@@ -208,6 +208,9 @@ it("prefers the source stock over stale history for short handoff questions", as
 
   renderPage("/ask?symbol=SZ.300750&name=宁德时代&from=opportunities&preset=trend");
 
+  expect(screen.getByText("正在围绕 宁德时代 SZ.300750 追问")).toBeInTheDocument();
+  expect(screen.getByText("这些问题会自动围绕 宁德时代 SZ.300750 生成。")).toBeInTheDocument();
+  expect(screen.getByText("最近宁德时代怎么大跌")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 

@@ -769,7 +769,7 @@ export function AskStockPage() {
   const messages = activeThread.messages;
   const activeStock = useMemo(() => latestStock(messages), [messages]);
   const sourceContext = useMemo(() => askSourceContext(searchParams), [searchParams]);
-  const focusStock = activeStock ?? sourceContext?.stock ?? null;
+  const focusStock = sourceContext?.stock ?? activeStock ?? null;
   const visibleThreads = useMemo(
     () => sortedThreads(threadState.threads).filter((thread) => shouldShowThread(thread, threadState.activeThreadId)),
     [threadState],

@@ -1630,3 +1630,17 @@ git diff --check
 ```
 
 Result: Ask Stock frontend tests passed, 19 tests; frontend typecheck passed; diff check passed. Coverage asserts short manual follow-ups send structured context, source-context handoffs beat stale history, and user question text is not prefixed with the stock name.
+
+## 2026-07-29 Ask Stock Visible Context Priority
+
+Ask Stock now gives source handoff context priority in the visible UI as well as the request payload. When a user enters Ask Stock from a new stock/opportunity/board link while saved history still contains another stock, the side context, playbook examples, and composer placeholder now show the source stock instead of the stale historical stock.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+git diff --check
+```
+
+Result: Ask Stock frontend tests passed, 19 tests; frontend typecheck passed; diff check passed. Coverage asserts stale-history handoffs from 贵州茅台 to 宁德时代 show 宁德时代 in the context panel and generated playbook prompts.
