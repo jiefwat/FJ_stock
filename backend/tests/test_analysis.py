@@ -124,6 +124,23 @@ def volatile_bars(count: int = 140) -> list[Bar]:
     ]
 
 
+def overheated_bars(count: int = 120) -> list[Bar]:
+    start = date(2025, 1, 1)
+    closes = [30 + index * 0.05 for index in range(count - 1)] + [52.0]
+    return [
+        Bar(
+            date=start + timedelta(days=index),
+            open=close - 0.3,
+            high=close + 0.8,
+            low=close - 0.8,
+            close=close,
+            volume=1_000_000 if index < count - 1 else 6_000_000,
+            amount=150_000_000 + index * 500_000,
+        )
+        for index, close in enumerate(closes)
+    ]
+
+
 def test_market_analysis_renormalizes_missing_external_factor() -> None:
     result = analyse_market(snapshot())
 
@@ -225,6 +242,35 @@ def test_opportunity_presets_are_distinct_and_effective_with_current_fields() ->
     assert [item.quote.symbol for item in value.candidates] == ["SH.600012"]
     assert [item.quote.symbol for item in oversold.candidates] == ["SH.600013"]
     assert all(result.available for result in [trend, breakout, value, oversold])
+
+
+def test_opportunity_candidates_include_history_confirmation() -> None:
+    rows = [
+        equity(symbol="SH.600040", code="600040", name="稳健趋势", change_pct=3.0),
+        equity(symbol="SH.600041", code="600041", name="过热趋势", change_pct=3.1),
+    ]
+
+    result = rank_candidates(
+        rows,
+        "balanced",
+        "trend",
+        history_by_symbol={
+            "SH.600040": trending_bars(120),
+            "SH.600041": overheated_bars(),
+        },
+    )
+
+    assert result.candidates[0].quote.symbol == "SH.600040"
+    stable = result.candidates[0]
+    overheated = next(item for item in result.candidates if item.quote.symbol == "SH.600041")
+    assert stable.history_check is not None
+    assert stable.history_check.available is True
+    assert stable.history_check.lookback_days == 120
+    assert stable.evidence_coverage == 0.9
+    assert any(part.key == "history_confirmation" for part in stable.components)
+    assert any(item.key == "history_confirmation" for item in stable.dimensions)
+    assert overheated.history_check is not None
+    assert "远离MA20，追高风险" in overheated.risk_flags
 
 
 def test_risk_off_penalty_is_visible() -> None:

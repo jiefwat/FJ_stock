@@ -335,6 +335,21 @@ class OpportunityDimension(StrictModel):
     available: bool = True
 
 
+class OpportunityHistoryCheck(StrictModel):
+    available: bool
+    lookback_days: int = 0
+    score: float | None = Field(default=None, ge=0, le=100)
+    trend_20d_pct: float | None = None
+    trend_60d_pct: float | None = None
+    ma20_gap_pct: float | None = None
+    volatility_20d: float | None = None
+    max_drawdown_60d: float | None = None
+    volume_ratio_20d: float | None = None
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+
+
 class RankedCandidate(StrictModel):
     quote: EquityQuote
     base_score: float
@@ -343,6 +358,7 @@ class RankedCandidate(StrictModel):
     evidence_coverage: float = Field(ge=0, le=1)
     components: list[ScoreComponent]
     dimensions: list[OpportunityDimension] = Field(default_factory=list)
+    history_check: OpportunityHistoryCheck | None = None
     thesis: str = ""
     invalidation: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)

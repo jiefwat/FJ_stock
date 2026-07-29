@@ -35,11 +35,26 @@ it("shows professional strategy diagnostics and candidate decision cards", async
         components: [{ key: "trend", label: "价格趋势", raw_value: 3.2, score: 77, weight: 0.25, weighted_score: 19.25 }],
         dimensions: [
           { key: "trigger", label: "触发逻辑", signal: "positive", score: 76, summary: "温和上涨且成交额达标", evidence: ["涨幅 3.2%", "成交额 6.8 亿"] },
+          { key: "history_confirmation", label: "历史确认", signal: "neutral", score: 62, summary: "历史确认需复核：20日趋势 +5.2%，MA20偏离 +9.1%，未明显追高。", evidence: ["20日趋势 +5.2%", "MA20偏离 +9.1%"] },
           { key: "risk_control", label: "风险控制", signal: "neutral", score: 55, summary: "需要避免追高", evidence: ["环境扣分 8"] },
           { key: "capital_flow", label: "资金态度", signal: "positive", score: 71, summary: "资金净流入确认", evidence: ["净流入 2600 万"] },
           { key: "sector_context", label: "板块位置", signal: "neutral", score: 58, summary: "通信设备板块需要联动复核", evidence: ["通信设备"] },
           { key: "catalyst_check", label: "催化核验", signal: "missing", score: null, summary: "公告和研报催化待补齐", evidence: ["公告待读", "研报待补"] },
         ],
+        history_check: {
+          available: true,
+          lookback_days: 120,
+          score: 62,
+          trend_20d_pct: 5.2,
+          trend_60d_pct: 12.4,
+          ma20_gap_pct: 9.1,
+          volatility_20d: 32.6,
+          max_drawdown_60d: 11.8,
+          volume_ratio_20d: 1.3,
+          summary: "历史确认需复核：20日趋势 +5.2%，MA20偏离 +9.1%，未明显追高。",
+          evidence: ["20日趋势 +5.2%", "60日趋势 +12.4%", "MA20偏离 +9.1%", "量能 1.3x"],
+          risk_flags: [],
+        },
         thesis: "趋势延续线索：价格温和走强，流动性可验证；是否参与以个股证据账本为准。",
         invalidation: ["跌回策略涨幅区间外", "成交额低于策略门槛"],
         next_actions: ["打开个股证据账本复核均线与资金", "加入跟踪前写清关注理由"],
@@ -53,8 +68,23 @@ it("shows professional strategy diagnostics and candidate decision cards", async
         components: [{ key: "trend", label: "价格趋势", raw_value: 4.1, score: 89, weight: 0.25, weighted_score: 22.25 }],
         dimensions: [
           { key: "trigger", label: "触发逻辑", signal: "positive", score: 88, summary: "趋势和成交同步改善", evidence: ["涨幅 4.1%", "成交额 128 亿"] },
+          { key: "history_confirmation", label: "历史确认", signal: "positive", score: 76, summary: "历史确认通过：20日趋势 +8.4%，MA20偏离 +5.1%，未明显追高。", evidence: ["20日趋势 +8.4%", "60日趋势 +16.2%", "MA20偏离 +5.1%"] },
           { key: "risk_control", label: "风险控制", signal: "positive", score: 68, summary: "环境没有扣分", evidence: ["环境扣分 0"] },
         ],
+        history_check: {
+          available: true,
+          lookback_days: 120,
+          score: 76,
+          trend_20d_pct: 8.4,
+          trend_60d_pct: 16.2,
+          ma20_gap_pct: 5.1,
+          volatility_20d: 28,
+          max_drawdown_60d: 9.5,
+          volume_ratio_20d: 1.4,
+          summary: "历史确认通过：20日趋势 +8.4%，MA20偏离 +5.1%，未明显追高。",
+          evidence: ["20日趋势 +8.4%", "60日趋势 +16.2%", "MA20偏离 +5.1%", "量能 1.4x"],
+          risk_flags: [],
+        },
         thesis: "趋势延续线索：价格和资金同步走强；是否参与以个股证据账本为准。",
         invalidation: ["放量失败", "跌回策略涨幅区间外"],
         next_actions: ["打开个股证据账本复核均线与资金"],
@@ -88,6 +118,10 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getByText("筛选压力")).toBeInTheDocument();
   expect(screen.getByText("线索处理清单")).toBeInTheDocument();
   expect(screen.getAllByText("触发逻辑").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("HISTORY CHECK · 历史K线").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("20日趋势").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("60日趋势").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("MA20偏离").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("风险控制").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("资金态度")).toBeInTheDocument();
   expect(screen.getByText("板块位置")).toBeInTheDocument();

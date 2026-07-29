@@ -126,16 +126,43 @@ function OpportunityQueueDesk({
 }
 
 function leadBadge(item: Candidate): { key: LeadLayer; label: string; tone: string; reason: string } {
+  const history = item.history_check;
+  const hasHistoryRisk = Boolean(history?.risk_flags.length) || (history?.score != null && history.score < 45);
+  const historyConfirmed = !history || (history.available && history.score != null && history.score >= 65 && history.risk_flags.length === 0);
+  if (hasHistoryRisk) {
+    return { key: "high_risk", label: "高风险线索", tone: "negative", reason: "历史K线出现追高、波动或回撤警报，先降级复核" };
+  }
   if (item.evidence_coverage < 0.65 || item.risk_flags.length >= 3 || item.context_penalty >= 15) {
     return { key: "high_risk", label: "高风险线索", tone: "negative", reason: "证据或环境约束偏弱，优先看失效条件" };
   }
-  if (item.score >= 75 && item.evidence_coverage >= 0.75 && item.context_penalty === 0) {
-    return { key: "priority", label: "优先复核", tone: "positive", reason: "线索质量较高，但仍需个股页确认" };
+  if (item.score >= 75 && item.evidence_coverage >= 0.75 && item.context_penalty === 0 && historyConfirmed) {
+    return { key: "priority", label: "优先复核", tone: "positive", reason: "线索质量和历史K线同时通过，但仍需个股页确认" };
   }
   if (item.score < 60 || item.context_penalty > 0) {
     return { key: "watch_only", label: "可能暂不参与", tone: "caution", reason: "市场或风险收益可能压低最终建议" };
   }
   return { key: "review", label: "待复核", tone: "neutral", reason: "进入证据账本后再定是否参与" };
+}
+
+function HistoryCheckCard({ item }: { item: Candidate }) {
+  const history = item.history_check;
+  if (!history) return null;
+  return <div className={`candidate-history ${history.available ? "available" : "missing"}`}>
+    <div>
+      <span>HISTORY CHECK · 历史K线</span>
+      <strong>{history.available ? `${fmt(history.score, 0)}/100` : "待补K线"}</strong>
+    </div>
+    <p>{history.summary}</p>
+    <dl>
+      <div><dt>20日趋势</dt><dd>{pct(history.trend_20d_pct)}</dd></div>
+      <div><dt>60日趋势</dt><dd>{pct(history.trend_60d_pct)}</dd></div>
+      <div><dt>MA20偏离</dt><dd>{pct(history.ma20_gap_pct)}</dd></div>
+      <div><dt>波动</dt><dd>{percent(history.volatility_20d)}</dd></div>
+      <div><dt>回撤</dt><dd>{history.max_drawdown_60d == null ? "—" : `-${fmt(history.max_drawdown_60d, 1)}%`}</dd></div>
+      <div><dt>量能</dt><dd>{history.volume_ratio_20d == null ? "—" : `${fmt(history.volume_ratio_20d, 1)}x`}</dd></div>
+    </dl>
+    <small>{history.evidence.join(" · ")}</small>
+  </div>;
 }
 
 export function OpportunitiesPage() {
@@ -190,6 +217,7 @@ export function OpportunitiesPage() {
           <div className="score-context"><span>基础 {fmt(item.base_score, 0)}</span>{item.context_penalty > 0 && <b>环境 -{fmt(item.context_penalty, 0)}</b>}<em>证据 {percent(item.evidence_coverage * 100)}</em></div>
           <div className={`lead-badge ${badge.tone}`}><strong>{badge.label}</strong><span>{badge.reason}</span></div>
           <div className="candidate-thesis"><strong>线索理由</strong><p>{item.thesis}</p></div>
+          <HistoryCheckCard item={item} />
           <div className="candidate-dimensions">{item.dimensions.map((dimension) => <div key={dimension.key} className={dimension.signal}><span>{dimension.label}</span><p>{dimension.summary}</p></div>)}</div>
           <div className="candidate-playbook"><div><strong>失效条件</strong>{item.invalidation.map((rule) => <p key={rule}>× {rule}</p>)}</div><div><strong>下一步</strong>{item.next_actions.map((action) => <p key={action}>→ {action}</p>)}</div></div>
           <div className="risk-tags">{item.risk_flags.map((flag) => <i key={flag}>{flag}</i>)}</div>

@@ -1,7 +1,12 @@
+from math import sqrt
+
+from marketdesk.analysis.indicators import maximum_drawdown
 from marketdesk.models import (
+    Bar,
     EquityQuote,
     ExcludedCandidate,
     OpportunityDimension,
+    OpportunityHistoryCheck,
     OpportunityResult,
     RankedCandidate,
     ScoreComponent,
@@ -58,7 +63,10 @@ def _signed_money(value: float | None) -> str:
 
 
 def rank_candidates(
-    equities: list[EquityQuote], market_regime: str, preset: str = "trend"
+    equities: list[EquityQuote],
+    market_regime: str,
+    preset: str = "trend",
+    history_by_symbol: dict[str, list[Bar]] | None = None,
 ) -> OpportunityResult:
     preset = PRESET_ALIASES.get(preset, preset)
     strategy_rules = {
@@ -89,6 +97,9 @@ def rank_candidates(
             continue
         component_values: list[tuple[str, str, float, float, float]] = []
         risk_flags: list[str] = []
+        history_check: OpportunityHistoryCheck | None = None
+        if history_by_symbol is not None and quote.symbol in history_by_symbol:
+            history_check = analyse_opportunity_history(history_by_symbol[quote.symbol])
         if quote.change_pct is not None:
             component_values.append(
                 ("trend", "价格趋势", _score(quote.change_pct, -3, 5), 0.25, quote.change_pct)
@@ -125,6 +136,20 @@ def rank_candidates(
                     quote.pe,
                 )
             )
+        if history_check is not None:
+            if history_check.available and history_check.score is not None:
+                component_values.append(
+                    (
+                        "history_confirmation",
+                        "历史确认",
+                        history_check.score,
+                        0.20,
+                        history_check.trend_20d_pct or 0.0,
+                    )
+                )
+            else:
+                risk_flags.append("历史K线不足")
+            risk_flags.extend(history_check.risk_flags)
         risk_flags.append("板块归属暂缺" if quote.sector is None else "板块强度数据暂缺")
         risk_flags.append("催化证据暂缺")
         available_weight = sum(item[3] for item in component_values)
@@ -144,15 +169,19 @@ def rank_candidates(
         total = round(max(0.0, base_score - context_penalty), 2)
         if market_regime in {"risk_off", "cautious"}:
             risk_flags.append("市场偏弱")
+        risk_flags = list(dict.fromkeys(risk_flags))
         ranked.append(
             RankedCandidate(
                 quote=quote,
                 base_score=base_score,
                 context_penalty=context_penalty,
                 score=total,
-                evidence_coverage=round(available_weight, 2),
+                evidence_coverage=round(min(1.0, available_weight), 2),
                 components=components,
-                dimensions=_candidate_dimensions(quote, preset, components, context_penalty),
+                dimensions=_candidate_dimensions(
+                    quote, preset, components, context_penalty, history_check
+                ),
+                history_check=history_check,
                 thesis=_candidate_thesis(quote, preset),
                 invalidation=_candidate_invalidation(quote, preset),
                 next_actions=_candidate_next_actions(quote, context_penalty),
@@ -179,6 +208,127 @@ def rank_candidates(
         funnel=funnel,
         candidates=ranked,
         excluded=excluded,
+    )
+
+
+def analyse_opportunity_history(bars: list[Bar]) -> OpportunityHistoryCheck:
+    ordered = sorted(bars, key=lambda item: item.date)
+    closes = [bar.close for bar in ordered if bar.close > 0]
+    if len(closes) < 20:
+        return OpportunityHistoryCheck(
+            available=False,
+            lookback_days=len(closes),
+            summary=f"历史K线不足：仅 {len(closes)} 个交易日，不能确认趋势、波动和回撤。",
+            evidence=["至少需要 20 个交易日K线"],
+            risk_flags=["历史K线不足"],
+        )
+
+    latest = closes[-1]
+    ma20 = sum(closes[-20:]) / 20
+    trend_20d = (latest / closes[-21] - 1) * 100 if len(closes) >= 21 else (
+        latest / closes[0] - 1
+    ) * 100
+    trend_60d = (latest / closes[-61] - 1) * 100 if len(closes) >= 61 else None
+    ma20_gap = (latest / ma20 - 1) * 100 if ma20 > 0 else None
+    returns = [
+        (closes[index] / closes[index - 1] - 1)
+        for index in range(1, len(closes))
+        if closes[index - 1] > 0
+    ]
+    recent_returns = returns[-20:]
+    volatility = None
+    if recent_returns:
+        mean = sum(recent_returns) / len(recent_returns)
+        variance = sum((value - mean) ** 2 for value in recent_returns) / len(recent_returns)
+        volatility = sqrt(variance) * sqrt(252) * 100
+    drawdown = maximum_drawdown(closes, min(60, len(closes)))
+    volumes = [bar.volume for bar in ordered if bar.volume > 0]
+    volume_ratio = None
+    if len(volumes) >= 21:
+        average_volume = sum(volumes[-21:-1]) / 20
+        volume_ratio = volumes[-1] / average_volume if average_volume > 0 else None
+
+    score = 50.0
+    score += max(-18.0, min(20.0, trend_20d * 1.25))
+    if trend_60d is not None:
+        score += max(-12.0, min(15.0, trend_60d * 0.45))
+    else:
+        score -= 4.0
+    if ma20_gap is not None:
+        if -4 <= ma20_gap <= 10:
+            score += 12.0
+        elif 10 < ma20_gap <= 15:
+            score += 4.0
+        elif ma20_gap > 15:
+            score -= min(18.0, (ma20_gap - 15) * 1.4)
+        else:
+            score -= min(12.0, abs(ma20_gap) * 1.2)
+    if volatility is not None:
+        if volatility <= 35:
+            score += 8.0
+        elif volatility > 60:
+            score -= 14.0
+        elif volatility > 45:
+            score -= 6.0
+    if drawdown is not None:
+        if drawdown <= 12:
+            score += 8.0
+        elif drawdown > 30:
+            score -= 14.0
+        elif drawdown > 20:
+            score -= 7.0
+    if volume_ratio is not None:
+        if 1.1 <= volume_ratio <= 2.5:
+            score += 8.0
+        elif volume_ratio > 4:
+            score -= 7.0
+        elif volume_ratio < 0.75:
+            score -= 5.0
+
+    risk_flags: list[str] = []
+    if ma20_gap is not None and ma20_gap > 15:
+        risk_flags.append("远离MA20，追高风险")
+    if volatility is not None and volatility > 45:
+        risk_flags.append("20日波动偏高")
+    if drawdown is not None and drawdown > 20:
+        risk_flags.append("60日回撤偏深")
+    if volume_ratio is not None and volume_ratio > 4:
+        risk_flags.append("放量过急，需等回踩确认")
+    if trend_20d < -3:
+        risk_flags.append("20日趋势转弱")
+
+    evidence = [
+        f"20日趋势 {trend_20d:+.1f}%",
+        f"MA20偏离 {ma20_gap:+.1f}%" if ma20_gap is not None else "MA20偏离待确认",
+    ]
+    if trend_60d is not None:
+        evidence.append(f"60日趋势 {trend_60d:+.1f}%")
+    if volatility is not None:
+        evidence.append(f"20日波动 {volatility:.1f}%")
+    if drawdown is not None:
+        evidence.append(f"60日最大回撤 {drawdown:.1f}%")
+    if volume_ratio is not None:
+        evidence.append(f"量能 {volume_ratio:.1f}x")
+
+    status = "通过" if score >= 65 and not risk_flags else "需复核" if score >= 50 else "偏弱"
+    summary = (
+        f"历史确认{status}：20日趋势 {trend_20d:+.1f}%，"
+        f"MA20偏离 {ma20_gap:+.1f}%，"
+        f"{'未明显追高' if ma20_gap is not None and ma20_gap <= 15 else '注意追高'}。"
+    )
+    return OpportunityHistoryCheck(
+        available=True,
+        lookback_days=len(closes),
+        score=round(max(0.0, min(100.0, score)), 2),
+        trend_20d_pct=round(trend_20d, 2),
+        trend_60d_pct=round(trend_60d, 2) if trend_60d is not None else None,
+        ma20_gap_pct=round(ma20_gap, 2) if ma20_gap is not None else None,
+        volatility_20d=round(volatility, 2) if volatility is not None else None,
+        max_drawdown_60d=round(drawdown, 2) if drawdown is not None else None,
+        volume_ratio_20d=round(volume_ratio, 2) if volume_ratio is not None else None,
+        summary=summary,
+        evidence=evidence,
+        risk_flags=risk_flags,
     )
 
 
@@ -326,7 +476,11 @@ def _component_score(components: list[ScoreComponent], key: str) -> float | None
 
 
 def _candidate_dimensions(
-    quote: EquityQuote, preset: str, components: list[ScoreComponent], context_penalty: float
+    quote: EquityQuote,
+    preset: str,
+    components: list[ScoreComponent],
+    context_penalty: float,
+    history_check: OpportunityHistoryCheck | None = None,
 ) -> list[OpportunityDimension]:
     trend_score = _component_score(components, "trend")
     capital_score = _component_score(components, "capital")
@@ -370,7 +524,7 @@ def _candidate_dimensions(
     )
     catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的线索只进入观察池"
     follow_up_summary = "先打开个股证据账本，再写关注理由、失效条件和下次复盘触发点"
-    return [
+    dimensions = [
         OpportunityDimension(
             key="trigger",
             label="触发逻辑",
@@ -468,6 +622,20 @@ def _candidate_dimensions(
             evidence=["个股证据账本", "关注理由", "失效条件", "复盘触发点"],
         ),
     ]
+    if history_check is not None:
+        dimensions.insert(
+            2,
+            OpportunityDimension(
+                key="history_confirmation",
+                label="历史确认",
+                signal=_signal(history_check.score, history_check.available),
+                score=history_check.score,
+                summary=history_check.summary,
+                evidence=history_check.evidence,
+                available=history_check.available,
+            ),
+        )
+    return dimensions
 
 
 def _candidate_thesis(quote: EquityQuote, preset: str) -> str:

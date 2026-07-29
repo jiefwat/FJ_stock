@@ -1353,3 +1353,30 @@ Full gate and public deployment after the Market execution-console upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `MARKET PULSE`, `大盘执行台`, `允许复核机会`, `只看前排板块`, `先守风险`, `执行指令`, `盘面三问`, and `ORDER TAPE` |
+
+## 2026-07-29 Opportunity Historical K-line Confirmation
+
+Opportunity recommendations now keep the fast full-market snapshot screen, then batch-check up to the first 80 ranked leads with 120 trading days of K-line history before presenting the final lead queue. The history check adds a typed score and visible evidence for 20-day trend, 60-day trend, MA20 extension, 20-day volatility, 60-day drawdown, and 20-day volume ratio. Overextended, volatile, deep-drawdown, or rush-volume leads are downgraded with explicit risk flags before Stock Lab review.
+
+Focused checks:
+
+```text
+pytest -q backend/tests/test_analysis.py -k 'opportunity'
+pytest -q backend/tests/test_api.py -k 'opportunities'
+pnpm --dir frontend test --run src/features/opportunities/OpportunitiesPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Opportunity analysis passed 7 focused tests, the opportunities API passed the historical-enrichment contract test, the Opportunity page passed 2 focused tests, and frontend typecheck passed. The new assertions verify the `历史确认` component/dimension, the `history_check` API payload, and the visible `HISTORY CHECK · 历史K线` card with trend, MA20, volatility, drawdown, and volume fields.
+
+Full local gate after the Opportunity historical-confirmation upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 133 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 49 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |

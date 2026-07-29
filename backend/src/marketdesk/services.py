@@ -26,6 +26,7 @@ from marketdesk.config import Settings
 from marketdesk.models import (
     AskStockMetric,
     AskStockResponse,
+    Bar,
     CapabilityState,
     CapabilityStatus,
     EquityDataset,
@@ -473,6 +474,30 @@ class MarketService:
         )
         return analyse_sector(snapshot, constituents)
 
+    async def _opportunity_kline_history(
+        self, symbols: list[str], limit: int = 120
+    ) -> dict[str, list[Bar]]:
+        unique_symbols = list(dict.fromkeys(symbols))[:80]
+        if not unique_symbols:
+            return {}
+        semaphore = asyncio.Semaphore(6)
+
+        async def fetch(symbol: str) -> tuple[str, list[Bar]]:
+            async with semaphore:
+                try:
+                    payload = await self.provider.fetch_kline(symbol, limit=limit)
+                    bars = [
+                        item if isinstance(item, Bar) else Bar.model_validate(item)
+                        for item in payload
+                    ]
+                    return symbol, bars
+                except Exception as error:
+                    self._provider_errors["opportunity_kline"] = str(error)
+                    return symbol, []
+
+        pairs = await asyncio.gather(*(fetch(symbol) for symbol in unique_symbols))
+        return dict(pairs)
+
     async def opportunities(self, preset: str = "trend", limit: int = 50) -> OpportunityResult:
         if preset not in {
             "trend",
@@ -486,7 +511,10 @@ class MarketService:
             raise ValueError("unknown preset")
         snapshot = await self.market()
         regime = analyse_market(snapshot).regime
-        result = rank_candidates(snapshot.equities, regime, preset)
+        initial = rank_candidates(snapshot.equities, regime, preset)
+        symbols = [item.quote.symbol for item in initial.candidates[: max(50, limit)]]
+        history_by_symbol = await self._opportunity_kline_history(symbols)
+        result = rank_candidates(snapshot.equities, regime, preset, history_by_symbol)
         return result.model_copy(update={"candidates": result.candidates[:limit]})
 
     async def today(self) -> dict[str, Any]:

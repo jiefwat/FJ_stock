@@ -151,11 +151,18 @@ def _candidate_lines(opportunities: OpportunityResult, base_url: str) -> list[st
     lines: list[str] = []
     for candidate in opportunities.candidates[:3]:
         reasons = "；".join(candidate.thesis.split("；")[:2]) if candidate.thesis else "打开个股页复核证据链"
+        history = (
+            f"历史K线：{candidate.history_check.summary}"
+            if candidate.history_check and candidate.history_check.available
+            else "历史K线：待补齐后再升级"
+            if candidate.history_check
+            else "历史K线：未纳入本次邮件"
+        )
         url = _link(base_url, "stocks", {"symbol": candidate.quote.symbol})
         lines.append(
             f"{candidate.quote.name} {candidate.quote.symbol}: 分数 {_fmt(candidate.score, 0)}，"
             f"涨跌 {_pct(candidate.quote.change_pct)}，确认项：强于大盘、板块延续、回踩不破；"
-            f"先看 {reasons}。{url}"
+            f"{history}；先看 {reasons}。{url}"
         )
     return lines
 
@@ -172,6 +179,13 @@ def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> st
         url = _link(base_url, "stocks", {"symbol": quote.symbol})
         reasons = "；".join(candidate.thesis.split("；")[:2]) if candidate.thesis else "打开个股页复核证据链"
         risk = "；".join(candidate.risk_flags[:2]) if candidate.risk_flags else "等待开盘承接确认"
+        history = (
+            candidate.history_check.summary
+            if candidate.history_check and candidate.history_check.available
+            else "历史K线待补齐，不能直接升级为参与"
+            if candidate.history_check
+            else "本次未纳入历史K线确认"
+        )
         priority, priority_color, priority_note = _priority_label(
             candidate.score,
             candidate.evidence_coverage,
@@ -191,6 +205,7 @@ def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> st
             "</div>"
             f'<p style="margin:0 0 6px;color:{priority_color};font-size:13px;line-height:1.7;"><b>复核级别：</b>{escape(priority_note)}</p>'
             f'<p style="margin:0;color:#33443e;font-size:13px;line-height:1.7;"><b>推荐理由：</b>{escape(reasons)}</p>'
+            f'<p style="margin:6px 0 0;color:#33443e;font-size:13px;line-height:1.7;"><b>历史K线：</b>{escape(history)}</p>'
             f'<p style="margin:6px 0 0;color:#8a4a27;font-size:13px;line-height:1.7;"><b>先看风险：</b>{escape(risk)}</p>'
             '<p style="margin:6px 0 0;color:#6f7c76;font-size:12px;line-height:1.7;">确认项：强于大盘、板块延续、回踩不破。</p>'
             f'{_button(url, "打开个股页复核")}'

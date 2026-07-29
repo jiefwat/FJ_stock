@@ -755,6 +755,20 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     assert stock_payload["technical"]["atr_pct"] is not None
 
 
+def test_opportunities_route_enriches_top_candidates_with_history(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/opportunities", params={"preset": "trend", "limit": 1})
+
+    assert response.status_code == 200
+    candidate = response.json()["candidates"][0]
+    assert candidate["history_check"]["available"] is True
+    assert candidate["history_check"]["lookback_days"] == 70
+    assert candidate["history_check"]["trend_20d_pct"] is not None
+    assert "历史确认" in {item["label"] for item in candidate["dimensions"]}
+    assert "历史确认" in {item["label"] for item in candidate["components"]}
+
+
 def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
     service = MarketService(provider=EquityBrowserProvider(), store=Store(tmp_path / "equities.db"))
     api = authenticated_client(service)
