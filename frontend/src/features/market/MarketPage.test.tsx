@@ -196,6 +196,17 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
 it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {
   renderPage();
 
+  const command = within(await screen.findByLabelText("市场作战台"));
+  expect(command.getByText("MARKET GATE")).toBeInTheDocument();
+  expect(command.getByText("均衡 · 58/100")).toBeInTheDocument();
+  expect(command.getByText("今日路线")).toBeInTheDocument();
+  expect(command.getByText(/广度占优/)).toBeInTheDocument();
+  expect(command.getByText("资金主线")).toBeInTheDocument();
+  expect(command.getByRole("button", { name: "电力设备" })).toBeInTheDocument();
+  expect(command.getByText("事件风险")).toBeInTheDocument();
+  expect(command.getByText(/央企改革出现政策支持信号/)).toBeInTheDocument();
+  expect(command.getByRole("link", { name: "进入机会漏斗" })).toHaveAttribute("href", "/opportunities");
+
   const panel = within(await screen.findByLabelText("A股市场情报"));
   expect(panel.getByText("板块资金确认")).toBeInTheDocument();
   expect(panel.getByText("电力设备")).toBeInTheDocument();

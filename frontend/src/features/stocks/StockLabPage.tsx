@@ -320,6 +320,49 @@ function themeHref(theme: { code: string; name: string; change_pct: number | nul
   return `/market?${params.toString()}`;
 }
 
+function actionTone(action: string) {
+  if (/回避|不参与|先降风险/.test(action)) return "negative";
+  if (/试错|观察|等待/.test(action)) return "caution";
+  return "positive";
+}
+
+function StockDecisionDeck({ dossier, evidence }: { dossier: Dossier; evidence?: InstrumentEvidenceResult }) {
+  const firstTheme = evidence?.themes[0];
+  const sectorName = dossier.quote.sector ?? firstTheme?.name ?? "板块待确认";
+  const sectorLink = firstTheme ? themeHref(firstTheme) : dossier.quote.sector ? `/market?industry=${encodeURIComponent(dossier.quote.sector)}` : "/market";
+  const tone = actionTone(dossier.investment_advice.action);
+  const invalidation = firstOrFallback(dossier.invalidation, dossier.investment_advice.stop_loss);
+  const nextAction = firstOrFallback(dossier.next_actions, dossier.investment_advice.entry_plan);
+  const missing = firstOrFallback(dossier.missing_evidence, "暂无关键缺口，继续按证据账本复核");
+
+  return <section className={`stock-decision-deck ${tone}`} aria-label="个股复核作战台">
+    <article className="decision-primary">
+      <span>FINAL GATE</span>
+      <strong>{dossier.investment_advice.action}</strong>
+      <p>{dossier.investment_advice.position_hint}</p>
+      <small>置信度 {percent(dossier.investment_advice.confidence * 100)} · 证据覆盖 {percent(dossier.evidence_coverage * 100)}</small>
+    </article>
+    <div className="decision-cards">
+      <article>
+        <span>先看板块</span>
+        <strong>{sectorName}</strong>
+        <p>个股动作必须和板块温度、资金扩散一起确认。</p>
+        <Link to={sectorLink}>打开板块/题材</Link>
+      </article>
+      <article>
+        <span>失效条件</span>
+        <strong>{invalidation}</strong>
+        <p>跌破或证据恶化时，先退出复核，不用新理由补旧逻辑。</p>
+      </article>
+      <article>
+        <span>下一步</span>
+        <strong>{nextAction}</strong>
+        <p>{missing}</p>
+      </article>
+    </div>
+  </section>;
+}
+
 function EvidenceDocuments({ title, items, unavailable }: { title: string; items: EvidenceDocument[]; unavailable: boolean }) {
   return <div className="company-evidence-stream">
     <header><span>{title}</span><b>{items.length} 条</b></header>
@@ -433,6 +476,7 @@ export function StockLabPage() {
         <div className="stance"><small>研究立场</small><strong>{stanceLabel[query.data.stance] ?? query.data.stance}</strong><span>{query.data.stance_score == null ? "证据不足" : `${query.data.stance_score}/100`}</span><em>证据覆盖 {percent(query.data.evidence_coverage * 100)}</em>{existing ? <Link className="watch-button" to="/watchlist">已跟踪 · 编辑记录</Link> : authenticated ? <button className="watch-button" onClick={() => setComposerOpen(true)} disabled={composerOpen || addWatch.isSuccess}>{addWatch.isSuccess ? "已加入跟踪" : "加入跟踪"}</button> : <button className="watch-button" disabled>登录后加入跟踪</button>}</div>
       </section>
       {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
+      <StockDecisionDeck dossier={query.data} evidence={evidenceQuery.data} />
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
       <SignalValidationPanel validation={query.data.signal_validation} />

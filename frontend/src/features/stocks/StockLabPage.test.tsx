@@ -243,6 +243,17 @@ it("surfaces an analyst action map before the deep evidence sections", async () 
 it("shows direct investment advice with horizontal and vertical comparisons", async () => {
   renderPage();
 
+  const deck = within(await screen.findByLabelText("个股复核作战台"));
+  expect(deck.getByText("FINAL GATE")).toBeInTheDocument();
+  expect(deck.getByText("先看板块")).toBeInTheDocument();
+  expect(deck.getByText("失效条件")).toBeInTheDocument();
+  expect(deck.getByText("下一步")).toBeInTheDocument();
+  expect(deck.getByText(/个股动作必须和板块温度/)).toBeInTheDocument();
+  await waitFor(() => expect(deck.getByRole("link", { name: "打开板块/题材" })).toHaveAttribute(
+    "href",
+    "/market?theme=BK0896&themeName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&themeChange=1.8",
+  ));
+
   const advice = within(await screen.findByLabelText("直接投资建议"));
   expect(advice.getByText("等待回踩")).toBeInTheDocument();
   expect(advice.getByText(/暂不追高/)).toBeInTheDocument();

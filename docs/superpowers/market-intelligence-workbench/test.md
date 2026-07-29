@@ -929,3 +929,17 @@ cd backend && uv run ruff check src tests --fix && uv run mypy src
 Result: the preview route test passed with assertions for `今日开盘路线`, `市场广度仪表`, `上涨占比`, `复核级别`, and `持仓风险雷达`; Ruff and mypy passed across 23 backend source files.
 
 Production sender compatibility: the legacy production renderer was backed up as `notification.py.bak.20260729-layout-v2`, then upgraded with the same opening-route, market-breadth, and review-priority markers. The production virtualenv compiled `src/stock_ts/notification.py` and `scripts/send_morning_report.py`, the generated HTML contained all new markers, and a dry-run account dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)`.
+
+## 2026-07-29 Core Workbench Decision Layer
+
+The core workbench now adds a decision layer above the deep evidence sections. Stock Lab exposes a `个股复核作战台` immediately after the stock hero, combining the final action, confidence, evidence coverage, sector/theme handoff, invalidation condition, and next action. Market exposes a `市场作战台` above the breadth board, combining regime, breadth, funding mainline, event risk, and the next handoff into Opportunities.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Stock Lab passed 11 tests, Market passed 9 tests, and frontend typecheck passed. The new assertions verify `FINAL GATE`, `个股复核作战台`, theme/sector handoff into Market, `市场作战台`, breadth-derived route copy, funding-mainline drilldown, event-risk summary, and the Opportunities handoff.

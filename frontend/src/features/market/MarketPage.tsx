@@ -11,6 +11,13 @@ type MarketData = { snapshot: { meta: Meta; indices: IndexQuote[]; sectors: Sect
 type DetailSort = "net_flow" | "change_pct" | "amount";
 type DetailFilter = "all" | "net_inflow" | "up";
 
+const regimeCopy: Record<string, { label: string; action: string }> = {
+  risk_off: { label: "防守", action: "先保护本金，机会只保留观察。" },
+  cautious: { label: "谨慎", action: "只复核板块、量能、价格同时确认的线索。" },
+  balanced: { label: "均衡", action: "可以复核机会，但不要脱离证据链追涨。" },
+  risk_on: { label: "进攻", action: "可提高复核强度，仍按失效条件执行。" },
+};
+
 export function MarketPage() {
   const [showAllSectors, setShowAllSectors] = useState(false);
   const [params, setParams] = useSearchParams();
@@ -38,6 +45,7 @@ export function MarketPage() {
   const openSector = (code: string) => setParams({ sector: code });
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
     <header className="page-head"><div><p className="eyebrow">MARKET / 全市场体检</p><h1>市场不是一个点数，<br /><em>而是一组证据。</em></h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
+    <MarketCommandCenter market={query.data} intelligence={intelligenceQuery.data} events={eventsQuery.data} onOpenSector={openSector} />
     <section className="breadth-board"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
     <div className="two-column"><section className="panel"><div className="panel-title"><span>指数</span></div><div className="market-table">{query.data.snapshot.indices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}</div></section><section className="panel"><div className="panel-title"><span>评分证据</span><small>分数 · 权重 · 事实</small></div><div className="factor-ledger">{query.data.analysis.factors.map((factor) => <article key={factor.key} className={factor.available ? "available" : "missing"}><span>{factor.label}<small>{factor.evidence}</small></span><strong>{factor.available ? fmt(factor.score, 0) : "未计入"}</strong><em>{factor.available ? `权重 ${percent(factor.weight * 100)}` : "权重 0%"}</em></article>)}</div></section></div>
     <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
@@ -52,6 +60,52 @@ export function MarketPage() {
     {selectedSector && <DossierPanel key={`sector-${selectedSector}`} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={() => setParams({})} />}
     {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={() => setParams({})} />}
   </>}</AsyncState>;
+}
+
+function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { market: MarketData; intelligence?: MarketIntelligenceResult; events?: MarketEventResult; onOpenSector: (code: string) => void }) {
+  const regime = regimeCopy[market.analysis.regime] ?? { label: market.analysis.regime, action: "先读证据，再决定复核顺序。" };
+  const total = Math.max(1, market.analysis.advancing + market.analysis.declining + market.analysis.unchanged);
+  const breadth = market.analysis.advancing / total * 100;
+  const topFlow = intelligence?.sector_flows[0];
+  const riskEvent = events?.events.find((event) => event.sentiment === "negative" || event.category === "risk_alert");
+  const eventHeadline = riskEvent?.title ?? events?.summary[0] ?? "暂无显著事件风险，继续以指数、板块和资金为主。";
+  const routeText = breadth >= 55 ? "广度占优，优先看资金主线是否扩散。" : breadth >= 45 ? "广度中性，只做强势板块里的少数复核。" : "广度偏弱，候选降级，先处理持仓风险。";
+
+  return <section className="market-command-center" aria-label="市场作战台">
+    <article className="market-command-verdict">
+      <span>MARKET GATE</span>
+      <strong>{regime.label} · {fmt(market.analysis.score, 0)}/100</strong>
+      <p>{regime.action}</p>
+      <small>上涨占比 {percent(breadth)} · 置信度 {percent(market.analysis.confidence * 100)}</small>
+    </article>
+    <div className="market-command-grid">
+      <article>
+        <span>今日路线</span>
+        <strong>{routeText}</strong>
+        <p>市场状态决定机会复核强度，不让单个热点覆盖全局风险。</p>
+      </article>
+      <article>
+        <span>资金主线</span>
+        {topFlow ? <>
+          <button type="button" onClick={() => onOpenSector(topFlow.code)}>{topFlow.name}</button>
+          <p>{pct(topFlow.change_pct)} · 净流 {flowAmount(topFlow.net_flow)}</p>
+        </> : <>
+          <strong>等待资金确认</strong>
+          <p>板块资金源未返回时，只用指数和广度做防守判断。</p>
+        </>}
+      </article>
+      <article>
+        <span>事件风险</span>
+        <strong>{eventHeadline}</strong>
+        <p>事件必须回到板块和个股页验证价格、资金、逻辑三道闸。</p>
+      </article>
+      <article>
+        <span>下一步</span>
+        <Link to="/opportunities">进入机会漏斗</Link>
+        <p>只把通过市场和板块确认的标的带入 Stock Lab。</p>
+      </article>
+    </div>
+  </section>;
 }
 
 function detailValue(item: Quote, sort: DetailSort) {
