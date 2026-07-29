@@ -124,6 +124,8 @@ def test_requires_exactly_one_local_stock() -> None:
         ("贵州茅台有哪些风险", "risk"),
         ("贵州茅台技术趋势怎么样", "trend"),
         ("贵州茅台估值贵不贵", "valuation"),
+        ("贵州茅台基本面怎么样", "fundamental"),
+        ("贵州茅台有什么公告催化", "catalyst"),
         ("贵州茅台仓位和止损怎么定", "action"),
         ("贵州茅台未来可能涨到多少", "action"),
         ("最近大业股份怎么大跌", "movement"),
@@ -143,7 +145,7 @@ def test_detects_portfolio_diagnostics_without_swallowing_single_holding_questio
     assert not is_rebalance_plan_question("我的持仓里风险最大的是哪个")
 
 
-@pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "action", "movement", "overview"])
+@pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "fundamental", "catalyst", "action", "movement", "overview"])
 def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
     observed_at = datetime(2026, 7, 25, 1, tzinfo=UTC)
     answer = build_stock_answer(
@@ -179,6 +181,14 @@ def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
         assert "近期" in answer.answer
         assert "不能直接归因" in answer.answer
         assert "暂不参与" not in answer.answer
+    if intent == "fundamental":
+        assert "基本面" in answer.answer
+        assert "公告研报" in answer.answer
+        assert "当前动作" not in answer.answer
+    if intent == "catalyst":
+        assert "催化" in answer.answer
+        assert "公告" in answer.answer or "研报" in answer.answer
+        assert "当前动作" not in answer.answer
     if intent == "overview":
         assert len(answer.answer) < 240
         assert "技术面：" not in answer.answer

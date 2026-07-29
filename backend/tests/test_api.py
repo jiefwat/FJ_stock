@@ -459,6 +459,27 @@ def test_ask_stock_answers_recent_drop_questions_with_movement_cause(tmp_path) -
     assert any("近5日" in item for item in payload["evidence"])
 
 
+def test_ask_stock_answers_fundamental_and_catalyst_questions(tmp_path) -> None:
+    api = client(tmp_path)
+
+    fundamental = api.post("/api/v1/ask-stock", json={"question": "贵州茅台基本面怎么样"})
+    catalyst = api.post("/api/v1/ask-stock", json={"question": "贵州茅台有什么公告催化"})
+
+    assert fundamental.status_code == 200
+    fundamental_payload = fundamental.json()
+    assert fundamental_payload["intent"] == "fundamental"
+    assert "基本面" in fundamental_payload["answer"]
+    assert "公告研报" in fundamental_payload["answer"]
+    assert "当前动作" not in fundamental_payload["answer"]
+
+    assert catalyst.status_code == 200
+    catalyst_payload = catalyst.json()
+    assert catalyst_payload["intent"] == "catalyst"
+    assert "催化" in catalyst_payload["answer"]
+    assert "公告研报" in catalyst_payload["answer"]
+    assert "当前动作" not in catalyst_payload["answer"]
+
+
 def test_ask_stock_includes_only_current_user_holding_context(tmp_path) -> None:
     service = MarketService(
         provider=FixtureProvider(), store=Store(tmp_path / "ask-holding-context.db")

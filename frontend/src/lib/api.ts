@@ -74,7 +74,7 @@ export type AskStockHoldingContext = {
 export type AskStockResponse = {
   kind: "stock_analysis" | "semantic_screen" | "portfolio_analysis";
   question: string;
-  intent: "risk" | "trend" | "valuation" | "action" | "movement" | "overview" | "screening" | "portfolio";
+  intent: "risk" | "trend" | "valuation" | "fundamental" | "catalyst" | "action" | "movement" | "overview" | "screening" | "portfolio";
   symbol: string | null;
   name: string | null;
   answer: string;

@@ -538,6 +538,8 @@ class AskStockResponse(StrictModel):
         "risk",
         "trend",
         "valuation",
+        "fundamental",
+        "catalyst",
         "action",
         "movement",
         "overview",

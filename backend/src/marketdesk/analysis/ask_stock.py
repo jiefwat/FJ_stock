@@ -14,10 +14,20 @@ from marketdesk.models import (
     EquityQuote,
     HoldingDossier,
     JsonScalar,
+    StockAnalysisDimension,
     StockDossier,
 )
 
-AskStockIntent = Literal["risk", "trend", "valuation", "action", "movement", "overview"]
+AskStockIntent = Literal[
+    "risk",
+    "trend",
+    "valuation",
+    "fundamental",
+    "catalyst",
+    "action",
+    "movement",
+    "overview",
+]
 AskStockMetricTone = Literal["positive", "neutral", "negative", "missing"]
 
 
@@ -134,6 +144,8 @@ def classify_stock_question(question: str) -> AskStockIntent:
         ("risk", ("风险", "利空", "隐患", "下跌风险", "回撤风险")),
         ("trend", ("趋势", "技术", "走势", "均线", "动量", "macd", "rsi")),
         ("valuation", ("估值", "市盈率", "市净率", "贵不贵", "便宜", "对比")),
+        ("catalyst", ("催化", "消息", "消息面", "公告", "研报", "题材", "概念", "龙虎榜", "事件")),
+        ("fundamental", ("基本面", "财报", "业绩", "利润", "营收", "收入", "现金流", "负债", "roe", "毛利率")),
         (
             "action",
             (
@@ -209,6 +221,69 @@ def build_stock_answer(
             if valuation
             else f"结论：{quote.name}当前缺少足够的估值比较证据，不能只凭 PE/PB 判断贵不贵。"
         )
+    elif intent == "fundamental":
+        quality = _dimension(dossier, "fundamental_quality")
+        research = _dimension(dossier, "research")
+        valuation = _dimension(dossier, "valuation")
+        quality_summary = quality.summary if quality else "基本面质量维度暂缺"
+        research_summary = (
+            research.summary if research and research.available else "公告研报增强数据暂缺，不能只用行情替代财报验证"
+        )
+        valuation_summary = valuation.summary if valuation and valuation.available else "估值约束暂缺"
+        evidence = _unique(
+            [
+                quality_summary,
+                *(_dimension_evidence(quality)),
+                f"公告研报：{research_summary}",
+                *(_dimension_evidence(research) if research and research.available else []),
+                f"估值约束：{valuation_summary}",
+            ]
+        )
+        verdict = "有可用线索，但仍要补财报细节" if research and research.available else "只能做轮廓判断，财报/公告研报证据还不够"
+        answer = (
+            f"结论：{quote.name}基本面{verdict}。{quality_summary}；"
+            f"公告研报：{research_summary}；估值约束：{valuation_summary}。"
+        )
+        next_actions = _unique(
+            [
+                f"优先补读{quote.name}最近年报、季报和业绩预告",
+                "核对营收、利润、现金流和负债变化，别只看价格走势",
+                *next_actions,
+            ]
+        )[:4]
+    elif intent == "catalyst":
+        catalyst = _dimension(dossier, "catalyst")
+        research = _dimension(dossier, "research")
+        sector = _dimension(dossier, "sector")
+        catalyst_summary = (
+            catalyst.summary if catalyst and catalyst.available else "未拿到可验证的催化证据"
+        )
+        research_summary = (
+            research.summary if research and research.available else "公告研报暂缺，不能确认消息面原因"
+        )
+        sector_summary = sector.summary if sector and sector.available else f"{quote.sector or '所属板块'}联动待确认"
+        evidence = _unique(
+            [
+                f"催化与事件：{catalyst_summary}",
+                *(_dimension_evidence(catalyst)),
+                f"公告研报：{research_summary}",
+                *(_dimension_evidence(research) if research and research.available else []),
+                f"板块联动：{sector_summary}",
+            ]
+        )
+        verdict = "已有待核验线索" if catalyst and catalyst.available else "还没有被本地证据确认"
+        answer = (
+            f"结论：{quote.name}催化证据{verdict}。{catalyst_summary}；"
+            f"公告研报：{research_summary}；板块/题材：{sector_summary}。"
+            "没有源链接或最新公告确认前，不把消息当成交易理由。"
+        )
+        next_actions = _unique(
+            [
+                f"打开{quote.name}公告与研报，确认是否有业绩、订单、政策或题材催化",
+                f"回到大盘页看{quote.sector or '所属板块'}是否同步扩散",
+                *next_actions,
+            ]
+        )[:4]
     elif intent == "movement":
         direction = _movement_direction(question, dossier)
         evidence = _movement_evidence(dossier, direction)
@@ -613,6 +688,16 @@ def _valuation_verdict(quote: EquityQuote) -> str:
     if (pe is not None and pe <= 30) and (pb is None or pb <= 5):
         return "不算贵，但不是单凭便宜就能参与"
     return "偏中性，贵不贵要放到同行和自身历史区间里看"
+
+
+def _dimension(dossier: StockDossier, key: str) -> StockAnalysisDimension | None:
+    return next((item for item in dossier.analysis_dimensions if item.key == key), None)
+
+
+def _dimension_evidence(dimension: StockAnalysisDimension | None) -> list[str]:
+    if dimension is None:
+        return []
+    return [dimension.summary, *dimension.evidence]
 
 
 def _is_price_target_question(question: str) -> bool:

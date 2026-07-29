@@ -104,6 +104,7 @@
 - [x] Make Ask Stock answer conclusion-first and move Stock Lab gate details behind an explicit evidence expansion.
 - [x] Keep Ask Stock conclusion text concise and answer target-price questions without replaying the full Stock Lab dossier.
 - [x] Add Ask Stock movement intent so recent big-rise/big-drop questions answer the price-move cause instead of generic participation advice.
+- [x] Add an Ask Stock answer playbook and route basic-fundamental/catalyst questions before generic overview/action templates.
 - [x] Add a Stock Lab review route rail so long-form dossiers have an explicit reading order.
 - [x] Add Market STOCK HANDOFF review-section routing into Stock Lab.
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.

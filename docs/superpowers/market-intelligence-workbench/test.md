@@ -1448,3 +1448,22 @@ pnpm --dir frontend typecheck
 ```
 
 Result: the first two tests initially failed because `最近大业股份怎么大跌` was not classified as movement and the response schema rejected that intent. After the fix, focused Ask Stock checks passed: 13 unit tests, 1 API regression, 30 combined Ask Stock API/unit tests, and frontend typecheck.
+
+## 2026-07-29 Ask Stock Playbook And Fundamental/Catalyst Routes
+
+Ask Stock now has a project-level answer playbook in `docs/ask-stock-answer-playbook.md`, adapted from common stock-analysis skill patterns without importing external runtime dependencies. The playbook fixes routing expectations for movement, risk, trend, valuation, fundamental, catalyst, action, portfolio, screening, and overview questions.
+
+Implementation added two high-frequency stock-analysis routes:
+
+- `fundamental`: handles basic quality, financial-report, revenue/profit/cash-flow/debt questions without pretending price action is fundamental evidence.
+- `catalyst`: handles announcement, research-report, topic, event, and message/catalyst questions without inventing unverified news reasons.
+
+Focused verification:
+
+```text
+uv run --directory backend pytest -q tests/test_ask_stock.py -k 'classifies_question_intent or builds_bounded_evidence_answer'
+uv run --directory backend pytest -q tests/test_ask_stock.py tests/test_api.py -k 'ask_stock'
+pnpm --dir frontend typecheck
+```
+
+Result: 17 intent/template unit tests passed, 35 combined Ask Stock API/unit tests passed, and frontend typecheck passed. The tests assert that basic-fundamental and catalyst questions no longer fall through to the generic overview/action answer.
