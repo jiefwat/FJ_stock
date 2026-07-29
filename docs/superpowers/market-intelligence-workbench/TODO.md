@@ -79,6 +79,7 @@
 - [x] Add Opportunity lead-layer filtering so users can focus on priority, watch-only, or high-risk leads.
 - [x] Add an Opportunity queue gate so leads show review route, first dossier, and queue shortcuts before the candidate table.
 - [x] Add historical K-line confirmation to Opportunity candidates so lead ranking checks trend, extension, volatility, drawdown, and volume before Stock Lab review.
+- [x] Collapse Opportunity candidates into a compact stock list and expand details only after the user clicks a stock.
 - [x] Simplify Stock Lab by keeping the core decision cards visible and moving deep evidence into an expandable package.
 
 ## A-share Evidence And Market Intelligence

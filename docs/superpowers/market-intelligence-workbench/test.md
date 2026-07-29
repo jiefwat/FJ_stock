@@ -1380,3 +1380,16 @@ Full local gate after the Opportunity historical-confirmation upgrade:
 | Frontend Vitest | Passed, 49 tests across 8 files |
 | Vite production build | Passed, 1,653 modules transformed |
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+## 2026-07-29 Opportunity Compact Expandable List
+
+Opportunity candidates now render as a compact stock list by default. Each stock row shows only the rank, identity, final score, day change, score context, and lead badge; the thesis, historical K-line check, dimensions, invalidation rules, next actions, risk tags, and Stock Lab review link appear only after the user clicks that stock row. Strategy and lead-layer changes collapse open rows so the page stays scannable when 50 leads are returned.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/opportunities/OpportunitiesPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Opportunity page passed 2 focused tests and frontend typecheck passed. The assertions verify collapsed rows start with `aria-expanded=false`, detail content and the review link are absent until a stock is clicked, and layer-filter changes keep the list compact before opening the selected stock.
