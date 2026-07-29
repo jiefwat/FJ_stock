@@ -1174,3 +1174,22 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Stock Lab passed 12 focused tests and frontend typecheck passed. The assertions verify `个股复核路线`, `REVIEW ROUTE`, `按这条顺序读`, and that all five route links target `#stock-final-gate`, `#stock-evidence-audit`, `#stock-investment-advice`, `#stock-company-evidence`, and `#stock-risk-controls`.
+
+Full gate and public deployment after the Stock Lab route-rail upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-131737-dcd3ee7` |
+| Commit | `dcd3ee7` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `REVIEW ROUTE`, `按这条顺序读`, `个股复核路线`, `stock-review-rail`, and `个股复核区块导航` |
