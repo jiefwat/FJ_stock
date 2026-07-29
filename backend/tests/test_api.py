@@ -1232,7 +1232,7 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "一、开盘前结论" in payload["text"]
     assert "三、资金主线" in payload["text"]
     assert "四、事件与异动" in payload["text"]
-    assert "五、今日候选复核" in payload["text"]
+    assert "五、推荐股票（需复核）" in payload["text"]
     assert "六、持仓和跟踪池" in payload["text"]
     assert "七、开盘检查清单" in payload["text"]
     assert "八、今日禁止动作" in payload["text"]
@@ -1244,6 +1244,11 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "不构成投资建议" in payload["text"]
     assert "<html" in payload["html"]
     assert "MARKET DESK MORNING BRIEF" in payload["html"]
+    assert "今日大盘" in payload["html"]
+    assert "大盘温度" in payload["html"]
+    assert "推荐股票（需复核）" in payload["html"]
+    assert "推荐股票 #1" in payload["html"]
+    assert "板块资金主线" in payload["html"]
     assert "开盘检查清单" in payload["html"]
 
 

@@ -899,3 +899,18 @@ Full gate after the action-checklist upgrade:
 | Frontend Vitest | Passed, 44 tests across 8 files |
 | Vite production build | Passed, 1,653 modules transformed |
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+## 2026-07-29 Morning Email Visual Layout Upgrade
+
+The morning email was upgraded from a plain markdown-like layout into a card-based brief that puts the market state, recommended stock review list, sector-flow leaders, holdings risk, and opening checklist above the fold. The app preview keeps the deterministic morning-brief contract and uses email-client-friendly inline/table layout for the top metrics and sector cards.
+
+Focused checks:
+
+```text
+cd backend && uv run pytest -q tests/test_api.py -k morning_email_preview
+cd backend && uv run ruff check src tests --fix && uv run mypy src
+```
+
+Result: the preview route test passed, including HTML assertions for `今日大盘`, `大盘温度`, `推荐股票（需复核）`, `推荐股票 #1`, `板块资金主线`, and `开盘检查清单`; Ruff and mypy passed across 23 backend source files.
+
+Production sender compatibility: the live legacy renderer at `/opt/stock-ts/src/stock_ts/notification.py` was backed up as `notification.py.bak.20260729-layout-v1`, then replaced with a visual renderer that parses the existing morning report sections into a hero, summary metric cards, recommended-stock cards, holdings-risk cards, and an opening-checklist timeline. The production script compiles successfully, generated HTML contains the new visual markers, and a dry-run dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)` without sending real email.

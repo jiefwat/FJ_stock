@@ -69,6 +69,14 @@ def _html_list(items: list[str]) -> str:
     return "".join(f"<li>{escape(item)}</li>" for item in items)
 
 
+def _button(url: str, label: str) -> str:
+    return (
+        f'<a href="{escape(url)}" style="display:inline-block;margin-top:10px;padding:9px 12px;'
+        'border-radius:999px;background:#17332c;color:#fff;text-decoration:none;font-size:12px;'
+        f'font-weight:700;">{escape(label)}</a>'
+    )
+
+
 def _top_market_factors(market: MarketPayload) -> list[str]:
     available = [factor for factor in market.analysis.factors if factor.available]
     available.sort(key=lambda factor: factor.weight, reverse=True)
@@ -83,6 +91,26 @@ def _sector_lines(intelligence: MarketIntelligenceResult) -> list[str]:
         f"{item.name} {_pct(item.change_pct)}，资金 {_amount_yi(item.net_flow)}"
         for item in intelligence.sector_flows[:5]
     ]
+
+
+def _sector_cards_html(intelligence: MarketIntelligenceResult, base_url: str) -> str:
+    if not intelligence.sector_flows:
+        return '<p style="margin:0;color:#6f7c76;font-size:13px;">暂无资金主线。</p>'
+    cells = []
+    for item in intelligence.sector_flows[:4]:
+        url = _link(base_url, "market", {"sector": item.code})
+        cells.append(
+            '<td style="width:50%;padding:5px;vertical-align:top;">'
+            '<div style="background:#fff;border:1px solid #dfe4dc;border-radius:14px;'
+            'padding:14px 15px;">'
+            f'<div style="font-size:13px;font-weight:800;color:#17332c;">{escape(item.name)}</div>'
+            f'<div style="margin-top:7px;font-size:22px;font-weight:800;color:#1f7a4c;">{escape(_pct(item.change_pct))}</div>'
+            f'<div style="margin-top:4px;color:#6f7c76;font-size:12px;">资金 {_amount_yi(item.net_flow)}</div>'
+            f'{_button(url, "查看板块")}'
+            "</div></td>"
+        )
+    rows = ["<tr>" + "".join(cells[index : index + 2]) + "</tr>" for index in range(0, len(cells), 2)]
+    return '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 -5px;">' + "".join(rows) + "</table>"
 
 
 def _anomaly_lines(intelligence: MarketIntelligenceResult) -> list[str]:
@@ -116,6 +144,38 @@ def _candidate_lines(opportunities: OpportunityResult, base_url: str) -> list[st
     return lines
 
 
+def _candidate_cards_html(opportunities: OpportunityResult, base_url: str) -> str:
+    if not opportunities.available:
+        reason = opportunities.unavailable_reason or "当前候选池不可用，先看市场证据。"
+        return f'<p style="margin:0;color:#6f7c76;font-size:13px;">{escape(reason)}</p>'
+    if not opportunities.candidates:
+        return '<p style="margin:0;color:#6f7c76;font-size:13px;">暂无推荐股票；今天不为凑数降低标准。</p>'
+    cards = []
+    for index, candidate in enumerate(opportunities.candidates[:3], start=1):
+        quote = candidate.quote
+        url = _link(base_url, "stocks", {"symbol": quote.symbol})
+        reasons = "；".join(candidate.thesis.split("；")[:2]) if candidate.thesis else "打开个股页复核证据链"
+        risk = "；".join(candidate.risk_flags[:2]) if candidate.risk_flags else "等待开盘承接确认"
+        cards.append(
+            '<article style="background:#fffaf2;border:1px solid #ead7b5;border-radius:16px;'
+            'padding:16px;margin:10px 0;">'
+            f'<div style="color:#b5522d;font-size:11px;font-weight:800;letter-spacing:.08em;">推荐股票 #{index}</div>'
+            f'<h3 style="margin:6px 0 4px;font-size:20px;line-height:1.25;color:#17332c;">{escape(quote.name)} '
+            f'<span style="font-size:12px;color:#6f7c76;">{escape(quote.symbol)}</span></h3>'
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">'
+            f'<span style="padding:5px 8px;border-radius:999px;background:#17332c;color:#fff;font-size:12px;">评分 {_fmt(candidate.score, 0)}</span>'
+            f'<span style="padding:5px 8px;border-radius:999px;background:#edf5ee;color:#1f7a4c;font-size:12px;">涨跌 {_pct(quote.change_pct)}</span>'
+            f'<span style="padding:5px 8px;border-radius:999px;background:#f2f4ef;color:#51605a;font-size:12px;">成交 {_amount_yi(quote.amount)}</span>'
+            "</div>"
+            f'<p style="margin:0;color:#33443e;font-size:13px;line-height:1.7;"><b>推荐理由：</b>{escape(reasons)}</p>'
+            f'<p style="margin:6px 0 0;color:#8a4a27;font-size:13px;line-height:1.7;"><b>先看风险：</b>{escape(risk)}</p>'
+            '<p style="margin:6px 0 0;color:#6f7c76;font-size:12px;line-height:1.7;">确认项：强于大盘、板块延续、回踩不破。</p>'
+            f'{_button(url, "打开个股页复核")}'
+            "</article>"
+        )
+    return "".join(cards)
+
+
 def _holding_lines(holdings: list[HoldingDossier], base_url: str) -> list[str]:
     if not holdings:
         return ["暂无持仓记录；如有实盘持仓，建议先补齐成本、仓位与失效条件。"]
@@ -137,6 +197,46 @@ def _holding_lines(holdings: list[HoldingDossier], base_url: str) -> list[str]:
             f"盈亏 {_pct(item.pnl_pct)}，动作 {item.action}，关注 {risks}。{url}"
         )
     return lines
+
+
+def _market_score_color(score: float) -> str:
+    if score >= 70:
+        return "#1f7a4c"
+    if score >= 50:
+        return "#b28a45"
+    return "#b5522d"
+
+
+def _metric_cards_html(
+    *,
+    market: MarketPayload,
+    regime_label: str,
+    risk_budget: int,
+) -> str:
+    score_color = _market_score_color(market.analysis.score)
+    cards = [
+        ("大盘温度", f"{_fmt(market.analysis.score, 0)}/100", regime_label, score_color),
+        ("上涨 / 下跌", f"{market.analysis.advancing}/{market.analysis.declining}", "市场广度", "#17332c"),
+        ("风险预算", f"{risk_budget}%", "今日上限", "#b5522d"),
+        ("数据覆盖", _pct(market.snapshot.meta.coverage * 100), market.snapshot.meta.freshness.value, "#17332c"),
+    ]
+    cells = []
+    for label, value, note, color in cards:
+        cells.append(
+            '<td style="width:25%;padding:5px;vertical-align:top;">'
+            '<div style="background:#fff;border:1px solid #dfe4dc;border-radius:14px;'
+            'padding:15px 16px;">'
+            f'<div style="font-size:11px;color:#6f7c76;font-weight:700;">{escape(label)}</div>'
+            f'<div style="margin-top:6px;color:{color};font-size:25px;font-weight:850;line-height:1;">{escape(value)}</div>'
+            f'<div style="margin-top:6px;color:#87918c;font-size:11px;">{escape(note)}</div>'
+            "</div></td>"
+        )
+    return (
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="border-collapse:collapse;margin:14px -5px;"><tr>'
+        + "".join(cells)
+        + "</tr></table>"
+    )
 
 
 def _watchlist_lines(watchlist: list[WatchlistItem], base_url: str) -> list[str]:
@@ -243,7 +343,7 @@ def build_morning_email_brief(
             "二、关键证据\n" + _li(factor_lines),
             "三、资金主线\n" + _li(sector_lines),
             "四、事件与异动\n" + _li([*event_lines, *anomaly_lines[:2]]),
-            "五、今日候选复核\n" + _li(candidate_lines),
+            "五、推荐股票（需复核）\n" + _li(candidate_lines),
             "六、持仓和跟踪池\n" + _li([*holding_lines, *watchlist_lines]),
             "七、开盘检查清单\n" + _li(checklist_lines),
             "八、今日禁止动作\n" + _li(forbidden_lines),
@@ -252,24 +352,26 @@ def build_morning_email_brief(
         ]
     )
     html = f"""<!doctype html>
-<html lang="zh-CN"><body style="margin:0;background:#f2f4ef;color:#17332c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<html lang="zh-CN"><body style="margin:0;background:#efe9dd;color:#17332c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="display:none;max-height:0;overflow:hidden;">{escape(preheader)}</div>
   <main style="max-width:760px;margin:0 auto;padding:24px;">
-    <section style="background:#17332c;color:#fff;padding:26px 28px;border-radius:18px;">
+    <section style="background:linear-gradient(135deg,#17332c,#274c41);color:#fff;padding:28px;border-radius:22px;box-shadow:0 18px 45px rgba(23,51,44,.18);">
       <p style="margin:0 0 8px;color:#f0a77f;font-size:12px;letter-spacing:.12em;">MARKET DESK MORNING BRIEF</p>
-      <h1 style="margin:0;font-size:28px;line-height:1.25;">{escape(regime_label)} · {_fmt(market.analysis.score, 0)}/100</h1>
+      <h1 style="margin:0;font-size:30px;line-height:1.25;">今日大盘：{escape(regime_label)} · {_fmt(market.analysis.score, 0)}/100</h1>
       <p style="margin:12px 0 0;color:#d4ddd6;line-height:1.7;">{escape(preheader)}</p>
     </section>
-    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;">
-      <article style="background:#fff;padding:16px;border:1px solid #dfe4dc;"><small>风险预算</small><strong style="display:block;font-size:24px;">{risk_budget}%</strong></article>
-      <article style="background:#fff;padding:16px;border:1px solid #dfe4dc;"><small>上涨 / 下跌</small><strong style="display:block;font-size:24px;">{market.analysis.advancing}/{market.analysis.declining}</strong></article>
-      <article style="background:#fff;padding:16px;border:1px solid #dfe4dc;"><small>数据覆盖</small><strong style="display:block;font-size:24px;">{_pct(market.snapshot.meta.coverage * 100)}</strong></article>
+    { _metric_cards_html(market=market, regime_label=regime_label, risk_budget=risk_budget) }
+    { _section_html("大盘情况", summary_lines) }
+    <section style="background:#fff;border:1px solid #dfe4dc;border-radius:18px;padding:18px 20px;margin:14px 0;">
+      <h2 style="margin:0 0 12px;font-size:17px;color:#17332c;">推荐股票（需复核）</h2>
+      {_candidate_cards_html(opportunities, base_url)}
     </section>
-    { _section_html("开盘前结论", summary_lines) }
+    <section style="background:#f8faf5;border:1px solid #dfe4dc;border-radius:18px;padding:18px 20px;margin:14px 0;">
+      <h2 style="margin:0 0 12px;font-size:17px;color:#17332c;">板块资金主线</h2>
+      {_sector_cards_html(intelligence, base_url)}
+    </section>
     { _section_html("关键证据", factor_lines) }
-    { _section_html("资金主线", sector_lines) }
     { _section_html("事件与异动", [*event_lines, *anomaly_lines[:2]]) }
-    { _section_html("今日候选复核", candidate_lines) }
     { _section_html("持仓和跟踪池", [*holding_lines, *watchlist_lines]) }
     { _section_html("开盘检查清单", checklist_lines) }
     { _section_html("今日禁止动作", forbidden_lines) }
