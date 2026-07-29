@@ -1225,3 +1225,35 @@ Full gate and public deployment after the Market handoff route upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS/CSS assets contained `先看交易计划`, `先看证据总账`, `先看 FINAL GATE`, `先补公告研报`, `先看风控条件`, `stock-investment-advice`, `stock-evidence-audit`, `stock-risk-controls`, and `board-lead-route` |
+
+## 2026-07-29 Ask Stock Post-Answer Review Route
+
+Ask Stock answers now include a `REVIEW ROUTE` panel immediately after the decision gate. For single-stock answers it gives a four-step path: reopen `FINAL GATE`, inspect the evidence ledger, jump to the Stock Lab section selected by the gate, and continue with a concrete next question. The panel preserves the established Ask/Stock Lab anchors so the chat answer remains connected to deterministic evidence instead of becoming a dead-end conversation.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock passed 13 focused tests and frontend typecheck passed. The assertions verify that `问后复核路线`, `Stock Lab 第一站`, and `下一句追问` render for stock answers, and that the route link targets `#stock-investment-advice` when `FINAL GATE` and `LEDGER GATE` permit a trading-plan review.
+
+Full gate and public deployment after the Ask Stock review-route upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-134729-05dd4e9` |
+| Commit | `05dd4e9` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `问后复核路线`, `REVIEW ROUTE`, `Stock Lab 第一站`, `下一句追问`, `如果风险触发，我应该怎么处理仓位`, `ask-review-route`, `stock-evidence-audit`, and `stock-investment-advice` |
