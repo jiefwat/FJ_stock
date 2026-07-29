@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
@@ -21,6 +21,7 @@ const regimeCopy: Record<string, { label: string; action: string }> = {
 
 export function MarketPage() {
   const [showAllSectors, setShowAllSectors] = useState(false);
+  const dossierRef = useRef<HTMLElement | null>(null);
   const [params, setParams] = useSearchParams();
   const selectedSector = params.get("sector");
   const selectedTheme = params.get("theme");
@@ -44,6 +45,19 @@ export function MarketPage() {
     enabled: Boolean(selectedTheme),
   });
   const openSector = (code: string) => setParams({ sector: code });
+  const activeDossierKey = selectedTheme ? `theme:${selectedTheme}:${selectedThemeName}` : selectedSector ? `sector:${selectedSector}` : null;
+  const activeDossierReady = selectedTheme ? Boolean(themeQuery.data) : selectedSector ? Boolean(sectorQuery.data) : false;
+
+  useEffect(() => {
+    if (!activeDossierKey || !activeDossierReady) return;
+    const timer = window.setTimeout(() => {
+      if (typeof dossierRef.current?.scrollIntoView === "function") {
+        dossierRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeDossierKey, activeDossierReady]);
+
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
     <header className="page-head"><div><p className="eyebrow">MARKET / 全市场体检</p><h1>市场不是一个点数，<br /><em>而是一组证据。</em></h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
     <MarketCommandCenter market={query.data} intelligence={intelligenceQuery.data} events={eventsQuery.data} onOpenSector={openSector} />
@@ -58,8 +72,8 @@ export function MarketPage() {
       </AsyncState>
     </section>
     <section className="panel"><div className="panel-title"><span>板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
-    {selectedSector && <DossierPanel key={`sector-${selectedSector}`} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={() => setParams({})} />}
-    {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={() => setParams({})} />}
+    {selectedSector && <DossierPanel key={`sector-${selectedSector}`} containerRef={dossierRef} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={() => setParams({})} />}
+    {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} containerRef={dossierRef} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={() => setParams({})} />}
   </>}</AsyncState>;
 }
 
@@ -268,12 +282,12 @@ function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string
   </section>;
 }
 
-function DossierPanel({ data, loading, error, variant, onClose }: { data?: SectorDossier; loading: boolean; error: Error | null; variant: "sector" | "theme"; onClose: () => void }) {
+function DossierPanel({ data, loading, error, variant, onClose, containerRef }: { data?: SectorDossier; loading: boolean; error: Error | null; variant: "sector" | "theme"; onClose: () => void; containerRef?: RefObject<HTMLElement | null> }) {
   const [sort, setSort] = useState<DetailSort>("net_flow");
   const [filter, setFilter] = useState<DetailFilter>("all");
   const rows = data ? sortedRows(data.constituents, sort, filter) : [];
   const suffix = variant === "theme" ? "题材" : "板块";
-  return <section className="panel sector-detail">
+  return <section ref={containerRef} className="panel sector-detail">
     <AsyncState loading={loading} error={error}>{data && <>
       <div className="sector-detail-head"><div><span>{variant === "theme" ? "THEME DOSSIER" : "SECTOR DOSSIER"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
       <SectorReviewDesk data={data} suffix={suffix} />

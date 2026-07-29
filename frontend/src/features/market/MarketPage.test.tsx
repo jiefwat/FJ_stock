@@ -221,6 +221,21 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
   expect(within(detail as HTMLElement).getAllByText("缺口：板块资金流").length).toBeGreaterThan(0);
 });
 
+it("scrolls directly to the selected theme dossier when landing from deep links", async () => {
+  const scrollIntoView = vi.fn();
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = scrollIntoView;
+
+  try {
+    renderPage("/market?theme=BK0896&themeName=酿酒概念&themeChange=1.8");
+
+    await screen.findByText("酿酒概念题材简析");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" }));
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
 it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {
   renderPage();
 
