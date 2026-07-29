@@ -5,11 +5,18 @@ import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
-import { api, fmt, pct, percent, type MarketEventResult, type TodayData } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, percent, type HoldingDossier, type MarketEventResult, type TodayData } from "../../lib/api";
 import { loadRecentResearch, type RecentResearch } from "../../lib/recentResearch";
 
 const regimeLabel: Record<string, string> = { risk_off: "防守", cautious: "谨慎", balanced: "均衡", risk_on: "积极" };
 const actionRoutes = ["/market", "/market", "/opportunities"];
+const holdingActionLabel: Record<string, string> = {
+  hold: "持有观察",
+  trim: "需要减仓",
+  add_watch: "可加仓复核",
+  review: "补齐数据",
+  exit_watch: "退出复核",
+};
 
 function openingGate(data: TodayData) {
   const breadthTotal = Math.max(1, data.analysis.advancing + data.analysis.declining + data.analysis.unchanged);
@@ -115,10 +122,48 @@ function ContinueResearch({ items }: { items: RecentResearch[] }) {
   </section>;
 }
 
+function holdingRiskScore(item: HoldingDossier) {
+  const actionScore = item.action === "exit_watch" ? 5 : item.action === "trim" ? 4 : item.action === "review" ? 3 : item.action === "add_watch" ? 2 : 1;
+  const driftScore = Math.abs(item.drift ?? 0) * 5;
+  const lossScore = Math.max(0, -(item.pnl_pct ?? 0)) / 5;
+  return actionScore + driftScore + lossScore + item.risk_flags.length;
+}
+
+function HoldingRiskSentinel({ items }: { items: HoldingDossier[] }) {
+  if (!items.length) return null;
+  const ranked = [...items].sort((left, right) => holdingRiskScore(right) - holdingRiskScore(left));
+  const leader = ranked[0];
+  const riskyCount = items.filter((item) => item.action !== "hold" || item.risk_flags.length > 0 || Math.abs(item.drift ?? 0) > 0.08).length;
+  const totalValue = items.reduce((sum, item) => sum + (item.market_value ?? 0), 0);
+  const totalPnl = items.reduce((sum, item) => sum + (item.pnl ?? 0), 0);
+
+  return <section className={`holding-sentinel ${leader.action}`} aria-label="持仓风险哨兵">
+    <article>
+      <span>PORTFOLIO WATCH</span>
+      <strong>{leader.item.name}</strong>
+      <p>{leader.risk_flags[0] ?? leader.next_actions[0] ?? leader.conclusion}</p>
+      <small>{holdingActionLabel[leader.action] ?? leader.action} · 组合需复核 {riskyCount} 笔</small>
+    </article>
+    <div className="holding-sentinel-metrics">
+      <div><span>组合市值</span><strong>{fmt(totalValue, 0)}</strong></div>
+      <div><span>浮动盈亏</span><strong className={totalPnl >= 0 ? "up" : "down"}>{fmt(totalPnl, 0)}</strong></div>
+      <div><span>最高风险</span><strong>{pct(leader.pnl_pct)}</strong><small>{leader.item.symbol}</small></div>
+    </div>
+    <nav>
+      <Link to="/holdings">处理持仓</Link>
+      <Link to={`/stocks?symbol=${encodeURIComponent(leader.item.symbol)}#stock-final-gate`}>个股复核</Link>
+      <Link to={`/ask?symbol=${encodeURIComponent(leader.item.symbol)}&name=${encodeURIComponent(leader.item.name)}&from=today&question=${encodeURIComponent(`我的${leader.item.name}持仓风险怎么处理`)}`}>问持仓</Link>
+    </nav>
+  </section>;
+}
+
 export function TodayPage() {
   const [recentResearch, setRecentResearch] = useState<RecentResearch[]>(() => loadRecentResearch());
+  const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
   const query = useQuery({ queryKey: ["today"], queryFn: () => api<TodayData>("/api/v1/today") });
   const eventsQuery = useQuery({ queryKey: ["market-events", "today"], queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=8") });
+  const holdingsQuery = useQuery({ queryKey: ["holdings", "today-sentinel", authScope], queryFn: () => api<HoldingDossier[]>("/api/v1/holdings"), retry: false });
+  const holdings = Array.isArray(holdingsQuery.data) ? holdingsQuery.data : [];
   useEffect(() => {
     setRecentResearch(loadRecentResearch());
   }, []);
@@ -136,6 +181,7 @@ export function TodayPage() {
     </section>
     <p className="risk-caption">风险控制参考用于研究分层，不是仓位或交易建议。机会分会根据当前市场环境自动扣减。</p>
     <OpeningDesk data={query.data} events={eventsQuery.data} />
+    <HoldingRiskSentinel items={holdings} />
     <ContinueResearch items={recentResearch} />
     <section className="market-evidence-strip"><div><span>为什么是这个市场状态</span><small>已按可用数据重新分配权重</small></div>{query.data.analysis.factors.filter((factor) => factor.available).slice(0, 3).map((factor) => <article key={factor.key}><span>{factor.label}</span><strong>{fmt(factor.score, 0)}</strong><small>{factor.evidence}</small></article>)}</section>
     <section className="panel today-events reveal delay-2">

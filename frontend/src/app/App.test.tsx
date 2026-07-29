@@ -20,6 +20,31 @@ const events = {
   events: [{ id: "e1", title: "两家央企宣布增持", summary: "央企继续增持股票资产。", source: "东方财富快讯", url: "https://finance.eastmoney.com/a/e1.html", published_at: "2026-07-19T13:30:00Z", related_symbols: [], related_sectors: ["央企改革"], category: "policy_support", sentiment: "positive", importance_score: 86, tags: ["央企改革"], impact: "稳定风险偏好。", action: "检查央企改革板块。" }],
 };
 
+const holdingRisk = {
+  item: { id: 1, symbol: "SH.600519", name: "贵州茅台", quantity: 100, cost_price: 1400, target_weight: 0.4, thesis: "现金流稳定", invalidation: "跌破成本", status: "holding", created_at: "2026-07-18T09:00:00Z", updated_at: "2026-07-19T09:00:00Z" },
+  quote: { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 1, turnover_rate: 1, volume_ratio: null, pe: 23, pb: 7, market_cap: 1, net_flow: 80000000, sector: "白酒" },
+  market_value: 150000,
+  cost_value: 140000,
+  pnl: 10000,
+  pnl_pct: 7.14,
+  day_pnl: 1780,
+  day_pnl_pct: 1.2,
+  five_day_pnl: -3200,
+  five_day_pnl_pct: -2.09,
+  portfolio_weight: 1,
+  drift: 0.6,
+  target_market_value: 60000,
+  rebalance_value: -90000,
+  rebalance_quantity: -60,
+  break_even_price: 1400,
+  price_gap_to_cost_pct: 7.14,
+  analysis_dimensions: [],
+  action: "trim",
+  conclusion: "建议动作：减仓。仓位明显高于目标，先降回目标仓位。",
+  risk_flags: ["组合占比高于目标"],
+  next_actions: ["复核是否需要降仓"],
+};
+
 beforeEach(() => {
   window.location.hash = "";
   const storage = new Map<string, string>();
@@ -293,6 +318,37 @@ it("surfaces recent research on the Today desk", async () => {
   expect(continueDesk.getByRole("link", { name: "问风险" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E7%8E%B0%E5%9C%A8%E4%B8%BB%E8%A6%81%E9%A3%8E%E9%99%A9%E6%98%AF%E4%BB%80%E4%B9%88");
   expect(continueDesk.getByRole("link", { name: "问异动" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%9C%80%E8%BF%91%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%80%8E%E4%B9%88%E5%A4%A7%E8%B7%8C");
   expect(continueDesk.getByRole("link", { name: "问基本面" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E5%9F%BA%E6%9C%AC%E9%9D%A2%E6%80%8E%E4%B9%88%E6%A0%B7");
+});
+
+it("shows a holdings risk sentinel on Today when positions need action", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-holding-risk");
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 13, email: "risk@example.com", display_name: "Risk User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    if (url.includes("/api/v1/holdings")) {
+      return { ok: true, status: 200, json: async () => [holdingRisk] };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+
+  const sentinel = within(await screen.findByLabelText("持仓风险哨兵"));
+  expect(sentinel.getByText("PORTFOLIO WATCH")).toBeInTheDocument();
+  expect(sentinel.getByText("贵州茅台")).toBeInTheDocument();
+  expect(sentinel.getByText("组合占比高于目标")).toBeInTheDocument();
+  expect(sentinel.getByText(/需要减仓 · 组合需复核 1 笔/)).toBeInTheDocument();
+  expect(sentinel.getByText("150,000")).toBeInTheDocument();
+  expect(sentinel.getByText("10,000")).toBeInTheDocument();
+  expect(sentinel.getByText("+7.14%")).toBeInTheDocument();
+  expect(sentinel.getByRole("link", { name: "处理持仓" })).toHaveAttribute("href", "#/holdings");
+  expect(sentinel.getByRole("link", { name: "个股复核" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519#stock-final-gate");
+  expect(sentinel.getByRole("link", { name: "问持仓" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%88%91%E7%9A%84%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%8C%81%E4%BB%93%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86");
 });
 
 it("keeps the Ask Stock route behind the authenticated shell", async () => {

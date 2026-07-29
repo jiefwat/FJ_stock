@@ -1534,3 +1534,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: App shell tests passed, 9 tests; frontend typecheck passed. Coverage asserts the Today continue-research region, FINAL GATE deep link, and risk/movement/fundamental Ask Stock handoff URLs.
+
+## 2026-07-29 Today Holding Risk Sentinel
+
+Today now reads account-scoped `/api/v1/holdings` and places a `PORTFOLIO WATCH` sentinel directly below the opening desk when positions need attention. The sentinel ranks holdings by action severity, weight drift, losses, and risk flags; shows portfolio value, floating PnL, and the leading risk; then offers direct routes to holdings handling, Stock Lab `FINAL GATE`, and Ask Stock portfolio diagnosis. The query key includes the authenticated token scope so switching accounts cannot reuse another account's holding sentinel cache.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/app/App.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: App shell tests passed, 10 tests; frontend typecheck passed. Coverage asserts sentinel rendering, leading holding/risk flag/action copy, metrics, holdings route, Stock Lab deep link, Ask Stock holding-risk handoff URL, and account-scoped holdings cache behavior.
