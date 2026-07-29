@@ -1393,3 +1393,17 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Opportunity page passed 2 focused tests and frontend typecheck passed. The assertions verify collapsed rows start with `aria-expanded=false`, detail content and the review link are absent until a stock is clicked, and layer-filter changes keep the list compact before opening the selected stock.
+
+## 2026-07-29 Ask Stock Conclusion-first Answers
+
+Ask Stock now treats the chat answer as the product surface instead of replaying Stock Lab first. Stock-analysis responses start with a direct `结论：...` sentence from the deterministic answer builder, while FINAL GATE, LEDGER GATE, key metrics, review route, and scoring factors move behind an explicit `展开个股分析证据和复核路线` control. The visible default answer keeps only the conclusion, concise evidence, risks, next actions, and optional holding context.
+
+Focused checks:
+
+```text
+pytest -q backend/tests/test_ask_stock.py backend/tests/test_api.py -k 'ask_stock'
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock backend/API passed 25 focused tests, the Ask Stock page passed 13 focused tests, and frontend typecheck passed. The assertions verify stock answers no longer start with `FINAL GATE：`, default chat results hide the Stock Lab gate package, and clicking `展开个股分析证据和复核路线` reveals the detailed metrics and review route when needed.

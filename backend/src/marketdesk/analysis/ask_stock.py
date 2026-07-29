@@ -154,15 +154,21 @@ def build_stock_answer(
 
     if intent == "risk":
         evidence = _unique([*dossier.bear_case, *dossier.invalidation, *dossier.missing_evidence])
-        answer = _lead(quote.name, "当前主要风险", dossier.bear_case, "风险证据不足")
+        risk = dossier.bear_case[0] if dossier.bear_case else "风险证据不足"
+        stop = dossier.invalidation[0] if dossier.invalidation else dossier.investment_advice.stop_loss
+        answer = (
+            f"结论：{quote.name}现在先按“{dossier.investment_advice.action}”处理，"
+            f"不要因为单一指标直接加仓。主要风险是{risk}；如果{stop}，就降级观察。"
+        )
     elif intent == "trend":
         evidence = _unique(
             [dossier.trend_forecast.summary, *dossier.trend_forecast.drivers]
             + [factor.evidence for factor in dossier.score_factors if factor.available]
         )
         answer = (
-            f"{quote.name}的{dossier.trend_forecast.horizon}趋势判断为"
-            f"{dossier.trend_forecast.direction}：{dossier.trend_forecast.summary}"
+            f"结论：{quote.name}的{dossier.trend_forecast.horizon}趋势是"
+            f"{dossier.trend_forecast.direction}，但操作上先按“{dossier.investment_advice.action}”。"
+            f"{dossier.trend_forecast.summary}"
         )
     elif intent == "valuation":
         valuation = next(
@@ -176,10 +182,11 @@ def build_stock_answer(
         evidence = _unique(
             ([valuation.summary, *valuation.evidence] if valuation else []) + comparisons
         )
+        verdict = _valuation_verdict(quote)
         answer = (
-            f"{quote.name}的估值判断：{valuation.summary}"
+            f"结论：{quote.name}估值{verdict}。{valuation.summary}"
             if valuation
-            else f"{quote.name}当前缺少足够的估值比较证据。"
+            else f"结论：{quote.name}当前缺少足够的估值比较证据，不能只凭 PE/PB 判断贵不贵。"
         )
     elif intent == "action":
         advice = dossier.investment_advice
@@ -187,7 +194,7 @@ def build_stock_answer(
             [*advice.rationale, advice.entry_plan, advice.stop_loss, advice.take_profit]
         )
         answer = (
-            f"{quote.name}当前建议为{advice.action}。{advice.position_hint}；"
+            f"结论：{quote.name}当前建议为“{advice.action}”。{advice.position_hint}；"
             f"入场纪律：{advice.entry_plan}；止损纪律：{advice.stop_loss}。"
         )
     else:
@@ -195,9 +202,9 @@ def build_stock_answer(
             [*dossier.bull_case, *dossier.bear_case]
             + [factor.evidence for factor in dossier.score_factors if factor.available]
         )
-        answer = dossier.conclusion
+        final_gate, _ = _final_gate(dossier)
+        answer = f"结论：{final_gate}。{dossier.conclusion}"
 
-    answer = _with_gate_summary(answer, dossier)
     holding_context = _holding_context(holding)
     if holding is not None:
         answer = _with_holding_summary(answer, holding)
@@ -533,6 +540,20 @@ def _gate_detail(dossier: StockDossier) -> str:
 
 def _with_gate_summary(answer: str, dossier: StockDossier) -> str:
     return f"{_gate_detail(dossier)}{answer}"
+
+
+def _valuation_verdict(quote: EquityQuote) -> str:
+    pe = quote.pe
+    pb = quote.pb
+    if pe is None and pb is None:
+        return "证据不足"
+    if (pe is not None and pe <= 15) or (pb is not None and pb <= 1.5):
+        return "不贵，但还要看盈利质量和行业风险"
+    if (pe is not None and pe > 50) or (pb is not None and pb > 8):
+        return "偏贵，除非增长或资产质量能继续兑现"
+    if (pe is not None and pe <= 30) and (pb is None or pb <= 5):
+        return "不算贵，但不是单凭便宜就能参与"
+    return "偏中性，贵不贵要放到同行和自身历史区间里看"
 
 
 def _money(value: float | None) -> str:

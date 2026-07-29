@@ -84,6 +84,10 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(screen.getAllByText("等待下一交易日确认").length).toBeGreaterThan(0);
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
+  expect(screen.getByText("结论")).toBeInTheDocument();
+  expect(screen.queryByLabelText("问股决策闸口")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("回答关键指标")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("展开个股分析证据和复核路线"));
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("综合分62");
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("证据覆盖80%");
   const gate = screen.getByLabelText("问股决策闸口");
@@ -336,6 +340,7 @@ it("renders personal holding context when the answer includes account data", asy
 
   expect(await screen.findByLabelText("个人持仓上下文")).toHaveTextContent("数量 10 股");
   expect(screen.getByLabelText("个人持仓上下文")).toHaveTextContent("盈亏 +7.14%");
+  fireEvent.click(screen.getByText("展开个股分析证据和复核路线"));
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("持仓盈亏+7.14%");
 });
 

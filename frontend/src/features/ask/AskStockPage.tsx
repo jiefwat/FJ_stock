@@ -586,6 +586,8 @@ function AskRowsTable({ result }: { result: AskStockResponse }) {
 }
 
 function AskResult({ result }: { result: AskStockResponse }) {
+  const stockAnalysis = result.kind === "stock_analysis";
+  const [supportOpen, setSupportOpen] = useState(false);
   return <section className="ask-result" aria-live="polite">
     <header className="ask-result-head">
       <div>
@@ -599,21 +601,31 @@ function AskResult({ result }: { result: AskStockResponse }) {
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
       </div>
     </header>
-    <AskMetrics result={result} />
-    <HoldingContext result={result} />
-    <AskGateBrief result={result} />
-    <AskReviewRoute result={result} />
     <article className="ask-answer">
-      <span>回答</span>
+      <span>结论</span>
       <p>{result.answer}</p>
     </article>
+    <HoldingContext result={result} />
     <AskRowsTable result={result} />
-    <AskFactors result={result} />
     <div className="ask-evidence-grid">
       <EvidenceList title="判断依据" items={result.evidence} tone="evidence" />
       <EvidenceList title="主要风险" items={result.risks} tone="risk" />
       <EvidenceList title="下一步" items={result.next_actions} tone="action" />
     </div>
+    {stockAnalysis ? <section className="ask-support-package">
+      <button className="ask-support-toggle" type="button" aria-expanded={supportOpen} onClick={() => setSupportOpen((open) => !open)}>
+        {supportOpen ? "收起个股分析证据和复核路线" : "展开个股分析证据和复核路线"}
+      </button>
+      {supportOpen && <>
+        <AskMetrics result={result} />
+        <AskGateBrief result={result} />
+        <AskReviewRoute result={result} />
+        <AskFactors result={result} />
+      </>}
+    </section> : <>
+      <AskMetrics result={result} />
+      <AskFactors result={result} />
+    </>}
     <p className="ask-disclaimer"><ShieldAlert size={14} />{result.disclaimer}</p>
   </section>;
 }
