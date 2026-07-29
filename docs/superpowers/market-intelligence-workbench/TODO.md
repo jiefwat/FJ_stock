@@ -73,6 +73,7 @@
 - [x] Carry Opportunity source context into Stock Lab so lead review and final participation advice stay connected.
 - [x] Add opportunity lead pre-judgement badges so users can see likely review risk before opening Stock Lab.
 - [x] Move the top three Stock Lab advice reasons directly under the direct suggestion.
+- [x] Add a Stock Lab evidence-audit gate so support, risk, gaps, and next review route are visible before deep evidence.
 - [x] Add a Stock Lab opportunity-review outcome so leads explicitly upgrade, stay watch-only, or fail participation review.
 - [x] Add Opportunity lead-layer filtering so users can focus on priority, watch-only, or high-risk leads.
 - [x] Add an Opportunity queue gate so leads show review route, first dossier, and queue shortcuts before the candidate table.

@@ -145,7 +145,15 @@ it("shows the evidence ledger and edits the thesis before adding to watchlist", 
   expect(screen.getAllByText(/不是买卖指令/).length).toBeGreaterThan(0);
   expect(screen.getByText("波动风险")).toBeInTheDocument();
   expect(screen.getByText("语义研究增强")).toBeInTheDocument();
-  expect(screen.getByText(/近三十日有分红相关公告/)).toBeInTheDocument();
+  expect(screen.getAllByText(/近三十日有分红相关公告/).length).toBeGreaterThan(0);
+  const audit = within(await screen.findByLabelText("证据总账"));
+  expect(audit.getByText("LEDGER GATE")).toBeInTheDocument();
+  expect(audit.getByText("先补证据，不升级仓位")).toBeInTheDocument();
+  expect(audit.getByText(/覆盖 55% · 支持 2 · 反方 2 · 缺口 0/)).toBeInTheDocument();
+  expect(audit.getByText("支持证据")).toBeInTheDocument();
+  expect(audit.getByText("反方证据")).toBeInTheDocument();
+  expect(audit.getByText("证据缺口")).toBeInTheDocument();
+  expect(audit.getByText("下一步复核")).toBeInTheDocument();
   expect(screen.getByText("分析拆解")).toBeInTheDocument();
   expect(screen.getByText("趋势结构")).toBeInTheDocument();
   expect(screen.getAllByText("风险收益").length).toBeGreaterThan(0);
@@ -295,7 +303,9 @@ it("shows a future trend forecast before detailed evidence", async () => {
   expect(forecast.getByText(/趋势判断失效/)).toBeInTheDocument();
 
   const forecastSection = await screen.findByLabelText("未来趋势判断");
+  const auditSection = await screen.findByLabelText("证据总账");
   const evidenceLedger = await screen.findByText("证据账本");
+  expect(auditSection.compareDocumentPosition(forecastSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

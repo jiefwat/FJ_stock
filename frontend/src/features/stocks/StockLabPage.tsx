@@ -254,6 +254,77 @@ function OpportunityReviewOutcome({ advice }: { advice: InvestmentAdvice }) {
   </section>;
 }
 
+
+function factorCount(items: Array<{ signal: string; available?: boolean }>, signal: string) {
+  return items.filter((item) => item.signal === signal && item.available !== false).length;
+}
+
+function sourceGapCount(evidence?: InstrumentEvidenceResult) {
+  if (!evidence) return 0;
+  return Object.values(evidence.capabilities).filter((item) => item.status === "unavailable" || item.status === "partial").length;
+}
+
+function evidenceRoute(dossier: Dossier, evidence?: InstrumentEvidenceResult) {
+  const riskCount = factorCount(dossier.score_factors, "negative") + dossier.bear_case.length;
+  const supportCount = factorCount(dossier.score_factors, "positive") + dossier.bull_case.length;
+  const gapCount = dossier.missing_evidence.length + sourceGapCount(evidence);
+
+  if (dossier.evidence_coverage < 0.6 || gapCount >= 2) {
+    return { tone: "caution", text: "先补证据，不升级仓位", detail: "覆盖或外部来源仍有缺口，先确认公告、研报和板块温度。" };
+  }
+  if (riskCount > supportCount) {
+    return { tone: "negative", text: "反方证据占优，先守失效线", detail: "风险证据多于支持证据，复核重点放在止损和放弃条件。" };
+  }
+  return { tone: "positive", text: "证据够用，进入交易计划复核", detail: "支持证据占优，但最终仍要按入场、止损、止盈纪律执行。" };
+}
+
+function EvidenceAuditDesk({ dossier, evidence }: { dossier: Dossier; evidence?: InstrumentEvidenceResult }) {
+  const route = evidenceRoute(dossier, evidence);
+  const supportCount = factorCount(dossier.score_factors, "positive") + dossier.bull_case.length;
+  const riskCount = factorCount(dossier.score_factors, "negative") + dossier.bear_case.length;
+  const gapCount = dossier.missing_evidence.length + sourceGapCount(evidence);
+  const confirmers = [
+    firstOrFallback(dossier.bull_case, "价格、资金或基本面支撑仍待确认"),
+    firstOrFallback(dossier.research_evidence, "外部研究证据仍待补充"),
+  ];
+  const risks = [
+    firstOrFallback(dossier.bear_case, "暂未识别主要反方证据"),
+    firstOrFallback(dossier.invalidation, dossier.investment_advice.stop_loss),
+  ];
+  const gaps = dossier.missing_evidence.length > 0 ? dossier.missing_evidence : [gapCount > 0 ? "部分外部证据源未完全可用" : "暂无关键缺口，继续滚动复核"];
+
+  return <section className={`evidence-audit-desk ${route.tone}`} aria-label="证据总账">
+    <article className="audit-verdict">
+      <span>LEDGER GATE</span>
+      <strong>{route.text}</strong>
+      <p>{route.detail}</p>
+      <small>覆盖 {percent(dossier.evidence_coverage * 100)} · 支持 {supportCount} · 反方 {riskCount} · 缺口 {gapCount}</small>
+    </article>
+    <div className="audit-ledger-grid">
+      <article>
+        <span>支持证据</span>
+        <strong>{supportCount} 项</strong>
+        {confirmers.map((item) => <p key={item}>＋ {item}</p>)}
+      </article>
+      <article>
+        <span>反方证据</span>
+        <strong>{riskCount} 项</strong>
+        {risks.map((item) => <p key={item}>－ {item}</p>)}
+      </article>
+      <article>
+        <span>证据缺口</span>
+        <strong>{gapCount} 项</strong>
+        {gaps.slice(0, 2).map((item) => <p key={item}>… {item}</p>)}
+      </article>
+      <article>
+        <span>下一步复核</span>
+        <strong>{dossier.investment_advice.action}</strong>
+        {(dossier.next_actions.length ? dossier.next_actions : [dossier.investment_advice.entry_plan]).slice(0, 2).map((item) => <p key={item}>→ {item}</p>)}
+      </article>
+    </div>
+  </section>;
+}
+
 function TrendForecastPanel({ forecast }: { forecast: TrendForecast }) {
   return <section className="trend-forecast-panel" aria-label="未来趋势判断">
     <article className="trend-forecast-verdict">
@@ -477,6 +548,7 @@ export function StockLabPage() {
       </section>
       {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
       <StockDecisionDeck dossier={query.data} evidence={evidenceQuery.data} />
+      <EvidenceAuditDesk dossier={query.data} evidence={evidenceQuery.data} />
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
       <SignalValidationPanel validation={query.data.signal_validation} />

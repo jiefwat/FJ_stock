@@ -993,3 +993,16 @@ Public deployment smoke after the opportunity-queue upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS asset contained `QUEUE GATE`, `线索队列`, `今日处理路线`, `第一张复核单`, and `队列筛选优先线索` |
+
+## 2026-07-29 Stock Lab Evidence Audit Gate
+
+Stock Lab now adds a `LEDGER GATE` evidence-audit desk immediately after the final decision deck. The desk condenses support evidence, contrary evidence, evidence gaps, and next review actions into a deterministic route such as `先补证据，不升级仓位`, so a lead opened from Opportunities can be checked before reading every detailed section.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Stock Lab passed 11 focused tests and frontend typecheck passed. The new assertions verify `证据总账`, `LEDGER GATE`, the evidence-coverage route, support/risk/gap counts, and that the audit desk appears before forecast and deep ledger sections.
