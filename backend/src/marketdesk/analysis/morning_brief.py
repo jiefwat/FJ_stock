@@ -24,6 +24,12 @@ REGIME_LABELS = {
 }
 
 RISK_BUDGETS = {"risk_off": 25, "cautious": 40, "balanced": 60, "risk_on": 75}
+REGIME_GUARDS = {
+    "risk_off": "防守日：先保护本金，候选只做观察，不主动扩大风险。",
+    "cautious": "谨慎日：只有板块、量能、价格三项同时确认，才允许小仓位试探。",
+    "balanced": "均衡日：可以复核机会，但先看市场广度是否继续站在中性以上。",
+    "risk_on": "进攻日：仍按触发线执行，禁止脱离止损线追涨。",
+}
 
 
 def _fmt(value: float | None, digits: int = 2) -> str:
@@ -104,7 +110,8 @@ def _candidate_lines(opportunities: OpportunityResult, base_url: str) -> list[st
         url = _link(base_url, "stocks", {"symbol": candidate.quote.symbol})
         lines.append(
             f"{candidate.quote.name} {candidate.quote.symbol}: 分数 {_fmt(candidate.score, 0)}，"
-            f"涨跌 {_pct(candidate.quote.change_pct)}，{reasons}。{url}"
+            f"涨跌 {_pct(candidate.quote.change_pct)}，确认项：强于大盘、板块延续、回踩不破；"
+            f"先看 {reasons}。{url}"
         )
     return lines
 
@@ -140,6 +147,38 @@ def _watchlist_lines(watchlist: list[WatchlistItem], base_url: str) -> list[str]
         f"{item.name} {item.symbol}: {item.status}，失效条件：{item.invalidation}。{url}"
         for item in watchlist[:3]
     ]
+
+
+def _opening_checklist_lines(
+    *,
+    market: MarketPayload,
+    intelligence: MarketIntelligenceResult,
+    opportunities: OpportunityResult,
+) -> list[str]:
+    top_sector = intelligence.sector_flows[0].name if intelligence.sector_flows else "资金主线"
+    top_candidate = (
+        opportunities.candidates[0].quote.name
+        if opportunities.available and opportunities.candidates
+        else "首个候选"
+    )
+    return [
+        f"09:25 集合竞价：确认 {top_sector} 是否仍在资金榜前列，若转弱则候选全部降级观察。",
+        f"09:45 第一轮检查：上涨家数需不弱于开盘前判断，{top_candidate} 不能弱于所属板块。",
+        "10:30 第二轮检查：只保留放量承接且未跌破开盘价/关键均线的标的。",
+    ]
+
+
+def _forbidden_action_lines(regime: str, holdings: list[HoldingDossier]) -> list[str]:
+    lines = [
+        REGIME_GUARDS.get(regime, "先确认市场和个股证据，再考虑动作。"),
+        "不因邮件出现某只股票就直接交易，必须回到个股页复核证据链。",
+        "不在公告、数据或资金状态标记为缺口时加仓。",
+    ]
+    if holdings:
+        lines.insert(1, "持仓有风险提示时，先处理旧仓，不用新机会掩盖旧风险。")
+    else:
+        lines.insert(1, "没有持仓记录时，先补齐真实持仓/观察池，再谈仓位。")
+    return lines
 
 
 def build_morning_email_brief(
@@ -186,6 +225,12 @@ def build_morning_email_brief(
     candidate_lines = _candidate_lines(opportunities, base_url)
     holding_lines = _holding_lines(holdings, base_url)
     watchlist_lines = _watchlist_lines(watchlist, base_url)
+    checklist_lines = _opening_checklist_lines(
+        market=market,
+        intelligence=intelligence,
+        opportunities=opportunities,
+    )
+    forbidden_lines = _forbidden_action_lines(regime, holdings)
     action_lines = [
         f"先打开今日页确认市场温度：{_link(base_url, 'today')}",
         f"再打开大盘页钻取资金主线：{_link(base_url, 'market')}",
@@ -200,7 +245,9 @@ def build_morning_email_brief(
             "四、事件与异动\n" + _li([*event_lines, *anomaly_lines[:2]]),
             "五、今日候选复核\n" + _li(candidate_lines),
             "六、持仓和跟踪池\n" + _li([*holding_lines, *watchlist_lines]),
-            "七、下一步\n" + _li(action_lines),
+            "七、开盘检查清单\n" + _li(checklist_lines),
+            "八、今日禁止动作\n" + _li(forbidden_lines),
+            "九、下一步\n" + _li(action_lines),
             "提示：本邮件为研究辅助信息，不构成投资建议；外部情报只作展示，不改变确定性评分。",
         ]
     )
@@ -224,6 +271,8 @@ def build_morning_email_brief(
     { _section_html("事件与异动", [*event_lines, *anomaly_lines[:2]]) }
     { _section_html("今日候选复核", candidate_lines) }
     { _section_html("持仓和跟踪池", [*holding_lines, *watchlist_lines]) }
+    { _section_html("开盘检查清单", checklist_lines) }
+    { _section_html("今日禁止动作", forbidden_lines) }
     <section style="background:#fff8ee;border-left:4px solid #e65f32;padding:16px 18px;margin:14px 0;">
       <h2 style="margin:0 0 10px;font-size:16px;">下一步</h2>
       <ol style="margin:0;padding-left:20px;line-height:1.8;">{_html_list(action_lines)}</ol>

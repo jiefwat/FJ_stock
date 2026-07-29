@@ -872,3 +872,30 @@ Full gate after adding the morning brief preview:
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
 
 Production morning-email sender compatibility check: the existing `stock-ts-morning-email.timer` calls `/opt/stock-ts/scripts/send_user_morning_reports.py`. That legacy sender was backed up as `scripts/send_morning_report.py.bak.20260729-email-v2`, then its content template was reorganized into opening conclusion, holdings priority, market/opportunity review, event/data risk, prediction feedback, and three current app links. A dry-run dispatch for `2026-07-30T08:45:00+08:00` returned `OK user=1: sent to 1 receiver(s)` without sending real email.
+
+## 2026-07-29 Morning Brief Action Checklist Upgrade
+
+The morning brief was upgraded from a readable digest to an opening-playbook format. The preview now includes a 09:25 / 09:45 / 10:30 checklist and an explicit forbidden-action section. Candidate lines state that confirmation requires market-relative strength, sector continuation, and price support; the email remains a review trigger rather than a trade signal.
+
+Focused checks:
+
+```text
+cd backend && uv run pytest -q tests/test_api.py -k morning_email_preview
+cd backend && uv run ruff check src tests --fix && uv run mypy src
+```
+
+Result: the preview test passed and mypy passed across 23 source files.
+
+Production sender compatibility: the legacy `/opt/stock-ts/scripts/send_morning_report.py` sender was backed up as `send_morning_report.py.bak.20260729-email-v3`. It now converts unknown themes to `主题待确认`, appends an observation-only discipline note for unconfirmed themes, and adds an opening checklist section before the app links. The script compiles successfully with the production virtualenv.
+
+Full gate after the action-checklist upgrade:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 44 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |

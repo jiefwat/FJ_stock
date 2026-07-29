@@ -1234,11 +1234,17 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "四、事件与异动" in payload["text"]
     assert "五、今日候选复核" in payload["text"]
     assert "六、持仓和跟踪池" in payload["text"]
+    assert "七、开盘检查清单" in payload["text"]
+    assert "八、今日禁止动作" in payload["text"]
+    assert "09:25 集合竞价" in payload["text"]
+    assert "不因邮件出现某只股票就直接交易" in payload["text"]
+    assert "确认项：强于大盘、板块延续、回踩不破" in payload["text"]
     assert "贵州茅台 SH.600519" in payload["text"]
     assert "https://stock.example.com/#/stocks?symbol=SH.600519" in payload["text"]
     assert "不构成投资建议" in payload["text"]
     assert "<html" in payload["html"]
     assert "MARKET DESK MORNING BRIEF" in payload["html"]
+    assert "开盘检查清单" in payload["html"]
 
 
 def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
