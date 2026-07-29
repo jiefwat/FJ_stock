@@ -1467,3 +1467,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: 17 intent/template unit tests passed, 35 combined Ask Stock API/unit tests passed, and frontend typecheck passed. The tests assert that basic-fundamental and catalyst questions no longer fall through to the generic overview/action answer.
+
+## 2026-07-29 Ask Stock Scene Router UI
+
+Ask Stock now exposes the answer playbook as a visible scene router in the left rail. Users can choose movement explanation, fundamental review, catalyst check, risk review, action discipline, or portfolio diagnosis before typing free-form text. When a stock context is active, scene prompts are generated for that stock; otherwise they use safe examples.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock page tests passed, 14 tests. The new regression clicks the `异动解释` scene route and verifies that it submits `最近大业股份怎么大跌`, renders the movement answer, and displays recent-move evidence.

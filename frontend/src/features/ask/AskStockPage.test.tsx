@@ -166,6 +166,42 @@ it("uses opportunity context for lead upgrade prompts", async () => {
   expect(requests).toEqual(["宁德时代 这条趋势延续线索能升级吗"]);
 });
 
+it("routes users through the Ask Stock playbook before submitting", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        intent: "movement",
+        symbol: "SH.603278",
+        name: "大业股份",
+        answer: "结论：大业股份近期下跌先按行情结构解释，近5日跌幅偏大。",
+        evidence: ["近5日涨跌幅 -18.40%"],
+        risks: ["价格低于 MA20"],
+        next_actions: ["核对最近公告和所属板块新闻"],
+      }),
+    };
+  }));
+
+  renderPage();
+
+  const playbook = screen.getByLabelText("问股场景路由");
+  expect(playbook).toHaveTextContent("ANSWER PLAYBOOK");
+  expect(playbook).toHaveTextContent("基本面");
+  expect(playbook).toHaveTextContent("消息催化");
+  fireEvent.click(within(playbook).getByRole("button", { name: /异动解释/ }));
+
+  expect(await screen.findByText(/大业股份近期下跌/)).toBeInTheDocument();
+  expect(screen.getAllByText("异动解释").length).toBeGreaterThan(0);
+  expect(screen.getByText("近5日涨跌幅 -18.40%")).toBeInTheDocument();
+  expect(requests).toEqual(["最近大业股份怎么大跌"]);
+});
+
 it("keeps multiple turns and carries the previous stock into a follow-up", async () => {
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

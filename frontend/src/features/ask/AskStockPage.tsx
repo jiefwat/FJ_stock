@@ -7,10 +7,66 @@ import { ApiError, api, getAuthToken, type AskStockResponse } from "../../lib/ap
 
 const prompts = [
   "贵州茅台现在主要风险是什么",
+  "最近大业股份怎么大跌",
+  "贵州茅台基本面怎么样",
+  "贵州茅台有什么公告催化",
   "600519 的技术趋势怎么样",
   "平安银行的估值贵不贵",
   "我的持仓里风险最大的是哪个",
   "帮我生成调仓计划",
+];
+
+type AskPlaybookScene = {
+  intent: AskStockResponse["intent"];
+  label: string;
+  detail: string;
+  example: string;
+  question: (stock: StockAnchor | null) => string;
+};
+
+const askPlaybookScenes: AskPlaybookScene[] = [
+  {
+    intent: "movement",
+    label: "异动解释",
+    detail: "为什么大涨/大跌，先量化 1/5/20 日走势，再看量能、资金和板块。",
+    example: "最近大业股份怎么大跌",
+    question: (stock) => `最近${stock?.name ?? "大业股份"}怎么大跌`,
+  },
+  {
+    intent: "fundamental",
+    label: "基本面",
+    detail: "财报、业绩、现金流、负债与公告研报，避免用 K 线冒充基本面。",
+    example: "贵州茅台基本面怎么样",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}基本面怎么样`,
+  },
+  {
+    intent: "catalyst",
+    label: "消息催化",
+    detail: "公告、研报、题材、龙虎榜和板块联动；没证据就明确说未确认。",
+    example: "贵州茅台有什么公告催化",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}有什么公告催化`,
+  },
+  {
+    intent: "risk",
+    label: "风险核对",
+    detail: "主要风险、利空、失效条件和必须放弃的情形。",
+    example: "贵州茅台现在主要风险是什么",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}现在主要风险是什么`,
+  },
+  {
+    intent: "action",
+    label: "操作纪律",
+    detail: "仓位、止损、止盈、入场约束；不给承诺式目标价。",
+    example: "贵州茅台仓位和止损怎么定",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}仓位和止损怎么定`,
+  },
+  {
+    intent: "portfolio",
+    label: "持仓诊断",
+    detail: "只读取当前账号持仓，做组合风险、集中度和调仓路线。",
+    example: "我的持仓里风险最大的是哪个",
+    question: () => "我的持仓里风险最大的是哪个",
+  },
 ];
 
 const intentLabel: Record<AskStockResponse["intent"], string> = {
@@ -756,6 +812,29 @@ export function AskStockPage() {
             >{prompt}</button>)}
           </div>
         </section> : null}
+        <section className="ask-playbook" aria-label="问股场景路由">
+          <header>
+            <span>ANSWER PLAYBOOK</span>
+            <strong>先选问法，再给结论</strong>
+            <p>{focusStock ? `这些问题会自动围绕 ${stockLabel(focusStock)} 生成。` : "从场景入口开始，能减少答非所问和模板跑偏。"}</p>
+          </header>
+          <div>
+            {askPlaybookScenes.map((scene) => {
+              const nextQuestion = scene.question(focusStock);
+              return <button
+                type="button"
+                key={scene.intent}
+                onClick={() => void submitQuestion(nextQuestion)}
+                disabled={ask.isPending}
+              >
+                <span>{intentLabel[scene.intent]}</span>
+                <strong>{scene.label}</strong>
+                <small>{scene.detail}</small>
+                <em>{focusStock ? nextQuestion : scene.example}</em>
+              </button>;
+            })}
+          </div>
+        </section>
         <section className="ask-history" aria-label="历史对话">
           <header>
             <span><History size={15} />历史对话</span>
