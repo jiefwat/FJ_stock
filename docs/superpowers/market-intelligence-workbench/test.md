@@ -1600,3 +1600,19 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Focused frontend tests passed, 18 tests; frontend typecheck passed. Coverage asserts watchlist `FINAL GATE` deep links, Ask Stock tracking/invalidation URLs, `WATCH BRIDGE` context, watchlist back-link, and source-stock carry behavior for follow-up prompts.
+
+## 2026-07-29 Ask Stock Context Fallback
+
+Ask Stock now sends explicit `context_symbol` / `context_name` with focused follow-up requests and the backend treats short contextual questions such as `为什么最近大跌` as stock-analysis follow-ups before attempting optional semantic screening. This prevents a stock page or board bridge conversation from falling into the `条件选股增强暂不可用` error when the user asks a natural short question without repeating the stock name.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pytest backend/tests/test_api.py -k 'ask_stock'
+pnpm --dir frontend typecheck
+git diff --check
+make verify
+```
+
+Result: Ask Stock frontend tests passed, 18 tests; backend Ask Stock tests passed, 14 tests; frontend typecheck passed; diff check passed; full `make verify` passed with backend 144 tests, frontend 61 tests, production build, and live-data quality gate.

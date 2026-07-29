@@ -143,6 +143,37 @@ it("uses market board context for focused Ask Stock prompts", async () => {
   expect(requests).toEqual(["贵州茅台 为什么它是板块前排样本"]);
 });
 
+it("sends focused stock context for short manual follow-up questions", async () => {
+  const requests: Array<{ question: string; context_symbol?: string; context_name?: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string; context_symbol?: string; context_name?: string };
+    requests.push(parsed);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        intent: "movement",
+        answer: "结论：贵州茅台近期下跌优先看价格破位、量能和板块温度。",
+      }),
+    };
+  }));
+
+  renderPage("/ask?symbol=SH.600519&name=贵州茅台&from=market&board=BK1&boardName=白酒&boardType=板块");
+
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("结论：贵州茅台近期下跌优先看价格破位、量能和板块温度。")).toBeInTheDocument();
+  expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
+  expect(requests).toEqual([{
+    question: "贵州茅台 为什么最近大跌",
+    context_symbol: "SH.600519",
+    context_name: "贵州茅台",
+  }]);
+});
+
 it("uses opportunity context for lead upgrade prompts", async () => {
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

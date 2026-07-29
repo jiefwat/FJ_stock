@@ -71,6 +71,79 @@ def resolve_stock_question(question: str, quotes: list[EquityQuote]) -> EquityQu
     return next(iter(matched.values()))
 
 
+def is_contextual_stock_followup(question: str) -> bool:
+    normalized = _compact(question).casefold()
+    if not normalized:
+        return False
+    broad_screening_keywords = (
+        "低估值",
+        "高股息",
+        "龙头",
+        "筛选",
+        "选股",
+        "有哪些",
+        "哪些",
+        "推荐",
+        "找",
+        "寻找",
+        "排名",
+        "排行",
+    )
+    contextual_keywords = ("它", "这只", "该股", "这个标的", "这条线索", "这家公司", "这笔")
+    if any(keyword in normalized for keyword in broad_screening_keywords) and not any(
+        keyword in normalized for keyword in contextual_keywords
+    ):
+        return False
+    followup_prefixes = ("那", "它", "这个", "这只", "该股", "刚才", "上面", "继续", "再", "顺便")
+    followup_topics = (
+        "风险",
+        "趋势",
+        "估值",
+        "基本面",
+        "财报",
+        "业绩",
+        "利润",
+        "营收",
+        "现金流",
+        "负债",
+        "公告",
+        "研报",
+        "消息",
+        "催化",
+        "题材",
+        "龙虎榜",
+        "仓位",
+        "止损",
+        "止盈",
+        "支撑",
+        "压力",
+        "目标价",
+        "价格",
+        "股价",
+        "合理",
+        "多少",
+        "为什么",
+        "为啥",
+        "怎么跌",
+        "怎么涨",
+        "大跌",
+        "大涨",
+        "异动",
+        "发生了什么",
+        "能买吗",
+        "能不能",
+        "要不要",
+        "可以买",
+        "可以卖",
+        "怎么样",
+        "怎么看",
+    )
+    if any(keyword in normalized for keyword in contextual_keywords):
+        return True
+    if normalized.startswith(followup_prefixes):
+        return True
+    return len(normalized) <= 20 and any(keyword in normalized for keyword in followup_topics)
+
 def is_portfolio_question(question: str) -> bool:
     normalized = _compact(question)
     keywords = (

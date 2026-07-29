@@ -126,6 +126,7 @@ function moneyValue(value: number | null | undefined) {
 }
 
 type StockAnchor = { name: string; symbol: string };
+type AskRequestPayload = { question: string; context: StockAnchor | null };
 type AskSourceContext = {
   stock: StockAnchor | null;
   label: string;
@@ -273,6 +274,16 @@ function shouldCarrySourceStock(question: string, stock: StockAnchor | null) {
   if (contextualReferencePattern.test(question)) return true;
   if (followUpPrefixPattern.test(question)) return true;
   return question.length <= 16 && followUpTopicPattern.test(question);
+}
+
+function shouldSendContextStock(question: string, stock: StockAnchor | null) {
+  if (!stock) return false;
+  if (question.includes(stock.name) || question.includes(stock.symbol) || question.includes(stock.symbol.slice(-6))) return true;
+  if (stockCodePattern.test(question)) return false;
+  if (screeningQuestionPattern.test(question) && !contextualReferencePattern.test(question)) return false;
+  if (contextualReferencePattern.test(question)) return true;
+  if (followUpPrefixPattern.test(question)) return true;
+  return question.length <= 20 && followUpTopicPattern.test(question);
 }
 
 function legacyStorageKey() {
@@ -732,9 +743,12 @@ export function AskStockPage() {
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const inboundQuestionRef = useRef<string | null>(null);
   const ask = useMutation({
-    mutationFn: (value: string) => api<AskStockResponse>("/api/v1/ask-stock", {
+    mutationFn: ({ question: value, context }: AskRequestPayload) => api<AskStockResponse>("/api/v1/ask-stock", {
       method: "POST",
-      body: JSON.stringify({ question: value }),
+      body: JSON.stringify({
+        question: value,
+        ...(context ? { context_symbol: context.symbol, context_name: context.name } : {}),
+      }),
     }),
   });
   const activeThread = useMemo(() => activeThreadFrom(threadState), [threadState]);
@@ -763,12 +777,14 @@ export function AskStockPage() {
     if (normalized.length < 2 || ask.isPending) return;
 
     const threadId = activeThread.id;
-    const carriedStock = shouldCarryStock(normalized, activeStock)
-      ? activeStock
+    const contextStock = activeStock ?? sourceContext?.stock ?? null;
+    const carriedStock = shouldCarryStock(normalized, contextStock)
+      ? contextStock
       : (options.forceSourceStock || shouldCarrySourceStock(normalized, sourceContext?.stock ?? null))
           ? sourceContext?.stock ?? null
           : null;
     const requestQuestion = carriedStock ? `${carriedStock.name} ${normalized}` : normalized;
+    const requestContext = carriedStock ?? (shouldSendContextStock(normalized, contextStock) ? contextStock : null);
     setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
       ...currentMessages,
       { id: messageId(), role: "user", content: normalized, carriedStock },
@@ -776,7 +792,7 @@ export function AskStockPage() {
     setQuestion("");
 
     try {
-      const result = await ask.mutateAsync(requestQuestion);
+      const result = await ask.mutateAsync({ question: requestQuestion, context: requestContext });
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
         ...currentMessages,
         { id: messageId(), role: "assistant", result },

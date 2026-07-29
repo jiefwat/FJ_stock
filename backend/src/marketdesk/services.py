@@ -11,6 +11,7 @@ from marketdesk.analysis.ask_stock import (
     build_portfolio_answer,
     build_stock_answer,
     classify_stock_question,
+    is_contextual_stock_followup,
     is_portfolio_diagnostic_question,
     is_portfolio_question,
     resolve_stock_question,
@@ -590,42 +591,61 @@ class MarketService:
         bars = await self.provider.fetch_kline(symbol)
         return analyse_stock(quote, bars, research_evidence, peer_quotes=snapshot.equities)
 
-    async def ask_stock(self, question: str, user_id: int | None = None) -> AskStockResponse:
+    async def ask_stock(
+        self,
+        question: str,
+        user_id: int | None = None,
+        *,
+        context_symbol: str | None = None,
+        context_name: str | None = None,
+    ) -> AskStockResponse:
         snapshot = await self.market()
         holdings = self.store.list_holdings(user_id) if user_id is not None else []
+        context_quote = self._resolve_ask_context_stock(
+            snapshot.equities, context_symbol, context_name
+        )
         try:
             quote = resolve_stock_question(question, snapshot.equities)
         except StockQuestionNotFound as error:
             if user_id is not None and is_portfolio_question(question):
+                focus_symbol = (
+                    context_quote.symbol
+                    if context_quote is not None and is_contextual_stock_followup(question)
+                    else None
+                )
                 return build_portfolio_answer(
                     question=question,
                     holdings=await self._analyse_holdings(holdings, snapshot),
                     observed_at=snapshot.meta.observed_at,
+                    focus_symbol=focus_symbol,
                 )
-            semantic_screener = getattr(self.provider, "query_stock_screen", None)
-            if not callable(semantic_screener):
-                raise ProviderUnavailable(
-                    "semantic stock screening is not configured"
-                ) from error
-            result = await semantic_screener(question, 20)
-            return AskStockResponse(
-                kind="semantic_screen",
-                question=question,
-                intent="screening",
-                answer=f"条件选股增强返回 {len(result.rows)} 个候选结果。",
-                evidence=["候选字段与排序由当前自然语言问题和外部语义数据共同决定。"],
-                risks=["筛选结果可能延迟或缺少字段，请回到个股研究页核对证据。"],
-                next_actions=["选择候选股票后，在问股中输入股票名称或代码继续分析。"],
-                metrics=[
-                    AskStockMetric(label="候选数量", value=str(len(result.rows)), tone="neutral"),
-                    AskStockMetric(label="增强来源", value="条件选股", tone="neutral"),
-                ],
-                observed_at=snapshot.meta.observed_at,
-                source="条件选股增强（可选）",
-                disclaimer="研究辅助信息，不构成投资建议。",
-                columns=result.columns,
-                rows=result.rows,
-            )
+            if context_quote is not None and is_contextual_stock_followup(question):
+                quote = context_quote
+            else:
+                semantic_screener = getattr(self.provider, "query_stock_screen", None)
+                if not callable(semantic_screener):
+                    raise ProviderUnavailable(
+                        "semantic stock screening is not configured"
+                    ) from error
+                result = await semantic_screener(question, 20)
+                return AskStockResponse(
+                    kind="semantic_screen",
+                    question=question,
+                    intent="screening",
+                    answer=f"条件选股增强返回 {len(result.rows)} 个候选结果。",
+                    evidence=["候选字段与排序由当前自然语言问题和外部语义数据共同决定。"],
+                    risks=["筛选结果可能延迟或缺少字段，请回到个股研究页核对证据。"],
+                    next_actions=["选择候选股票后，在问股中输入股票名称或代码继续分析。"],
+                    metrics=[
+                        AskStockMetric(label="候选数量", value=str(len(result.rows)), tone="neutral"),
+                        AskStockMetric(label="增强来源", value="条件选股", tone="neutral"),
+                    ],
+                    observed_at=snapshot.meta.observed_at,
+                    source="条件选股增强（可选）",
+                    disclaimer="研究辅助信息，不构成投资建议。",
+                    columns=result.columns,
+                    rows=result.rows,
+                )
         if user_id is not None and is_portfolio_diagnostic_question(question):
             return build_portfolio_answer(
                 question=question,
@@ -647,6 +667,27 @@ class MarketService:
             holding=holding_context,
             observed_at=snapshot.meta.observed_at,
         )
+
+    def _resolve_ask_context_stock(
+        self,
+        quotes: list[EquityQuote],
+        symbol: str | None,
+        name: str | None,
+    ) -> EquityQuote | None:
+        if symbol:
+            try:
+                normalized_symbol = self._normalize_a_share_symbol(symbol)
+            except ValueError:
+                normalized_symbol = symbol.strip().upper()
+            match = next((quote for quote in quotes if quote.symbol == normalized_symbol), None)
+            if match is not None:
+                return match
+        if name:
+            try:
+                return resolve_stock_question(name, quotes)
+            except (StockQuestionNotFound, ValueError):
+                return None
+        return None
 
     async def holdings(self, user_id: int | None = None) -> list[HoldingDossier]:
         snapshot = await self.market()

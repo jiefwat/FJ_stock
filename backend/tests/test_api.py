@@ -459,6 +459,27 @@ def test_ask_stock_answers_recent_drop_questions_with_movement_cause(tmp_path) -
     assert any("近5日" in item for item in payload["evidence"])
 
 
+def test_ask_stock_uses_explicit_context_for_short_followups(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.post(
+        "/api/v1/ask-stock",
+        json={
+            "question": "为什么最近大跌",
+            "context_symbol": "SH.600519",
+            "context_name": "贵州茅台",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "stock_analysis"
+    assert payload["intent"] == "movement"
+    assert payload["symbol"] == "SH.600519"
+    assert payload["name"] == "贵州茅台"
+    assert payload["source"] == "本地行情快照 + 确定性分析"
+
+
 def test_ask_stock_answers_fundamental_and_catalyst_questions(tmp_path) -> None:
     api = client(tmp_path)
 

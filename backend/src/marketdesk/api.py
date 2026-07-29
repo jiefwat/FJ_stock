@@ -91,11 +91,16 @@ class AuthLogin(BaseModel):
 
 class AskStockRequest(StrictModel):
     question: str = Field(min_length=2, max_length=160)
+    context_symbol: str | None = Field(default=None, min_length=1, max_length=16)
+    context_name: str | None = Field(default=None, min_length=1, max_length=32)
 
-    @field_validator("question", mode="before")
+    @field_validator("question", "context_symbol", "context_name", mode="before")
     @classmethod
-    def normalize_question(cls, value: object) -> object:
-        return " ".join(value.split()) if isinstance(value, str) else value
+    def normalize_text(cls, value: object) -> object:
+        normalized = " ".join(value.split()) if isinstance(value, str) else value
+        if isinstance(normalized, str) and normalized == "":
+            return None
+        return normalized
 
 
 class PreferenceUpdate(BaseModel):
@@ -454,7 +459,12 @@ def create_app(
     async def ask_stock(payload: AskStockRequest, request: Request) -> AskStockResponse:
         user = current_user(request.headers.get("authorization"))
         try:
-            return await market_service.ask_stock(payload.question, user.id)
+            return await market_service.ask_stock(
+                payload.question,
+                user.id,
+                context_symbol=payload.context_symbol,
+                context_name=payload.context_name,
+            )
         except AmbiguousStockQuestion as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         except ProviderUnavailable as error:
