@@ -41,6 +41,14 @@ type CandidateRow = { item: Candidate; badge: ReturnType<typeof leadBadge> };
 
 type QueuePlan = { tone: "positive" | "caution" | "negative" | "neutral"; route: string; steps: string[] };
 
+function opportunityAskHref(item: Candidate, preset: string, question: string) {
+  return `/ask?symbol=${encodeURIComponent(item.quote.symbol)}&name=${encodeURIComponent(item.quote.name)}&from=opportunities&preset=${encodeURIComponent(preset)}&question=${encodeURIComponent(question)}`;
+}
+
+function upgradeQuestion(item: Candidate, presetLabel: string | undefined) {
+  return `${item.quote.name}这条${presetLabel ?? "机会"}线索能升级吗`;
+}
+
 function buildQueuePlan(counts: Record<LeadLayer, number>): QueuePlan {
   if (counts.all === 0) {
     return {
@@ -113,6 +121,11 @@ function OpportunityQueueDesk({
       <strong>{topRow.item.quote.name}</strong>
       <span>{topRow.item.quote.symbol} · 最终分 {fmt(topRow.item.score, 0)} · 证据 {percent(topRow.item.evidence_coverage * 100)} · {topRow.badge.label}</span>
     </Link> : <div className="queue-top-card empty-card"><small>第一张复核单</small><strong>暂无候选</strong><span>切换策略或等待下一次行情刷新</span></div>}
+    {topRow ? <nav className="queue-ask-bridge" aria-label="第一候选快捷动作">
+      <Link to={topHref}>打开 FINAL GATE</Link>
+      <Link to={opportunityAskHref(topRow.item, preset, upgradeQuestion(topRow.item, presetLabel))}>问能否升级</Link>
+      <Link to={opportunityAskHref(topRow.item, preset, `${topRow.item.quote.name}这条线索主要风险是什么`)}>问主要风险</Link>
+    </nav> : null}
     <div className="queue-route">
       <strong>今日处理路线</strong>
       <ol>{plan.steps.map((step) => <li key={step}>{step}</li>)}</ol>
@@ -165,14 +178,18 @@ function HistoryCheckCard({ item }: { item: Candidate }) {
   </div>;
 }
 
-function CandidateDetail({ item, preset }: { item: Candidate; preset: string }) {
+function CandidateDetail({ item, preset, presetLabel }: { item: Candidate; preset: string; presetLabel: string | undefined }) {
   return <div className="candidate-detail">
     <div className="candidate-thesis"><strong>线索理由</strong><p>{item.thesis}</p></div>
     <HistoryCheckCard item={item} />
     <div className="candidate-dimensions">{item.dimensions.map((dimension) => <div key={dimension.key} className={dimension.signal}><span>{dimension.label}</span><p>{dimension.summary}</p></div>)}</div>
     <div className="candidate-playbook"><div><strong>失效条件</strong>{item.invalidation.map((rule) => <p key={rule}>× {rule}</p>)}</div><div><strong>下一步</strong>{item.next_actions.map((action) => <p key={action}>→ {action}</p>)}</div></div>
     <div className="risk-tags">{item.risk_flags.map((flag) => <i key={flag}>{flag}</i>)}</div>
-    <Link className="text-link" to={`/stocks?symbol=${item.quote.symbol}&from=opportunities&preset=${preset}`}>复核是否参与 →</Link>
+    <div className="candidate-ask-actions" aria-label={`${item.quote.name} 线索快捷动作`}>
+      <Link to={`/stocks?symbol=${item.quote.symbol}&from=opportunities&preset=${preset}`}>复核是否参与 →</Link>
+      <Link to={opportunityAskHref(item, preset, upgradeQuestion(item, presetLabel))}>问线索能否升级 →</Link>
+      <Link to={opportunityAskHref(item, preset, `${item.quote.name}这条线索主要风险是什么`)}>问风险 →</Link>
+    </div>
   </div>;
 }
 
@@ -234,7 +251,7 @@ export function OpportunitiesPage() {
               <div className={`lead-badge ${badge.tone}`}><strong>{badge.label}</strong><span>{badge.reason}</span></div>
               <ChevronDown className="candidate-toggle" size={18} aria-hidden="true" />
             </button>
-            {expanded && <CandidateDetail item={item} preset={preset} />}
+            {expanded && <CandidateDetail item={item} preset={preset} presetLabel={presetLabel} />}
           </article>;
         })}</div>}</section>
       </>}

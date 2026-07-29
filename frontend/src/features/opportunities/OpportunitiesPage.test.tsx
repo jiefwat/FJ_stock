@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -105,6 +105,10 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getByText("先复核优先线索，再扫待复核")).toBeInTheDocument();
   expect(screen.getByText("今日处理路线")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /第一张复核单\s*宁德时代/ })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
+  const queueActions = within(screen.getByLabelText("第一候选快捷动作"));
+  expect(queueActions.getByRole("link", { name: "打开 FINAL GATE" })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
+  expect(queueActions.getByRole("link", { name: "问能否升级" })).toHaveAttribute("href", "/ask?symbol=SZ.300750&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3&from=opportunities&preset=trend&question=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3%E8%BF%99%E6%9D%A1%E8%B6%8B%E5%8A%BF%E5%BB%B6%E7%BB%AD%E7%BA%BF%E7%B4%A2%E8%83%BD%E5%8D%87%E7%BA%A7%E5%90%97");
+  expect(queueActions.getByRole("link", { name: "问主要风险" })).toHaveAttribute("href", "/ask?symbol=SZ.300750&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3&from=opportunities&preset=trend&question=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3%E8%BF%99%E6%9D%A1%E7%BA%BF%E7%B4%A2%E4%B8%BB%E8%A6%81%E9%A3%8E%E9%99%A9%E6%98%AF%E4%BB%80%E4%B9%88");
   expect(screen.getByRole("button", { name: "队列筛选优先线索 1" })).toBeInTheDocument();
   expect(screen.getByText("待复核线索")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /全部线索\s*2/ })).toBeInTheDocument();
@@ -123,7 +127,10 @@ it("shows professional strategy diagnostics and candidate decision cards", async
 
   fireEvent.click(screen.getByRole("button", { name: /星网锐捷/ }));
   expect(screen.getByRole("button", { name: /星网锐捷/ })).toHaveAttribute("aria-expanded", "true");
-  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
+  const starActions = within(screen.getByLabelText("星网锐捷 线索快捷动作"));
+  expect(starActions.getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
+  expect(starActions.getByRole("link", { name: "问线索能否升级 →" })).toHaveAttribute("href", "/ask?symbol=SZ.002396&name=%E6%98%9F%E7%BD%91%E9%94%90%E6%8D%B7&from=opportunities&preset=trend&question=%E6%98%9F%E7%BD%91%E9%94%90%E6%8D%B7%E8%BF%99%E6%9D%A1%E8%B6%8B%E5%8A%BF%E5%BB%B6%E7%BB%AD%E7%BA%BF%E7%B4%A2%E8%83%BD%E5%8D%87%E7%BA%A7%E5%90%97");
+  expect(starActions.getByRole("link", { name: "问风险 →" })).toHaveAttribute("href", "/ask?symbol=SZ.002396&name=%E6%98%9F%E7%BD%91%E9%94%90%E6%8D%B7&from=opportunities&preset=trend&question=%E6%98%9F%E7%BD%91%E9%94%90%E6%8D%B7%E8%BF%99%E6%9D%A1%E7%BA%BF%E7%B4%A2%E4%B8%BB%E8%A6%81%E9%A3%8E%E9%99%A9%E6%98%AF%E4%BB%80%E4%B9%88");
   expect(screen.getAllByText("触发逻辑").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("HISTORY CHECK · 历史K线").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("20日趋势").length).toBeGreaterThanOrEqual(1);
@@ -142,14 +149,14 @@ it("shows professional strategy diagnostics and candidate decision cards", async
   expect(screen.getByText("优先复核 · 点击股票展开详情")).toBeInTheDocument();
   expect(screen.getAllByText("宁德时代").length).toBeGreaterThanOrEqual(1);
   fireEvent.click(screen.getByRole("button", { name: /宁德时代/ }));
-  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
+  expect(within(screen.getByLabelText("宁德时代 线索快捷动作")).getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
   expect(screen.queryByText("星网锐捷")).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /可能暂不参与\s*1/ }));
   expect(screen.getByText("可能暂不参与 · 点击股票展开详情")).toBeInTheDocument();
   expect(screen.getByText("星网锐捷")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /星网锐捷/ }));
-  expect(screen.getAllByRole("link", { name: "复核是否参与 →" })[0]).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
+  expect(within(screen.getByLabelText("星网锐捷 线索快捷动作")).getByRole("link", { name: "复核是否参与 →" })).toHaveAttribute("href", "/stocks?symbol=SZ.002396&from=opportunities&preset=trend");
 });
 
 it("offers only effective primary strategies instead of data-blocked presets", async () => {

@@ -1574,3 +1574,16 @@ uv run --directory backend pytest -q tests/test_api.py -k 'ask_stock_named_portf
 ```
 
 Result: Frontend focused tests passed, 30 tests; frontend typecheck passed; backend focused Ask Stock portfolio tests passed, 2 tests. Coverage asserts holdings/Today Ask Stock URLs, `PORTFOLIO BRIDGE` source context, holdings back-link, portfolio prompt carry behavior, and portfolio-analysis routing for named holding treatment questions.
+
+## 2026-07-29 Opportunity Ask Bridge
+
+Opportunities now closes the loop from a candidate lead to Ask Stock. The top candidate queue card exposes quick actions for `FINAL GATE`, lead-upgrade questioning, and risk questioning; expanded candidate rows also include stock review, lead-upgrade Ask Stock, and risk Ask Stock handoffs. All Ask links carry symbol, name, `from=opportunities`, preset, and a precise question so Ask Stock can render the existing opportunity bridge instead of a blank generic chat.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/opportunities/OpportunitiesPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Opportunities page tests passed, 2 tests; frontend typecheck passed. Coverage asserts top-candidate quick actions, encoded Ask Stock upgrade/risk URLs, expanded candidate action bars, and existing compact candidate expansion behavior.
