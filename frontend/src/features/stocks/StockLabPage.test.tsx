@@ -135,6 +135,17 @@ it("explains when a stock dossier is opened from opportunity leads", async () =>
   expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
 });
 
+it("explains when a stock dossier is opened from a market board", async () => {
+  renderPage([], true, "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=白酒&boardType=板块");
+
+  const sourceNote = within(await screen.findByLabelText("板块复核说明"));
+  expect(sourceNote.getByText("来自白酒板块复核")).toBeInTheDocument();
+  expect(sourceNote.getByText(/板块页只说明它是前排样本/)).toBeInTheDocument();
+  expect(sourceNote.getByText(/FINAL GATE 和证据总账/)).toBeInTheDocument();
+  expect(sourceNote.getByText("来源：白酒板块")).toBeInTheDocument();
+  expect(await screen.findByLabelText("证据总账")).toBeInTheDocument();
+});
+
 it("shows the evidence ledger and edits the thesis before adding to watchlist", async () => {
   renderPage();
 

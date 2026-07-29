@@ -124,6 +124,57 @@ function sortedRows(items: Quote[], sort: DetailSort, filter: DetailFilter) {
   );
 }
 
+
+function stockLeadReason(item: Quote) {
+  const up = (item.change_pct ?? 0) > 0;
+  const inflow = (item.net_flow ?? 0) > 0;
+  if (up && inflow) return "价格与资金同向，优先打开 Stock Lab 复核";
+  if (up && item.net_flow == null) return "价格走强但资金缺口待补，先看证据总账";
+  if (inflow) return "资金先动但价格未确认，观察是否补涨";
+  if ((item.amount ?? 0) >= 1_000_000_000) return "成交活跃，适合作为板块样本复核";
+  return "证据较弱，先保留观察";
+}
+
+function stockLeadTone(item: Quote) {
+  if ((item.change_pct ?? 0) > 0 && (item.net_flow ?? 0) > 0) return "positive";
+  if ((item.change_pct ?? 0) < 0 && (item.net_flow ?? 0) <= 0) return "negative";
+  return "caution";
+}
+
+function stockLeadScore(item: Quote) {
+  const change = item.change_pct ?? -20;
+  const flow = item.net_flow == null ? -1 : item.net_flow / 100_000_000;
+  const amount = item.amount == null ? 0 : Math.min(item.amount / 100_000_000, 50) / 10;
+  return change * 2 + flow + amount;
+}
+
+function stockHref(item: Quote, source: SectorDossier, suffix: string) {
+  const params = new URLSearchParams({ symbol: item.symbol, from: "market", board: source.sector.code, boardName: source.sector.name, boardType: suffix });
+  return `/stocks?${params.toString()}`;
+}
+
+function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string }) {
+  const leads = [...data.constituents].sort((left, right) => stockLeadScore(right) - stockLeadScore(left)).slice(0, 3);
+  if (!leads.length) return null;
+
+  return <section className="board-stock-leads" aria-label={`${data.sector.name}${suffix}优先个股线索`}>
+    <div className="board-leads-title">
+      <span>STOCK HANDOFF</span>
+      <strong>优先点开这几只</strong>
+      <p>从板块进入个股页前，先看价格、资金和成交额是否给出点开理由。</p>
+    </div>
+    <div className="board-leads-grid">
+      {leads.map((item, index) => <Link key={item.symbol} className={stockLeadTone(item)} to={stockHref(item, data, suffix)}>
+        <em>{String(index + 1).padStart(2, "0")}</em>
+        <span>{item.name}<small>{item.symbol}</small></span>
+        <strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong>
+        <p>{stockLeadReason(item)}</p>
+        <b>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</b>
+      </Link>)}
+    </div>
+  </section>;
+}
+
 function DossierPanel({ data, loading, error, variant, onClose }: { data?: SectorDossier; loading: boolean; error: Error | null; variant: "sector" | "theme"; onClose: () => void }) {
   const [sort, setSort] = useState<DetailSort>("net_flow");
   const [filter, setFilter] = useState<DetailFilter>("all");
@@ -135,12 +186,13 @@ function DossierPanel({ data, loading, error, variant, onClose }: { data?: Secto
       <SectorReviewDesk data={data} suffix={suffix} />
       <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待增强" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
       <div className="sector-summary">{data.summary.map((item) => <p key={item}>{item}</p>)}{data.missing_evidence.length > 0 && <small>缺口：{data.missing_evidence.join("、")}</small>}</div>
+      <BoardStockLeads data={data} suffix={suffix} />
       <div className="dossier-tools" aria-label={`${data.sector.name}${suffix}筛选`}>
         <label>排序<select aria-label="详情排序" value={sort} onChange={(event) => setSort(event.target.value as DetailSort)}><option value="net_flow">资金优先</option><option value="change_pct">涨幅优先</option><option value="amount">成交额优先</option></select></label>
         <label>范围<select aria-label="详情范围" value={filter} onChange={(event) => setFilter(event.target.value as DetailFilter)}><option value="all">全部</option><option value="net_inflow">只看净流入</option><option value="up">只看上涨</option></select></label>
         <span>显示 {rows.length} / {data.constituents.length}</span>
       </div>
-      {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
+      {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => <Link key={item.symbol} to={stockHref(item, data, suffix)}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em><p>{stockLeadReason(item)}</p></Link>)}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
     </>}</AsyncState>
   </section>;
 }

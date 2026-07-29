@@ -1025,3 +1025,16 @@ Full gate and public deployment after the Stock Lab evidence-audit upgrade:
 | Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
 | Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
 | Frontend asset | Current JS asset contained `LEDGER GATE`, `证据总账`, `先补证据，不升级仓位`, `反方证据占优，先守失效线`, and `证据够用，进入交易计划复核` |
+
+## 2026-07-29 Market Board-To-Stock Handoff
+
+Market sector and theme dossiers now add a `STOCK HANDOFF` block before the constituent screener. It highlights the first stocks to open from the board, explains whether the handoff is backed by price plus capital, price-only with a capital gap, capital-only, or merely active turnover, and carries board context into Stock Lab with a visible source note.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx src/features/market/MarketPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Market passed 9 focused tests, Stock Lab passed 12 focused tests, and frontend typecheck passed. The new assertions verify `STOCK HANDOFF`, priority stock links with board context, point-open reasons such as `价格与资金同向`, theme source gaps, and the Stock Lab `板块复核说明` note before the final evidence gates.

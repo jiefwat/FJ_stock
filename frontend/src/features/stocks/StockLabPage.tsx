@@ -477,8 +477,11 @@ export function StockLabPage() {
   const [matches, setMatches] = useState<Quote[]>([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const fromOpportunity = params.get("from") === "opportunities";
+  const fromMarketBoard = params.get("from") === "market";
   const sourcePreset = params.get("preset") ?? "";
   const sourcePresetLabel = sourcePresetLabels[sourcePreset];
+  const sourceBoardName = params.get("boardName") ?? "";
+  const sourceBoardType = params.get("boardType") ?? "板块";
   const [thesis, setThesis] = useState("");
   const [invalidation, setInvalidation] = useState("");
 
@@ -541,6 +544,7 @@ export function StockLabPage() {
     <header className="page-head compact"><div><p className="eyebrow">STOCK LAB / 个股研究</p><h1>一只股票，<em>一条证据链。</em></h1></div></header>
     <div className="stock-search"><Search size={18} /><input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="输入股票代码或名称" aria-label="搜索股票" />{matches.length > 0 && <div className="search-results">{matches.map((item) => <button key={item.symbol} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}</div>
     {fromOpportunity && <section className="stock-source-note" aria-label="线索复核说明"><strong>来自机会选股的研究线索</strong><span>线索页只负责短名单排序；此页的直接建议和证据账本才用于判断是否参与。</span>{sourcePresetLabel && <small>来源策略：{sourcePresetLabel}</small>}</section>}
+    {fromMarketBoard && <section className="stock-source-note" aria-label="板块复核说明"><strong>来自{sourceBoardName || "板块"}{sourceBoardType}复核</strong><span>板块页只说明它是前排样本；此页继续用 FINAL GATE 和证据总账判断是否值得跟踪。</span>{sourceBoardName && <small>来源：{sourceBoardName}{sourceBoardType}</small>}</section>}
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       <section className="stock-hero">
         <div><span>{query.data.quote.symbol} · {query.data.quote.sector ?? "行业待补"}</span><h2>{query.data.quote.name}</h2><p>{fmt(query.data.quote.price)} <b className={(query.data.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(query.data.quote.change_pct)}</b></p></div>
