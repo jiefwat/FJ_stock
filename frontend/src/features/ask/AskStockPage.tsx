@@ -474,6 +474,55 @@ function gateReviewRoute(result: AskStockResponse) {
   return { anchor: "stock-evidence-audit", label: "去看证据总账", detail: "先看支持、反方和缺口。" };
 }
 
+function reviewFollowUp(result: AskStockResponse) {
+  if (result.intent === "risk") return "如果风险触发，我应该怎么处理仓位？";
+  if (result.intent === "trend") return "趋势失效条件是什么？";
+  if (result.intent === "valuation") return "估值需要等到什么价位才合理？";
+  if (result.intent === "action") return "如果明天不确认，应该怎么执行？";
+  return "支持和反方证据哪边更强？";
+}
+
+function AskReviewRoute({ result }: { result: AskStockResponse }) {
+  if (result.kind !== "stock_analysis") return null;
+  const finalGate = metricByLabel(result, "FINAL GATE");
+  const ledgerGate = metricByLabel(result, "LEDGER GATE");
+  const route = gateReviewRoute(result);
+  const firstRisk = result.risks[0] ?? "暂无显性风险，仍要检查反方证据。";
+  const nextCheck = result.next_actions[0] ?? "继续补齐证据后再复核。";
+
+  return <section className="ask-review-route" aria-label="问股复核路线">
+    <div>
+      <span>REVIEW ROUTE</span>
+      <strong>问后复核路线</strong>
+      <p>把回答变成下一步动作：先验闸口，再回证据，最后继续追问。</p>
+    </div>
+    <a href={stockResearchHref(result, "stock-final-gate")}>
+      <b>01</b>
+      <span>FINAL GATE</span>
+      <strong>{finalGate?.value ?? "先看最终结论"}</strong>
+      <small>{nextCheck}</small>
+    </a>
+    <a href={stockResearchHref(result, "stock-evidence-audit")}>
+      <b>02</b>
+      <span>证据总账</span>
+      <strong>{ledgerGate?.value ?? "看支持 / 反方 / 缺口"}</strong>
+      <small>{firstRisk}</small>
+    </a>
+    <a href={stockResearchHref(result, route.anchor)}>
+      <b>03</b>
+      <span>Stock Lab 第一站</span>
+      <strong>{route.label.replace("去", "先")}</strong>
+      <small>{route.detail}</small>
+    </a>
+    <article>
+      <b>04</b>
+      <span>下一句追问</span>
+      <strong>{reviewFollowUp(result)}</strong>
+      <small>用下面的追问按钮或直接复制这句话继续。</small>
+    </article>
+  </section>;
+}
+
 function AskGateBrief({ result }: { result: AskStockResponse }) {
   if (result.kind !== "stock_analysis") return null;
   const finalGate = metricByLabel(result, "FINAL GATE");
@@ -553,6 +602,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
     <AskMetrics result={result} />
     <HoldingContext result={result} />
     <AskGateBrief result={result} />
+    <AskReviewRoute result={result} />
     <article className="ask-answer">
       <span>回答</span>
       <p>{result.answer}</p>

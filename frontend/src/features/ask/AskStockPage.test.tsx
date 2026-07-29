@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -80,7 +80,7 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
   expect(screen.getByText("SH.600519")).toBeInTheDocument();
   expect(screen.getByText("价格仍在 MA20 上方")).toBeInTheDocument();
-  expect(screen.getByText("短期波动放大")).toBeInTheDocument();
+  expect(screen.getAllByText("短期波动放大").length).toBeGreaterThan(0);
   expect(screen.getAllByText("等待下一交易日确认").length).toBeGreaterThan(0);
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
@@ -92,6 +92,16 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(gate).toHaveTextContent("LEDGER GATE证据够用");
   expect(gate).toHaveTextContent("NEXT CHECK等待下一交易日确认");
   expect(screen.getByRole("link", { name: "去看交易计划 →" })).toHaveAttribute(
+    "href",
+    "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-investment-advice",
+  );
+  const reviewRoute = within(screen.getByLabelText("问股复核路线"));
+  expect(reviewRoute.getByText("REVIEW ROUTE")).toBeInTheDocument();
+  expect(reviewRoute.getByText("问后复核路线")).toBeInTheDocument();
+  expect(reviewRoute.getByText("Stock Lab 第一站")).toBeInTheDocument();
+  expect(reviewRoute.getByText("先看交易计划")).toBeInTheDocument();
+  expect(reviewRoute.getByText("如果风险触发，我应该怎么处理仓位？")).toBeInTheDocument();
+  expect(reviewRoute.getByRole("link", { name: /Stock Lab 第一站/ })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-investment-advice",
   );
