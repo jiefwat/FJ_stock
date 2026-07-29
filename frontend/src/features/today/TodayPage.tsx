@@ -9,6 +9,85 @@ import { api, fmt, pct, percent, type MarketEventResult, type TodayData } from "
 const regimeLabel: Record<string, string> = { risk_off: "防守", cautious: "谨慎", balanced: "均衡", risk_on: "积极" };
 const actionRoutes = ["/market", "/market", "/opportunities"];
 
+function openingGate(data: TodayData) {
+  const breadthTotal = Math.max(1, data.analysis.advancing + data.analysis.declining + data.analysis.unchanged);
+  const breadth = data.analysis.advancing / breadthTotal * 100;
+  if (data.analysis.regime === "risk_off" || data.risk_budget <= 35) {
+    return {
+      tone: "negative",
+      title: "先守风险",
+      detail: "市场温度和风险预算偏低，今天只处理持仓风险，不主动扩张候选。",
+      metric: `上涨占比 ${percent(breadth)}`,
+      href: "/holdings",
+      action: "检查持仓",
+    };
+  }
+  if (data.analysis.regime === "cautious" || breadth < 45) {
+    return {
+      tone: "caution",
+      title: "只做前排复核",
+      detail: "广度未完全打开，机会只看强板块里的少数样本，先过证据总账。",
+      metric: `风险预算 ${data.risk_budget}%`,
+      href: "/market",
+      action: "核验市场",
+    };
+  }
+  return {
+    tone: "positive",
+    title: "允许复核机会",
+    detail: "市场状态允许进入机会漏斗，但仍以 Stock Lab 的 FINAL GATE 为准。",
+    metric: `置信度 ${percent(data.analysis.confidence * 100)}`,
+    href: "/opportunities",
+    action: "打开机会",
+  };
+}
+
+function eventGuard(data?: MarketEventResult) {
+  const risk = data?.events.find((event) => event.sentiment === "negative" || event.category === "risk_alert");
+  if (risk) return { title: "风险新闻优先", detail: risk.impact, href: "/market", action: "看风险雷达" };
+  return {
+    title: "不要追噪音",
+    detail: data?.summary[0] ?? "没有强事件时，按指数、板块、个股证据的顺序推进。",
+    href: "/market",
+    action: "看市场雷达",
+  };
+}
+
+function OpeningDesk({ data, events }: { data: TodayData; events?: MarketEventResult }) {
+  const gate = openingGate(data);
+  const guard = eventGuard(events);
+  const candidate = data.top_opportunities[0];
+
+  return <section className={`opening-desk ${gate.tone}`} aria-label="今日开盘执行台">
+    <article className="opening-verdict">
+      <span>OPENING DESK</span>
+      <strong>{gate.title}</strong>
+      <p>{gate.detail}</p>
+      <small>{gate.metric}</small>
+    </article>
+    <div className="opening-steps">
+      <Link to={gate.href}>
+        <b>01</b>
+        <span>市场闸口</span>
+        <strong>{regimeLabel[data.analysis.regime]}</strong>
+        <small>{gate.action} →</small>
+      </Link>
+      <Link to={candidate ? `/stocks?symbol=${candidate.quote.symbol}&from=opportunities#stock-final-gate` : "/opportunities"}>
+        <b>02</b>
+        <span>优先复核</span>
+        <strong>{candidate?.quote.name ?? "等待候选收敛"}</strong>
+        <small>{candidate ? `分数 ${fmt(candidate.score, 0)} · 先看 FINAL GATE` : "先打开机会漏斗 →"}</small>
+      </Link>
+      <Link to={guard.href}>
+        <b>03</b>
+        <span>今日禁区</span>
+        <strong>{guard.title}</strong>
+        <small>{guard.detail}</small>
+      </Link>
+    </div>
+  </section>;
+}
+
 export function TodayPage() {
   const query = useQuery({ queryKey: ["today"], queryFn: () => api<TodayData>("/api/v1/today") });
   const eventsQuery = useQuery({ queryKey: ["market-events", "today"], queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=8") });
@@ -25,6 +104,7 @@ export function TodayPage() {
       <div className="rail-cell"><Radar size={18} /><span>证据完整度</span><strong>{percent(query.data.analysis.confidence * 100)}</strong></div>
     </section>
     <p className="risk-caption">风险控制参考用于研究分层，不是仓位或交易建议。机会分会根据当前市场环境自动扣减。</p>
+    <OpeningDesk data={query.data} events={eventsQuery.data} />
     <section className="market-evidence-strip"><div><span>为什么是这个市场状态</span><small>已按可用数据重新分配权重</small></div>{query.data.analysis.factors.filter((factor) => factor.available).slice(0, 3).map((factor) => <article key={factor.key}><span>{factor.label}</span><strong>{fmt(factor.score, 0)}</strong><small>{factor.evidence}</small></article>)}</section>
     <section className="panel today-events reveal delay-2">
       <div className="panel-title"><span>今日市场异动</span><Link to="/market">查看完整雷达 <ArrowUpRight size={14} /></Link></div>

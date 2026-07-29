@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -150,6 +150,14 @@ it("restores a valid session and removes the shell on logout", async () => {
   render(<App />);
 
   expect(await screen.findByText("市场状态")).toBeInTheDocument();
+  const openingDesk = within(await screen.findByLabelText("今日开盘执行台"));
+  expect(openingDesk.getByText("OPENING DESK")).toBeInTheDocument();
+  expect(openingDesk.getByText("允许复核机会")).toBeInTheDocument();
+  expect(openingDesk.getByText("市场闸口")).toBeInTheDocument();
+  expect(openingDesk.getByText("优先复核")).toBeInTheDocument();
+  expect(openingDesk.getByText("等待候选收敛")).toBeInTheDocument();
+  expect(openingDesk.getByText("今日禁区")).toBeInTheDocument();
+  expect(openingDesk.getByRole("link", { name: /01\s*市场闸口/ })).toHaveAttribute("href", "#/opportunities");
   expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
   expect(calls[0]).toEqual({ url: "/api/v1/auth/me", auth: "Bearer token-existing" });
   fireEvent.click(screen.getByText("Owner"));

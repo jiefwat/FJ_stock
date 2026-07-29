@@ -43,6 +43,7 @@
 - [x] Make stop and trial-position guidance adapt to ATR while retaining structural support levels.
 - [x] Keep anonymous stock research independent from private watchlist requests.
 - [x] Preserve the desktop layout and remove Stock Lab horizontal overflow at 390px.
+- [x] Add a Today opening desk so the daily route starts with market gate, priority review, and forbidden-action checks.
 
 ## Application Authentication Gate
 
