@@ -356,6 +356,36 @@ it("shows a future trend forecast before detailed evidence", async () => {
   expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
+it("offers intent-aware Ask Stock shortcuts after the final gate", async () => {
+  renderPage();
+
+  const router = within(await screen.findByLabelText("个股问股快捷入口"));
+  expect(router.getByText("ASK NEXT")).toBeInTheDocument();
+  expect(router.getByText("把这份证据，继续问成结论")).toBeInTheDocument();
+  expect(router.getByRole("link", { name: /问风险/ })).toHaveAttribute(
+    "href",
+    `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "贵州茅台现在主要风险是什么" }).toString()}`,
+  );
+  expect(router.getByRole("link", { name: /问异动/ })).toHaveAttribute(
+    "href",
+    `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "最近贵州茅台怎么大跌" }).toString()}`,
+  );
+  expect(router.getByRole("link", { name: /问基本面/ })).toHaveAttribute(
+    "href",
+    `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "贵州茅台基本面怎么样" }).toString()}`,
+  );
+  expect(router.getByRole("link", { name: /问催化/ })).toHaveAttribute(
+    "href",
+    `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "贵州茅台有什么公告催化" }).toString()}`,
+  );
+
+  const finalGate = await screen.findByLabelText("个股复核作战台");
+  const askRouter = await screen.findByLabelText("个股问股快捷入口");
+  const audit = await screen.findByLabelText("证据总账");
+  expect(finalGate.compareDocumentPosition(askRouter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(askRouter.compareDocumentPosition(audit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("shows descriptive historical validation without changing the page structure", async () => {
   renderPage();
 

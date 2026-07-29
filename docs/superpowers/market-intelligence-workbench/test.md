@@ -1508,3 +1508,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: App shell tests passed, 8 tests; Stock Lab page tests passed, 14 tests; frontend typecheck passed. Coverage asserts account-scoped recent research loading, recent-stock shortcuts, Ask Stock risk/movement links, and Stock Lab writing the opened stock into the recent research trail.
+
+## 2026-07-29 Stock Lab Ask Next Router
+
+Stock Lab now adds an `ASK NEXT` strip immediately after the `FINAL GATE`. The strip turns the current dossier into four intent-aware Ask Stock routes: risk, movement, fundamental quality, and catalyst evidence. Each route carries the current stock symbol/name plus source context and a precise question, so users can continue from deterministic evidence into a conclusion-first chat without copying stock names or writing prompts manually.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Stock Lab page tests passed, 15 tests; frontend typecheck passed. Coverage asserts all four Ask Stock route URLs, preserved stock/source context, and placement between `FINAL GATE` and the evidence audit desk.

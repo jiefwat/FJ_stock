@@ -145,12 +145,13 @@ function splitEvidence(content: string) {
   return parts.length > 1 ? parts : [];
 }
 
-function askHref(dossier: Dossier, params: URLSearchParams) {
+function askHref(dossier: Dossier, params: URLSearchParams, question?: string) {
   const askParams = new URLSearchParams({
     symbol: dossier.quote.symbol,
     name: dossier.quote.name,
     from: params.get("from") ?? "stock",
   });
+  if (question) askParams.set("question", question);
   ["preset", "board", "boardName", "boardType"].forEach((key) => {
     const value = params.get(key);
     if (value) askParams.set(key, value);
@@ -510,6 +511,51 @@ function StockDecisionDeck({ dossier, evidence }: { dossier: Dossier; evidence?:
   </section>;
 }
 
+function StockAskRouter({ dossier, params }: { dossier: Dossier; params: URLSearchParams }) {
+  const name = dossier.quote.name;
+  const routes = [
+    {
+      label: "问风险",
+      intent: "RISK",
+      detail: "只问失效条件、利空和必须放弃的场景。",
+      question: `${name}现在主要风险是什么`,
+    },
+    {
+      label: "问异动",
+      intent: "MOVE",
+      detail: "先量化 1/5/20 日涨跌，再解释量能和结构。",
+      question: `最近${name}怎么大跌`,
+    },
+    {
+      label: "问基本面",
+      intent: "QUALITY",
+      detail: "把财报、现金流、估值和公告缺口分开说。",
+      question: `${name}基本面怎么样`,
+    },
+    {
+      label: "问催化",
+      intent: "CATALYST",
+      detail: "只看已验证公告、研报、题材和龙虎榜线索。",
+      question: `${name}有什么公告催化`,
+    },
+  ];
+
+  return <section className="stock-ask-router" aria-label="个股问股快捷入口">
+    <div>
+      <span>ASK NEXT</span>
+      <strong>把这份证据，继续问成结论</strong>
+      <p>不用复制股票名；每个入口都会带上当前股票和来源上下文。</p>
+    </div>
+    <nav>
+      {routes.map((route) => <Link key={route.intent} to={askHref(dossier, params, route.question)}>
+        <b>{route.intent}</b>
+        <strong>{route.label}</strong>
+        <small>{route.detail}</small>
+      </Link>)}
+    </nav>
+  </section>;
+}
+
 function EvidenceDocuments({ title, items, unavailable }: { title: string; items: EvidenceDocument[]; unavailable: boolean }) {
   return <div className="company-evidence-stream">
     <header><span>{title}</span><b>{items.length} 条</b></header>
@@ -683,7 +729,7 @@ export function StockLabPage() {
     <header className="page-head compact"><div><p className="eyebrow">STOCK LAB / 个股研究</p><h1>一只股票，<em>一条证据链。</em></h1></div></header>
     <div className="stock-search"><Search size={18} /><input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="输入股票代码或名称" aria-label="搜索股票" />{matches.length > 0 && <div className="search-results">{matches.map((item) => <button key={item.symbol} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}</div>
     {fromOpportunity && <section className="stock-source-note" aria-label="线索复核说明"><strong>来自机会选股的研究线索</strong><span>线索页只负责短名单排序；此页的直接建议和证据账本才用于判断是否参与。</span>{sourcePresetLabel && <small>来源策略：{sourcePresetLabel}</small>}</section>}
-    {fromMarketBoard && <section className="stock-source-note" aria-label="板块复核说明"><strong>来自{sourceBoardName || "板块"}{sourceBoardType}复核</strong><span>板块页只说明它是前排样本；此页继续用 FINAL GATE 和证据总账判断是否值得跟踪。</span>{sourceBoardName && <small>来源：{sourceBoardName}{sourceBoardType}</small>}</section>}
+      {fromMarketBoard && <section className="stock-source-note" aria-label="板块复核说明"><strong>来自{sourceBoardName || "板块"}{sourceBoardType}复核</strong><span>板块页只说明它是前排样本；此页继续用 FINAL GATE 和证据总账判断是否值得跟踪。</span>{sourceBoardName && <small>来源：{sourceBoardName}{sourceBoardType}</small>}</section>}
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       <section className="stock-hero">
         <div><span>{query.data.quote.symbol} · {query.data.quote.sector ?? "行业待补"}</span><h2>{query.data.quote.name}</h2><p>{fmt(query.data.quote.price)} <b className={(query.data.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(query.data.quote.change_pct)}</b></p></div>
@@ -692,6 +738,7 @@ export function StockLabPage() {
       {fromOpportunity && <OpportunityReviewOutcome advice={query.data.investment_advice} />}
       <StockReviewRail dossier={query.data} evidence={evidenceQuery.data} location={location} />
       <StockDecisionDeck dossier={query.data} evidence={evidenceQuery.data} />
+      <StockAskRouter dossier={query.data} params={params} />
       <EvidenceAuditDesk dossier={query.data} evidence={evidenceQuery.data} />
       <InvestmentAdvicePanel advice={query.data.investment_advice} />
       <TrendForecastPanel forecast={query.data.trend_forecast} />
