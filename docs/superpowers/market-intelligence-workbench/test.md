@@ -981,3 +981,15 @@ Full gate after the opportunity-queue upgrade:
 | Frontend Vitest | Passed, 44 tests across 8 files |
 | Vite production build | Passed, 1,653 modules transformed |
 | Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+
+Public deployment smoke after the opportunity-queue upgrade:
+
+| Check | Result |
+| --- | --- |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-120858-86f7484` |
+| Commit | `86f7484` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS asset contained `QUEUE GATE`, `线索队列`, `今日处理路线`, `第一张复核单`, and `队列筛选优先线索` |
