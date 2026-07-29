@@ -1480,3 +1480,17 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Ask Stock page tests passed, 14 tests. The new regression clicks the `异动解释` scene route and verifies that it submits `最近大业股份怎么大跌`, renders the movement answer, and displays recent-move evidence.
+
+## 2026-07-29 Global Research Router UI
+
+The authenticated shell now has a topbar research router: `Cmd/Ctrl+K` focuses a global input, stock search uses the existing `/api/v1/search` route with the current auth token, search results jump straight to Stock Lab `FINAL GATE`, and unmatched free text can be handed to Ask Stock. Ask Stock also accepts `/ask?question=...` and auto-submits that inbound question so router handoffs produce an answer instead of a blank chat.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/app/App.test.tsx
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: App shell tests passed, 7 tests; Ask Stock page tests passed, 15 tests; frontend typecheck passed. Coverage asserts keyboard focus, authenticated `/api/v1/search`, stock result rendering with sector context, Ask Stock handoff URL, and automatic Ask Stock submission from `question` search params.

@@ -205,6 +205,41 @@ it("shows market observation time separately from the latest refresh time", asyn
   expect(screen.getByText(/行情时间/)).toBeInTheDocument();
 });
 
+it("adds a global research router for stock search and Ask Stock handoff", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-command");
+  const calls: Array<{ url: string; auth: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    calls.push({ url, auth: headers.get("Authorization") ?? "" });
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 10, email: "command@example.com", display_name: "Command User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    if (url.includes("/api/v1/search")) {
+      return { ok: true, status: 200, json: async () => [{ symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 100, turnover_rate: 1, volume_ratio: 1, pe: 24, pb: 8, market_cap: 1000, net_flow: 100, sector: "白酒" }] };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+  expect(await screen.findByText("市场状态")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+  const input = screen.getByLabelText("搜索股票或输入问题");
+  expect(input).toHaveFocus();
+  expect(screen.getByText("RESEARCH ROUTER")).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: "茅台" } });
+
+  const stockResult = (await screen.findAllByRole("button", { name: /贵州茅台/ }))[0];
+  expect(stockResult).toBeInTheDocument();
+  expect(stockResult).toHaveTextContent("SH.600519");
+  expect(stockResult).toHaveTextContent("白酒");
+  expect(screen.getByRole("link", { name: "交给问股判断" })).toHaveAttribute("href", "#/ask?question=%E8%8C%85%E5%8F%B0");
+  expect(calls.some((call) => call.url.includes("/api/v1/search?q=%E8%8C%85%E5%8F%B0") && call.auth === "Bearer token-command")).toBe(true);
+});
+
 it("keeps the Ask Stock route behind the authenticated shell", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-ask-route");
   window.location.hash = "#/ask";

@@ -694,6 +694,7 @@ export function AskStockPage() {
   const [question, setQuestion] = useState("");
   const [threadState, setThreadState] = useState<AskThreadState>(() => loadThreadState());
   const threadEndRef = useRef<HTMLDivElement | null>(null);
+  const inboundQuestionRef = useRef<string | null>(null);
   const ask = useMutation({
     mutationFn: (value: string) => api<AskStockResponse>("/api/v1/ask-stock", {
       method: "POST",
@@ -758,6 +759,14 @@ export function AskStockPage() {
     event.preventDefault();
     void submitQuestion(question);
   };
+
+  useEffect(() => {
+    const inboundQuestion = safeParam(searchParams, "question");
+    if (inboundQuestion.length < 2 || inboundQuestionRef.current === inboundQuestion) return;
+    inboundQuestionRef.current = inboundQuestion;
+    setQuestion(inboundQuestion);
+    void submitQuestion(inboundQuestion);
+  }, [searchParams]);
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) return;

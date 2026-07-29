@@ -202,6 +202,30 @@ it("routes users through the Ask Stock playbook before submitting", async () => 
   expect(requests).toEqual(["最近大业股份怎么大跌"]);
 });
 
+it("auto-submits a question passed from the global research router", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        intent: "fundamental",
+        answer: "结论：贵州茅台基本面要先看现金流、利润质量和最新公告。",
+      }),
+    };
+  }));
+
+  renderPage("/ask?question=贵州茅台基本面怎么样");
+
+  expect(await screen.findByText("结论：贵州茅台基本面要先看现金流、利润质量和最新公告。")).toBeInTheDocument();
+  expect(screen.getAllByText("贵州茅台基本面怎么样").length).toBeGreaterThanOrEqual(1);
+  expect(requests).toEqual(["贵州茅台基本面怎么样"]);
+});
+
 it("keeps multiple turns and carries the previous stock into a follow-up", async () => {
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

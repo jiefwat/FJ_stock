@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Binoculars, Briefcase, Database, MessageSquareText, RefreshCw, Search, Star, UserRound } from "lucide-react";
-import { useEffect, useState } from "react";
-import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { HashRouter, Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { AskStockPage } from "../features/ask/AskStockPage";
 import { DataCenterPage } from "../features/data/DataCenterPage";
 import { HoldingsPage } from "../features/holdings/HoldingsPage";
@@ -18,6 +18,7 @@ import {
   type AuthResult,
   type UserAccount,
   type UserPreferences,
+  type Quote,
 } from "../lib/api";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: 1 } } });
@@ -77,6 +78,98 @@ function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: Aut
         <small className="auth-disclaimer">研究辅助工具，不构成投资建议。</small>
       </form>
     </main>
+  );
+}
+
+
+function CommandDock() {
+  const navigate = useNavigate();
+  const [draft, setDraft] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const query = draft.trim();
+  const search = useQuery({
+    queryKey: ["global-stock-search", query],
+    queryFn: () => api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(query)}`),
+    enabled: query.length >= 2,
+    staleTime: 30_000,
+  });
+  const results = Array.isArray(search.data) ? search.data.slice(0, 5) : [];
+  const primary = results[0] ?? null;
+  const askHref = `/ask?question=${encodeURIComponent(query || "最近大业股份怎么大跌")}`;
+
+  useEffect(() => {
+    const handleKeydown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        inputRef.current?.focus();
+        setExpanded(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, []);
+
+  const openStock = (symbol: string) => {
+    setExpanded(false);
+    setDraft("");
+    navigate(`/stocks?symbol=${encodeURIComponent(symbol)}#stock-final-gate`);
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (primary) {
+      openStock(primary.symbol);
+      return;
+    }
+    if (query) navigate(`/ask?question=${encodeURIComponent(query)}`);
+  };
+
+  return (
+    <form
+      className="command-dock"
+      role="search"
+      aria-label="全局股票搜索"
+      onSubmit={submit}
+      onFocus={() => setExpanded(true)}
+      onBlur={() => window.setTimeout(() => setExpanded(false), 120)}
+    >
+      <Search size={15} />
+      <input
+        ref={inputRef}
+        type="search"
+        value={draft}
+        onChange={(event) => { setDraft(event.target.value); setExpanded(true); }}
+        placeholder="搜股票 / 直接问股"
+        aria-label="搜索股票或输入问题"
+      />
+      <span>⌘K</span>
+      {expanded ? <div className="command-panel">
+        <div className="command-panel-head">
+          <strong>RESEARCH ROUTER</strong>
+          <small>{query.length >= 2 ? "点股票进 FINAL GATE，或把输入转成问股" : "输入 2 个字或 6 位代码开始"}</small>
+        </div>
+        {query.length >= 2 ? <div className="command-results">
+          {search.isLoading ? <p>正在搜索股票…</p> : null}
+          {!search.isLoading && results.length === 0 ? <p>没找到股票，可以把这句话交给问股。</p> : null}
+          {results.map((item) => (
+            <button type="button" key={item.symbol} onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item.symbol)}>
+              <b>{item.name}</b>
+              <span>{item.symbol}</span>
+              <small>{item.sector ?? "未标注板块"}</small>
+            </button>
+          ))}
+        </div> : <div className="command-shortcuts">
+          <Link to="/market#market-board-zone">板块热度</Link>
+          <Link to="/opportunities">机会队列</Link>
+          <Link to="/holdings">持仓风险</Link>
+        </div>}
+        <div className="command-actions">
+          {primary ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(primary.symbol)}>打开 {primary.name} 研究</button> : null}
+          <Link to={askHref}>交给问股判断</Link>
+        </div>
+      </div> : null}
+    </form>
   );
 }
 
@@ -151,7 +244,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
       </aside>
       <main id="main">
         <div className="topbar">
-          <div className="session"><i />A 股 · 最近交易快照</div>
+          <div className="topbar-left"><div className="session"><i />A 股 · 最近交易快照</div><CommandDock /></div>
           <div className="topbar-actions">
             <AccountPanel user={user} onLogout={onLogout} />
             <button className="refresh-button" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
