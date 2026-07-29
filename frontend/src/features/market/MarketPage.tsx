@@ -132,6 +132,7 @@ function DossierPanel({ data, loading, error, variant, onClose }: { data?: Secto
   return <section className="panel sector-detail">
     <AsyncState loading={loading} error={error}>{data && <>
       <div className="sector-detail-head"><div><span>{variant === "theme" ? "THEME DOSSIER" : "SECTOR DOSSIER"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
+      <SectorReviewDesk data={data} suffix={suffix} />
       <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待增强" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
       <div className="sector-summary">{data.summary.map((item) => <p key={item}>{item}</p>)}{data.missing_evidence.length > 0 && <small>缺口：{data.missing_evidence.join("、")}</small>}</div>
       <div className="dossier-tools" aria-label={`${data.sector.name}${suffix}筛选`}>
@@ -141,6 +142,52 @@ function DossierPanel({ data, loading, error, variant, onClose }: { data?: Secto
       </div>
       {rows.length > 0 ? <div className="sector-constituents">{rows.map((item) => <Link key={item.symbol} to={`/stocks?symbol=${item.symbol}`}><span><b>{item.name}</b><small>{item.symbol}</small></span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><em>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</em></Link>)}</div> : <div className="empty">当前筛选下没有相关股票。</div>}
     </>}</AsyncState>
+  </section>;
+}
+
+function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: string }) {
+  const total = Math.max(1, data.constituents.length);
+  const rising = data.constituents.filter((item) => (item.change_pct ?? 0) > 0).length;
+  const inflow = data.constituents.filter((item) => (item.net_flow ?? 0) > 0).length;
+  const topGain = [...data.constituents].sort((left, right) => (right.change_pct ?? Number.NEGATIVE_INFINITY) - (left.change_pct ?? Number.NEGATIVE_INFINITY))[0];
+  const topFlow = [...data.constituents].sort((left, right) => (right.net_flow ?? Number.NEGATIVE_INFINITY) - (left.net_flow ?? Number.NEGATIVE_INFINITY))[0];
+  const risingRatio = rising / total * 100;
+  const inflowRatio = inflow / total * 100;
+  const tone = data.missing_evidence.length > 0 ? "caution" : risingRatio >= 55 && inflowRatio >= 45 ? "positive" : risingRatio < 35 ? "negative" : "neutral";
+  const verdict = tone === "positive"
+    ? "主线可继续复核"
+    : tone === "negative"
+      ? "扩散不足，先降级观察"
+      : "只看前排，等待确认";
+
+  return <section className={`sector-review-desk ${tone}`} aria-label={`${data.sector.name}${suffix}复核工作台`}>
+    <article className="sector-review-verdict">
+      <span>BOARD GATE</span>
+      <strong>{verdict}</strong>
+      <p>{data.summary[0] ?? `${data.sector.name}${suffix}需要继续补充价格、资金和成分股证据。`}</p>
+    </article>
+    <div className="sector-review-grid">
+      <article>
+        <span>上涨扩散</span>
+        <strong>{rising} / {total}</strong>
+        <p>{percent(risingRatio)} 成分上涨；不过半时不把单点领涨当成板块主线。</p>
+      </article>
+      <article>
+        <span>净流入扩散</span>
+        <strong>{inflow} / {total}</strong>
+        <p>{data.sector.net_flow == null ? "资金证据待增强，先看成交额和涨跌扩散。" : `${percent(inflowRatio)} 成分净流入，板块净流 ${flowAmount(data.sector.net_flow)}。`}</p>
+      </article>
+      <article>
+        <span>领涨核心</span>
+        {topGain ? <Link to={`/stocks?symbol=${topGain.symbol}`}>{topGain.name}<small>{pct(topGain.change_pct)}</small></Link> : <strong>暂无</strong>}
+        <p>先确认领涨是否强于板块，而不是只看板块均值。</p>
+      </article>
+      <article>
+        <span>资金核心</span>
+        {topFlow && topFlow.net_flow != null ? <Link to={`/stocks?symbol=${topFlow.symbol}`}>{topFlow.name}<small>{flowAmount(topFlow.net_flow)}</small></Link> : <strong>待增强</strong>}
+        <p>{data.missing_evidence.length ? `缺口：${data.missing_evidence.join("、")}` : "资金核心需要和领涨核心交叉确认。"}</p>
+      </article>
+    </div>
   </section>;
 }
 

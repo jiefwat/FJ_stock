@@ -166,16 +166,26 @@ it("opens a sector research panel with constituents and stock links", async () =
   fireEvent.click(await screen.findByRole("button", { name: /白酒/ }));
 
   expect(await screen.findByText("白酒板块简析")).toBeInTheDocument();
+  const reviewDesk = within(await screen.findByLabelText("白酒板块复核工作台"));
+  expect(reviewDesk.getByText("BOARD GATE")).toBeInTheDocument();
+  expect(reviewDesk.getByText("主线可继续复核")).toBeInTheDocument();
+  expect(reviewDesk.getByText("上涨扩散")).toBeInTheDocument();
+  expect(reviewDesk.getByText("净流入扩散")).toBeInTheDocument();
+  expect(reviewDesk.getByText("领涨核心")).toBeInTheDocument();
+  expect(reviewDesk.getByText("资金核心")).toBeInTheDocument();
+  expect(reviewDesk.getAllByRole("link", { name: /贵州茅台/ })[0]).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(screen.getByText("市场异动雷达")).toBeInTheDocument();
   expect(screen.getByText("两家央企宣布增持")).toBeInTheDocument();
   expect(screen.getByText("政策与监管")).toBeInTheDocument();
   expect(screen.getByText("事件-板块核验矩阵")).toBeInTheDocument();
   expect(screen.getByText("价格是否确认")).toBeInTheDocument();
   expect(screen.getByText("资金是否确认")).toBeInTheDocument();
-  expect(screen.getByText("主力净流入 1.00 亿，板块热度偏强。")).toBeInTheDocument();
+  expect(screen.getAllByText("主力净流入 1.00 亿，板块热度偏强。").length).toBeGreaterThan(0);
   const detail = screen.getByText("白酒板块简析").closest("section");
   expect(detail).not.toBeNull();
-  const row = within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ });
+  const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
+  expect(constituents).not.toBeNull();
+  const row = within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ });
   expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
 });
@@ -184,13 +194,19 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
   const requests = renderPage("/market?theme=BK0896&themeName=酿酒概念&themeChange=1.8");
 
   expect(await screen.findByText("酿酒概念题材简析")).toBeInTheDocument();
+  const reviewDesk = within(await screen.findByLabelText("酿酒概念题材复核工作台"));
+  expect(reviewDesk.getByText("只看前排，等待确认")).toBeInTheDocument();
+  expect(reviewDesk.getByText(/资金证据待增强/)).toBeInTheDocument();
+  expect(reviewDesk.getByText("缺口：板块资金流")).toBeInTheDocument();
   await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/themes/BK0896"))).toBe(true));
   expect(requests.some((url) => url.includes("name=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5"))).toBe(true);
   const detail = screen.getByText("酿酒概念题材简析").closest("section");
   expect(detail).not.toBeNull();
   expect(within(detail as HTMLElement).getByText("题材涨跌")).toBeInTheDocument();
-  expect(within(detail as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
-  expect(within(detail as HTMLElement).getByText("缺口：板块资金流")).toBeInTheDocument();
+  const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
+  expect(constituents).not.toBeNull();
+  expect(within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
+  expect(within(detail as HTMLElement).getAllByText("缺口：板块资金流").length).toBeGreaterThan(0);
 });
 
 it("renders sourced sector flows and dragon-tiger observations as market intelligence", async () => {
@@ -227,8 +243,10 @@ it("opens sector details from market intelligence flow leaders", async () => {
   await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/sectors/BK1031"))).toBe(true));
   const detail = screen.getByText("电力设备板块简析").closest("section");
   expect(detail).not.toBeNull();
-  expect(within(detail as HTMLElement).getByText("主力净流入 64.66 亿，板块热度偏强。")).toBeInTheDocument();
-  expect(within(detail as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
+  expect(within(detail as HTMLElement).getAllByText("主力净流入 64.66 亿，板块热度偏强。").length).toBeGreaterThan(0);
+  const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
+  expect(constituents).not.toBeNull();
+  expect(within(constituents as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475");
 });
 
 it("sorts and filters dossier constituents like a compact screener", async () => {
@@ -240,26 +258,29 @@ it("sorts and filters dossier constituents like a compact screener", async () =>
   const detail = (await screen.findByText("电力设备板块简析")).closest("section");
   expect(detail).not.toBeNull();
   const scoped = within(detail as HTMLElement);
+  const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
+  expect(constituents).not.toBeNull();
+  const constituentScope = within(constituents as HTMLElement);
   expect(scoped.getByText("显示 3 / 3")).toBeInTheDocument();
-  expect(scoped.getAllByRole("link").map((row) => row.textContent)).toEqual([
+  expect(constituentScope.getAllByRole("link").map((row) => row.textContent)).toEqual([
     expect.stringContaining("立讯精密"),
     expect.stringContaining("阳光电源"),
     expect.stringContaining("宁德时代"),
   ]);
 
   fireEvent.change(scoped.getByLabelText("详情排序"), { target: { value: "change_pct" } });
-  expect(scoped.getAllByRole("link")[0]).toHaveTextContent("阳光电源");
+  expect(constituentScope.getAllByRole("link")[0]).toHaveTextContent("阳光电源");
 
   fireEvent.change(scoped.getByLabelText("详情排序"), { target: { value: "amount" } });
-  expect(scoped.getAllByRole("link")[0]).toHaveTextContent("宁德时代");
+  expect(constituentScope.getAllByRole("link")[0]).toHaveTextContent("宁德时代");
 
   fireEvent.change(scoped.getByLabelText("详情范围"), { target: { value: "net_inflow" } });
-  expect(scoped.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
+  expect(constituentScope.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
   expect(scoped.getByText("显示 2 / 3")).toBeInTheDocument();
 
   fireEvent.change(scoped.getByLabelText("详情范围"), { target: { value: "up" } });
-  expect(scoped.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
-  expect(scoped.getAllByRole("link")).toHaveLength(2);
+  expect(constituentScope.queryByRole("link", { name: /宁德时代/ })).not.toBeInTheDocument();
+  expect(constituentScope.getAllByRole("link")).toHaveLength(2);
 });
 
 it("browses, ranks, and searches the full market without loading every quote", async () => {

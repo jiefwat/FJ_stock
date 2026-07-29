@@ -943,3 +943,16 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Stock Lab passed 11 tests, Market passed 9 tests, and frontend typecheck passed. The new assertions verify `FINAL GATE`, `个股复核作战台`, theme/sector handoff into Market, `市场作战台`, breadth-derived route copy, funding-mainline drilldown, event-risk summary, and the Opportunities handoff.
+
+## 2026-07-29 Sector Review Workbench
+
+Market board and theme drilldowns now start with a `BOARD GATE` review desk before the constituent screener. The desk summarizes whether the board remains worth drilling into, how many constituents are rising, how many have net inflow, which stock leads price, which stock leads capital, and which evidence gaps still block conviction.
+
+Focused frontend checks:
+
+```text
+pnpm --dir frontend test --run src/features/market/MarketPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Market passed 9 tests and frontend typecheck passed. The new assertions verify `白酒板块复核工作台`, `酿酒概念题材复核工作台`, `BOARD GATE`, breadth/inflow spread metrics, lead-stock links into Stock Lab, missing-evidence copy, and that constituent sorting/filtering remains scoped to the screener rows rather than the review desk.
