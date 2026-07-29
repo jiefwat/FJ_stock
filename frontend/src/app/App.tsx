@@ -10,6 +10,7 @@ import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { StockLabPage } from "../features/stocks/StockLabPage";
 import { TodayPage } from "../features/today/TodayPage";
 import { WatchlistPage } from "../features/watchlist/WatchlistPage";
+import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
 import {
   api,
   clearAuthToken,
@@ -86,6 +87,7 @@ function CommandDock() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [recent, setRecent] = useState<RecentResearch[]>(() => loadRecentResearch());
   const inputRef = useRef<HTMLInputElement | null>(null);
   const query = draft.trim();
   const search = useQuery({
@@ -110,16 +112,17 @@ function CommandDock() {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, []);
 
-  const openStock = (symbol: string) => {
+  const openStock = (stock: Pick<Quote, "symbol" | "name" | "sector">) => {
+    setRecent(rememberRecentResearch(stock));
     setExpanded(false);
     setDraft("");
-    navigate(`/stocks?symbol=${encodeURIComponent(symbol)}#stock-final-gate`);
+    navigate(`/stocks?symbol=${encodeURIComponent(stock.symbol)}#stock-final-gate`);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (primary) {
-      openStock(primary.symbol);
+      openStock(primary);
       return;
     }
     if (query) navigate(`/ask?question=${encodeURIComponent(query)}`);
@@ -131,7 +134,7 @@ function CommandDock() {
       role="search"
       aria-label="全局股票搜索"
       onSubmit={submit}
-      onFocus={() => setExpanded(true)}
+      onFocus={() => { setRecent(loadRecentResearch()); setExpanded(true); }}
       onBlur={() => window.setTimeout(() => setExpanded(false), 120)}
     >
       <Search size={15} />
@@ -153,19 +156,31 @@ function CommandDock() {
           {search.isLoading ? <p>正在搜索股票…</p> : null}
           {!search.isLoading && results.length === 0 ? <p>没找到股票，可以把这句话交给问股。</p> : null}
           {results.map((item) => (
-            <button type="button" key={item.symbol} onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item.symbol)}>
+            <button type="button" key={item.symbol} onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item)}>
               <b>{item.name}</b>
               <span>{item.symbol}</span>
               <small>{item.sector ?? "未标注板块"}</small>
             </button>
           ))}
-        </div> : <div className="command-shortcuts">
-          <Link to="/market#market-board-zone">板块热度</Link>
-          <Link to="/opportunities">机会队列</Link>
-          <Link to="/holdings">持仓风险</Link>
+        </div> : <div className="command-zero-state">
+          {recent.length ? <section aria-label="最近研究">
+            <div><strong>最近研究</strong><small>直接回到 FINAL GATE，或者带着股票去问股。</small></div>
+            {recent.slice(0, 4).map((item) => <article key={item.symbol}>
+              <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item)}>
+                <b>{item.name}</b><span>{item.symbol}</span><small>{item.sector ?? "未标注板块"}</small>
+              </button>
+              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`${item.name}现在主要风险是什么`)}`}>问风险</Link>
+              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`最近${item.name}怎么大跌`)}`}>问异动</Link>
+            </article>)}
+          </section> : null}
+          <div className="command-shortcuts">
+            <Link to="/market#market-board-zone">板块热度</Link>
+            <Link to="/opportunities">机会队列</Link>
+            <Link to="/holdings">持仓风险</Link>
+          </div>
         </div>}
         <div className="command-actions">
-          {primary ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(primary.symbol)}>打开 {primary.name} 研究</button> : null}
+          {primary ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(primary)}>打开 {primary.name} 研究</button> : null}
           <Link to={askHref}>交给问股判断</Link>
         </div>
       </div> : null}

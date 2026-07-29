@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
+import { rememberRecentResearch } from "../../lib/recentResearch";
 import { api, fmt, getAuthToken, pct, percent, type EvidenceDocument, type InstrumentEvidenceResult, type Quote, type WatchlistItem } from "../../lib/api";
 import { StockTrend } from "./StockTrend";
 
@@ -652,6 +653,7 @@ export function StockLabPage() {
 
   useEffect(() => {
     if (!query.data) return;
+    rememberRecentResearch(query.data.quote);
     setThesis(query.data.bull_case[0] ?? `关注理由：${query.data.stance}`);
     setInvalidation(query.data.invalidation[0] ?? "关注理由不成立");
   }, [query.data]);

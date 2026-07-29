@@ -1494,3 +1494,17 @@ pnpm --dir frontend typecheck
 ```
 
 Result: App shell tests passed, 7 tests; Ask Stock page tests passed, 15 tests; frontend typecheck passed. Coverage asserts keyboard focus, authenticated `/api/v1/search`, stock result rendering with sector context, Ask Stock handoff URL, and automatic Ask Stock submission from `question` search params.
+
+## 2026-07-29 Recent Research Router
+
+The global research router now remembers recently opened Stock Lab dossiers per authenticated account. Opening Stock Lab records the stock name, symbol, and sector in local storage; focusing the topbar router shows the latest research trail with direct `FINAL GATE` return buttons and one-click Ask Stock routes for risk and movement questions.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/app/App.test.tsx
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: App shell tests passed, 8 tests; Stock Lab page tests passed, 14 tests; frontend typecheck passed. Coverage asserts account-scoped recent research loading, recent-stock shortcuts, Ask Stock risk/movement links, and Stock Lab writing the opened stock into the recent research trail.

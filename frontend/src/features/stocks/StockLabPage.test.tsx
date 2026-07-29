@@ -89,11 +89,12 @@ const evidence = {
 
 function renderPage(watchlist: object[] = [], authenticated = true, route = "/stocks?symbol=SH.600519", evidencePayload: object = evidence) {
   const currentWatchlist = [...watchlist];
-  let accessToken = authenticated ? "fixture-token" : null;
+  const storage = new Map<string, string>();
+  if (authenticated) storage.set("marketdesk.accessToken", "fixture-token");
   vi.stubGlobal("localStorage", {
-    getItem: () => accessToken,
-    setItem: (_key: string, value: string) => { accessToken = value; },
-    removeItem: () => { accessToken = null; },
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => { storage.set(key, value); },
+    removeItem: (key: string) => { storage.delete(key); },
   });
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -110,6 +111,7 @@ function renderPage(watchlist: object[] = [], authenticated = true, route = "/st
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
     fetchMock,
+    storage,
     ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><StockLabPage /></MemoryRouter></QueryClientProvider>),
   };
 }
@@ -390,5 +392,17 @@ it("does not request the private watchlist before login", async () => {
   expect(loginButton).toBeDisabled();
   await waitFor(() => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/watchlist"))).toBe(false);
+  });
+});
+
+it("remembers the opened stock for the global research router", async () => {
+  const { storage } = renderPage();
+
+  expect(await screen.findByText("贵州茅台")).toBeInTheDocument();
+  await waitFor(() => {
+    const raw = storage.get("marketdesk.recentResearch.v1.fixture-token");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw ?? "{}") as { items?: Array<{ symbol: string; name: string }> };
+    expect(parsed.items?.[0]).toMatchObject({ symbol: "SH.600519", name: "贵州茅台" });
   });
 });

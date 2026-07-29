@@ -240,6 +240,34 @@ it("adds a global research router for stock search and Ask Stock handoff", async
   expect(calls.some((call) => call.url.includes("/api/v1/search?q=%E8%8C%85%E5%8F%B0") && call.auth === "Bearer token-command")).toBe(true);
 });
 
+it("shows recent research shortcuts in the global router", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-recent");
+  localStorage.setItem("marketdesk.recentResearch.v1.token-recent", JSON.stringify({
+    version: 1,
+    items: [{ symbol: "SH.600519", name: "贵州茅台", sector: "白酒", updatedAt: 1 }],
+  }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 11, email: "recent@example.com", display_name: "Recent User", created_at: "2026-07-25T01:00:00Z", updated_at: "2026-07-25T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => ({ default_symbol: "SH.600519", start_page: "today", risk_profile: "balanced", morning_email_enabled: true }) };
+    }
+    return { ok: true, status: 200, json: async () => url.includes("/api/v1/market-events") ? events : today };
+  }));
+
+  render(<App />);
+  expect(await screen.findByText("市场状态")).toBeInTheDocument();
+  fireEvent.focus(screen.getByLabelText("搜索股票或输入问题"));
+
+  const recent = within(screen.getByLabelText("最近研究"));
+  expect(recent.getByText("贵州茅台")).toBeInTheDocument();
+  expect(recent.getByText("SH.600519")).toBeInTheDocument();
+  expect(recent.getByRole("link", { name: "问风险" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&question=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E7%8E%B0%E5%9C%A8%E4%B8%BB%E8%A6%81%E9%A3%8E%E9%99%A9%E6%98%AF%E4%BB%80%E4%B9%88");
+  expect(recent.getByRole("link", { name: "问异动" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&question=%E6%9C%80%E8%BF%91%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E6%80%8E%E4%B9%88%E5%A4%A7%E8%B7%8C");
+});
+
 it("keeps the Ask Stock route behind the authenticated shell", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-ask-route");
   window.location.hash = "#/ask";
