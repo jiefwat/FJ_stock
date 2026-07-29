@@ -628,12 +628,24 @@ class MarketService:
     async def create_holding(
         self, payload: dict[str, Any], user_id: int | None = None
     ) -> HoldingDossier:
+        normalized_symbol = self._normalize_a_share_symbol(str(payload.get("symbol", "")))
+        existing_items = self.store.list_holdings(user_id)
+        existing = next(
+            (
+                item
+                for item in existing_items
+                if self._normalize_holding_item(item).symbol == normalized_symbol
+            ),
+            None,
+        )
+        snapshot = await self.market()
+        if existing is not None:
+            return await self._analyse_selected_holding(existing_items, snapshot, existing.id)
         normalized_payload = {
             **payload,
-            "symbol": self._normalize_a_share_symbol(str(payload.get("symbol", ""))),
+            "symbol": normalized_symbol,
         }
         item = self.store.create_holding(**normalized_payload, user_id=user_id)
-        snapshot = await self.market()
         return await self._analyse_selected_holding(
             self.store.list_holdings(user_id), snapshot, item.id
         )

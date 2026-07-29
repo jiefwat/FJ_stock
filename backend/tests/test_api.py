@@ -1068,6 +1068,43 @@ def test_holding_create_normalizes_six_digit_symbol_for_price_lookup(tmp_path) -
     assert payload["pnl"] == 10_000
 
 
+def test_holding_create_reuses_existing_unprefixed_symbol(tmp_path) -> None:
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "legacy.db"))
+    api = authenticated_client(service)
+    account = service.store.get_user_by_email("fixture-user@example.com")
+    assert account is not None
+    legacy = service.store.create_holding(
+        symbol="600519",
+        name="贵州茅台",
+        quantity=100,
+        cost_price=1400,
+        target_weight=0.4,
+        thesis="现金流稳定，等待趋势延续",
+        invalidation="跌破成本且基本面证据转弱",
+        user_id=account.account.id,
+    )
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 200,
+            "cost_price": 1300,
+            "target_weight": 0.2,
+            "thesis": "重复添加",
+            "invalidation": "重复添加",
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["item"]["id"] == legacy.id
+    assert payload["item"]["symbol"] == "SH.600519"
+    assert payload["item"]["quantity"] == 100
+    assert len(api.get("/api/v1/holdings").json()) == 1
+
+
 def test_stock_route_backfills_sector_and_capital_when_snapshot_is_older(tmp_path) -> None:
     service = MarketService(
         provider=StockEnhancementProvider(), store=Store(tmp_path / "enhanced.db")
