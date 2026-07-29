@@ -140,7 +140,7 @@ it("uses market board context for focused Ask Stock prompts", async () => {
 
   expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
-  expect(requests).toEqual(["贵州茅台 为什么它是板块前排样本"]);
+  expect(requests).toEqual(["为什么它是板块前排样本"]);
 });
 
 it("sends focused stock context for short manual follow-up questions", async () => {
@@ -168,9 +168,55 @@ it("sends focused stock context for short manual follow-up questions", async () 
   expect(await screen.findByText("结论：贵州茅台近期下跌优先看价格破位、量能和板块温度。")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(requests).toEqual([{
-    question: "贵州茅台 为什么最近大跌",
+    question: "为什么最近大跌",
     context_symbol: "SH.600519",
     context_name: "贵州茅台",
+  }]);
+});
+
+it("prefers the source stock over stale history for short handoff questions", async () => {
+  localStorage.setItem("marketdesk.askStockThreads.v1.token-ask", JSON.stringify({
+    version: 1,
+    activeThreadId: "old-moutai",
+    threads: [{
+      id: "old-moutai",
+      title: "贵州茅台现在主要风险是什么",
+      updatedAt: Date.now() - 60_000,
+      messages: [
+        { id: "u-old", role: "user", content: "贵州茅台现在主要风险是什么", carriedStock: null },
+        { id: "a-old", role: "assistant", result: stockAnswer },
+      ],
+    }],
+  }));
+  const requests: Array<{ question: string; context_symbol?: string; context_name?: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string; context_symbol?: string; context_name?: string };
+    requests.push(parsed);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        question: parsed.question,
+        symbol: "SZ.300750",
+        name: "宁德时代",
+        intent: "movement",
+        answer: "结论：宁德时代近期下跌先看新能源板块温度和资金撤退。",
+      }),
+    };
+  }));
+
+  renderPage("/ask?symbol=SZ.300750&name=宁德时代&from=opportunities&preset=trend");
+
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("结论：宁德时代近期下跌先看新能源板块温度和资金撤退。")).toBeInTheDocument();
+  expect(screen.getByText("沿用上文：宁德时代 SZ.300750")).toBeInTheDocument();
+  expect(requests).toEqual([{
+    question: "为什么最近大跌",
+    context_symbol: "SZ.300750",
+    context_name: "宁德时代",
   }]);
 });
 
@@ -194,7 +240,7 @@ it("uses opportunity context for lead upgrade prompts", async () => {
   fireEvent.click(screen.getByRole("button", { name: "这条趋势延续线索能升级吗" }));
 
   expect(await screen.findByText("宁德时代这条线索仍需补齐资金确认。")).toBeInTheDocument();
-  expect(requests).toEqual(["宁德时代 这条趋势延续线索能升级吗"]);
+  expect(requests).toEqual(["这条趋势延续线索能升级吗"]);
 });
 
 it("uses watchlist context for follow-up review handoffs", async () => {
@@ -227,7 +273,7 @@ it("uses watchlist context for follow-up review handoffs", async () => {
 
   await waitFor(() => expect(requests).toEqual([
     "贵州茅台还值得继续跟踪吗",
-    "贵州茅台 这条跟踪的失效条件是什么",
+    "这条跟踪的失效条件是什么",
   ]));
 });
 
@@ -268,7 +314,7 @@ it("uses holdings context for portfolio treatment handoffs", async () => {
 
   await waitFor(() => expect(requests).toEqual([
     "我的持仓里贵州茅台风险怎么处理，要不要调仓",
-    "贵州茅台 我的持仓里这只要先减仓吗",
+    "我的持仓里这只要先减仓吗",
   ]));
 });
 
@@ -359,7 +405,7 @@ it("keeps multiple turns and carries the previous stock into a follow-up", async
   expect(await screen.findByText("贵州茅台估值处于合理偏高区间。")).toBeInTheDocument();
   expect(screen.getByText("那估值呢")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
-  expect(requests).toEqual(["贵州茅台现在主要风险是什么", "贵州茅台 那估值呢"]);
+  expect(requests).toEqual(["贵州茅台现在主要风险是什么", "那估值呢"]);
 });
 
 it("carries the previous stock for natural follow-up questions without provider wording", async () => {
@@ -389,7 +435,7 @@ it("carries the previous stock for natural follow-up questions without provider 
   expect(await screen.findByText("贵州茅台合理仓位应先按风险预算控制。")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(screen.queryByText(/问财/i)).not.toBeInTheDocument();
-  expect(requests).toEqual(["贵州茅台现在主要风险是什么", "贵州茅台 你觉得多少合理"]);
+  expect(requests).toEqual(["贵州茅台现在主要风险是什么", "你觉得多少合理"]);
 });
 
 it("restores the current tab conversation for the same session", async () => {

@@ -1616,3 +1616,17 @@ make verify
 ```
 
 Result: Ask Stock frontend tests passed, 18 tests; backend Ask Stock tests passed, 14 tests; frontend typecheck passed; diff check passed; full `make verify` passed with backend 144 tests, frontend 61 tests, production build, and live-data quality gate.
+
+## 2026-07-29 Ask Stock Structured Context
+
+Ask Stock no longer rewrites user questions by prefixing the stock name. The frontend now keeps the user's wording intact and sends focused stock context separately through `context_symbol` / `context_name`; source handoffs also prefer the source stock over stale saved history for short questions. This avoids cross-stock contamination such as turning a fresh short question from a new stock page into an old-stock follow-up.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+git diff --check
+```
+
+Result: Ask Stock frontend tests passed, 19 tests; frontend typecheck passed; diff check passed. Coverage asserts short manual follow-ups send structured context, source-context handoffs beat stale history, and user question text is not prefixed with the stock name.

@@ -286,6 +286,20 @@ function shouldSendContextStock(question: string, stock: StockAnchor | null) {
   return question.length <= 20 && followUpTopicPattern.test(question);
 }
 
+function stockContextForQuestion(
+  question: string,
+  activeStock: StockAnchor | null,
+  sourceStock: StockAnchor | null,
+  forceSourceStock = false,
+) {
+  if (forceSourceStock && sourceStock) return sourceStock;
+  if (shouldCarrySourceStock(question, sourceStock)) return sourceStock;
+  if (shouldCarryStock(question, activeStock)) return activeStock;
+  if (shouldSendContextStock(question, sourceStock)) return sourceStock;
+  if (shouldSendContextStock(question, activeStock)) return activeStock;
+  return null;
+}
+
 function legacyStorageKey() {
   const token = getAuthToken();
   return `marketdesk.askStockThread.v${storageVersion}.${token ? token.slice(-16) : "anonymous"}`;
@@ -777,14 +791,14 @@ export function AskStockPage() {
     if (normalized.length < 2 || ask.isPending) return;
 
     const threadId = activeThread.id;
-    const contextStock = activeStock ?? sourceContext?.stock ?? null;
-    const carriedStock = shouldCarryStock(normalized, contextStock)
-      ? contextStock
-      : (options.forceSourceStock || shouldCarrySourceStock(normalized, sourceContext?.stock ?? null))
-          ? sourceContext?.stock ?? null
-          : null;
-    const requestQuestion = carriedStock ? `${carriedStock.name} ${normalized}` : normalized;
-    const requestContext = carriedStock ?? (shouldSendContextStock(normalized, contextStock) ? contextStock : null);
+    const carriedStock = stockContextForQuestion(
+      normalized,
+      activeStock,
+      sourceContext?.stock ?? null,
+      options.forceSourceStock,
+    );
+    const requestQuestion = normalized;
+    const requestContext = carriedStock;
     setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
       ...currentMessages,
       { id: messageId(), role: "user", content: normalized, carriedStock },
