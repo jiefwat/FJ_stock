@@ -125,6 +125,7 @@ def test_requires_exactly_one_local_stock() -> None:
         ("贵州茅台技术趋势怎么样", "trend"),
         ("贵州茅台估值贵不贵", "valuation"),
         ("贵州茅台仓位和止损怎么定", "action"),
+        ("贵州茅台未来可能涨到多少", "action"),
         ("贵州茅台怎么样", "overview"),
     ],
 )
@@ -173,8 +174,28 @@ def test_builds_bounded_evidence_answer_for_each_intent(intent: str) -> None:
     assert answer.answer.startswith("结论：")
     assert "FINAL GATE：" not in answer.answer
     assert "LEDGER GATE：" not in answer.answer
+    if intent == "overview":
+        assert len(answer.answer) < 240
+        assert "技术面：" not in answer.answer
+        assert "基本面：" not in answer.answer
     assert answer.source == "本地行情快照 + 确定性分析"
     assert answer.disclaimer == "研究辅助信息，不构成投资建议。"
+
+
+def test_target_price_answer_is_direct_and_bounded() -> None:
+    answer = build_stock_answer(
+        question="贵州茅台未来可能涨到多少",
+        intent=classify_stock_question("贵州茅台未来可能涨到多少"),
+        dossier=dossier(),
+        observed_at=datetime(2026, 7, 25, 1, tzinfo=UTC),
+    )
+
+    assert answer.intent == "action"
+    assert "不能精确预测" in answer.answer
+    assert "止盈" in answer.answer or "压力" in answer.answer
+    assert len(answer.answer) < 180
+    assert "技术面：" not in answer.answer
+    assert "基本面：" not in answer.answer
 
 
 def test_risk_answer_uses_existing_risk_evidence() -> None:

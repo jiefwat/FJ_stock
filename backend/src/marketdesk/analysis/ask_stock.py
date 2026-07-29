@@ -131,7 +131,25 @@ def classify_stock_question(question: str) -> AskStockIntent:
         ("risk", ("风险", "利空", "隐患", "下跌", "回撤")),
         ("trend", ("趋势", "技术", "走势", "均线", "动量", "macd", "rsi")),
         ("valuation", ("估值", "市盈率", "市净率", "贵不贵", "便宜", "对比")),
-        ("action", ("买", "卖", "仓位", "减仓", "加仓", "止损", "止盈", "操作", "入场")),
+        (
+            "action",
+            (
+                "买",
+                "卖",
+                "仓位",
+                "减仓",
+                "加仓",
+                "止损",
+                "止盈",
+                "操作",
+                "入场",
+                "目标价",
+                "涨到",
+                "空间",
+                "压力位",
+                "未来",
+            ),
+        ),
     )
     for intent, keywords in keyword_groups:
         if any(keyword in normalized for keyword in keywords):
@@ -193,17 +211,35 @@ def build_stock_answer(
         evidence = _unique(
             [*advice.rationale, advice.entry_plan, advice.stop_loss, advice.take_profit]
         )
-        answer = (
-            f"结论：{quote.name}当前建议为“{advice.action}”。{advice.position_hint}；"
-            f"入场纪律：{advice.entry_plan}；止损纪律：{advice.stop_loss}。"
-        )
+        if _is_price_target_question(question):
+            price_text = f"当前价约 {_price(quote.price)}，" if quote.price is not None else ""
+            answer = (
+                f"结论：不能精确预测会涨到多少；{quote.name}{price_text}"
+                f"上方先按止盈/压力纪律看：{_short_text(advice.take_profit, 72)}。"
+                f"若没有放量和趋势继续确认，就不要把目标价当承诺。"
+            )
+        else:
+            answer = (
+                f"结论：{quote.name}当前建议为“{advice.action}”。"
+                f"{_short_text(advice.position_hint, 70)}；"
+                f"入场：{_short_text(advice.entry_plan, 72)}；"
+                f"止损：{_short_text(advice.stop_loss, 72)}。"
+            )
     else:
         evidence = _unique(
             [*dossier.bull_case, *dossier.bear_case]
             + [factor.evidence for factor in dossier.score_factors if factor.available]
         )
         final_gate, _ = _final_gate(dossier)
-        answer = f"结论：{final_gate}。{dossier.conclusion}"
+        bull = dossier.bull_case[0] if dossier.bull_case else "正向证据不足"
+        bear = dossier.bear_case[0] if dossier.bear_case else "反方证据不足"
+        next_action = dossier.next_actions[0] if dossier.next_actions else "继续补齐证据后再复核"
+        answer = (
+            f"结论：{final_gate}。{quote.name}当前动作是“{dossier.investment_advice.action}”，"
+            f"综合分 {dossier.stance_score or 0:.0f}/100，证据覆盖 {_percent(dossier.evidence_coverage)}。"
+            f"核心理由：{_short_text(bull, 56)}；主要风险：{_short_text(bear, 56)}；"
+            f"下一步：{_short_text(next_action, 56)}。"
+        )
 
     holding_context = _holding_context(holding)
     if holding is not None:
@@ -554,6 +590,19 @@ def _valuation_verdict(quote: EquityQuote) -> str:
     if (pe is not None and pe <= 30) and (pb is None or pb <= 5):
         return "不算贵，但不是单凭便宜就能参与"
     return "偏中性，贵不贵要放到同行和自身历史区间里看"
+
+
+def _is_price_target_question(question: str) -> bool:
+    normalized = _compact(question)
+    return any(
+        keyword in normalized
+        for keyword in ("涨到多少", "能涨多少", "目标价", "未来涨", "上涨空间", "压力位")
+    )
+
+
+def _short_text(value: str, limit: int = 72) -> str:
+    compacted = " ".join(value.split())
+    return compacted if len(compacted) <= limit else f"{compacted[:limit].rstrip()}..."
 
 
 def _money(value: float | None) -> str:

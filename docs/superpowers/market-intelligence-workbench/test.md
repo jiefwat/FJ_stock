@@ -1407,3 +1407,17 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Ask Stock backend/API passed 25 focused tests, the Ask Stock page passed 13 focused tests, and frontend typecheck passed. The assertions verify stock answers no longer start with `FINAL GATE：`, default chat results hide the Stock Lab gate package, and clicking `展开个股分析证据和复核路线` reveals the detailed metrics and review route when needed.
+
+## 2026-07-29 Ask Stock Short Conclusion and Target-price Follow-up
+
+Ask Stock now treats target-price style follow-ups such as `未来可能涨到多少` as an action/price-target question. The deterministic answer no longer falls back to the full Stock Lab `dossier.conclusion`; it returns a short conclusion that says it cannot predict an exact target, shows the current price when available, and uses the take-profit/pressure discipline as the upper reference. Generic overview answers are also capped to a compact conclusion with score, evidence coverage, one support point, one risk point, and one next action.
+
+Focused checks:
+
+```text
+pytest -q backend/tests/test_ask_stock.py backend/tests/test_api.py -k 'ask_stock'
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: Ask Stock backend/API passed 27 focused tests, the Ask Stock page passed 13 focused tests, and frontend typecheck passed. The new assertions verify `未来可能涨到多少` is classified as an action question, returns a bounded direct answer under 180 characters, includes pressure/take-profit discipline, and does not include long Stock Lab sections like `技术面：` or `基本面：`.
