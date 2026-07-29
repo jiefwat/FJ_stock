@@ -10,6 +10,7 @@ import { EquityBrowser } from "./EquityBrowser";
 type MarketData = { snapshot: { meta: Meta; indices: IndexQuote[]; sectors: Sector[] }; analysis: Analysis };
 type DetailSort = "net_flow" | "change_pct" | "amount";
 type DetailFilter = "all" | "net_inflow" | "up";
+type MarketCommandTone = "positive" | "caution" | "negative";
 
 const regimeCopy: Record<string, { label: string; action: string }> = {
   risk_off: { label: "防守", action: "先保护本金，机会只保留观察。" },
@@ -70,42 +71,90 @@ function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { m
   const riskEvent = events?.events.find((event) => event.sentiment === "negative" || event.category === "risk_alert");
   const eventHeadline = riskEvent?.title ?? events?.summary[0] ?? "暂无显著事件风险，继续以指数、板块和资金为主。";
   const routeText = breadth >= 55 ? "广度占优，优先看资金主线是否扩散。" : breadth >= 45 ? "广度中性，只做强势板块里的少数复核。" : "广度偏弱，候选降级，先处理持仓风险。";
+  const command = marketCommandDecision(market, breadth, Boolean(riskEvent), topFlow?.code);
+  const mainline = topFlow ? `${topFlow.name} ${pct(topFlow.change_pct)} · ${flowAmount(topFlow.net_flow)}` : "资金主线未确认";
 
-  return <section className="market-command-center" aria-label="市场作战台">
+  return <section className={`market-command-center ${command.tone}`} aria-label="市场作战台">
     <article className="market-command-verdict">
-      <span>MARKET GATE</span>
+      <span>MARKET PULSE · 大盘执行台</span>
       <strong>{regime.label} · {fmt(market.analysis.score, 0)}/100</strong>
+      <b className="market-command-badge">{command.title}</b>
       <p>{regime.action}</p>
       <small>上涨占比 {percent(breadth)} · 置信度 {percent(market.analysis.confidence * 100)}</small>
+      <em>MARKET GATE</em>
     </article>
-    <div className="market-command-grid">
-      <article>
-        <span>今日路线</span>
-        <strong>{routeText}</strong>
-        <p>市场状态决定机会复核强度，不让单个热点覆盖全局风险。</p>
-      </article>
-      <article>
-        <span>资金主线</span>
-        {topFlow ? <>
-          <button type="button" onClick={() => onOpenSector(topFlow.code)}>{topFlow.name}</button>
-          <p>{pct(topFlow.change_pct)} · 净流 {flowAmount(topFlow.net_flow)}</p>
-        </> : <>
-          <strong>等待资金确认</strong>
-          <p>板块资金源未返回时，只用指数和广度做防守判断。</p>
-        </>}
-      </article>
-      <article>
-        <span>事件风险</span>
-        <strong>{eventHeadline}</strong>
-        <p>事件必须回到板块和个股页验证价格、资金、逻辑三道闸。</p>
-      </article>
-      <article>
-        <span>下一步</span>
-        <Link to="/opportunities">进入机会漏斗</Link>
-        <p>只把通过市场和板块确认的标的带入 Stock Lab。</p>
-      </article>
+    <div className="market-command-stack">
+      <div className="market-command-checks" aria-label="盘面三问">
+        <span>盘面三问</span>
+        <b>宽度够不够：{breadth >= 55 ? "够" : breadth >= 45 ? "勉强" : "不够"}</b>
+        <b>主线清不清：{topFlow ? topFlow.name : "待确认"}</b>
+        <b>风险挡不挡：{riskEvent ? "先刹车" : "不挡"}</b>
+      </div>
+      <div className="market-command-grid">
+        <article>
+          <span>今日路线</span>
+          <strong>{routeText}</strong>
+          <p>市场状态决定机会复核强度，不让单个热点覆盖全局风险。</p>
+        </article>
+        <article>
+          <span>资金主线</span>
+          {topFlow ? <>
+            <button type="button" onClick={() => onOpenSector(topFlow.code)}>{topFlow.name}</button>
+            <p>{pct(topFlow.change_pct)} · 净流 {flowAmount(topFlow.net_flow)}</p>
+          </> : <>
+            <strong>等待资金确认</strong>
+            <p>板块资金源未返回时，只用指数和广度做防守判断。</p>
+          </>}
+        </article>
+        <article>
+          <span>事件风险</span>
+          <strong>{eventHeadline}</strong>
+          <p>事件必须回到板块和个股页验证价格、资金、逻辑三道闸。</p>
+        </article>
+        <article className="market-command-route">
+          <span>下一步 · 执行指令</span>
+          <Link to={command.href}>{command.action}</Link>
+          <p>{command.detail}</p>
+        </article>
+      </div>
+      <div className="market-command-tape">
+        <span>ORDER TAPE</span>
+        <strong>{command.title}</strong>
+        <p>{command.reason} · 主线：{mainline} · 风险：{riskEvent ? eventHeadline : "暂无强风险新闻"}</p>
+      </div>
     </div>
   </section>;
+}
+
+function marketCommandDecision(market: MarketData, breadth: number, hasRiskEvent: boolean, topFlowCode?: string): { tone: MarketCommandTone; title: string; action: string; href: string; detail: string; reason: string } {
+  if (market.analysis.regime === "risk_off" || hasRiskEvent || breadth < 40 || market.analysis.score < 45) {
+    return {
+      tone: "negative",
+      title: "先守风险",
+      action: "检查持仓风险",
+      href: "/holdings",
+      detail: "大盘闸口未放行，先看已有仓位、止损线和风险事件。",
+      reason: "防守优先，机会只保留观察",
+    };
+  }
+  if (breadth >= 55 && market.analysis.score >= 55) {
+    return {
+      tone: "positive",
+      title: "允许复核机会",
+      action: "进入机会漏斗",
+      href: "/opportunities",
+      detail: "市场宽度与温度同时过线，下一步找能被板块和个股证据接住的线索。",
+      reason: "宽度过线，可以启动候选复核",
+    };
+  }
+  return {
+    tone: "caution",
+    title: "只看前排板块",
+    action: topFlowCode ? "打开资金主线" : "等待资金确认",
+    href: topFlowCode ? `/market?sector=${topFlowCode}` : "/market",
+    detail: "大盘未完全放行，只复核资金最强、扩散更清楚的前排。",
+    reason: "宽度或温度仍需确认",
+  };
 }
 
 function detailValue(item: Quote, sort: DetailSort) {

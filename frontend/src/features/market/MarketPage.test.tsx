@@ -225,14 +225,22 @@ it("renders sourced sector flows and dragon-tiger observations as market intelli
   renderPage();
 
   const command = within(await screen.findByLabelText("市场作战台"));
+  expect(command.getByText("MARKET PULSE · 大盘执行台")).toBeInTheDocument();
   expect(command.getByText("MARKET GATE")).toBeInTheDocument();
   expect(command.getByText("均衡 · 58/100")).toBeInTheDocument();
+  expect(command.getAllByText("允许复核机会").length).toBeGreaterThan(0);
+  expect(command.getByText("盘面三问")).toBeInTheDocument();
+  expect(command.getByText("宽度够不够：够")).toBeInTheDocument();
+  expect(command.getByText("主线清不清：电力设备")).toBeInTheDocument();
+  expect(command.getByText("风险挡不挡：不挡")).toBeInTheDocument();
   expect(command.getByText("今日路线")).toBeInTheDocument();
   expect(command.getByText(/广度占优/)).toBeInTheDocument();
   expect(command.getByText("资金主线")).toBeInTheDocument();
   expect(command.getByRole("button", { name: "电力设备" })).toBeInTheDocument();
   expect(command.getByText("事件风险")).toBeInTheDocument();
   expect(command.getByText(/央企改革出现政策支持信号/)).toBeInTheDocument();
+  expect(command.getByText("下一步 · 执行指令")).toBeInTheDocument();
+  expect(command.getByText("ORDER TAPE")).toBeInTheDocument();
   expect(command.getByRole("link", { name: "进入机会漏斗" })).toHaveAttribute("href", "/opportunities");
 
   const panel = within(await screen.findByLabelText("A股市场情报"));

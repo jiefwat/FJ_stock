@@ -102,3 +102,4 @@
 - [x] Add a Stock Lab review route rail so long-form dossiers have an explicit reading order.
 - [x] Add Market STOCK HANDOFF review-section routing into Stock Lab.
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.
+- [x] Add a Market execution console so broad-market review starts with breadth, capital line, risk brake, and next instruction.
