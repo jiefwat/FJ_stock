@@ -1142,3 +1142,22 @@ pnpm --dir frontend typecheck
 ```
 
 Result: Ask Stock passed 13 focused tests, Stock Lab passed 12 focused tests, and frontend typecheck passed. The assertions verify that `去看交易计划 →` targets `#stock-investment-advice`, `打开个股研究` targets `#stock-final-gate`, and Stock Lab exposes stable IDs for `stock-final-gate`, `stock-evidence-audit`, `stock-investment-advice`, and `stock-company-evidence`.
+
+Full gate and public deployment after the Ask Stock deep-link upgrade:
+
+| Check | Result |
+| --- | --- |
+| Backend lint | Passed, no findings |
+| Backend mypy | Passed, 23 source files |
+| Backend pytest | Passed, 129 tests, 1 third-party deprecation warning |
+| Frontend TypeScript | Passed |
+| Frontend Vitest | Passed, 47 tests across 8 files |
+| Vite production build | Passed, 1,653 modules transformed |
+| Live data | Passed: 5,533 equities, 100.0% coverage, 6 indices, 100 sectors, fresh observation |
+| URL | `https://stock.jiewat-kaka-fj.com` |
+| Release | `/opt/aster-market/releases/20260729-130800-cce0d23` |
+| Commit | `cce0d23` |
+| Health | Public `/healthz` returned `status=ok` |
+| Services | `stock-ts.service` and `stock-ts-morning-email.timer` were active |
+| Data boundary | `/opt/aster-market/current/data` was absent; runtime data remains external |
+| Frontend asset | Current JS/CSS assets contained `去看交易计划`, `stock-investment-advice`, `stock-final-gate`, `stock-evidence-audit`, `stock-company-evidence`, and `stock-risk-controls` |
