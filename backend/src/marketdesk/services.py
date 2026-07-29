@@ -241,10 +241,25 @@ class MarketService:
 
     @staticmethod
     def _require_a_share_symbol(symbol: str) -> str:
+        return MarketService._normalize_a_share_symbol(symbol)
+
+    @staticmethod
+    def _normalize_a_share_symbol(symbol: str) -> str:
         normalized = symbol.strip().upper()
         match = re.fullmatch(r"(SH|SZ|BJ)\.(\d{6})", normalized)
         if match is None:
-            raise ValueError("A-share symbol required")
+            bare = re.fullmatch(r"\d{6}", normalized)
+            if bare is None:
+                raise ValueError("A-share symbol required")
+            code = bare.group(0)
+            market = (
+                "BJ"
+                if code.startswith(("4", "8"))
+                else "SH"
+                if code.startswith(("5", "6", "9"))
+                else "SZ"
+            )
+            return f"{market}.{code}"
         market, code = match.groups()
         expected = (
             "BJ"
@@ -613,7 +628,11 @@ class MarketService:
     async def create_holding(
         self, payload: dict[str, Any], user_id: int | None = None
     ) -> HoldingDossier:
-        item = self.store.create_holding(**payload, user_id=user_id)
+        normalized_payload = {
+            **payload,
+            "symbol": self._normalize_a_share_symbol(str(payload.get("symbol", ""))),
+        }
+        item = self.store.create_holding(**normalized_payload, user_id=user_id)
         snapshot = await self.market()
         return await self._analyse_selected_holding(
             self.store.list_holdings(user_id), snapshot, item.id
@@ -634,29 +653,49 @@ class MarketService:
     async def _analyse_holdings(
         self, items: list[HoldingItem], snapshot: MarketSnapshot
     ) -> list[HoldingDossier]:
+        items = [self._normalize_holding_item(item) for item in items]
         quote_by_symbol = {quote.symbol: quote for quote in snapshot.equities}
+        bars_by_symbol = await self._holding_bars(items)
         total_market_value = 0.0
         for item in items:
-            quote = quote_by_symbol.get(item.symbol)
+            quote = self._quote_for_holding(item, quote_by_symbol, bars_by_symbol)
             if quote is not None and quote.price is not None:
                 total_market_value += item.quantity * quote.price
-        bars_by_symbol = await self._holding_bars(items)
         return [
             analyse_holding(
                 item,
-                quote_by_symbol.get(
-                    item.symbol,
-                    EquityQuote(
-                        symbol=item.symbol,
-                        code=item.symbol.split(".")[-1],
-                        name=item.name,
-                    ),
-                ),
+                self._quote_for_holding(item, quote_by_symbol, bars_by_symbol),
                 total_market_value or None,
                 bars_by_symbol.get(item.symbol),
             )
             for item in items
         ]
+
+    def _normalize_holding_item(self, item: HoldingItem) -> HoldingItem:
+        try:
+            normalized = self._normalize_a_share_symbol(item.symbol)
+        except ValueError:
+            return item
+        return item.model_copy(update={"symbol": normalized})
+
+    @staticmethod
+    def _quote_for_holding(
+        item: HoldingItem,
+        quote_by_symbol: dict[str, EquityQuote],
+        bars_by_symbol: dict[str, list[Any]],
+    ) -> EquityQuote:
+        quote = quote_by_symbol.get(
+            item.symbol,
+            EquityQuote(
+                symbol=item.symbol,
+                code=item.symbol.split(".")[-1],
+                name=item.name,
+            ),
+        )
+        bars = bars_by_symbol.get(item.symbol) or []
+        if quote.price is None and bars:
+            return quote.model_copy(update={"price": bars[-1].close})
+        return quote
 
     async def _holding_bars(self, items: list[HoldingItem]) -> dict[str, list[Any]]:
         symbols = list(dict.fromkeys(item.symbol for item in items))

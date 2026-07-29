@@ -3,7 +3,7 @@ import { Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, fmt, getAuthToken, pct, percent, type HoldingDossier } from "../../lib/api";
+import { api, fmt, getAuthToken, pct, type HoldingDossier } from "../../lib/api";
 
 type HoldingDraft = {
   symbol: string;
@@ -33,10 +33,6 @@ function toPayload(draft: HoldingDraft) {
     thesis: draft.thesis.trim(),
     invalidation: draft.invalidation.trim(),
   };
-}
-
-function weight(value: number | null | undefined, digits = 1) {
-  return value == null ? "—" : percent(value * 100, digits);
 }
 
 function shares(value: number | null | undefined) {
@@ -144,8 +140,11 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
       <div><small>近5日盈亏</small><PnlCell value={dossier.five_day_pnl} ratio={dossier.five_day_pnl_pct} /></div>
     </div>
     <div className="holding-target-cell">
-      <b>{fmt(dossier.market_value, 0)}</b><small>当前市值</small>
-      <b>{weight(dossier.portfolio_weight)}</b><small>目标 {weight(dossier.item.target_weight)}</small>
+      <b>{fmt(dossier.quote.price)}</b><small>现价</small>
+      <b>{fmt(dossier.market_value, 0)}</b><small>持仓市值</small>
+      <b>{fmt(dossier.cost_value, 0)}</b><small>持仓成本</small>
+      <b>{fmt(dossier.target_market_value, 0)}</b><small>目标市值</small>
+      <small>差额 {signedMoney(dossier.rebalance_value, 0)}</small>
       <strong className={actionTone(dossier)}>{actionQuantity(dossier)}</strong><small>{actionLabel[dossier.action] ?? dossier.action}</small>
     </div>
     <div className="holding-edit-cell" aria-label={`${dossier.item.name} 快速修改`}>
@@ -195,7 +194,7 @@ export function HoldingsPage() {
       <div className="panel-title"><span>组合总览</span><small>整体分析只回答：风险在哪里，今天先处理谁</small></div>
       <div className="portfolio-hero-line">
         <article><span>组合市值</span><strong>{fmt(summary.totalValue, 0)}</strong></article>
-        <article><span>浮动盈亏</span><strong className={summary.totalPnl >= 0 ? "up" : "down"}>{fmt(summary.totalPnl, 0)} · {pct(summary.totalPnlPct)}</strong></article>
+        <article><span>浮动盈亏</span><strong className={summary.totalPnl >= 0 ? "up" : "down"}>{signedMoney(summary.totalPnl, 0)}</strong><small>收益率 {pct(summary.totalPnlPct)}</small></article>
         <article><span>持仓数量</span><strong>{holdings.length}</strong></article>
         <article><span>需复核</span><strong>{summary.reviewItems.length}</strong></article>
       </div>

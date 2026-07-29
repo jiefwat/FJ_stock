@@ -90,6 +90,14 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(within(row).getByText(/10,000/)).toBeInTheDocument();
   expect(within(row).getByText("+1,780")).toBeInTheDocument();
   expect(within(row).getByText("-3,200")).toBeInTheDocument();
+  expect(within(row).getByText("现价")).toBeInTheDocument();
+  expect(within(row).getByText("1,500")).toBeInTheDocument();
+  expect(within(row).getByText("持仓市值")).toBeInTheDocument();
+  expect(within(row).getByText("持仓成本")).toBeInTheDocument();
+  expect(within(row).getByText("目标市值")).toBeInTheDocument();
+  expect(within(row).getByText("60,000")).toBeInTheDocument();
+  expect(within(row).queryByText("100.0%")).not.toBeInTheDocument();
+  expect(within(row).queryByText("目标 40.0%")).not.toBeInTheDocument();
   expect(within(row).getByRole("link", { name: "个股分析 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();

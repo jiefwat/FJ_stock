@@ -1044,6 +1044,30 @@ def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
     assert len(api.get("/api/v1/holdings").json()) == 1
 
 
+def test_holding_create_normalizes_six_digit_symbol_for_price_lookup(tmp_path) -> None:
+    api = client(tmp_path)
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "600519",
+            "name": "贵州茅台",
+            "quantity": 100,
+            "cost_price": 1400,
+            "target_weight": 0.4,
+            "thesis": "现金流稳定，等待趋势延续",
+            "invalidation": "跌破成本且基本面证据转弱",
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["item"]["symbol"] == "SH.600519"
+    assert payload["quote"]["price"] == 1500
+    assert payload["market_value"] == 150_000
+    assert payload["pnl"] == 10_000
+
+
 def test_stock_route_backfills_sector_and_capital_when_snapshot_is_older(tmp_path) -> None:
     service = MarketService(
         provider=StockEnhancementProvider(), store=Store(tmp_path / "enhanced.db")
