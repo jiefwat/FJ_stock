@@ -1023,6 +1023,47 @@ def test_opportunities_route_enriches_top_candidates_with_history(tmp_path) -> N
     assert "历史确认" in {item["label"] for item in candidate["components"]}
 
 
+class ManyExcludedOpportunityProvider(FixtureProvider):
+    async def fetch_equities(self):
+        dataset = await super().fetch_equities()
+        extras = [
+            EquityQuote(
+                symbol=f"SZ.{i:06d}",
+                code=f"{i:06d}",
+                name=f"ST样本{i}",
+                price=8.0,
+                change_pct=-1.0,
+                amount=1_000_000,
+                turnover_rate=0.2,
+                volume_ratio=0.6,
+                pe=30,
+                pb=2,
+                market_cap=5_000_000_000,
+                net_flow=-1_000_000,
+                sector="测试",
+            )
+            for i in range(300000, 300500)
+        ]
+        return dataset.model_copy(update={"items": [*dataset.items, *extras]})
+
+
+def test_opportunities_route_does_not_send_full_excluded_universe(tmp_path) -> None:
+    service = MarketService(
+        provider=ManyExcludedOpportunityProvider(),
+        store=Store(tmp_path / "opportunity-payload.db"),
+    )
+    api = authenticated_client(service)
+
+    response = api.get("/api/v1/opportunities", params={"preset": "trend", "limit": 1})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["funnel"]["excluded"] >= 500
+    assert payload["excluded"] == []
+    assert len(response.content) < 80_000
+
+
+
 class HangingKlineProvider(FixtureProvider):
     async def fetch_kline(self, symbol: str, limit: int = 180):
         await asyncio.sleep(60)

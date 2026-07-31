@@ -529,7 +529,7 @@ class MarketService:
         symbols = [item.quote.symbol for item in initial.candidates[: max(50, limit)]]
         history_by_symbol = await self._opportunity_kline_history(symbols)
         result = rank_candidates(snapshot.equities, regime, preset, history_by_symbol)
-        return result.model_copy(update={"candidates": result.candidates[:limit]})
+        return result.model_copy(update={"candidates": result.candidates[:limit], "excluded": []})
 
     async def today(self) -> dict[str, Any]:
         snapshot = await self.market()
