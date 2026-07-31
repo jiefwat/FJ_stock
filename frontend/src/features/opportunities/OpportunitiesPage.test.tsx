@@ -198,7 +198,7 @@ it("offers only effective primary strategies instead of data-blocked presets", a
 
   fireEvent.click(screen.getByRole("button", { name: "放量突破" }));
   expect(fetchMock).toHaveBeenCalledWith(
-    "/api/v1/opportunities?preset=volume_breakout",
+    "/api/v1/opportunities?preset=volume_breakout&limit=20",
     expect.any(Object),
   );
 });
