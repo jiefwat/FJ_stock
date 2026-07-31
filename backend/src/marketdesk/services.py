@@ -93,48 +93,77 @@ class MarketService:
         self._capability_cache: dict[str, tuple[float, Any]] = {}
         self._capability_cache_lock = asyncio.Lock()
         self._opportunity_kline_timeout_seconds = 4.0
+        self._refresh_lock = asyncio.Lock()
+        self._refresh_task: asyncio.Task[MarketSnapshot] | None = None
 
     async def refresh(self) -> MarketSnapshot:
-        equities = await self.provider.fetch_equities()
-        errors: list[str] = []
-        self._provider_errors = {}
-        indices: list[Any]
-        try:
-            indices = await self.provider.fetch_indices()
-        except Exception as error:
-            indices = []
-            message = str(error)
-            errors.append(f"indices: {message}")
-            self._provider_errors["tencent"] = message
-        sectors: list[Any]
-        try:
-            sectors = await self.provider.fetch_sectors()
-        except Exception as error:
-            sectors = []
-            message = str(error)
-            errors.append(f"sectors: {message}")
-            self._provider_errors["sina"] = message
-        meta = equities.meta.model_copy(update={"errors": errors})
-        self._snapshot = MarketSnapshot(
-            meta=meta, indices=indices, equities=equities.items, sectors=sectors
-        )
-        self.store.save_snapshot(
-            "market", self._snapshot.meta.observed_at, self._snapshot.model_dump(mode="json")
-        )
-        return self._snapshot
+        async with self._refresh_lock:
+            equities = await self.provider.fetch_equities()
+            errors: list[str] = []
+            self._provider_errors = {}
+            indices: list[Any]
+            try:
+                indices = await self.provider.fetch_indices()
+            except Exception as error:
+                indices = []
+                message = str(error)
+                errors.append(f"indices: {message}")
+                self._provider_errors["tencent"] = message
+            sectors: list[Any]
+            try:
+                sectors = await self.provider.fetch_sectors()
+            except Exception as error:
+                sectors = []
+                message = str(error)
+                errors.append(f"sectors: {message}")
+                self._provider_errors["sina"] = message
+            meta = equities.meta.model_copy(update={"errors": errors})
+            self._snapshot = MarketSnapshot(
+                meta=meta, indices=indices, equities=equities.items, sectors=sectors
+            )
+            self.store.save_snapshot(
+                "market", self._snapshot.meta.observed_at, self._snapshot.model_dump(mode="json")
+            )
+            return self._snapshot
 
     async def market(self, force: bool = False) -> MarketSnapshot:
-        if self._snapshot is None or force:
+        if force:
+            return await self.refresh()
+        if self._snapshot is None:
+            cached = self._cached_market_snapshot()
+            if cached is not None:
+                self._snapshot = cached
+                self._schedule_background_refresh()
+                return self._snapshot
             try:
                 return await self.refresh()
             except Exception:
-                cached = self.store.latest_snapshot("market")
+                cached = self._cached_market_snapshot()
                 if cached is None:
                     raise
-                payload = dict(cached.payload)
-                payload["meta"]["freshness"] = "stale"  # type: ignore[index]
-                self._snapshot = MarketSnapshot.model_validate(payload)
+                self._snapshot = cached
         return self._snapshot
+
+    def _cached_market_snapshot(self) -> MarketSnapshot | None:
+        cached = self.store.latest_snapshot("market")
+        if cached is None:
+            return None
+        payload = dict(cached.payload)
+        payload["meta"]["freshness"] = "stale"  # type: ignore[index]
+        return MarketSnapshot.model_validate(payload)
+
+    def _schedule_background_refresh(self) -> None:
+        if self._refresh_task is not None and not self._refresh_task.done():
+            return
+        self._refresh_task = asyncio.create_task(self._refresh_cache_safely())
+
+    async def _refresh_cache_safely(self) -> MarketSnapshot:
+        try:
+            return await self.refresh()
+        except Exception:
+            if self._snapshot is None:
+                raise
+            return self._snapshot
 
     async def market_payload(self) -> MarketPayload:
         snapshot = await self.market()

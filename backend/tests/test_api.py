@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 from datetime import UTC, datetime
 
@@ -141,6 +142,12 @@ class FixtureProvider:
 class SectorFailProvider(FixtureProvider):
     async def fetch_sectors(self):
         raise RuntimeError("sector provider unavailable")
+
+
+class HangingEquityProvider(FixtureProvider):
+    async def fetch_equities(self):
+        await asyncio.sleep(5)
+        return await super().fetch_equities()
 
 
 class EquityBrowserProvider(FixtureProvider):
@@ -1746,6 +1753,23 @@ async def test_market_service_keeps_core_data_when_sector_source_fails(tmp_path)
     assert len(snapshot.equities) == 1
     assert snapshot.sectors == []
     assert snapshot.meta.errors == ["sectors: sector provider unavailable"]
+
+
+@pytest.mark.asyncio
+async def test_market_service_returns_cached_snapshot_before_slow_cold_refresh(tmp_path) -> None:
+    store = Store(tmp_path / "cached-cold-start.db")
+    await MarketService(provider=FixtureProvider(), store=store).refresh()
+    service = MarketService(provider=HangingEquityProvider(), store=store)
+
+    snapshot = await asyncio.wait_for(service.market(), timeout=0.2)
+
+    assert len(snapshot.equities) == 1
+    assert snapshot.meta.freshness == Freshness.STALE
+    task = service._refresh_task
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def test_app_can_refresh_market_data_on_a_two_hour_schedule(tmp_path) -> None:
