@@ -25,8 +25,10 @@ from marketdesk.analysis.sector import analyse_sector
 from marketdesk.analysis.stock import analyse_stock
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AskStockConversationMessage,
     AskStockMetric,
     AskStockResponse,
+    AskStockSourceContext,
     Bar,
     CapabilityState,
     CapabilityStatus,
@@ -53,6 +55,7 @@ from marketdesk.models import (
     TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
+from marketdesk.providers.llm_web import LLMWebAskContext
 from marketdesk.providers.public_market import PublicMarketProvider
 from marketdesk.store import Store
 
@@ -598,12 +601,34 @@ class MarketService:
         *,
         context_symbol: str | None = None,
         context_name: str | None = None,
+        conversation: list[AskStockConversationMessage] | None = None,
+        source_context: AskStockSourceContext | None = None,
     ) -> AskStockResponse:
         snapshot = await self.market()
         holdings = self.store.list_holdings(user_id) if user_id is not None else []
+        source_stock = source_context.stock if source_context is not None else None
+        context_symbol = context_symbol or (source_stock.symbol if source_stock else None)
+        context_name = context_name or (source_stock.name if source_stock else None)
         context_quote = self._resolve_ask_context_stock(
             snapshot.equities, context_symbol, context_name
         )
+        llm_asker = getattr(self.provider, "ask_stock_with_llm", None)
+        if callable(llm_asker) and bool(getattr(self.provider, "llm_web_configured", False)):
+            llm_context = self._build_llm_ask_context(
+                question=question,
+                snapshot=snapshot,
+                holdings=holdings,
+                context_quote=context_quote,
+                context_symbol=context_symbol,
+                context_name=context_name,
+                conversation=conversation or [],
+                source_context=source_context,
+            )
+            try:
+                result = await llm_asker(llm_context)
+                return cast(AskStockResponse, result)
+            except ProviderUnavailable as error:
+                return self._llm_unavailable_answer(question, snapshot, context_quote, str(error))
         try:
             quote = resolve_stock_question(question, snapshot.equities)
         except StockQuestionNotFound as error:
@@ -666,6 +691,102 @@ class MarketService:
             dossier=dossier,
             holding=holding_context,
             observed_at=snapshot.meta.observed_at,
+        )
+
+    def _build_llm_ask_context(
+        self,
+        *,
+        question: str,
+        snapshot: MarketSnapshot,
+        holdings: list[HoldingItem],
+        context_quote: EquityQuote | None,
+        context_symbol: str | None,
+        context_name: str | None,
+        conversation: list[AskStockConversationMessage],
+        source_context: AskStockSourceContext | None,
+    ) -> LLMWebAskContext:
+        quote = context_quote
+        if quote is None:
+            try:
+                quote = resolve_stock_question(question, snapshot.equities)
+            except ValueError:
+                quote = None
+        stock = self._llm_stock_payload(quote, context_symbol, context_name)
+        return LLMWebAskContext(
+            question=question,
+            conversation=tuple(conversation[-8:]),
+            source_context=source_context,
+            stock=stock,
+            holdings=tuple(self._llm_holding_notes(holdings)),
+            observed_at=snapshot.meta.observed_at,
+            market_notes=tuple(self._llm_market_notes(snapshot)),
+        )
+
+    def _llm_stock_payload(
+        self,
+        quote: EquityQuote | None,
+        context_symbol: str | None,
+        context_name: str | None,
+    ) -> dict[str, str | int | float | None] | None:
+        if quote is not None:
+            return {
+                "symbol": quote.symbol,
+                "code": quote.code,
+                "name": quote.name,
+                "price": quote.price,
+                "change_pct": quote.change_pct,
+                "amount": quote.amount,
+                "turnover_rate": quote.turnover_rate,
+                "pe": quote.pe,
+                "pb": quote.pb,
+                "market_cap": quote.market_cap,
+                "net_flow": quote.net_flow,
+                "sector": quote.sector,
+            }
+        if context_symbol or context_name:
+            return {"symbol": context_symbol, "name": context_name}
+        return None
+
+    def _llm_holding_notes(self, holdings: list[HoldingItem]) -> list[str]:
+        notes: list[str] = []
+        for item in holdings[:8]:
+            holding = self._normalize_holding_item(item)
+            notes.append(
+                f"{holding.name}({holding.symbol}) 数量{holding.quantity:g} "
+                f"成本{holding.cost_price:g} 目标仓位{holding.target_weight:.0%} 状态{holding.status}"
+            )
+        return notes
+
+    def _llm_market_notes(self, snapshot: MarketSnapshot) -> list[str]:
+        notes: list[str] = []
+        for index in snapshot.indices[:3]:
+            change = f"{index.change_pct:+.2f}%" if index.change_pct is not None else "涨跌幅缺失"
+            notes.append(f"{index.name} {change}")
+        for sector in snapshot.sectors[:3]:
+            change = f"{sector.change_pct:+.2f}%" if sector.change_pct is not None else "涨跌幅缺失"
+            notes.append(f"{sector.name} {change}")
+        return notes
+
+    def _llm_unavailable_answer(
+        self,
+        question: str,
+        snapshot: MarketSnapshot,
+        context_quote: EquityQuote | None,
+        error: str,
+    ) -> AskStockResponse:
+        return AskStockResponse(
+            kind="llm_answer",
+            question=question,
+            intent="overview",
+            symbol=context_quote.symbol if context_quote is not None else None,
+            name=context_quote.name if context_quote is not None else None,
+            answer="联网问答暂不可用，当前没有生成可交易结论。请稍后重试，或先打开个股研究页核对本地行情证据。",
+            evidence=["大模型联网请求未完成，未把旧版规则答案伪装成联网结论。"],
+            risks=[error[:180]],
+            next_actions=["检查 MARKETDESK_LLM_WEB_API_KEY / MARKETDESK_LLM_WEB_MODEL 配置。"],
+            observed_at=snapshot.meta.observed_at,
+            source="联网大模型问答",
+            disclaimer="联网研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
     def _resolve_ask_context_stock(

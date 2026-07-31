@@ -17,7 +17,7 @@ export type TradingAnomaly = { symbol: string; name: string; trade_date: string;
 export type MarketIntelligenceResult = { meta: Meta; sector_flows: Sector[]; anomalies: TradingAnomaly[]; capabilities: Record<string, CapabilityState> };
 export type OpportunityDimension = { key: string; label: string; signal: string; score: number | null; summary: string; evidence: string[]; available?: boolean };
 export type OpportunityHistoryCheck = { available: boolean; lookback_days: number; score: number | null; trend_20d_pct: number | null; trend_60d_pct: number | null; ma20_gap_pct: number | null; volatility_20d: number | null; max_drawdown_60d: number | null; volume_ratio_20d: number | null; summary: string; evidence: string[]; risk_flags: string[] };
-export type Candidate = { quote: Quote; base_score: number; context_penalty: number; score: number; evidence_coverage: number; components: { key: string; label: string; raw_value: number | null; score: number; weight: number; weighted_score: number }[]; dimensions: OpportunityDimension[]; history_check?: OpportunityHistoryCheck | null; thesis: string; invalidation: string[]; next_actions: string[]; risk_flags: string[] };
+export type Candidate = { quote: Quote; base_score: number; context_penalty: number; score: number; upside_score?: number; upside_label?: string; upside_summary?: string; upside_drivers?: string[]; upside_risks?: string[]; evidence_coverage: number; components: { key: string; label: string; raw_value: number | null; score: number; weight: number; weighted_score: number }[]; dimensions: OpportunityDimension[]; history_check?: OpportunityHistoryCheck | null; thesis: string; invalidation: string[]; next_actions: string[]; risk_flags: string[] };
 export type WatchlistItem = { id: number; symbol: string; name: string; thesis: string; invalidation: string; status: string; created_at?: string; updated_at: string };
 export type HoldingItem = { id: number; symbol: string; name: string; quantity: number; cost_price: number; target_weight: number; thesis: string; invalidation: string; status: string; created_at?: string; updated_at: string };
 export type HoldingAnalysisDimension = { key: string; label: string; signal: string; summary: string; evidence: string[] };
@@ -71,8 +71,18 @@ export type AskStockHoldingContext = {
   action: string | null;
   risk_flags: string[];
 };
+export type AskStockConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+export type AskStockSourceContext = {
+  origin: string;
+  label: string;
+  detail?: string | null;
+  stock?: { symbol?: string | null; name?: string | null } | null;
+};
 export type AskStockResponse = {
-  kind: "stock_analysis" | "semantic_screen" | "portfolio_analysis";
+  kind: "stock_analysis" | "semantic_screen" | "portfolio_analysis" | "llm_answer";
   question: string;
   intent: "risk" | "trend" | "valuation" | "fundamental" | "catalyst" | "action" | "movement" | "overview" | "screening" | "portfolio";
   symbol: string | null;

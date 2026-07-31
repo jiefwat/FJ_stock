@@ -14,9 +14,9 @@ type MarketCommandTone = "positive" | "caution" | "negative";
 
 const regimeCopy: Record<string, { label: string; action: string }> = {
   risk_off: { label: "防守", action: "先保护本金，机会只保留观察。" },
-  cautious: { label: "谨慎", action: "只复核板块、量能、价格同时确认的线索。" },
-  balanced: { label: "均衡", action: "可以复核机会，但不要脱离证据链追涨。" },
-  risk_on: { label: "进攻", action: "可提高复核强度，仍按失效条件执行。" },
+  cautious: { label: "谨慎", action: "只看板块、量能、价格同时确认的线索。" },
+  balanced: { label: "均衡", action: "可以看机会，但不要追涨。" },
+  risk_on: { label: "进攻", action: "可以更积极，仍守失效条件。" },
 };
 
 export function MarketPage() {
@@ -74,25 +74,19 @@ export function MarketPage() {
   }, [activeDossierKey, activeDossierReady]);
 
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
-    <header className="page-head"><div><p className="eyebrow">MARKET / 全市场体检</p><h1>市场不是一个点数，<br /><em>而是一组证据。</em></h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
+    <header className="page-head"><div><h1>市场</h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
     <MarketCommandCenter market={query.data} intelligence={intelligenceQuery.data} events={eventsQuery.data} onOpenSector={openSector} />
-    <nav className="market-page-map" aria-label="大盘页阅读顺序">
-      <a href="#market-gate"><span>01</span><strong>先看大盘闸口</strong><small>决定今天进攻、防守还是只观察</small></a>
-      <a href="#market-board-workbench"><span>02</span><strong>再看板块/题材</strong><small>资金主线、热度和成分股放在一起看</small></a>
-      <a href="#market-events"><span>03</span><strong>核验事件风险</strong><small>新闻必须回到板块和个股证据</small></a>
-      <a href="#market-browser"><span>04</span><strong>最后做全市场检索</strong><small>需要深挖时再打开筛选器</small></a>
-    </nav>
     <section className="breadth-board" aria-label="市场广度"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
     <div className="two-column"><section className="panel"><div className="panel-title"><span>指数</span></div><div className="market-table">{query.data.snapshot.indices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}</div></section><section className="panel"><div className="panel-title"><span>评分证据</span><small>分数 · 权重 · 事实</small></div><div className="factor-ledger">{query.data.analysis.factors.map((factor) => <article key={factor.key} className={factor.available ? "available" : "missing"}><span>{factor.label}<small>{factor.evidence}</small></span><strong>{factor.available ? fmt(factor.score, 0) : "未计入"}</strong><em>{factor.available ? `权重 ${percent(factor.weight * 100)}` : "权重 0%"}</em></article>)}</div></section></div>
     <section id="market-board-workbench" className="market-board-zone" aria-label="板块和题材工作区">
-      <div className="section-bridge"><span>BOARD WORKBENCH</span><strong>板块和题材先在这里闭环</strong><p>从资金主线、板块热度点进去后，相关股票列表会紧跟在下方；全市场检索被移到页面底部，避免挡住板块工作流。</p></div>
+      <div className="section-bridge"><span>板块</span><strong>板块和题材</strong></div>
       <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
       <section className="panel" aria-labelledby="sector-heat-title"><div className="panel-title"><span id="sector-heat-title">板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
       {selectedSector && <DossierPanel key={`sector-${selectedSector}`} containerRef={dossierRef} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={closeDossier} />}
       {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} containerRef={dossierRef} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={closeDossier} />}
     </section>
     <section id="market-events" className="panel event-radar" aria-labelledby="market-events-title">
-      <div className="panel-title"><span id="market-events-title">市场异动雷达</span><small>今天股市正在发生什么</small></div>
+      <div className="panel-title"><span id="market-events-title">市场异动</span><small>今天股市正在发生什么</small></div>
       <AsyncState loading={eventsQuery.isLoading} error={eventsQuery.error as Error | null}>
         {eventsQuery.data && <MarketEventRadar data={eventsQuery.data} />}
       </AsyncState>
@@ -104,24 +98,24 @@ export function MarketPage() {
 }
 
 function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { market: MarketData; intelligence?: MarketIntelligenceResult; events?: MarketEventResult; onOpenSector: (code: string) => void }) {
-  const regime = regimeCopy[market.analysis.regime] ?? { label: market.analysis.regime, action: "先读证据，再决定复核顺序。" };
+  const regime = regimeCopy[market.analysis.regime] ?? { label: market.analysis.regime, action: "先看市场，再做决定。" };
   const total = Math.max(1, market.analysis.advancing + market.analysis.declining + market.analysis.unchanged);
   const breadth = market.analysis.advancing / total * 100;
   const topFlow = intelligence?.sector_flows[0];
   const riskEvent = events?.events.find((event) => event.sentiment === "negative" || event.category === "risk_alert");
   const eventHeadline = riskEvent?.title ?? events?.summary[0] ?? "暂无显著事件风险，继续以指数、板块和资金为主。";
-  const routeText = breadth >= 55 ? "广度占优，优先看资金主线是否扩散。" : breadth >= 45 ? "广度中性，只做强势板块里的少数复核。" : "广度偏弱，候选降级，先处理持仓风险。";
+  const routeText = breadth >= 55 ? "广度占优，优先看资金主线是否扩散。" : breadth >= 45 ? "广度中性，只看强势板块里的少数前排。" : "广度偏弱，候选降级，先处理持仓风险。";
   const command = marketCommandDecision(market, breadth, Boolean(riskEvent), topFlow?.code);
   const mainline = topFlow ? `${topFlow.name} ${pct(topFlow.change_pct)} · ${flowAmount(topFlow.net_flow)}` : "资金主线未确认";
 
-  return <section id="market-gate" className={`market-command-center ${command.tone}`} aria-label="市场作战台">
+  return <section id="market-gate" className={`market-command-center ${command.tone}`} aria-label="市场概览">
     <article className="market-command-verdict">
-      <span>MARKET PULSE · 大盘执行台</span>
+      <span>市场</span>
       <strong>{regime.label} · {fmt(market.analysis.score, 0)}/100</strong>
       <b className="market-command-badge">{command.title}</b>
       <p>{regime.action}</p>
       <small>上涨占比 {percent(breadth)} · 置信度 {percent(market.analysis.confidence * 100)}</small>
-      <em>MARKET GATE</em>
+      <em>大盘</em>
     </article>
     <div className="market-command-stack">
       <div className="market-command-checks" aria-label="盘面三问">
@@ -132,9 +126,8 @@ function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { m
       </div>
       <div className="market-command-grid">
         <article>
-          <span>今日路线</span>
+          <span>方向</span>
           <strong>{routeText}</strong>
-          <p>市场状态决定机会复核强度，不让单个热点覆盖全局风险。</p>
         </article>
         <article>
           <span>资金主线</span>
@@ -149,16 +142,15 @@ function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { m
         <article>
           <span>事件风险</span>
           <strong>{eventHeadline}</strong>
-          <p>事件必须回到板块和个股页验证价格、资金、逻辑三道闸。</p>
         </article>
         <article className="market-command-route">
-          <span>下一步 · 执行指令</span>
+          <span>下一步</span>
           <Link to={command.href}>{command.action}</Link>
           <p>{command.detail}</p>
         </article>
       </div>
       <div className="market-command-tape">
-        <span>ORDER TAPE</span>
+        <span>摘要</span>
         <strong>{command.title}</strong>
         <p>{command.reason} · 主线：{mainline} · 风险：{riskEvent ? eventHeadline : "暂无强风险新闻"}</p>
       </div>
@@ -173,18 +165,18 @@ function marketCommandDecision(market: MarketData, breadth: number, hasRiskEvent
       title: "先守风险",
       action: "检查持仓风险",
       href: "/holdings",
-      detail: "大盘闸口未放行，先看已有仓位、止损线和风险事件。",
+      detail: "大盘偏弱，先看已有仓位、止损线和风险事件。",
       reason: "防守优先，机会只保留观察",
     };
   }
   if (breadth >= 55 && market.analysis.score >= 55) {
     return {
       tone: "positive",
-      title: "允许复核机会",
-      action: "进入机会漏斗",
+      title: "可以找机会",
+      action: "找机会",
       href: "/opportunities",
-      detail: "市场宽度与温度同时过线，下一步找能被板块和个股证据接住的线索。",
-      reason: "宽度过线，可以启动候选复核",
+      detail: "市场宽度与温度同时过线，找板块和个股证据能接住的线索。",
+      reason: "宽度过线，可以找候选",
     };
   }
   return {
@@ -192,7 +184,7 @@ function marketCommandDecision(market: MarketData, breadth: number, hasRiskEvent
     title: "只看前排板块",
     action: topFlowCode ? "打开资金主线" : "等待资金确认",
     href: topFlowCode ? `/market?sector=${topFlowCode}` : "/market",
-    detail: "大盘未完全放行，只复核资金最强、扩散更清楚的前排。",
+    detail: "大盘不够强，只看资金最强、扩散更清楚的前排。",
     reason: "宽度或温度仍需确认",
   };
 }
@@ -217,10 +209,10 @@ function sortedRows(items: Quote[], sort: DetailSort, filter: DetailFilter) {
 function stockLeadReason(item: Quote) {
   const up = (item.change_pct ?? 0) > 0;
   const inflow = (item.net_flow ?? 0) > 0;
-  if (up && inflow) return "价格与资金同向，优先打开 Stock Lab 复核";
-  if (up && item.net_flow == null) return "价格走强但资金缺口待补，先看证据总账";
+  if (up && inflow) return "价格与资金同向，优先看";
+  if (up && item.net_flow == null) return "价格走强，资金待确认";
   if (inflow) return "资金先动但价格未确认，观察是否补涨";
-  if ((item.amount ?? 0) >= 1_000_000_000) return "成交活跃，适合作为板块样本复核";
+  if ((item.amount ?? 0) >= 1_000_000_000) return "成交活跃，可作板块样本";
   return "证据较弱，先保留观察";
 }
 
@@ -232,21 +224,21 @@ function stockLeadTarget(item: Quote) {
     return {
       anchor: "stock-investment-advice",
       label: "先看交易计划",
-      detail: "进入 Stock Lab 后先复核入场、仓位和止损。",
+      detail: "先看入场、仓位和止损。",
     };
   }
   if (up && item.net_flow == null) {
     return {
       anchor: "stock-evidence-audit",
-      label: "先看证据总账",
+      label: "先看依据",
       detail: "价格已动但资金缺口待补，先看支持、反方和缺口。",
     };
   }
   if (inflow) {
     return {
       anchor: "stock-final-gate",
-      label: "先看 FINAL GATE",
-      detail: "资金先动但价格未确认，先判断是否只保留观察。",
+      label: "先看结论",
+      detail: "资金先动但价格未确认，先判断是否观察。",
     };
   }
   if ((item.amount ?? 0) >= 1_000_000_000) {
@@ -287,9 +279,8 @@ function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string
 
   return <section className="board-stock-leads" aria-label={`${data.sector.name}${suffix}优先个股线索`}>
     <div className="board-leads-title">
-      <span>STOCK HANDOFF</span>
-      <strong>优先点开这几只</strong>
-      <p>从板块进入个股页前，先看价格、资金和成交额是否给出点开理由。</p>
+      <span>个股</span>
+      <strong>优先个股</strong>
     </div>
     <div className="board-leads-grid">
       {leads.map((item, index) => {
@@ -300,7 +291,6 @@ function BoardStockLeads({ data, suffix }: { data: SectorDossier; suffix: string
           <strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong>
           <p>{stockLeadReason(item)}</p>
           <i className="board-lead-route">{target.label}</i>
-          <small className="board-lead-detail">{target.detail}</small>
           <b>{item.net_flow == null ? `成交 ${fmt((item.amount ?? 0) / 100000000)} 亿` : `净流 ${fmt(item.net_flow / 100000000)} 亿`}</b>
         </Link>;
       })}
@@ -315,7 +305,7 @@ function DossierPanel({ data, loading, error, variant, onClose, containerRef }: 
   const suffix = variant === "theme" ? "题材" : "板块";
   return <section ref={containerRef} className="panel sector-detail">
     <AsyncState loading={loading} error={error}>{data && <>
-      <div className="sector-detail-head"><div><span>{variant === "theme" ? "THEME DOSSIER" : "SECTOR DOSSIER"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
+      <div className="sector-detail-head"><div><span>{variant === "theme" ? "题材" : "板块"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
       <SectorReviewDesk data={data} suffix={suffix} />
       <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待增强" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
       <div className="sector-summary">{data.summary.map((item) => <p key={item}>{item}</p>)}{data.missing_evidence.length > 0 && <small>缺口：{data.missing_evidence.join("、")}</small>}</div>
@@ -343,14 +333,14 @@ function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: strin
   const inflowRatio = inflow / total * 100;
   const tone = data.missing_evidence.length > 0 ? "caution" : risingRatio >= 55 && inflowRatio >= 45 ? "positive" : risingRatio < 35 ? "negative" : "neutral";
   const verdict = tone === "positive"
-    ? "主线可继续复核"
+    ? "主线可继续看"
     : tone === "negative"
       ? "扩散不足，先降级观察"
       : "只看前排，等待确认";
 
-  return <section className={`sector-review-desk ${tone}`} aria-label={`${data.sector.name}${suffix}复核工作台`}>
+  return <section className={`sector-review-desk ${tone}`} aria-label={`${data.sector.name}${suffix}简析`}>
     <article className="sector-review-verdict">
-      <span>BOARD GATE</span>
+      <span>板块</span>
       <strong>{verdict}</strong>
       <p>{data.summary[0] ?? `${data.sector.name}${suffix}需要继续补充价格、资金和成分股证据。`}</p>
     </article>
@@ -358,22 +348,22 @@ function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: strin
       <article>
         <span>上涨扩散</span>
         <strong>{rising} / {total}</strong>
-        <p>{percent(risingRatio)} 成分上涨；不过半时不把单点领涨当成板块主线。</p>
+        <p>{percent(risingRatio)} 成分上涨。</p>
       </article>
       <article>
         <span>净流入扩散</span>
         <strong>{inflow} / {total}</strong>
-        <p>{data.sector.net_flow == null ? "资金证据待增强，先看成交额和涨跌扩散。" : `${percent(inflowRatio)} 成分净流入，板块净流 ${flowAmount(data.sector.net_flow)}。`}</p>
+        <p>{data.sector.net_flow == null ? "资金证据待增强。" : `${percent(inflowRatio)} 成分净流入，板块净流 ${flowAmount(data.sector.net_flow)}。`}</p>
       </article>
       <article>
         <span>领涨核心</span>
         {topGain ? <Link to={`/stocks?symbol=${topGain.symbol}`}>{topGain.name}<small>{pct(topGain.change_pct)}</small></Link> : <strong>暂无</strong>}
-        <p>先确认领涨是否强于板块，而不是只看板块均值。</p>
+        <p>强于板块优先。</p>
       </article>
       <article>
         <span>资金核心</span>
         {topFlow && topFlow.net_flow != null ? <Link to={`/stocks?symbol=${topFlow.symbol}`}>{topFlow.name}<small>{flowAmount(topFlow.net_flow)}</small></Link> : <strong>待增强</strong>}
-        <p>{data.missing_evidence.length ? `缺口：${data.missing_evidence.join("、")}` : "资金核心需要和领涨核心交叉确认。"}</p>
+        <p>{data.missing_evidence.length ? `缺口：${data.missing_evidence.join("、")}` : "与领涨核心交叉确认。"}</p>
       </article>
     </div>
   </section>;
@@ -387,8 +377,7 @@ function flowAmount(value: number | null) {
 
 function MarketIntelligencePanel({ data, loading, failed, onOpenSector }: { data?: MarketIntelligenceResult; loading: boolean; failed: boolean; onOpenSector: (code: string) => void }) {
   return <section className="panel market-intelligence" aria-label="A股市场情报">
-    <div className="panel-title"><span>A 股市场情报</span><small>板块资金 + 交易异动 · 只作核验线索</small></div>
-    <p className="intelligence-boundary">供应商算法与交易异动仅作展示，不直接形成推荐或改变个股评分。</p>
+    <div className="panel-title"><span>A 股市场情报</span><small>板块资金 + 交易异动</small></div>
     {loading && <div className="capability-empty">正在读取市场情报…</div>}
     {failed && <div className="capability-warning">市场情报暂不可用，指数、广度与全市场行情仍可继续使用。</div>}
     {data && <div className="intelligence-grid">
@@ -419,9 +408,6 @@ function MarketEventRadar({ data }: { data: MarketEventResult }) {
     return <div className="empty">暂时没有拿到市场异动新闻。先用指数、板块热度和资金数据判断今天的主线。</div>;
   }
   return <>
-    <div className="event-summary">
-      {data.summary.map((item) => <p key={item}>{item}</p>)}
-    </div>
     <div className="event-clusters">
       {data.clusters.map((cluster) => <article key={cluster.key} className={cluster.signal}>
         <span>{cluster.label}</span>
@@ -447,20 +433,6 @@ function MarketEventRadar({ data }: { data: MarketEventResult }) {
         </div>
       </article>)}
     </div>
-    <div className="event-actions">
-      {data.next_actions.map((action) => <span key={action}>{action}</span>)}
-    </div>
-    <section className="event-verify">
-      <div className="panel-title"><span>事件-板块核验矩阵</span><small>每条新闻都要过三道闸</small></div>
-      <div className="verify-grid">
-        {data.events.slice(0, 4).map((event) => <article key={event.id}>
-          <header><span>{event.tags[0] ?? "事件"}</span><strong>核验：{event.title}</strong></header>
-          <div><b>价格是否确认</b><p>关联板块或个股需要强于大盘，不能只靠标题热度。</p></div>
-          <div><b>资金是否确认</b><p>{event.related_sectors.length || event.related_symbols.length ? "回到板块温度与个股页看净流入、成交额和扩散数量。" : "暂无明确关联标的，先等待资金和板块映射补齐。"}</p></div>
-          <div><b>逻辑是否可复盘</b><p>{event.action}</p></div>
-        </article>)}
-      </div>
-    </section>
   </>;
 }
 

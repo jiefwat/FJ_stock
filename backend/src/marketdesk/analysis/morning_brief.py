@@ -417,7 +417,7 @@ def build_morning_email_brief(
         else "暂无候选"
     )
     subject = (
-        f"Market Desk 晨报 · {regime_label} {market.analysis.score:.0f}/100 · "
+        f"StockTS 晨报 · {regime_label} {market.analysis.score:.0f}/100 · "
         f"{market.snapshot.meta.observed_at:%m-%d}"
     )
     preheader = (

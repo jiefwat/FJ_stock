@@ -1,5 +1,5 @@
 [Unit]
-Description=Market Desk public research workbench
+Description=StockTS public research workbench
 After=network.target
 
 [Service]
@@ -12,6 +12,7 @@ Environment=MARKETDESK_DATA_DIR=/opt/aster-market/data
 Environment=MARKETDESK_AUTO_REFRESH_ENABLED=true
 Environment=MARKETDESK_AUTO_REFRESH_INTERVAL_SECONDS=7200
 Environment=MARKETDESK_AUTO_REFRESH_RUN_IMMEDIATELY=true
+EnvironmentFile=-/opt/aster-market/.env
 ExecStart=/opt/aster-market/current/.venv/bin/python -m uvicorn marketdesk.api:app --host 127.0.0.1 --port 8501
 Restart=always
 RestartSec=3

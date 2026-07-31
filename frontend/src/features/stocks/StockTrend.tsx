@@ -69,12 +69,12 @@ export function StockTrend({ bars, marker, compact = false }: StockTrendProps) {
 
   return <section className={`trend-panel${compact ? " compact" : ""}`}>
     <div className="trend-heading">
-      <div><span>PRICE TAPE / 价格与均线</span><strong>{validBars.length} 个交易日</strong></div>
+      <div><span>价格与均线</span><strong>{validBars.length} 个交易日</strong></div>
       <div className="trend-range"><span>区间低点 <b>{fmt(low)}</b></span><span>区间高点 <b>{fmt(high)}</b></span></div>
     </div>
     <div className="trend-legend" aria-label="趋势图图例">
       {series.map((item) => <span key={item.key} className={item.key}><i />{item.label}</span>)}
-      {marker && <span className="marker"><i />跟踪点</span>}
+      {marker && <span className="marker"><i />标记</span>}
     </div>
     <div className="trend-canvas">
       <svg role="img" aria-label="价格趋势图" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none">
@@ -89,6 +89,5 @@ export function StockTrend({ bars, marker, compact = false }: StockTrendProps) {
       </svg>
     </div>
     <div className="trend-dates"><span>{validBars[0].date}</span><span>{latest.date}</span></div>
-    {marker && <p className="trend-caption">圆点为加入跟踪日，方便复盘加入后走势。</p>}
   </section>;
 }

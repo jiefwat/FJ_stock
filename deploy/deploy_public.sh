@@ -16,7 +16,11 @@ else
   RSYNC+=(-e "ssh -o BatchMode=yes")
 fi
 
-RELEASE_ID="$(date +%Y%m%d-%H%M%S)-$(git -C "$ROOT" rev-parse --short HEAD)"
+GIT_SUFFIX=""
+if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+  GIT_SUFFIX="-dirty"
+fi
+RELEASE_ID="$(date +%Y%m%d-%H%M%S)-$(git -C "$ROOT" rev-parse --short HEAD)$GIT_SUFFIX"
 RELEASE_DIR="/opt/aster-market/releases/$RELEASE_ID"
 ARCHIVE="$ROOT/.run/$RELEASE_ID.tar.gz"
 
@@ -34,12 +38,18 @@ COPYFILE_DISABLE=1 tar \
   --exclude='**/.ruff_cache' \
   --exclude='**/__pycache__' \
   --exclude='frontend/node_modules' \
+  --exclude='.env' \
+  --exclude='.env.*' \
   --exclude='data' \
   --exclude='*.tsbuildinfo' \
   -czf "$ARCHIVE" \
   -C "$ROOT" .
 
 "${SSH[@]}" "$REMOTE" "mkdir -p /opt/aster-market/releases /opt/aster-market/data /tmp/aster-market-deploy"
+if [[ -f "$ROOT/.env" ]]; then
+  "${RSYNC[@]}" "$ROOT/.env" "$REMOTE:/opt/aster-market/.env"
+  "${SSH[@]}" "$REMOTE" "chmod 600 /opt/aster-market/.env"
+fi
 "${RSYNC[@]}" "$ARCHIVE" "$REMOTE:/tmp/aster-market-deploy/$RELEASE_ID.tar.gz"
 "${SSH[@]}" "$REMOTE" "rm -rf '$RELEASE_DIR.tmp' && mkdir -p '$RELEASE_DIR.tmp'"
 "${SSH[@]}" "$REMOTE" "tar -xzf '/tmp/aster-market-deploy/$RELEASE_ID.tar.gz' -C '$RELEASE_DIR.tmp'"

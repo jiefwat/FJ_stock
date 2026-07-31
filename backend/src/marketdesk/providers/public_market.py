@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from marketdesk.models import (
+    AskStockResponse,
     Bar,
     DatasetMeta,
     EquityDataset,
@@ -29,6 +30,7 @@ from marketdesk.models import (
 from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.cn_evidence import AshareEvidenceProvider
 from marketdesk.providers.iwencai import IwencaiProvider
+from marketdesk.providers.llm_web import LLMWebAskContext, LLMWebAskProvider
 
 
 def _market_observed_at(now: datetime) -> datetime:
@@ -87,6 +89,7 @@ class PublicMarketProvider:
         }
         self.research_provider = IwencaiProvider(client=self.client)
         self.evidence_provider = AshareEvidenceProvider(client=self.client)
+        self.llm_web_provider = LLMWebAskProvider()
         if self.research_provider.configured:
             self._mark_research_status("configured")
 
@@ -147,7 +150,18 @@ class PublicMarketProvider:
             ) from curl_error
 
     def provider_status(self) -> dict[str, dict[str, Any]]:
-        return {**self._enhancement_status, **self.evidence_provider.provider_status()}
+        return {
+            **self._enhancement_status,
+            **self.evidence_provider.provider_status(),
+            **self.llm_web_provider.provider_status(),
+        }
+
+    @property
+    def llm_web_configured(self) -> bool:
+        return self.llm_web_provider.configured
+
+    async def ask_stock_with_llm(self, context: LLMWebAskContext) -> AskStockResponse:
+        return await self.llm_web_provider.ask_stock(context)
 
     def _mark_fund_flow_status(self, status: str, error: str | None = None) -> None:
         payload: dict[str, Any] = {

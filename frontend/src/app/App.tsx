@@ -1,15 +1,13 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Binoculars, Briefcase, Database, MessageSquareText, RefreshCw, Search, Star, UserRound } from "lucide-react";
+import { Activity, Binoculars, Briefcase, MessageSquareText, RefreshCw, Search, Star, UserRound } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { AskStockPage } from "../features/ask/AskStockPage";
-import { DataCenterPage } from "../features/data/DataCenterPage";
 import { HoldingsPage } from "../features/holdings/HoldingsPage";
 import { MarketPage } from "../features/market/MarketPage";
 import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { StockLabPage } from "../features/stocks/StockLabPage";
 import { TodayPage } from "../features/today/TodayPage";
-import { WatchlistPage } from "../features/watchlist/WatchlistPage";
 import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
 import {
   api,
@@ -30,8 +28,6 @@ const nav = [
   ["/stocks", "个股", Star],
   ["/ask", "问股", MessageSquareText],
   ["/holdings", "持仓", Briefcase],
-  ["/watchlist", "跟踪", Star],
-  ["/data", "数据", Database],
 ] as const;
 
 function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: AuthResult) => void }) {
@@ -59,14 +55,13 @@ function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: Aut
   return (
     <main className="auth-screen" aria-label="账号登录">
       <section className="auth-intro">
-        <div className="auth-brand"><span>MD</span><strong>MARKET DESK</strong></div>
-        <p className="eyebrow">PRIVATE RESEARCH WORKSPACE</p>
-        <h1>登录 <span>Market Desk</span></h1>
-        <p>行情、个股分析、持仓与跟踪记录仅对当前账号开放。登录前不会加载任何市场或个人数据。</p>
+        <div className="auth-brand"><span>MD</span><strong>StockTS</strong></div>
+        <h1>登录 <span>StockTS</span></h1>
+        <p>行情、个股分析、问股记录和持仓仅对当前账号开放。</p>
         <div className="auth-boundary-note"><strong>一人一套研究空间</strong><span>你的持仓、偏好和观察记录不会与其他账号共享。</span></div>
       </section>
       <form className="auth-form" onSubmit={(event) => { event.preventDefault(); authenticate.mutate(); }}>
-        <header><span>{mode === "register" ? "创建个人账号" : "欢迎回来"}</span><small>使用你的账号进入工作台</small></header>
+        <header><span>{mode === "register" ? "创建个人账号" : "欢迎回来"}</span><small>进入你的投研空间</small></header>
         <div className="auth-tabs">
           <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>登录</button>
           <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>注册新账号</button>
@@ -75,7 +70,7 @@ function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: Aut
         {mode === "register" ? <label>昵称<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="nickname" /></label> : null}
         <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "register" ? "new-password" : "current-password"} required /></label>
         {authenticate.isError ? <p role="alert">账号或密码不可用，请检查后重试。</p> : null}
-        <button className="button auth-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? "验证中…" : mode === "register" ? "创建账号" : "进入工作台"}</button>
+        <button className="button auth-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? "验证中…" : mode === "register" ? "创建账号" : "进入"}</button>
         <small className="auth-disclaimer">研究辅助工具，不构成投资建议。</small>
       </form>
     </main>
@@ -149,8 +144,8 @@ function CommandDock() {
       <span>⌘K</span>
       {expanded ? <div className="command-panel">
         <div className="command-panel-head">
-          <strong>RESEARCH ROUTER</strong>
-          <small>{query.length >= 2 ? "点股票进 FINAL GATE，或把输入转成问股" : "输入 2 个字或 6 位代码开始"}</small>
+          <strong>搜索</strong>
+          <small>{query.length >= 2 ? "打开个股，或直接问股" : "输入名称或 6 位代码"}</small>
         </div>
         {query.length >= 2 ? <div className="command-results">
           {search.isLoading ? <p>正在搜索股票…</p> : null}
@@ -164,7 +159,7 @@ function CommandDock() {
           ))}
         </div> : <div className="command-zero-state">
           {recent.length ? <section aria-label="最近研究">
-            <div><strong>最近研究</strong><small>直接回到 FINAL GATE，或者带着股票去问股。</small></div>
+            <div><strong>最近研究</strong><small>打开个股或问风险。</small></div>
             {recent.slice(0, 4).map((item) => <article key={item.symbol}>
               <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item)}>
                 <b>{item.name}</b><span>{item.symbol}</span><small>{item.sector ?? "未标注板块"}</small>
@@ -175,7 +170,7 @@ function CommandDock() {
           </section> : null}
           <div className="command-shortcuts">
             <Link to="/market#market-board-zone">板块热度</Link>
-            <Link to="/opportunities">机会队列</Link>
+            <Link to="/opportunities">机会</Link>
             <Link to="/holdings">持仓风险</Link>
           </div>
         </div>}
@@ -218,7 +213,7 @@ function AccountPanel({ user, onLogout }: { user: UserAccount; onLogout: () => v
               <option value="active">积极</option>
             </select>
           </label>
-          <small>持仓、跟踪池和偏好只保存在当前账号下。</small>
+          <small>持仓和偏好只保存在当前账号下。</small>
           <button type="button" onClick={onLogout}>退出账号</button>
         </div>
       </details>
@@ -240,8 +235,8 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
         <div className="brand">
           <span>MD</span>
           <div>
-            <strong>MARKET DESK</strong>
-            <small>本地投研工作台</small>
+            <strong>StockTS</strong>
+            <small>A股投研</small>
           </div>
         </div>
         <nav aria-label="主导航">
@@ -276,8 +271,6 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
             <Route path="/stocks" element={<StockLabPage />} />
             <Route path="/ask" element={<AskStockPage />} />
             <Route path="/holdings" element={<HoldingsPage />} />
-            <Route path="/watchlist" element={<WatchlistPage />} />
-            <Route path="/data" element={<DataCenterPage />} />
           </Routes>
         </div>
       </main>

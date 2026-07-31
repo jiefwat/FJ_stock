@@ -8,7 +8,7 @@ import { StockLabPage } from "./StockLabPage";
 const dossier = {
   quote: { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1253, change_pct: -0.48, amount: 1, turnover_rate: 1, volume_ratio: null, pe: 23, pb: 7, market_cap: 1, net_flow: null, sector: null },
   stance: "neutral", stance_score: 57, evidence_coverage: 0.55,
-  conclusion: "总结论：贵州茅台 当前为中性（57/100），暂不形成明确倾向，但不是买卖指令。投资建议：等待回踩；暂不追高，等价格回到支撑/MA20 附近再评估；入场：把 1168.63 作为跟踪放弃线，跌破后重新评估；止损：跌破 1168.63 且无法快速收回，放弃本轮跟踪；止盈：接近 1327.50 时至少复核量能、资金流和板块温度。技术面：收盘价位于 20 日均线之上；MA5 位于 MA20 之上；MA20 低于 MA60。风险收益：距压力位 0.0%，距支撑位 -12.0%，风险收益比 0.00。估值：PE 20.2，PB 6.1，PE 20.2 位于约束区间。流动性：成交额 139.0 亿，换手率 0.85%，量比暂缺。基本面：基本面质量用估值、规模和公告研报交叉验证；PE 20.2，PB 6.1，总市值 16594.8 亿。催化：催化与事件待补齐，不能只用价格波动解释上涨。资金/行业：主力净流入 +3.9 亿，资金态度偏正向；已映射到 白酒Ⅱ，需要和板块温度联动复核。横向对比：相对白酒同业涨跌强度处于约 42 分位；PE 20.2 相对白酒同业估值吸引力约 68 分位。纵向对比：过去 20 日累计涨跌 5.1%；过去 60 日累计涨跌 12.4%。交易计划：交易计划先定义放弃线、压力位和复核节奏；放弃线 1168.63，压力位 1327.50，波动率 29.1%。主要风险：MA20 低于 MA60、RSI 79.2 显示短线过热；若 跌破近 20 日支撑 1168.63 则关注理由失效。下一步：把 1168.63 作为跟踪放弃线，跌破后重新评估。仍需补齐公告与研报增强数据。",
+  conclusion: "总结论：贵州茅台 当前为中性（57/100），暂不形成明确倾向，但仅供研究。投资建议：等待回踩；暂不追高，等价格回到支撑/MA20 附近再评估；入场：把 1168.63 作为跟踪放弃线，跌破后重新评估；止损：跌破 1168.63 且无法快速收回，放弃本轮跟踪；止盈：接近 1327.50 时至少复核量能、资金流和板块温度。技术面：收盘价位于 20 日均线之上；MA5 位于 MA20 之上；MA20 低于 MA60。风险收益：距压力位 0.0%，距支撑位 -12.0%，风险收益比 0.00。估值：PE 20.2，PB 6.1，PE 20.2 位于约束区间。流动性：成交额 139.0 亿，换手率 0.85%，量比暂缺。基本面：基本面质量用估值、规模和公告研报交叉验证；PE 20.2，PB 6.1，总市值 16594.8 亿。催化：催化与事件待补齐，不能只用价格波动解释上涨。资金/行业：主力净流入 +3.9 亿，资金态度偏正向；已映射到 白酒Ⅱ，需要和板块温度联动复核。横向对比：相对白酒同业涨跌强度处于约 42 分位；PE 20.2 相对白酒同业估值吸引力约 68 分位。纵向对比：过去 20 日累计涨跌 5.1%；过去 60 日累计涨跌 12.4%。交易计划：交易计划先定义放弃线、压力位和复核节奏；放弃线 1168.63，压力位 1327.50，波动率 29.1%。主要风险：MA20 低于 MA60、RSI 79.2 显示短线过热；若 跌破近 20 日支撑 1168.63 则关注理由失效。下一步：把 1168.63 作为跟踪放弃线，跌破后重新评估。仍需补齐公告与研报增强数据。",
   score_factors: [
     { key: "price_ma20", label: "价格与 MA20", impact: 10, signal: "positive", evidence: "收盘价位于 20 日均线之上", available: true },
     { key: "volatility", label: "波动风险", impact: -8, signal: "negative", evidence: "年化波动率偏高", available: true },
@@ -87,8 +87,7 @@ const evidence = {
   },
 };
 
-function renderPage(watchlist: object[] = [], authenticated = true, route = "/stocks?symbol=SH.600519", evidencePayload: object = evidence) {
-  const currentWatchlist = [...watchlist];
+function renderPage(authenticated = true, route = "/stocks?symbol=SH.600519", evidencePayload: object = evidence) {
   const storage = new Map<string, string>();
   if (authenticated) storage.set("marketdesk.accessToken", "fixture-token");
   vi.stubGlobal("localStorage", {
@@ -98,11 +97,6 @@ function renderPage(watchlist: object[] = [], authenticated = true, route = "/st
   });
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (init?.method === "POST") {
-      currentWatchlist.push({ id: 1, symbol: "SH.600519", name: "贵州茅台", thesis: "新逻辑", invalidation: "新失效条件", status: "new", updated_at: "2026-07-19T10:00:00Z" });
-      return { ok: true, status: 201, json: async () => currentWatchlist[0] };
-    }
-    if (url.includes("/watchlist")) return { ok: true, status: 200, json: async () => currentWatchlist };
     if (url.includes("/search")) return { ok: true, status: 200, json: async () => [] };
     if (url.includes("/evidence")) return { ok: true, status: 200, json: async () => evidencePayload };
     return { ok: true, status: 200, json: async () => dossier };
@@ -122,83 +116,78 @@ afterEach(() => {
 });
 
 it("explains when a stock dossier is opened from opportunity leads", async () => {
-  renderPage([], true, "/stocks?symbol=SH.600519&from=opportunities&preset=trend");
+  renderPage(true, "/stocks?symbol=SH.600519&from=opportunities&preset=trend");
 
-  const sourceNote = within(await screen.findByLabelText("线索复核说明"));
-  expect(sourceNote.getByText("来自机会选股的研究线索")).toBeInTheDocument();
-  expect(sourceNote.getByText(/线索页只负责短名单排序/)).toBeInTheDocument();
-  expect(sourceNote.getByText(/直接建议和证据账本才用于判断是否参与/)).toBeInTheDocument();
+  const sourceNote = within(await screen.findByLabelText("线索来源"));
+  expect(sourceNote.getByText("来自机会页")).toBeInTheDocument();
   expect(sourceNote.getByText("来源策略：趋势延续")).toBeInTheDocument();
-  const reviewOutcome = within(await screen.findByLabelText("线索复核结果"));
-  expect(reviewOutcome.getByText("线索仅保留观察")).toBeInTheDocument();
-  expect(reviewOutcome.getByText(/当前直接建议是/)).toBeInTheDocument();
+  const reviewOutcome = within(await screen.findByLabelText("线索结果"));
+  expect(reviewOutcome.getByText("仅观察")).toBeInTheDocument();
+  expect(reviewOutcome.getByText(/当前建议：/)).toBeInTheDocument();
   expect(reviewOutcome.getByText("等待回踩")).toBeInTheDocument();
-  expect(reviewOutcome.getByText(/不因为曾入选线索而参与/)).toBeInTheDocument();
+  expect(reviewOutcome.getByText(/按失效条件执行/)).toBeInTheDocument();
   expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "带着证据去问股" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
     "href",
     "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=opportunities&preset=trend",
   );
 });
 
 it("explains when a stock dossier is opened from a market board", async () => {
-  renderPage([], true, "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=白酒&boardType=板块");
+  renderPage(true, "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=白酒&boardType=板块");
 
-  const sourceNote = within(await screen.findByLabelText("板块复核说明"));
-  expect(sourceNote.getByText("来自白酒板块复核")).toBeInTheDocument();
-  expect(sourceNote.getByText(/板块页只说明它是前排样本/)).toBeInTheDocument();
-  expect(sourceNote.getByText(/FINAL GATE 和证据总账/)).toBeInTheDocument();
+  const sourceNote = within(await screen.findByLabelText("板块来源"));
+  expect(sourceNote.getByText("来自白酒板块")).toBeInTheDocument();
   expect(sourceNote.getByText("来源：白酒板块")).toBeInTheDocument();
-  expect(await screen.findByLabelText("证据总账")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "带着证据去问股" })).toHaveAttribute(
+  expect(await screen.findByLabelText("依据")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
     "href",
     "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97",
   );
 });
 
-it("shows the evidence ledger and edits the thesis before adding to watchlist", async () => {
+it("shows the evidence ledger and keeps Ask Stock as the primary action", async () => {
   renderPage();
 
   expect(await screen.findByLabelText("价格趋势图")).toBeInTheDocument();
   expect(screen.getByText("收盘价")).toBeInTheDocument();
   expect(screen.getByText("证据覆盖 55%")).toBeInTheDocument();
   expect(screen.getByText("总结论")).toBeInTheDocument();
-  expect(screen.getAllByText(/不是买卖指令/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/仅供研究/).length).toBeGreaterThan(0);
   expect(screen.getByText("波动风险")).toBeInTheDocument();
-  expect(screen.getByText("语义研究增强")).toBeInTheDocument();
+  expect(screen.getByText("语义研究")).toBeInTheDocument();
   expect(screen.getAllByText(/近三十日有分红相关公告/).length).toBeGreaterThan(0);
-  const audit = within(await screen.findByLabelText("证据总账"));
-  expect(screen.getByLabelText("证据总账")).toHaveAttribute("id", "stock-evidence-audit");
-  expect(audit.getByText("LEDGER GATE")).toBeInTheDocument();
-  expect(audit.getByText("先补证据，不升级仓位")).toBeInTheDocument();
+  const audit = within(await screen.findByLabelText("依据"));
+  expect(screen.getByLabelText("依据")).toHaveAttribute("id", "stock-evidence-audit");
+  expect(audit.getByText("证据")).toBeInTheDocument();
+  expect(audit.getByText("补证据")).toBeInTheDocument();
   expect(audit.getByText(/覆盖 55% · 支持 2 · 反方 2 · 缺口 0/)).toBeInTheDocument();
   expect(audit.getByText("支持证据")).toBeInTheDocument();
   expect(audit.getByText("反方证据")).toBeInTheDocument();
   expect(audit.getByText("证据缺口")).toBeInTheDocument();
-  expect(audit.getByText("下一步复核")).toBeInTheDocument();
+  expect(audit.getByText("动作")).toBeInTheDocument();
   expect(screen.getByText("分析拆解")).toBeInTheDocument();
   expect(screen.getByText("趋势结构")).toBeInTheDocument();
   expect(screen.getAllByText("风险收益").length).toBeGreaterThan(0);
   expect(screen.getByText("基本面质量")).toBeInTheDocument();
   expect(screen.getByText("催化与事件")).toBeInTheDocument();
   expect(screen.getAllByText("交易计划").length).toBeGreaterThan(0);
-  expect(screen.getByText("下一步看什么")).toBeInTheDocument();
+  expect(screen.getAllByText("动作").length).toBeGreaterThan(0);
   expect(screen.queryByText(/iWenCai|WenCai|问财/i)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "加入跟踪" }));
-  expect(screen.getByLabelText("关注理由")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("关注理由"), { target: { value: "等待估值与趋势共振" } });
-  fireEvent.click(screen.getByRole("button", { name: "保存到跟踪清单" }));
-
-  expect(await screen.findByRole("link", { name: "已跟踪 · 编辑记录" })).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("已加入跟踪");
+  expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
+    "href",
+    "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=stock",
+  );
+  expect(screen.queryByRole("button", { name: "加入跟踪" })).not.toBeInTheDocument();
+  expect(screen.queryByText("保存到跟踪清单")).not.toBeInTheDocument();
 });
 
 it("shows cited filings, research reports, and themes without changing the score", async () => {
   const { container } = renderPage();
 
-  await screen.findByText("完整证据包");
+  await screen.findByText("更多数据");
   expect(container.querySelector(".stock-deep-dossier")).not.toHaveAttribute("open");
-  fireEvent.click(screen.getByText("完整证据包"));
+  fireEvent.click(screen.getByText("更多数据"));
   expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
 
   const panel = within(await screen.findByLabelText("公司证据包"));
@@ -212,20 +201,20 @@ it("shows cited filings, research reports, and themes without changing the score
     "href",
     "/market?theme=BK0896&themeName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&themeChange=1.8",
   );
-  expect(panel.getByText(/仅作研究上下文，不直接改写评分/)).toBeInTheDocument();
+  expect(panel.queryByText(/仅作研究上下文/)).not.toBeInTheDocument();
   expect(screen.getAllByText("57/100").length).toBeGreaterThan(0);
 });
 
 it("opens the compact evidence package automatically for deep evidence anchors", async () => {
-  const { container } = renderPage([], true, "/stocks?symbol=SH.600519#stock-company-evidence");
+  const { container } = renderPage(true, "/stocks?symbol=SH.600519#stock-company-evidence");
 
-  await screen.findByText("完整证据包");
+  await screen.findByText("更多数据");
   expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
   expect(await screen.findByLabelText("公司证据包")).toHaveAttribute("id", "stock-company-evidence");
 });
 
 it("keeps available evidence visible when one source is unavailable", async () => {
-  renderPage([], true, "/stocks?symbol=SH.600519", {
+  renderPage(true, "/stocks?symbol=SH.600519", {
     ...evidence,
     research: [],
     capabilities: {
@@ -246,7 +235,7 @@ it("formats the generated stock conclusion into a scannable analyst brief", asyn
   expect(brief.getByText("当前判断")).toBeInTheDocument();
   expect(brief.getByText("中性")).toBeInTheDocument();
   expect(brief.getByText("57/100")).toBeInTheDocument();
-  expect(brief.getByText("怎么读")).toBeInTheDocument();
+  expect(brief.getByText("摘要")).toBeInTheDocument();
   const readSummary = brief.getByText(/暂不形成明确倾向/);
   expect(readSummary).toBeInTheDocument();
   expect(readSummary).not.toHaveTextContent("投资建议");
@@ -287,23 +276,15 @@ it("surfaces an analyst action map before the deep evidence sections", async () 
 it("shows direct investment advice with horizontal and vertical comparisons", async () => {
   renderPage();
 
-  const route = within(await screen.findByLabelText("个股复核路线"));
-  expect(route.getByText("REVIEW ROUTE")).toBeInTheDocument();
-  expect(route.getByText("按这条顺序读")).toBeInTheDocument();
-  expect(route.getByRole("link", { name: /01\s*FINAL GATE/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
-  expect(route.getByRole("link", { name: /02\s*LEDGER GATE/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-evidence-audit");
-  expect(route.getByRole("link", { name: /03\s*交易计划/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-investment-advice");
-  expect(route.getByRole("link", { name: /04\s*公告研报/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-company-evidence");
-  expect(route.getByRole("link", { name: /05\s*风控条件/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-risk-controls");
+  expect(screen.queryByLabelText("个股复核路线")).not.toBeInTheDocument();
 
-  const deck = within(await screen.findByLabelText("个股复核作战台"));
-  expect(screen.getByLabelText("个股复核作战台")).toHaveAttribute("id", "stock-final-gate");
-  expect(deck.getByText("FINAL GATE")).toBeInTheDocument();
-  expect(deck.getByText("先看板块")).toBeInTheDocument();
+  const deck = within(await screen.findByLabelText("个股结论"));
+  expect(screen.getByLabelText("个股结论")).toHaveAttribute("id", "stock-final-gate");
+  expect(deck.getByText("结论")).toBeInTheDocument();
+  expect(deck.getByText("板块")).toBeInTheDocument();
   expect(deck.getByText("失效条件")).toBeInTheDocument();
-  expect(deck.getByText("下一步")).toBeInTheDocument();
-  expect(deck.getByText(/个股动作必须和板块温度/)).toBeInTheDocument();
-  await waitFor(() => expect(deck.getByRole("link", { name: "打开板块/题材" })).toHaveAttribute(
+  expect(deck.getByText("动作")).toBeInTheDocument();
+  await waitFor(() => expect(deck.getByRole("link", { name: "看板块" })).toHaveAttribute(
     "href",
     "/market?theme=BK0896&themeName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&themeChange=1.8",
   ));
@@ -314,7 +295,7 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   expect(advice.getByText(/暂不追高/)).toBeInTheDocument();
   expect(advice.getByText("入场计划")).toBeInTheDocument();
   expect(advice.getByText("止损纪律")).toBeInTheDocument();
-  expect(advice.getByText("止盈复核")).toBeInTheDocument();
+  expect(advice.getByText("止盈检查")).toBeInTheDocument();
   expect(advice.getByText("为什么是这个建议")).toBeInTheDocument();
   expect(advice.getByText("趋势结构中性")).toBeInTheDocument();
   expect(advice.getByText("横向同业估值一般")).toBeInTheDocument();
@@ -350,8 +331,8 @@ it("shows a future trend forecast before detailed evidence", async () => {
   expect(forecast.getByText(/趋势判断失效/)).toBeInTheDocument();
 
   const forecastSection = await screen.findByLabelText("未来趋势判断");
-  const auditSection = await screen.findByLabelText("证据总账");
-  const evidenceLedger = await screen.findByText("证据账本");
+  const auditSection = await screen.findByLabelText("依据");
+  const evidenceLedger = await screen.findByText("评分明细");
   expect(auditSection.compareDocumentPosition(forecastSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
@@ -360,8 +341,8 @@ it("offers intent-aware Ask Stock shortcuts after the final gate", async () => {
   renderPage();
 
   const router = within(await screen.findByLabelText("个股问股快捷入口"));
-  expect(router.getByText("ASK NEXT")).toBeInTheDocument();
-  expect(router.getByText("把这份证据，继续问成结论")).toBeInTheDocument();
+  expect(router.getByText("问股")).toBeInTheDocument();
+  expect(router.getByText("继续问")).toBeInTheDocument();
   expect(router.getByRole("link", { name: /问风险/ })).toHaveAttribute(
     "href",
     `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "贵州茅台现在主要风险是什么" }).toString()}`,
@@ -379,9 +360,9 @@ it("offers intent-aware Ask Stock shortcuts after the final gate", async () => {
     `/ask?${new URLSearchParams({ symbol: "SH.600519", name: "贵州茅台", from: "stock", question: "贵州茅台有什么公告催化" }).toString()}`,
   );
 
-  const finalGate = await screen.findByLabelText("个股复核作战台");
+  const finalGate = await screen.findByLabelText("个股结论");
   const askRouter = await screen.findByLabelText("个股问股快捷入口");
-  const audit = await screen.findByLabelText("证据总账");
+  const audit = await screen.findByLabelText("依据");
   expect(finalGate.compareDocumentPosition(askRouter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(askRouter.compareDocumentPosition(audit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
@@ -407,19 +388,11 @@ it("shows descriptive historical validation without changing the page structure"
   ).toBeTruthy();
 });
 
-it("recognizes an existing watchlist item before another post", async () => {
-  renderPage([{ id: 1, symbol: "SH.600519", name: "贵州茅台", thesis: "已有逻辑", invalidation: "已有失效条件", status: "researching", updated_at: "2026-07-19T09:00:00Z" }]);
-
-  expect(await screen.findByRole("link", { name: "已跟踪 · 编辑记录" })).toBeInTheDocument();
-  await waitFor(() => expect(screen.queryByRole("button", { name: "加入跟踪" })).not.toBeInTheDocument());
-});
-
-it("does not request the private watchlist before login", async () => {
-  const { fetchMock } = renderPage([], false);
+it("does not request the removed watchlist module before login", async () => {
+  const { fetchMock } = renderPage(false);
 
   expect(await screen.findByText("贵州茅台")).toBeInTheDocument();
-  const loginButton = screen.getByRole("button", { name: "登录后加入跟踪" });
-  expect(loginButton).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "登录后加入跟踪" })).not.toBeInTheDocument();
   await waitFor(() => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/watchlist"))).toBe(false);
   });

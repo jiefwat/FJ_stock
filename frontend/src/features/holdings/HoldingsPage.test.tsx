@@ -43,7 +43,7 @@ const holding = {
     { key: "valuation", label: "估值安全垫", signal: "neutral", summary: "PE 与 PB 需要结合行业比较", evidence: ["PE 23", "PB 7"] },
   ],
   action: "trim",
-  conclusion: "建议动作：减仓。分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑。原因：仓位明显高于目标、成本风险未触发强制处理、估值需要结合行业比较、流动性中性、资金净流入、持仓逻辑已记录，可进入个股页复核证据。建议先减仓约 60 股，回到目标仓位后再复核保留理由。",
+  conclusion: "建议动作：减仓。仓位高于目标 60.0%，盈亏 +7.14% 未触发止损，白酒板块资金净流入。建议先减仓约 60 股，回到目标仓位后再复核保留理由。",
   risk_flags: ["组合占比高于目标"],
   next_actions: ["复核是否需要降仓"],
 };
@@ -94,23 +94,24 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
 
   const list = await screen.findByRole("list", { name: "持仓清单" });
 
-  expect(screen.getByText("组合总览")).toBeInTheDocument();
-  expect(screen.getByText("组合结论")).toBeInTheDocument();
+  expect(screen.getByText("组合")).toBeInTheDocument();
+  expect(screen.getByText("结论")).toBeInTheDocument();
   expect(screen.getByText(/1 笔持仓/)).toBeInTheDocument();
-  expect(screen.getByText(/需要复核 1 笔/)).toBeInTheDocument();
+  expect(screen.getByText(/待处理 1 笔/)).toBeInTheDocument();
   expect(screen.getAllByText(/组合占比高于目标/).length).toBeGreaterThan(0);
   const actionDeck = within(screen.getByLabelText("组合处理台"));
-  expect(actionDeck.getByText("NEXT POSITION")).toBeInTheDocument();
+  expect(actionDeck.getByText("先处理")).toBeInTheDocument();
   expect(actionDeck.getByText("偏离金额")).toBeInTheDocument();
   expect(actionDeck.getByText("-90,000")).toBeInTheDocument();
-  expect(actionDeck.getByRole("link", { name: "复核证据" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
+  expect(actionDeck.getByRole("link", { name: "看个股" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
   expect(actionDeck.getByRole("link", { name: "问这笔持仓" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
   expect(actionDeck.getByRole("link", { name: "问组合顺序" })).toHaveAttribute("href", "/ask?from=holdings&question=%E6%88%91%E7%9A%84%E7%BB%84%E5%90%88%E4%BB%8A%E5%A4%A9%E5%85%88%E5%A4%84%E7%90%86%E5%93%AA%E5%8F%AA%E6%8C%81%E4%BB%93");
 
   const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
   expect(within(row).getByText("贵州茅台")).toBeInTheDocument();
   expect(within(row).getByText("减仓")).toBeInTheDocument();
-  expect(within(row).getByText(/分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑/)).toBeInTheDocument();
+  expect(within(row).getByText(/仓位高于目标 60.0%/)).toBeInTheDocument();
+  expect(within(row).queryByText(/分析维度/)).not.toBeInTheDocument();
   expect(within(row).getByText(/建议先减仓约 60 股/)).toBeInTheDocument();
   expect(within(row).queryByText(/当前盈利/)).not.toBeInTheDocument();
   expect(within(row).getByText("收益拆分")).toBeInTheDocument();
@@ -128,7 +129,7 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(within(row).getByText("60,000")).toBeInTheDocument();
   expect(within(row).queryByText("100.0%")).not.toBeInTheDocument();
   expect(within(row).queryByText("目标 40.0%")).not.toBeInTheDocument();
-  expect(within(row).getByRole("link", { name: "个股复核 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
+  expect(within(row).getByRole("link", { name: "看个股 →" })).toHaveAttribute("href", "/stocks?symbol=SH.600519#stock-final-gate");
   expect(within(row).getByRole("link", { name: "问持仓 →" })).toHaveAttribute("href", "/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=holdings&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
 
   expect(screen.queryByText("编辑持仓数据")).not.toBeInTheDocument();
@@ -172,7 +173,7 @@ it("does not show an add signal when the holding action is exit review", async (
     drift: -0.066,
     rebalance_quantity: 4756,
     action: "exit_watch",
-    conclusion: "建议动作：减仓/退出复核。分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑。原因：成本风控已触发。暂停补仓，先做退出复核。",
+    conclusion: "建议动作：退出观察。亏损 -34.82% 已触发风控，虽低于目标 -6.6%，但风控优先。暂停补仓，先做退出观察。",
     risk_flags: ["亏损超过 10%"],
   };
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => [exitHolding] })));
@@ -182,7 +183,7 @@ it("does not show an add signal when the holding action is exit review", async (
   const list = await screen.findByRole("list", { name: "持仓清单" });
   const row = within(list).getByRole("listitem", { name: /风控样本/ });
 
-  expect(within(row).getByText("退出复核")).toBeInTheDocument();
+  expect(within(row).getByText("退出观察")).toBeInTheDocument();
   expect(within(row).getAllByText(/暂停补仓/).length).toBeGreaterThan(0);
   expect(within(row).queryByText(/可加仓/)).not.toBeInTheDocument();
   expect(within(row).queryByText(/\+4,756 股/)).not.toBeInTheDocument();

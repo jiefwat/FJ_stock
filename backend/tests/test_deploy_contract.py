@@ -8,6 +8,7 @@ def test_production_service_runs_marketdesk_on_public_proxy_port() -> None:
 
     assert "WorkingDirectory=/opt/aster-market/current" in service
     assert "Environment=PYTHONPATH=/opt/aster-market/current/backend/src" in service
+    assert "EnvironmentFile=-/opt/aster-market/.env" in service
     assert "ExecStart=/opt/aster-market/current/.venv/bin/python -m uvicorn marketdesk.api:app --host 127.0.0.1 --port 8501" in service
 
 
@@ -16,6 +17,9 @@ def test_deploy_script_uses_local_frontend_build_and_atomic_current_switch() -> 
 
     assert "pnpm --dir \"$ROOT/frontend\" build" in script
     assert "rsync" in script
+    assert "--exclude='.env'" in script
+    assert "--exclude='.env.*'" in script
+    assert "/opt/aster-market/.env" in script
     assert "ln -sfn" in script
     assert "/opt/aster-market/current" in script
     assert "systemctl restart stock-ts.service" in script

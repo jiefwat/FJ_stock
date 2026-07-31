@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from marketdesk.api import create_app
 from marketdesk.models import (
+    AskStockMetric,
+    AskStockResponse,
     DatasetMeta,
     EquityQuote,
     EvidenceDocument,
@@ -18,6 +20,7 @@ from marketdesk.models import (
     TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
+from marketdesk.providers.llm_web import LLMWebAskContext
 from marketdesk.services import MarketService
 from marketdesk.store import Store
 
@@ -382,6 +385,33 @@ class SemanticScreenProvider(FixtureProvider):
         )
 
 
+class LLMAskProvider(EquityBrowserProvider):
+    def __init__(self) -> None:
+        self.received_context: LLMWebAskContext | None = None
+
+    @property
+    def llm_web_configured(self) -> bool:
+        return True
+
+    async def ask_stock_with_llm(self, context: LLMWebAskContext) -> AskStockResponse:
+        self.received_context = context
+        return AskStockResponse(
+            kind="llm_answer",
+            question=context.question,
+            intent="overview",
+            symbol=context.stock["symbol"] if context.stock else None,
+            name=context.stock["name"] if context.stock else None,
+            answer="联网结论：先看最新公告、行业消息和资金变化。",
+            evidence=["联网检索已核对最新公开信息。"],
+            risks=["公开信息可能滞后。"],
+            next_actions=["回到个股研究页复核本地指标。"],
+            metrics=[AskStockMetric(label="回答模式", value="联网问答", tone="neutral")],
+            observed_at=context.observed_at,
+            source="联网大模型问答",
+            disclaimer="联网研究辅助信息，不构成投资建议。",
+        )
+
+
 def authenticated_client(
     service: MarketService, email: str = "fixture-user@example.com"
 ) -> TestClient:
@@ -409,6 +439,57 @@ def test_ask_stock_requires_authentication(tmp_path) -> None:
         "/api/v1/ask-stock", json={"question": "贵州茅台怎么样"}
     )
     assert response.status_code == 401
+
+
+def test_ask_stock_uses_configured_llm_web_answer_with_context(tmp_path) -> None:
+    provider = LLMAskProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-llm.db"))
+    api = authenticated_client(service)
+
+    response = api.post(
+        "/api/v1/ask-stock",
+        json={
+            "question": "它最新有什么需要注意",
+            "context_symbol": "SH.600519",
+            "context_name": "贵州茅台",
+            "conversation": [
+                {"role": "user", "content": "贵州茅台主要风险是什么"},
+                {"role": "assistant", "content": "先看需求节奏和估值压力。"},
+            ],
+            "source_context": {
+                "origin": "BOARD BRIDGE",
+                "label": "从白酒板块复核继续问",
+                "detail": "默认围绕 贵州茅台 SH.600519 追问。",
+                "stock": {"symbol": "SH.600519", "name": "贵州茅台"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "llm_answer"
+    assert payload["source"] == "联网大模型问答"
+    assert payload["symbol"] == "SH.600519"
+    assert payload["name"] == "贵州茅台"
+    assert payload["metrics"] == [{"label": "回答模式", "value": "联网问答", "tone": "neutral"}]
+    assert provider.received_context is not None
+    assert provider.received_context.conversation[-1].content == "先看需求节奏和估值压力。"
+    assert provider.received_context.source_context is not None
+    assert provider.received_context.source_context.origin == "BOARD BRIDGE"
+    assert provider.received_context.stock is not None
+    assert provider.received_context.stock["sector"] == "白酒"
+
+
+def test_ask_stock_configured_llm_handles_multi_stock_questions(tmp_path) -> None:
+    service = MarketService(provider=LLMAskProvider(), store=Store(tmp_path / "ask-llm-multi.db"))
+    api = authenticated_client(service)
+
+    response = api.post(
+        "/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更值得关注"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "llm_answer"
 
 
 def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> None:
@@ -1166,8 +1247,9 @@ def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
     assert round(payload["pnl_pct"], 2) == 7.14
     assert payload["action"] in {"hold", "trim", "add_watch", "review", "exit_watch"}
     assert payload["conclusion"].startswith("建议动作：")
-    assert "分析维度：" in payload["conclusion"]
-    assert "原因：" in payload["conclusion"]
+    assert "分析维度：" not in payload["conclusion"]
+    assert "原因：" not in payload["conclusion"]
+    assert any(token in payload["conclusion"] for token in ("仓位", "盈亏", "风控"))
 
     item_id = payload["item"]["id"]
     updated = api.patch(
@@ -1429,7 +1511,7 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     payload = response.json()
     assert payload["recipient"] == "fixture-user@example.com"
     assert payload["enabled"] is True
-    assert payload["subject"].startswith("Market Desk 晨报")
+    assert payload["subject"].startswith("StockTS 晨报")
     assert "上涨" in payload["preheader"]
     assert "一、开盘前结论" in payload["text"]
     assert "三、资金主线" in payload["text"]

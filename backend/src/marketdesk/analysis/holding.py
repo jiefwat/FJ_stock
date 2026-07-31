@@ -196,15 +196,9 @@ def _conclusion(
     rebalance_quantity: float | None,
 ) -> str:
     action_text = _action_text(action)
-    dimensions = "仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑"
-    reasons = _reason_fragments(item, quote, pnl_pct, drift)
+    reasons = _priority_reasons(item, quote, pnl_pct, drift, action)
     execution = _execution_text(action, rebalance_quantity)
-    return (
-        f"建议动作：{action_text}。"
-        f"分析维度：{dimensions}。"
-        f"原因：{'、'.join(reasons)}。"
-        f"{execution}"
-    )
+    return f"建议动作：{action_text}。{'，'.join(reasons)}。{execution}"
 
 
 def _action_text(action: str) -> str:
@@ -213,65 +207,81 @@ def _action_text(action: str) -> str:
         "trim": "减仓",
         "add_watch": "可加仓",
         "review": "暂不加仓，先补齐数据",
-        "exit_watch": "减仓/退出复核",
+        "exit_watch": "退出复核",
     }[action]
 
 
-def _reason_fragments(
+def _priority_reasons(
     item: HoldingItem,
     quote: EquityQuote,
     pnl_pct: float | None,
     drift: float | None,
+    action: str,
 ) -> list[str]:
     reasons: list[str] = []
+
+    if action == "exit_watch":
+        if pnl_pct is not None and pnl_pct <= -10:
+            reasons.append(f"亏损 {_pct(pnl_pct)} 已触发风控")
+        elif quote.change_pct is not None and quote.change_pct < -7:
+            reasons.append(f"当日跌幅 {_pct(quote.change_pct)} 偏大")
+        if drift is not None and drift > 0.1:
+            reasons.append(f"仓位高于目标 {_weight(drift)}")
+        elif drift is not None and drift < -0.1:
+            reasons.append(f"虽低于目标 {_weight(drift)}，但风控优先")
+        _append_flow_reason(reasons, quote)
+        _append_valuation_reason(reasons, quote)
+        if not item.invalidation.strip():
+            reasons.append("失效条件不完整")
+        return reasons[:3] or ["先核对失效条件"]
+
     if drift is None:
-        reasons.append("仓位偏离需要先用有效行情确认")
+        reasons.append("仓位需先用有效行情确认")
     elif drift > 0.1:
-        reasons.append("仓位明显高于目标")
+        reasons.append(f"仓位高于目标 {_weight(drift)}")
     elif drift < -0.1:
-        reasons.append("仓位低于目标")
+        reasons.append(f"仓位低于目标 {_weight(drift)}")
     else:
         reasons.append("仓位接近目标")
 
     if pnl_pct is None:
         reasons.append("成本风控缺少现价证据")
     elif pnl_pct <= -10:
-        reasons.append("成本风控已触发")
+        reasons.append(f"亏损 {_pct(pnl_pct)} 已触发风控")
     elif pnl_pct >= 20:
-        reasons.append("已有较高安全垫但需防回撤")
+        reasons.append(f"浮盈 {_pct(pnl_pct)}，注意回撤")
     else:
-        reasons.append("成本风险未触发强制处理")
+        reasons.append(f"盈亏 {_pct(pnl_pct)} 未触发止损")
 
-    if quote.pe is None and quote.pb is None:
-        reasons.append("估值证据暂缺")
-    elif quote.pe is not None and quote.pe > 60:
-        reasons.append("估值压力偏高")
-    elif quote.pe is not None and 0 < quote.pe < 20:
-        reasons.append("估值相对温和")
-    else:
-        reasons.append("估值需要结合行业比较")
+    _append_valuation_reason(reasons, quote)
+    _append_flow_reason(reasons, quote)
 
-    if quote.amount is None:
-        reasons.append("流动性待确认")
-    elif quote.amount >= 300_000_000:
-        reasons.append("流动性足够执行调仓")
-    elif quote.amount < 80_000_000:
-        reasons.append("流动性偏弱，调仓要分批")
-    else:
-        reasons.append("流动性中性")
-
-    if quote.net_flow is None:
-        reasons.append("板块资金持续性待确认")
-    elif quote.net_flow < 0:
-        reasons.append("资金净流出")
-    else:
-        reasons.append("资金净流入")
-
-    if item.thesis.strip() and item.invalidation.strip():
-        reasons.append("持仓逻辑已记录，可进入个股页复核证据")
-    else:
+    if quote.amount is not None and quote.amount < 80_000_000:
+        reasons.append("成交额偏低，调仓要分批")
+    if not item.thesis.strip() or not item.invalidation.strip():
         reasons.append("持仓逻辑或失效条件不完整")
-    return reasons
+    return reasons[:4]
+
+
+def _append_valuation_reason(reasons: list[str], quote: EquityQuote) -> None:
+    if quote.pe is None and quote.pb is None:
+        return
+    if quote.pe is not None and quote.pe > 60:
+        reasons.append(f"估值压力偏高，PE {_price(quote.pe)}")
+    elif quote.pe is not None and 0 < quote.pe < 20:
+        reasons.append(f"估值相对温和，PE {_price(quote.pe)}")
+    elif quote.pb is not None and 0 < quote.pb < 1:
+        reasons.append(f"估值相对温和，PB {_price(quote.pb)}")
+
+
+def _append_flow_reason(reasons: list[str], quote: EquityQuote) -> None:
+    if quote.net_flow is None and quote.sector:
+        reasons.append(f"{quote.sector}板块资金待确认")
+    elif quote.net_flow is not None and quote.net_flow < 0:
+        prefix = f"{quote.sector}板块" if quote.sector else ""
+        reasons.append(f"{prefix}资金净流出")
+    elif quote.net_flow is not None and quote.net_flow > 0 and quote.sector:
+        reasons.append(f"{quote.sector}板块资金净流入")
 
 
 def _execution_text(action: str, rebalance_quantity: float | None) -> str:

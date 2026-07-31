@@ -20,7 +20,9 @@ from marketdesk.analysis.ask_stock import AmbiguousStockQuestion
 from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
 from marketdesk.models import (
+    AskStockConversationMessage,
     AskStockResponse,
+    AskStockSourceContext,
     AuthResult,
     EquityPage,
     EquityQuote,
@@ -93,6 +95,8 @@ class AskStockRequest(StrictModel):
     question: str = Field(min_length=2, max_length=160)
     context_symbol: str | None = Field(default=None, min_length=1, max_length=16)
     context_name: str | None = Field(default=None, min_length=1, max_length=32)
+    conversation: list[AskStockConversationMessage] = Field(default_factory=list, max_length=8)
+    source_context: AskStockSourceContext | None = None
 
     @field_validator("question", "context_symbol", "context_name", mode="before")
     @classmethod
@@ -187,7 +191,7 @@ def create_app(
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-    app = FastAPI(title="Market Desk", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="StockTS", version="0.1.0", lifespan=lifespan)
     app.state.service = market_service
     app.state.auto_refresh_interval_seconds = configured_interval
     app.state.auto_refresh_run_immediately = configured_run_immediately
@@ -411,16 +415,29 @@ def create_app(
         result = await market_service.opportunities(preset, 200)
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow(["symbol", "name", "score", "change_pct", "amount", "risk_flags"])
+        writer.writerow(
+            [
+                "symbol",
+                "name",
+                "upside_score",
+                "upside_label",
+                "change_pct",
+                "amount",
+                "drivers",
+                "risks",
+            ]
+        )
         for item in result.candidates:
             writer.writerow(
                 [
                     item.quote.symbol,
                     item.quote.name,
-                    item.score,
+                    item.upside_score,
+                    item.upside_label,
                     item.quote.change_pct,
                     item.quote.amount,
-                    "|".join(item.risk_flags),
+                    "|".join(item.upside_drivers),
+                    "|".join(item.upside_risks),
                 ]
             )
         return StreamingResponse(
@@ -464,6 +481,8 @@ def create_app(
                 user.id,
                 context_symbol=payload.context_symbol,
                 context_name=payload.context_name,
+                conversation=payload.conversation,
+                source_context=payload.source_context,
             )
         except AmbiguousStockQuestion as error:
             raise HTTPException(status_code=422, detail=str(error)) from error

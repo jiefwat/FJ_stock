@@ -46,6 +46,10 @@ def _signal(score: float | None, available: bool = True) -> str:
     return "neutral"
 
 
+def _clamp_score(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
 def _money(value: float | None) -> str:
     if value is None:
         return "—"
@@ -166,7 +170,13 @@ def rank_candidates(
         ]
         base_score = round(sum(item.weighted_score for item in components), 2)
         context_penalty = 15.0 if market_regime == "risk_off" else 8.0 if market_regime == "cautious" else 0.0
-        total = round(max(0.0, base_score - context_penalty), 2)
+        upside_score, upside_label, upside_summary, upside_drivers, upside_risks = _candidate_upside(
+            quote=quote,
+            preset=preset,
+            components=components,
+            context_penalty=context_penalty,
+            history_check=history_check,
+        )
         if market_regime in {"risk_off", "cautious"}:
             risk_flags.append("市场偏弱")
         risk_flags = list(dict.fromkeys(risk_flags))
@@ -175,7 +185,12 @@ def rank_candidates(
                 quote=quote,
                 base_score=base_score,
                 context_penalty=context_penalty,
-                score=total,
+                score=upside_score,
+                upside_score=upside_score,
+                upside_label=upside_label,
+                upside_summary=upside_summary,
+                upside_drivers=upside_drivers,
+                upside_risks=upside_risks,
                 evidence_coverage=round(min(1.0, available_weight), 2),
                 components=components,
                 dimensions=_candidate_dimensions(
@@ -188,7 +203,7 @@ def rank_candidates(
                 risk_flags=risk_flags,
             )
         )
-    ranked.sort(key=lambda item: item.score, reverse=True)
+    ranked.sort(key=lambda item: item.upside_score, reverse=True)
     funnel = {"universe": len(equities), "excluded": len(excluded), "ranked": len(ranked)}
     diagnostics = _strategy_diagnostics(
         equities=equities,
@@ -456,7 +471,7 @@ def _strategy_next_actions(
     actions = ["先核对前 10 名的资金、行业和流动性证据"]
     data_quality = next((item for item in diagnostics if item.key == "data_quality"), None)
     if data_quality and data_quality.score is not None and data_quality.score < 70:
-        actions.append("数据完整度不足的线索只进入跟踪，不直接升级为参与判断")
+        actions.append("数据完整度不足的线索只保留候选，不直接升级为参与判断")
     if market_regime in {"risk_off", "cautious"}:
         actions.append("市场偏弱时优先保留有资金确认和成交额支撑的线索")
     if preset == "oversold_repair":
@@ -475,6 +490,163 @@ def _component_score(components: list[ScoreComponent], key: str) -> float | None
     return item.score if item else None
 
 
+def _risk_reward_score(
+    quote: EquityQuote, history_check: OpportunityHistoryCheck | None
+) -> tuple[float, list[str], list[str]]:
+    score = 58.0
+    drivers: list[str] = []
+    risks: list[str] = []
+
+    if quote.change_pct is not None:
+        if 1 <= quote.change_pct <= 5.5:
+            score += 10
+            drivers.append(f"当日涨幅 {quote.change_pct:.1f}% 未明显过热")
+        elif quote.change_pct > 6.5:
+            score -= min(16.0, (quote.change_pct - 6.5) * 4)
+            risks.append("当日涨幅偏高，追高性价比下降")
+        elif quote.change_pct < 0:
+            score -= 8
+            risks.append("价格仍在下跌，先等止跌确认")
+
+    if history_check and history_check.available:
+        if history_check.ma20_gap_pct is not None:
+            if -3 <= history_check.ma20_gap_pct <= 8:
+                score += 12
+                drivers.append(f"距 MA20 {history_check.ma20_gap_pct:+.1f}%，买点不拥挤")
+            elif history_check.ma20_gap_pct > 12:
+                score -= min(20.0, (history_check.ma20_gap_pct - 12) * 1.6)
+                risks.append(f"距 MA20 {history_check.ma20_gap_pct:+.1f}%，容易回踩")
+            elif history_check.ma20_gap_pct < -5:
+                score -= 8
+                risks.append("跌破均线区间，趋势需要修复")
+        if history_check.max_drawdown_60d is not None:
+            if history_check.max_drawdown_60d <= 12:
+                score += 8
+                drivers.append(f"60日回撤 {history_check.max_drawdown_60d:.1f}%，结构较稳")
+            elif history_check.max_drawdown_60d > 22:
+                score -= 10
+                risks.append("60日回撤偏深，反弹持续性要复核")
+        if history_check.volatility_20d is not None:
+            if history_check.volatility_20d <= 35:
+                score += 5
+            elif history_check.volatility_20d > 50:
+                score -= 8
+                risks.append("20日波动偏高，胜率会被拉低")
+    else:
+        score -= 6
+        risks.append("历史K线不足，上涨持续性不能确认")
+
+    return _clamp_score(score), drivers, risks
+
+
+def _valuation_room_score(quote: EquityQuote) -> tuple[float, str]:
+    if quote.pe is None and quote.pb is None:
+        return 50.0, "估值数据缺失，上涨空间只能先按量价线索判断"
+
+    score = 58.0
+    parts: list[str] = []
+    if quote.pe is not None:
+        if 0 < quote.pe <= 25:
+            score += 16
+            parts.append(f"PE {quote.pe:.1f} 仍有估值余地")
+        elif quote.pe <= 45:
+            score += 4
+            parts.append(f"PE {quote.pe:.1f} 中性")
+        elif quote.pe <= 70:
+            score -= 8
+            parts.append(f"PE {quote.pe:.1f} 偏高")
+        else:
+            score -= 18
+            parts.append(f"PE {quote.pe:.1f} 过高")
+    if quote.pb is not None:
+        if quote.pb <= 3:
+            score += 8
+            parts.append(f"PB {quote.pb:.1f} 不拥挤")
+        elif quote.pb > 6:
+            score -= 10
+            parts.append(f"PB {quote.pb:.1f} 偏贵")
+        else:
+            parts.append(f"PB {quote.pb:.1f} 中性")
+    return _clamp_score(score), "，".join(parts)
+
+
+def _candidate_upside(
+    quote: EquityQuote,
+    preset: str,
+    components: list[ScoreComponent],
+    context_penalty: float,
+    history_check: OpportunityHistoryCheck | None,
+) -> tuple[float, str, str, list[str], list[str]]:
+    trend_score = _component_score(components, "trend")
+    capital_score = _component_score(components, "capital")
+    liquidity_score = _component_score(components, "liquidity")
+    valuation_component = _component_score(components, "valuation")
+    history_score = history_check.score if history_check and history_check.available else None
+    persistence_score = history_score if history_score is not None else trend_score
+    risk_reward, risk_reward_drivers, risk_reward_risks = _risk_reward_score(
+        quote, history_check
+    )
+    valuation_room, valuation_summary = _valuation_room_score(quote)
+
+    score_inputs = [
+        (persistence_score, 0.30),
+        (capital_score, 0.22),
+        (risk_reward, 0.22),
+        (liquidity_score, 0.14),
+        (valuation_component if valuation_component is not None else valuation_room, 0.12),
+    ]
+    available = [(score, weight) for score, weight in score_inputs if score is not None]
+    available_weight = sum(weight for _, weight in available) or 1.0
+    raw_score = sum(score * weight for score, weight in available) / available_weight
+    score = round(_clamp_score(raw_score - context_penalty), 2)
+
+    if score >= 82:
+        label = "高概率延续"
+    elif score >= 72:
+        label = "大概率候选"
+    elif score >= 62:
+        label = "有弹性待确认"
+    elif score >= 52:
+        label = "反弹观察"
+    else:
+        label = "上涨证据偏弱"
+
+    drivers: list[str] = []
+    if persistence_score is not None and persistence_score >= 65:
+        if history_score is not None:
+            drivers.append(f"趋势持续性 {persistence_score:.0f}/100，未来上涨线索更强")
+        else:
+            drivers.append(f"当前价格动量 {persistence_score:.0f}/100，需补历史确认")
+    drivers.extend(risk_reward_drivers)
+    if quote.net_flow is not None and quote.net_flow > 0:
+        drivers.append(f"主动资金净流入 {_signed_money(quote.net_flow)}")
+    if quote.amount is not None and quote.amount >= 500_000_000:
+        drivers.append(f"成交额 {_money(quote.amount)}，承接较好")
+    if valuation_room >= 66:
+        drivers.append(valuation_summary)
+
+    risks: list[str] = []
+    if context_penalty > 0:
+        risks.append(f"市场环境扣 {context_penalty:.0f} 分")
+    if quote.net_flow is not None and quote.net_flow < 0:
+        risks.append(f"资金净流出 {_signed_money(quote.net_flow)}")
+    if capital_score is None:
+        risks.append("资金数据缺失")
+    risks.extend(risk_reward_risks)
+    if history_check and history_check.risk_flags:
+        risks.extend(history_check.risk_flags)
+    if valuation_room < 45:
+        risks.append(valuation_summary)
+    risks.append("催化仍需公告、业绩或研报确认")
+
+    drivers = list(dict.fromkeys(drivers))[:4]
+    risks = list(dict.fromkeys(risks))[:4]
+    driver_text = "；".join(drivers) if drivers else "上涨线索主要来自策略触发，仍需补确认"
+    risk_text = "；".join(risks[:2]) if risks else "暂无突出硬伤"
+    summary = f"{label}：上涨评分 {score:.0f}/100，{driver_text}。风险：{risk_text}。"
+    return score, label, summary, drivers, risks
+
+
 def _candidate_dimensions(
     quote: EquityQuote,
     preset: str,
@@ -486,6 +658,16 @@ def _candidate_dimensions(
     capital_score = _component_score(components, "capital")
     liquidity_score = _component_score(components, "liquidity")
     valuation_score = _component_score(components, "valuation")
+    persistence_score = (
+        history_check.score
+        if history_check is not None and history_check.available and history_check.score is not None
+        else trend_score
+    )
+    risk_reward_score, _, _ = _risk_reward_score(quote, history_check)
+    valuation_room_score, valuation_room_summary = _valuation_room_score(quote)
+    upside_score, upside_label, upside_summary, upside_drivers, upside_risks = _candidate_upside(
+        quote, preset, components, context_penalty, history_check
+    )
     trigger_summary = {
         "trend": f"涨幅 {quote.change_pct:.2f}% 处在温和趋势区间" if quote.change_pct is not None else "涨跌幅暂缺",
         "volume_breakout": f"涨幅 {quote.change_pct:.2f}%，成交额 {_money(quote.amount)}，量能具备突破观察价值" if quote.change_pct is not None else "涨跌幅暂缺",
@@ -522,9 +704,59 @@ def _candidate_dimensions(
         if quote.pe is not None and quote.pb is not None
         else "PE/PB 不完整，不能只凭涨跌幅排序"
     )
-    catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的线索只进入观察池"
-    follow_up_summary = "先打开个股证据账本，再写关注理由、失效条件和下次复盘触发点"
+    catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的线索只做候选复核"
+    follow_up_summary = "先打开个股证据账本，确认参与条件、放弃条件和下次复盘触发点"
     dimensions = [
+        OpportunityDimension(
+            key="future_probability",
+            label="上涨概率",
+            signal=_signal(upside_score),
+            score=upside_score,
+            summary=upside_summary,
+            evidence=upside_drivers or ["策略触发后仍需补趋势、资金和催化确认"],
+        ),
+        OpportunityDimension(
+            key="trend_persistence",
+            label="趋势持续",
+            signal=_signal(persistence_score, persistence_score is not None),
+            score=persistence_score,
+            summary=(
+                f"历史趋势给出 {persistence_score:.0f}/100，越高越接近可延续上涨"
+                if history_check is not None and history_check.available and persistence_score is not None
+                else f"当前价格动量 {persistence_score:.0f}/100，仍需历史K线确认持续性"
+                if persistence_score is not None
+                else "缺少趋势确认，不能判断上涨持续性"
+            ),
+            evidence=(
+                history_check.evidence
+                if history_check is not None and history_check.evidence
+                else [trigger_summary]
+            ),
+            available=persistence_score is not None,
+        ),
+        OpportunityDimension(
+            key="upside_space",
+            label="上涨空间",
+            signal=_signal(valuation_room_score),
+            score=valuation_room_score,
+            summary=valuation_room_summary,
+            evidence=[
+                f"PE {quote.pe:.1f}" if quote.pe is not None else "PE 暂缺",
+                f"PB {quote.pb:.1f}" if quote.pb is not None else "PB 暂缺",
+            ],
+        ),
+        OpportunityDimension(
+            key="timing_quality",
+            label="买点质量",
+            signal=_signal(risk_reward_score),
+            score=risk_reward_score,
+            summary=(
+                "位置、波动和回撤共同评估是否还有风险收益"
+                if not upside_risks
+                else "；".join(upside_risks[:2])
+            ),
+            evidence=["当日涨跌幅", "MA20 偏离", "20日波动", "60日回撤"],
+        ),
         OpportunityDimension(
             key="trigger",
             label="触发逻辑",
@@ -619,7 +851,7 @@ def _candidate_dimensions(
             signal="neutral",
             score=55.0,
             summary=follow_up_summary,
-            evidence=["个股证据账本", "关注理由", "失效条件", "复盘触发点"],
+            evidence=["个股证据账本", "参与条件", "失效条件", "复盘触发点"],
         ),
     ]
     if history_check is not None:
@@ -678,5 +910,5 @@ def _candidate_next_actions(quote: EquityQuote, context_penalty: float) -> list[
         actions.append("复核资金流是否连续，而不是只看单日净流入")
     actions.append("补读公告、业绩预告和研报摘要，确认是否存在真实催化")
     actions.append("比较同行估值和市值风格，避免只按涨幅排序")
-    actions.append("加入跟踪前写清关注理由、参与条件和放弃条件")
+    actions.append("写清参与条件和放弃条件，不满足就放弃")
     return actions[:6]

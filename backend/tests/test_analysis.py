@@ -178,8 +178,10 @@ def test_opportunity_excludes_st_and_explains_score() -> None:
     assert result.excluded[0].reasons == ["special_treatment"]
     assert (
         round(sum(part.weighted_score for part in result.candidates[0].components), 2)
-        == result.candidates[0].score
+        == result.candidates[0].base_score
     )
+    assert result.candidates[0].score == result.candidates[0].upside_score
+    assert result.candidates[0].upside_label
 
 
 def test_opportunity_does_not_score_missing_evidence_as_neutral() -> None:
@@ -279,7 +281,8 @@ def test_risk_off_penalty_is_visible() -> None:
     ).candidates[0]
 
     assert candidate.context_penalty == 15
-    assert candidate.score == candidate.base_score - candidate.context_penalty
+    assert candidate.score == candidate.upside_score
+    assert candidate.score < candidate.base_score
     assert candidate.evidence_coverage == 0.7
 
 
@@ -510,7 +513,7 @@ def test_stock_analysis_returns_future_trend_forecast() -> None:
     assert result.trend_forecast.invalidation
 
 
-def test_holding_conclusion_leads_with_action_dimensions_and_reason() -> None:
+def test_holding_conclusion_leads_with_action_and_key_reasons() -> None:
     result = analyse_holding(
         holding_item(),
         equity(
@@ -529,9 +532,10 @@ def test_holding_conclusion_leads_with_action_dimensions_and_reason() -> None:
     )
 
     assert result.action == "exit_watch"
-    assert result.conclusion.startswith("建议动作：减仓/退出复核")
-    assert "分析维度：仓位偏离、成本风控、估值、流动性、板块资金、持仓逻辑" in result.conclusion
-    assert "原因：" in result.conclusion
+    assert result.conclusion.startswith("建议动作：退出复核")
+    assert "分析维度：" not in result.conclusion
+    assert "亏损 -20.73% 已触发风控" in result.conclusion
+    assert "估值压力偏高，PE 120.60" in result.conclusion
     assert "建议先减仓约 22 股" in result.conclusion
     assert "当前盈亏" not in result.conclusion
     assert "持仓数量 800 股" not in result.conclusion
@@ -554,7 +558,9 @@ def test_holding_conclusion_can_recommend_add_when_under_target_and_clean() -> N
 
     assert result.action == "add_watch"
     assert result.conclusion.startswith("建议动作：可加仓")
-    assert "原因：" in result.conclusion
+    assert "分析维度：" not in result.conclusion
+    assert "仓位低于目标 -20.0%" in result.conclusion
+    assert "估值相对温和" in result.conclusion
 
 
 def test_holding_exit_watch_never_suggests_adding_when_under_target() -> None:
@@ -878,11 +884,17 @@ def test_opportunity_result_has_strategy_diagnostics_and_candidate_playbook() ->
     assert candidate.thesis.startswith("趋势延续线索")
     assert "是否参与以个股证据账本为准" in candidate.thesis
     assert {item.key for item in candidate.dimensions} >= {
+        "future_probability",
+        "trend_persistence",
+        "upside_space",
+        "timing_quality",
         "trigger",
         "confirmation",
         "risk_control",
         "execution",
     }
+    assert candidate.upside_summary.startswith(candidate.upside_label)
+    assert candidate.upside_drivers or candidate.upside_risks
     assert candidate.invalidation
     assert candidate.next_actions
     assert "环境" in candidate.next_actions[0] or candidate.context_penalty > 0
@@ -922,6 +934,10 @@ def test_opportunity_candidate_has_multi_dimension_decision_playbook() -> None:
     candidate = result.candidates[0]
     keys = {item.key for item in candidate.dimensions}
     assert keys >= {
+        "future_probability",
+        "trend_persistence",
+        "upside_space",
+        "timing_quality",
         "trigger",
         "confirmation",
         "capital_flow",
@@ -973,7 +989,9 @@ def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
         "risk",
     }
     assert result.conclusion.startswith("建议动作：减仓")
-    assert "分析维度：" in result.conclusion
+    assert "分析维度：" not in result.conclusion
+    assert "仓位高于目标 60.0%" in result.conclusion
+    assert "盈亏 +7.14% 未触发止损" in result.conclusion
     assert "持仓数量 100 股" not in result.conclusion
     assert "成本价 1400.00" not in result.conclusion
     assert "建议先减仓约 60 股" in result.conclusion

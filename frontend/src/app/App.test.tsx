@@ -73,7 +73,7 @@ it("keeps the application unmounted before login", () => {
   }));
 
   render(<App />);
-  expect(screen.getByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(screen.queryByText("市场状态")).not.toBeInTheDocument();
@@ -129,7 +129,11 @@ it("registers a user and sends the auth token with personal requests", async () 
   fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
 
   expect(await screen.findByText("Alpha")).toBeInTheDocument();
-  expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+  const navigation = within(screen.getByRole("navigation", { name: "主导航" }));
+  expect(navigation.getByRole("link", { name: "今日" })).toBeInTheDocument();
+  expect(navigation.getByRole("link", { name: "持仓" })).toBeInTheDocument();
+  expect(navigation.queryByRole("link", { name: "跟踪" })).not.toBeInTheDocument();
+  expect(navigation.queryByRole("link", { name: "数据" })).not.toBeInTheDocument();
   await waitFor(() => {
     expect(calls.some((call) => call.url.includes("/api/v1/preferences") && call.auth === "Bearer token-alpha")).toBe(true);
     expect(calls.some((call) => call.url.includes("/api/v1/today") && call.auth === "Bearer token-alpha")).toBe(true);
@@ -147,7 +151,7 @@ it("rejects an expired session without mounting business routes", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(calls).toEqual(["/api/v1/auth/me"]);
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
@@ -176,18 +180,18 @@ it("restores a valid session and removes the shell on logout", async () => {
 
   expect(await screen.findByText("市场状态")).toBeInTheDocument();
   const openingDesk = within(await screen.findByLabelText("今日开盘执行台"));
-  expect(openingDesk.getByText("OPENING DESK")).toBeInTheDocument();
-  expect(openingDesk.getByText("允许复核机会")).toBeInTheDocument();
-  expect(openingDesk.getByText("市场闸口")).toBeInTheDocument();
-  expect(openingDesk.getByText("优先复核")).toBeInTheDocument();
+  expect(openingDesk.getByText("今日")).toBeInTheDocument();
+  expect(openingDesk.getByText("可以找机会")).toBeInTheDocument();
+  expect(openingDesk.getByText("市场")).toBeInTheDocument();
+  expect(openingDesk.getByText("机会")).toBeInTheDocument();
   expect(openingDesk.getByText("等待候选收敛")).toBeInTheDocument();
-  expect(openingDesk.getByText("今日禁区")).toBeInTheDocument();
-  expect(openingDesk.getByRole("link", { name: /01\s*市场闸口/ })).toHaveAttribute("href", "#/opportunities");
+  expect(openingDesk.getByText("风险")).toBeInTheDocument();
+  expect(openingDesk.getByRole("link", { name: /01\s*市场/ })).toHaveAttribute("href", "#/opportunities");
   expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
   expect(calls[0]).toEqual({ url: "/api/v1/auth/me", auth: "Bearer token-existing" });
   fireEvent.click(screen.getByText("Owner"));
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
-  expect(screen.getByRole("heading", { name: "登录 Market Desk" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
 });
@@ -254,7 +258,7 @@ it("adds a global research router for stock search and Ask Stock handoff", async
   fireEvent.keyDown(window, { key: "k", metaKey: true });
   const input = screen.getByLabelText("搜索股票或输入问题");
   expect(input).toHaveFocus();
-  expect(screen.getByText("RESEARCH ROUTER")).toBeInTheDocument();
+  expect(screen.getByText("搜索")).toBeInTheDocument();
   fireEvent.change(input, { target: { value: "茅台" } });
 
   const stockResult = (await screen.findAllByRole("button", { name: /贵州茅台/ }))[0];
@@ -339,15 +343,15 @@ it("shows a holdings risk sentinel on Today when positions need action", async (
   render(<App />);
 
   const sentinel = within(await screen.findByLabelText("持仓风险哨兵"));
-  expect(sentinel.getByText("PORTFOLIO WATCH")).toBeInTheDocument();
+  expect(sentinel.getByText("持仓风险")).toBeInTheDocument();
   expect(sentinel.getByText("贵州茅台")).toBeInTheDocument();
   expect(sentinel.getByText("组合占比高于目标")).toBeInTheDocument();
-  expect(sentinel.getByText(/需要减仓 · 组合需复核 1 笔/)).toBeInTheDocument();
+  expect(sentinel.getByText(/需要减仓 · 待处理 1 笔/)).toBeInTheDocument();
   expect(sentinel.getByText("150,000")).toBeInTheDocument();
   expect(sentinel.getByText("10,000")).toBeInTheDocument();
   expect(sentinel.getByText("+7.14%")).toBeInTheDocument();
   expect(sentinel.getByRole("link", { name: "处理持仓" })).toHaveAttribute("href", "#/holdings");
-  expect(sentinel.getByRole("link", { name: "个股复核" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519#stock-final-gate");
+  expect(sentinel.getByRole("link", { name: "看个股" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519#stock-final-gate");
   expect(sentinel.getByRole("link", { name: "问持仓" })).toHaveAttribute("href", "#/ask?symbol=SH.600519&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&from=today&question=%E6%88%91%E7%9A%84%E6%8C%81%E4%BB%93%E9%87%8C%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%EF%BC%8C%E8%A6%81%E4%B8%8D%E8%A6%81%E8%B0%83%E4%BB%93");
 });
 
@@ -367,6 +371,6 @@ it("keeps the Ask Stock route behind the authenticated shell", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "问股对话" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
 });

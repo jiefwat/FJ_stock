@@ -355,6 +355,11 @@ class RankedCandidate(StrictModel):
     base_score: float
     context_penalty: float
     score: float
+    upside_score: float = Field(default=0.0, ge=0, le=100)
+    upside_label: str = ""
+    upside_summary: str = ""
+    upside_drivers: list[str] = Field(default_factory=list)
+    upside_risks: list[str] = Field(default_factory=list)
     evidence_coverage: float = Field(ge=0, le=1)
     components: list[ScoreComponent]
     dimensions: list[OpportunityDimension] = Field(default_factory=list)
@@ -531,8 +536,46 @@ class AskStockHoldingContext(StrictModel):
     risk_flags: list[str] = Field(default_factory=list)
 
 
+class AskStockConversationMessage(StrictModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def normalize_content(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
+
+
+class AskStockSourceStock(StrictModel):
+    symbol: str | None = Field(default=None, max_length=16)
+    name: str | None = Field(default=None, max_length=32)
+
+    @field_validator("symbol", "name", mode="before")
+    @classmethod
+    def normalize_text(cls, value: object) -> object:
+        normalized = " ".join(value.split()) if isinstance(value, str) else value
+        if isinstance(normalized, str) and normalized == "":
+            return None
+        return normalized
+
+
+class AskStockSourceContext(StrictModel):
+    origin: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=120)
+    detail: str | None = Field(default=None, max_length=300)
+    stock: AskStockSourceStock | None = None
+
+    @field_validator("origin", "label", "detail", mode="before")
+    @classmethod
+    def normalize_text(cls, value: object) -> object:
+        normalized = " ".join(value.split()) if isinstance(value, str) else value
+        if isinstance(normalized, str) and normalized == "":
+            return None
+        return normalized
+
+
 class AskStockResponse(StrictModel):
-    kind: Literal["stock_analysis", "semantic_screen", "portfolio_analysis"]
+    kind: Literal["stock_analysis", "semantic_screen", "portfolio_analysis", "llm_answer"]
     question: str
     intent: Literal[
         "risk",
