@@ -724,10 +724,15 @@ function AskRowsTable({ result }: { result: AskStockResponse }) {
   </div>;
 }
 
+function displayAskSource(source: string) {
+  return source.replace(/联网大模型问答|联网问答/g, "智能分析");
+}
+
 function AskResult({ result }: { result: AskStockResponse }) {
   const stockAnalysis = result.kind === "stock_analysis";
   const [supportOpen, setSupportOpen] = useState(false);
-  const fallbackTitle = result.kind === "portfolio_analysis" ? "账户组合" : result.kind === "llm_answer" ? "联网问答" : "自然语言选股";
+  const fallbackTitle = result.kind === "portfolio_analysis" ? "账户组合" : result.kind === "llm_answer" ? "智能分析" : "自然语言选股";
+  const sourceLabel = displayAskSource(result.source);
   if (result.kind === "llm_answer") {
     return <section className="ask-result ask-result-chat" aria-live="polite">
       <article className="ask-answer">
@@ -742,7 +747,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
         </div>
       </details>
       <footer className="ask-answer-foot">
-        <span>{result.source}</span>
+        <span>{sourceLabel}</span>
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
       </footer>
     </section>;
@@ -755,7 +760,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
         {result.symbol && <b>{result.symbol}</b>}
       </div>
       <div className="ask-provenance">
-        <span>{result.source}</span>
+        <span>{sourceLabel}</span>
         <small>行情时间 {observedTime(result.observed_at)}</small>
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
       </div>
