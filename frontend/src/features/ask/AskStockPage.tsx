@@ -860,28 +860,6 @@ export function AskStockPage() {
             >{prompt}</button>)}
           </div>
         </section> : null}
-        <section className="ask-playbook compact" aria-label="问股场景路由">
-          <header>
-            <span>快捷</span>
-            <strong>常用问题</strong>
-            <p>{focusStock ? `围绕 ${stockLabel(focusStock)} 生成` : "常用问题入口"}</p>
-          </header>
-          <div>
-            {askPlaybookScenes.filter((scene) => compactPlaybookIntents.has(scene.intent)).map((scene) => {
-              const nextQuestion = scene.question(focusStock);
-              return <button
-                type="button"
-                key={scene.intent}
-                onClick={() => void submitQuestion(nextQuestion)}
-                disabled={ask.isPending}
-              >
-                <span>{intentLabel[scene.intent]}</span>
-                <strong>{scene.label}</strong>
-                <em>{focusStock ? nextQuestion : scene.example}</em>
-              </button>;
-            })}
-          </div>
-        </section>
         <section className="ask-history" aria-label="历史对话">
           <header>
             <span><History size={15} />历史对话</span>
@@ -917,6 +895,28 @@ export function AskStockPage() {
         </button>
       </aside>
       <div className="ask-chat-main">
+        <section className="ask-playbook compact ask-main-playbook" aria-label="问股场景路由">
+          <header>
+            <span>快捷</span>
+            <strong>常用问题</strong>
+            <p>{focusStock ? `围绕 ${stockLabel(focusStock)} 生成` : "常用问题入口"}</p>
+          </header>
+          <div>
+            {askPlaybookScenes.filter((scene) => compactPlaybookIntents.has(scene.intent)).map((scene) => {
+              const nextQuestion = scene.question(focusStock);
+              return <button
+                type="button"
+                key={scene.intent}
+                onClick={() => void submitQuestion(nextQuestion)}
+                disabled={ask.isPending}
+              >
+                <span>{intentLabel[scene.intent]}</span>
+                <strong>{scene.label}</strong>
+                <em>{focusStock ? nextQuestion : scene.example}</em>
+              </button>;
+            })}
+          </div>
+        </section>
         <section className="ask-thread panel" aria-label="问股对话记录">
           {messages.length === 0 ? <div className="ask-thread-empty">
             <MessageSquareText size={28} />

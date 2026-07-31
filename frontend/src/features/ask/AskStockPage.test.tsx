@@ -321,9 +321,11 @@ it("routes users through the Ask Stock playbook before submitting", async () => 
   renderPage();
 
   const playbook = screen.getByLabelText("问股场景路由");
+  const thread = screen.getByLabelText("问股对话记录");
   expect(playbook).toHaveTextContent("常用问题");
   expect(playbook).toHaveTextContent("基本面");
   expect(playbook).toHaveTextContent("持仓诊断");
+  expect(playbook.compareDocumentPosition(thread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(within(playbook).getByRole("button", { name: /异动解释/ }));
 
   expect(await screen.findByText(/大业股份近期下跌/)).toBeInTheDocument();

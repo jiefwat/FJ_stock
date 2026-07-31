@@ -268,6 +268,8 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   expect(screen.getByLabelText("个股结论")).toHaveAttribute("id", "stock-final-gate");
   expect(deck.getByText("贵州茅台")).toBeInTheDocument();
   expect(deck.getByText("等待回踩")).toBeInTheDocument();
+  expect(deck.getByText("置信")).toBeInTheDocument();
+  expect(deck.getAllByText("趋势").length).toBeGreaterThan(0);
   expect(deck.getByText("怎么做")).toBeInTheDocument();
   expect(deck.getByText("为什么")).toBeInTheDocument();
   expect(deck.getByText("风险")).toBeInTheDocument();

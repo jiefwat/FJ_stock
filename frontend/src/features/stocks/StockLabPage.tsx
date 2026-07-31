@@ -441,6 +441,11 @@ function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evid
         <p>{fmt(quote.price)} <b className={(quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(quote.change_pct)}</b></p>
       </div>
       <strong>{dossier.investment_advice.action}</strong>
+      <div className="stock-focus-metrics">
+        <span>趋势 <b>{dossier.trend_forecast.direction}</b></span>
+        <span>置信 <b>{percent(dossier.investment_advice.confidence * 100)}</b></span>
+        <span>证据 <b>{percent(dossier.evidence_coverage * 100)}</b></span>
+      </div>
       <small>置信度 {percent(dossier.investment_advice.confidence * 100)} · 证据 {percent(dossier.evidence_coverage * 100)}</small>
     </article>
     <div className="stock-focus-content">
