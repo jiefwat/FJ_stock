@@ -433,31 +433,38 @@ function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evid
     "暂无明确反方，但仍按止损线执行。",
   );
 
-  return <section className={`stock-focus-board ${tone}`} id="stock-final-gate" aria-label="个股结论">
-    <article className="stock-focus-verdict">
-      <div>
+  return <section className={`stock-focus-board stock-focus-redesign ${tone}`} id="stock-final-gate" aria-label="个股结论">
+    <header className="stock-focus-hero">
+      <div className="stock-identity">
         <span>{quote.symbol} · {sectorName}</span>
         <h2>{quote.name}</h2>
         <p>{fmt(quote.price)} <b className={(quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(quote.change_pct)}</b></p>
       </div>
-      <strong>{dossier.investment_advice.action}</strong>
+      <article className="stock-verdict-card">
+        <span>结论</span>
+        <strong>{dossier.investment_advice.action}</strong>
+        <small>置信 {percent(dossier.investment_advice.confidence * 100)} · 证据 {percent(dossier.evidence_coverage * 100)}</small>
+      </article>
       <div className="stock-focus-metrics">
         <span>趋势 <b>{dossier.trend_forecast.direction}</b></span>
         <span>置信 <b>{percent(dossier.investment_advice.confidence * 100)}</b></span>
         <span>证据 <b>{percent(dossier.evidence_coverage * 100)}</b></span>
       </div>
-      <small>置信度 {percent(dossier.investment_advice.confidence * 100)} · 证据 {percent(dossier.evidence_coverage * 100)}</small>
-    </article>
-    <div className="stock-focus-content">
-      <section className="focus-card focus-summary" id="stock-investment-advice" aria-label="直接投资建议">
+    </header>
+
+    <section className="stock-action-sheet" id="stock-investment-advice" aria-label="直接投资建议">
+      <div>
         <span>怎么做</span>
         <p>{dossier.investment_advice.position_hint}</p>
-        <dl>
-          <div><dt>入场</dt><dd>{dossier.investment_advice.entry_plan}</dd></div>
-          <div><dt>止损</dt><dd>{dossier.investment_advice.stop_loss}</dd></div>
-          <div><dt>止盈</dt><dd>{dossier.investment_advice.take_profit}</dd></div>
-        </dl>
-      </section>
+      </div>
+      <dl>
+        <div><dt>入场</dt><dd>{dossier.investment_advice.entry_plan}</dd></div>
+        <div><dt>止损</dt><dd>{dossier.investment_advice.stop_loss}</dd></div>
+        <div><dt>止盈</dt><dd>{dossier.investment_advice.take_profit}</dd></div>
+      </dl>
+    </section>
+
+    <div className="stock-focus-content">
       <section className="focus-card" id="stock-evidence-audit" aria-label="依据">
         <span>为什么</span>
         <ul>{reasons.map((item) => <li key={item}>{item}</li>)}</ul>
@@ -466,13 +473,17 @@ function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evid
         <span>风险</span>
         <ul>{risks.map((item) => <li key={item}>{item}</li>)}</ul>
       </section>
-      <footer>
-        <div aria-label="未来趋势判断"><span>趋势</span><b>{dossier.trend_forecast.direction}</b></div>
-        <div><span>依据</span><b>{route.text}</b></div>
-        <Link to={sectorLink}>看板块</Link>
-        <Link to={askHref(dossier, params)}>问股</Link>
-      </footer>
+      <section className="focus-card" aria-label="未来趋势判断">
+        <span>趋势</span>
+        <strong>{dossier.trend_forecast.direction}</strong>
+        <p>{route.text}</p>
+      </section>
     </div>
+
+    <footer className="stock-focus-actions">
+      <Link to={sectorLink}>看板块</Link>
+      <Link to={askHref(dossier, params)}>问股</Link>
+    </footer>
   </section>;
 }
 
