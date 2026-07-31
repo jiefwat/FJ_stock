@@ -167,7 +167,7 @@ export function TodayPage() {
     setRecentResearch(loadRecentResearch());
   }, []);
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
-    <header className="page-head reveal">
+    <header className="page-head reveal today-page-head">
       <div><h1>今日</h1></div>
       <DataStamp meta={query.data.meta} />
     </header>
@@ -206,7 +206,7 @@ export function TodayPage() {
         </div>}
       </AsyncState>
     </section>
-    <div className="dashboard-grid reveal delay-2">
+    <div className="dashboard-grid today-secondary-grid reveal delay-2">
       <section className="panel index-panel"><div className="panel-title"><span>指数</span><Link to="/market">展开市场 <ArrowUpRight size={14} /></Link></div><div className="index-list">{query.data.indices.map((index) => <article key={index.symbol}><span>{index.name}</span><strong>{fmt(index.price)}</strong><b className={(index.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(index.change_pct)}</b></article>)}</div></section>
       <section className="panel actions-panel"><div className="panel-title"><span>动作</span></div><ol>{query.data.next_actions.map((action, index) => <li key={action}><Link to={actionRoutes[index] ?? "/opportunities"}><i>{index + 1}</i><span>{action}</span><ArrowUpRight size={14} /></Link></li>)}</ol></section>
       <section className="panel sector-panel"><div className="panel-title"><span>板块温度</span><Link to="/opportunities">找机会</Link></div><div className="sector-strip">{query.data.sectors.map((sector) => <Link key={sector.code} to={`/market?sector=${sector.code}`} className={(sector.change_pct ?? 0) >= 0 ? "heat-up" : "heat-down"}><span>{sector.name}</span><strong>{pct(sector.change_pct)}</strong></Link>)}</div></section>

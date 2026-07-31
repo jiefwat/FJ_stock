@@ -221,7 +221,7 @@ export function HoldingsPage() {
   if (query.isError) {
     const hasToken = Boolean(getAuthToken());
     return <>
-      <header className="page-head"><div><h1>持仓</h1></div></header>
+      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
       <section className="panel personal-auth-gate" role="alert">
         <span>{hasToken ? "登录状态已失效" : "请先登录后查看个人持仓"}</span>
         <p>{hasToken ? "请退出后重新登录，系统不会回退展示其他账号的数据。" : "持仓属于个人数据。登录后这里只会显示当前账号自己的组合。"}</p>
@@ -230,7 +230,7 @@ export function HoldingsPage() {
   }
 
   return <>
-    <header className="page-head"><div><h1>持仓</h1></div></header>
+    <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
     <section className="portfolio-overview panel" aria-label="组合总览">
       <div className="panel-title"><span>组合</span></div>
       <div className="portfolio-hero-line">

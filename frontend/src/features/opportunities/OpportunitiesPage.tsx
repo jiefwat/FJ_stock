@@ -204,7 +204,7 @@ export function OpportunitiesPage() {
   const toggleExpanded = (symbol: string) => setExpandedSymbols((symbols) => symbols.includes(symbol) ? symbols.filter((item) => item !== symbol) : [...symbols, symbol]);
 
   return <>
-    <header className="page-head"><div><h1>机会</h1></div><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></header>
+    <header className="page-head opportunity-page-head"><div><h1>机会</h1></div><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></header>
     <div className="preset-bar" aria-label="策略预设">{presets.map(([key, label]) => <button key={key} className={preset === key ? "active" : ""} onClick={() => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}>{label}</button>)}</div>
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       {query.data.available && <OpportunityQueueDesk preset={preset} presetLabel={presetLabel} candidateRows={candidateRows} layerCounts={layerCounts} />}
@@ -213,7 +213,7 @@ export function OpportunitiesPage() {
         <div><span>暂时没有结果</span><p>{query.data.unavailable_reason}</p>{query.data.next_actions.map((action) => <p key={action}>· {action}</p>)}<button className="text-button" onClick={() => setPreset("trend")}>看趋势延续 →</button></div>
       </section> : <>
         <section className="lead-layer-bar" aria-label="线索分层筛选">{leadLayers.map(([key, label]) => <button key={key} className={leadLayer === key ? "active" : ""} onClick={() => { setLeadLayer(key); setExpandedSymbols([]); }}><span>{label}</span><strong>{layerCounts[key]}</strong></button>)}</section>
-        <section className="panel"><div className="panel-title"><span>{selectedLayerLabel}</span><small>{visibleCandidates.length} 只</small></div>{visibleCandidates.length === 0 ? <div className="empty">当前分层没有线索。</div> : <div className="candidate-table opportunity-table compact-opportunity-list">{visibleCandidates.map(({ item, badge }, index) => {
+        <section className="panel opportunity-list-panel"><div className="panel-title"><span>{selectedLayerLabel}</span><small>{visibleCandidates.length} 只</small></div>{visibleCandidates.length === 0 ? <div className="empty">当前分层没有线索。</div> : <div className="candidate-table opportunity-table compact-opportunity-list">{visibleCandidates.map(({ item, badge }, index) => {
           const expanded = expandedSymbols.includes(item.quote.symbol);
           return <article key={item.quote.symbol} className={expanded ? "expanded" : ""}>
             <button className="candidate-list-row" type="button" aria-expanded={expanded} onClick={() => toggleExpanded(item.quote.symbol)}>
