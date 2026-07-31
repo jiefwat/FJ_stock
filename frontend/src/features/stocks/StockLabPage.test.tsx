@@ -119,13 +119,9 @@ it("explains when a stock dossier is opened from opportunity leads", async () =>
   renderPage(true, "/stocks?symbol=SH.600519&from=opportunities&preset=trend");
 
   const sourceNote = within(await screen.findByLabelText("线索来源"));
-  expect(sourceNote.getByText("来自机会页")).toBeInTheDocument();
-  expect(sourceNote.getByText("来源策略：趋势延续")).toBeInTheDocument();
-  const reviewOutcome = within(await screen.findByLabelText("线索结果"));
-  expect(reviewOutcome.getByText("仅观察")).toBeInTheDocument();
-  expect(reviewOutcome.getByText(/当前建议：/)).toBeInTheDocument();
-  expect(reviewOutcome.getByText("等待回踩")).toBeInTheDocument();
-  expect(reviewOutcome.getByText(/按失效条件执行/)).toBeInTheDocument();
+  expect(sourceNote.getByText("机会")).toBeInTheDocument();
+  expect(sourceNote.getByText("趋势延续")).toBeInTheDocument();
+  expect(screen.queryByLabelText("线索结果")).not.toBeInTheDocument();
   expect(await screen.findByLabelText("直接投资建议")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
     "href",
@@ -137,8 +133,8 @@ it("explains when a stock dossier is opened from a market board", async () => {
   renderPage(true, "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=白酒&boardType=板块");
 
   const sourceNote = within(await screen.findByLabelText("板块来源"));
-  expect(sourceNote.getByText("来自白酒板块")).toBeInTheDocument();
-  expect(sourceNote.getByText("来源：白酒板块")).toBeInTheDocument();
+  expect(sourceNote.getByText("白酒")).toBeInTheDocument();
+  expect(sourceNote.getByText("板块")).toBeInTheDocument();
   expect(await screen.findByLabelText("依据")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
     "href",
@@ -149,30 +145,20 @@ it("explains when a stock dossier is opened from a market board", async () => {
 it("shows the evidence ledger and keeps Ask Stock as the primary action", async () => {
   renderPage();
 
+  expect(await screen.findByText("贵州茅台")).toBeInTheDocument();
+  expect(screen.getByText("等待回踩")).toBeInTheDocument();
+  expect(screen.getByText(/证据 55%/)).toBeInTheDocument();
+  const audit = within(await screen.findByLabelText("依据"));
+  expect(screen.getByLabelText("依据")).toHaveAttribute("id", "stock-evidence-audit");
+  expect(audit.getByText("为什么")).toBeInTheDocument();
+  expect(audit.getByText("趋势结构中性")).toBeInTheDocument();
+  expect(screen.queryByText("分析拆解")).not.toBeVisible();
+  fireEvent.click(screen.getByText("明细"));
   expect(await screen.findByLabelText("价格趋势图")).toBeInTheDocument();
-  expect(screen.getByText("收盘价")).toBeInTheDocument();
-  expect(screen.getByText("证据覆盖 55%")).toBeInTheDocument();
-  expect(screen.getByText("总结论")).toBeInTheDocument();
-  expect(screen.getAllByText(/仅供研究/).length).toBeGreaterThan(0);
+  expect(screen.getByText("评分明细")).toBeInTheDocument();
   expect(screen.getByText("波动风险")).toBeInTheDocument();
   expect(screen.getByText("语义研究")).toBeInTheDocument();
   expect(screen.getAllByText(/近三十日有分红相关公告/).length).toBeGreaterThan(0);
-  const audit = within(await screen.findByLabelText("依据"));
-  expect(screen.getByLabelText("依据")).toHaveAttribute("id", "stock-evidence-audit");
-  expect(audit.getByText("证据")).toBeInTheDocument();
-  expect(audit.getByText("补证据")).toBeInTheDocument();
-  expect(audit.getByText(/覆盖 55% · 支持 2 · 反方 2 · 缺口 0/)).toBeInTheDocument();
-  expect(audit.getByText("支持证据")).toBeInTheDocument();
-  expect(audit.getByText("反方证据")).toBeInTheDocument();
-  expect(audit.getByText("证据缺口")).toBeInTheDocument();
-  expect(audit.getByText("动作")).toBeInTheDocument();
-  expect(screen.getByText("分析拆解")).toBeInTheDocument();
-  expect(screen.getByText("趋势结构")).toBeInTheDocument();
-  expect(screen.getAllByText("风险收益").length).toBeGreaterThan(0);
-  expect(screen.getByText("基本面质量")).toBeInTheDocument();
-  expect(screen.getByText("催化与事件")).toBeInTheDocument();
-  expect(screen.getAllByText("交易计划").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("动作").length).toBeGreaterThan(0);
   expect(screen.queryByText(/iWenCai|WenCai|问财/i)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveAttribute(
     "href",
@@ -185,9 +171,9 @@ it("shows the evidence ledger and keeps Ask Stock as the primary action", async 
 it("shows cited filings, research reports, and themes without changing the score", async () => {
   const { container } = renderPage();
 
-  await screen.findByText("更多数据");
+  await screen.findByText("明细");
   expect(container.querySelector(".stock-deep-dossier")).not.toHaveAttribute("open");
-  fireEvent.click(screen.getByText("更多数据"));
+  fireEvent.click(screen.getByText("明细"));
   expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
 
   const panel = within(await screen.findByLabelText("公司证据包"));
@@ -208,7 +194,7 @@ it("shows cited filings, research reports, and themes without changing the score
 it("opens the compact evidence package automatically for deep evidence anchors", async () => {
   const { container } = renderPage(true, "/stocks?symbol=SH.600519#stock-company-evidence");
 
-  await screen.findByText("更多数据");
+  await screen.findByText("明细");
   expect(container.querySelector(".stock-deep-dossier")).toHaveAttribute("open");
   expect(await screen.findByLabelText("公司证据包")).toHaveAttribute("id", "stock-company-evidence");
 });
@@ -280,10 +266,11 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
 
   const deck = within(await screen.findByLabelText("个股结论"));
   expect(screen.getByLabelText("个股结论")).toHaveAttribute("id", "stock-final-gate");
-  expect(deck.getByText("结论")).toBeInTheDocument();
-  expect(deck.getByText("板块")).toBeInTheDocument();
-  expect(deck.getByText("失效条件")).toBeInTheDocument();
-  expect(deck.getByText("动作")).toBeInTheDocument();
+  expect(deck.getByText("贵州茅台")).toBeInTheDocument();
+  expect(deck.getByText("等待回踩")).toBeInTheDocument();
+  expect(deck.getByText("怎么做")).toBeInTheDocument();
+  expect(deck.getByText("为什么")).toBeInTheDocument();
+  expect(deck.getByText("风险")).toBeInTheDocument();
   await waitFor(() => expect(deck.getByRole("link", { name: "看板块" })).toHaveAttribute(
     "href",
     "/market?theme=BK0896&themeName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&themeChange=1.8",
@@ -291,16 +278,10 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
 
   const advice = within(await screen.findByLabelText("直接投资建议"));
   expect(screen.getByLabelText("直接投资建议")).toHaveAttribute("id", "stock-investment-advice");
-  expect(advice.getByText("等待回踩")).toBeInTheDocument();
   expect(advice.getByText(/暂不追高/)).toBeInTheDocument();
-  expect(advice.getByText("入场计划")).toBeInTheDocument();
-  expect(advice.getByText("止损纪律")).toBeInTheDocument();
-  expect(advice.getByText("止盈检查")).toBeInTheDocument();
-  expect(advice.getByText("为什么是这个建议")).toBeInTheDocument();
-  expect(advice.getByText("趋势结构中性")).toBeInTheDocument();
-  expect(advice.getByText("横向同业估值一般")).toBeInTheDocument();
-  expect(advice.getByText("过去 60 日累计涨跌 12.4%")).toBeInTheDocument();
-  expect(advice.getByText(/研究建议不是保证收益/)).toBeInTheDocument();
+  expect(advice.getByText("入场")).toBeInTheDocument();
+  expect(advice.getByText("止损")).toBeInTheDocument();
+  expect(advice.getByText("止盈")).toBeInTheDocument();
 
   const comparison = within(await screen.findByLabelText("横向纵向对比"));
   expect(comparison.getByText("横向对比")).toBeInTheDocument();
@@ -315,7 +296,7 @@ it("shows direct investment advice with horizontal and vertical comparisons", as
   const adviceSection = await screen.findByLabelText("直接投资建议");
   const comparisonSection = await screen.findByLabelText("横向纵向对比");
   const conclusionSection = await screen.findByLabelText("结构化总结论");
-  expect(adviceSection.compareDocumentPosition(comparisonSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText("明细")).toBeInTheDocument();
   expect(comparisonSection.compareDocumentPosition(conclusionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
@@ -324,14 +305,10 @@ it("shows a future trend forecast before detailed evidence", async () => {
 
   const forecast = within(await screen.findByLabelText("未来趋势判断"));
   expect(forecast.getByText("偏强震荡")).toBeInTheDocument();
-  expect(forecast.getByText("未来 1-4 周")).toBeInTheDocument();
-  expect(forecast.getByText("置信度 68%")).toBeInTheDocument();
-  expect(forecast.getByText(/MA5\/MA20 保持多头/)).toBeInTheDocument();
-  expect(forecast.getByText("MA5/MA20 短线结构占优")).toBeInTheDocument();
-  expect(forecast.getByText(/趋势判断失效/)).toBeInTheDocument();
 
   const forecastSection = await screen.findByLabelText("未来趋势判断");
   const auditSection = await screen.findByLabelText("依据");
+  fireEvent.click(screen.getByText("明细"));
   const evidenceLedger = await screen.findByText("评分明细");
   expect(auditSection.compareDocumentPosition(forecastSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(forecastSection.compareDocumentPosition(evidenceLedger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -362,9 +339,9 @@ it("offers intent-aware Ask Stock shortcuts after the final gate", async () => {
 
   const finalGate = await screen.findByLabelText("个股结论");
   const askRouter = await screen.findByLabelText("个股问股快捷入口");
-  const audit = await screen.findByLabelText("依据");
+  const details = await screen.findByText("明细");
   expect(finalGate.compareDocumentPosition(askRouter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(askRouter.compareDocumentPosition(audit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(askRouter.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("shows descriptive historical validation without changing the page structure", async () => {
