@@ -79,6 +79,7 @@ const followUpPrompts = [
   { label: "继续问风险", question: "还有哪些风险" },
   { label: "仓位怎么定", question: "仓位和止损怎么定" },
 ];
+const compactPlaybookIntents = new Set<AskStockResponse["intent"]>(["risk", "movement", "fundamental", "portfolio"]);
 const stockCodePattern = /\b(?:SH|SZ|BJ)?\.?\d{6}\b/i;
 const followUpPrefixPattern = /^(那|它|这个|这只|该股|刚才|上面|继续|再|顺便)/;
 const followUpTopicPattern = /(风险|趋势|估值|基本面|财报|业绩|利润|营收|现金流|负债|公告|研报|消息|催化|题材|龙虎榜|仓位|止损|止盈|支撑|压力|目标价|价格|股价|合理|多少|为什么|为啥|怎么跌|怎么涨|大跌|大涨|异动|发生了什么|能买吗|能不能|要不要|可以买|可以卖|怎么样|怎么看)/;
@@ -333,10 +334,13 @@ function threadTitle(messages: AskMessage[]) {
 }
 
 function threadMeta(thread: AskThread) {
+  const last = thread.messages.at(-1);
+  if (last?.role === "error") return "失败";
+  if (last?.role === "user") return "待回答";
   const stock = latestStock(thread.messages);
   if (stock) return stockLabel(stock);
   const turns = thread.messages.filter((message) => message.role === "assistant").length;
-  return turns > 0 ? `${turns} 条回答` : "未开始";
+  return turns > 0 ? `${turns} 条回答` : "新对话";
 }
 
 function createThread(messages: AskMessage[] = []): AskThread {
@@ -500,6 +504,11 @@ function clearStoredThreads() {
 
 function isThreadStateEmpty(state: AskThreadState) {
   return state.threads.every((thread) => thread.messages.length === 0);
+}
+
+function trailingUnansweredUser(messages: AskMessage[]) {
+  const last = messages.at(-1);
+  return last?.role === "user" ? last : null;
 }
 
 function saveIfUseful(state: AskThreadState) {
@@ -718,6 +727,7 @@ export function AskStockPage() {
   const activeStock = useMemo(() => latestStock(messages), [messages]);
   const sourceContext = useMemo(() => askSourceContext(searchParams), [searchParams]);
   const focusStock = sourceContext?.stock ?? activeStock ?? null;
+  const unresolvedQuestion = !ask.isPending ? trailingUnansweredUser(messages) : null;
   const visibleThreads = useMemo(
     () => sortedThreads(threadState.threads).filter((thread) => shouldShowThread(thread, threadState.activeThreadId)),
     [threadState],
@@ -816,6 +826,13 @@ export function AskStockPage() {
     setQuestion("");
   };
 
+  const resendUnanswered = (message: Extract<AskMessage, { role: "user" }>) => {
+    setThreadState((current) => updateThreadMessages(current, activeThread.id, (currentMessages) => (
+      currentMessages.filter((item) => item.id !== message.id)
+    )));
+    void submitQuestion(message.content);
+  };
+
   return <>
     <header className="page-head ask-page-head">
       <div><h1>问股</h1></div>
@@ -843,14 +860,14 @@ export function AskStockPage() {
             >{prompt}</button>)}
           </div>
         </section> : null}
-        <section className="ask-playbook" aria-label="问股场景路由">
+        <section className="ask-playbook compact" aria-label="问股场景路由">
           <header>
-            <span>快捷提问</span>
-            <strong>场景</strong>
+            <span>快捷</span>
+            <strong>常用问题</strong>
             <p>{focusStock ? `围绕 ${stockLabel(focusStock)} 生成` : "常用问题入口"}</p>
           </header>
           <div>
-            {askPlaybookScenes.map((scene) => {
+            {askPlaybookScenes.filter((scene) => compactPlaybookIntents.has(scene.intent)).map((scene) => {
               const nextQuestion = scene.question(focusStock);
               return <button
                 type="button"
@@ -926,6 +943,10 @@ export function AskStockPage() {
             </article>;
           })}
           {ask.isPending ? <article className="ask-message assistant pending"><span>问股</span><p>正在联网检索...</p></article> : null}
+          {unresolvedQuestion ? <article className="ask-message unresolved" role="status">
+            <span>没有收到回答，可能是刷新或网络中断。</span>
+            <button type="button" onClick={() => resendUnanswered(unresolvedQuestion)}>重新发送</button>
+          </article> : null}
           <div ref={threadEndRef} />
         </section>
         <form className="ask-chat-composer panel" onSubmit={submit}>

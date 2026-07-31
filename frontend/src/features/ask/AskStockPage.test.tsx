@@ -321,15 +321,59 @@ it("routes users through the Ask Stock playbook before submitting", async () => 
   renderPage();
 
   const playbook = screen.getByLabelText("问股场景路由");
-  expect(playbook).toHaveTextContent("快捷提问");
+  expect(playbook).toHaveTextContent("常用问题");
   expect(playbook).toHaveTextContent("基本面");
-  expect(playbook).toHaveTextContent("消息催化");
+  expect(playbook).toHaveTextContent("持仓诊断");
   fireEvent.click(within(playbook).getByRole("button", { name: /异动解释/ }));
 
   expect(await screen.findByText(/大业股份近期下跌/)).toBeInTheDocument();
   expect(screen.getAllByText("异动解释").length).toBeGreaterThan(0);
   expect(screen.getByText("近5日涨跌幅 -18.40%")).toBeInTheDocument();
   expect(requests).toEqual(["最近大业股份怎么大跌"]);
+});
+
+it("lets users resend an interrupted question-only thread", async () => {
+  localStorage.setItem("marketdesk.askStockThreads.v1.token-ask", JSON.stringify({
+    version: 1,
+    activeThreadId: "interrupted",
+    threads: [{
+      id: "interrupted",
+      title: "大业股份最大的风险是什么",
+      updatedAt: Date.now(),
+      messages: [
+        { id: "u-interrupted", role: "user", content: "大业股份最大的风险是什么", carriedStock: null },
+      ],
+    }],
+  }));
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const parsed = JSON.parse(String(init?.body)) as { question: string };
+    requests.push(parsed.question);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...stockAnswer,
+        kind: "llm_answer",
+        intent: "risk",
+        symbol: "SH.603278",
+        name: "大业股份",
+        question: parsed.question,
+        answer: "大业股份最大风险是业绩亏损和行业竞争加剧。",
+        source: "联网大模型问答",
+      }),
+    };
+  }));
+
+  renderPage();
+
+  const history = screen.getByLabelText("历史对话");
+  expect(history).toHaveTextContent("待回答");
+  expect(screen.getByRole("status")).toHaveTextContent("没有收到回答");
+  fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
+
+  expect(await screen.findByText("大业股份最大风险是业绩亏损和行业竞争加剧。")).toBeInTheDocument();
+  expect(requests).toEqual(["大业股份最大的风险是什么"]);
 });
 
 it("auto-submits a question passed from the global research router", async () => {
