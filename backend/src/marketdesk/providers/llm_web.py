@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
@@ -130,6 +132,63 @@ class LLMWebAskProvider:
             disclaimer="联网研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
+    async def stream_answer_text(self, context: LLMWebAskContext) -> AsyncIterator[str]:
+        if not self.configured:
+            raise ProviderUnavailable("llm web answer is not configured")
+
+        payload = {
+            "model": self.settings.llm_web_model,
+            "tools": [self._web_search_tool()],
+            "max_output_tokens": 900,
+            "stream": True,
+            "input": [
+                {"role": "system", "content": self._stream_system_prompt()},
+                {"role": "user", "content": self._user_prompt(context)},
+            ],
+        }
+        try:
+            async with self.client.stream(
+                "POST",
+                f"{self.settings.llm_web_base_url.rstrip('/')}/responses",
+                headers={
+                    "Authorization": f"Bearer {self.settings.llm_web_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    chunk = self._stream_delta(line)
+                    if chunk:
+                        yield chunk
+        except httpx.HTTPError as error:
+            raise ProviderUnavailable(f"llm web answer failed: {error}") from error
+
+    def streamed_response(self, context: LLMWebAskContext, text: str) -> AskStockResponse:
+        parsed = self._parse_stream_sections(text)
+        return AskStockResponse(
+            kind="llm_answer",
+            question=context.question,
+            intent=self._intent(parsed),
+            symbol=self._string_or_none(parsed.get("symbol")) or self._context_symbol(context),
+            name=self._string_or_none(parsed.get("name")) or self._context_name(context),
+            answer=self._answer_text(parsed),
+            evidence=self._string_list(parsed.get("evidence"), fallback="联网检索未返回可结构化依据。"),
+            risks=self._string_list(parsed.get("risks"), fallback="公开信息可能滞后，需复核公告、行情和成交。"),
+            next_actions=self._string_list(parsed.get("next_actions"), fallback="打开个股研究页核对本地证据，再决定是否行动。"),
+            metrics=[
+                AskStockMetric(label="回答模式", value="联网问答", tone="neutral"),
+                AskStockMetric(
+                    label="上下文",
+                    value="已带入" if context.conversation or context.stock else "仅本轮",
+                    tone="neutral",
+                ),
+            ],
+            observed_at=context.observed_at,
+            source="联网大模型问答",
+            disclaimer="联网研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
+        )
+
     def _web_search_tool(self) -> dict[str, str]:
         tool_type = "web_search" if self._uses_dashscope() else "web_search_preview"
         return {"type": tool_type}
@@ -143,6 +202,13 @@ class LLMWebAskProvider:
             "不要写成说明书，不要复述系统能力，不要编造数据或承诺收益。"
             "如果公开信息不足，明确说哪些点未确认。"
             "输出必须是 JSON，字段：answer, evidence, risks, next_actions, intent, symbol, name。"
+        )
+
+    def _stream_system_prompt(self) -> str:
+        return (
+            "你是 A 股问答助手。必须优先联网核对最新公开信息，直接输出中文短回答。"
+            "不要输出 JSON，不要写说明书，不要复述系统能力，不要承诺收益。"
+            "格式固定为：结论：...\n依据：...\n风险：...\n下一步：..."
         )
 
     def _user_prompt(self, context: LLMWebAskContext) -> str:
@@ -190,6 +256,30 @@ class LLMWebAskProvider:
                         chunks.append(cast(str, part["text"]))
         return "\n".join(chunks).strip()
 
+    def _stream_delta(self, line: str) -> str:
+        if not line.startswith("data:"):
+            return ""
+        value = line.removeprefix("data:").strip()
+        if not value or value == "[DONE]":
+            return ""
+        try:
+            payload = json.loads(value)
+        except ValueError:
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+        if payload.get("type") == "response.output_text.delta":
+            delta = payload.get("delta")
+            return delta if isinstance(delta, str) else ""
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                delta = first.get("delta")
+                if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+                    return cast(str, delta["content"])
+        return ""
+
     def _parse_answer(self, text: str) -> dict[str, Any]:
         if not text:
             return {}
@@ -206,6 +296,44 @@ class LLMWebAskProvider:
                 except ValueError:
                     return {"answer": text}
             return {"answer": text}
+
+    def _parse_stream_sections(self, text: str) -> dict[str, Any]:
+        normalized = text.strip()
+        if not normalized:
+            return {}
+        sections: dict[str, list[str]] = {"evidence": [], "risks": [], "next_actions": []}
+        answer = normalized
+        heading_pattern = re.compile(r"(?:^|\n)\s*(结论|依据|风险|下一步)[：:]\s*")
+        matches = list(heading_pattern.finditer(normalized))
+        if matches:
+            answer = ""
+            for index, match in enumerate(matches):
+                label = match.group(1)
+                start = match.end()
+                end = matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
+                content = normalized[start:end].strip()
+                if label == "结论":
+                    answer = content
+                elif label == "依据":
+                    sections["evidence"] = self._section_items(content)
+                elif label == "风险":
+                    sections["risks"] = self._section_items(content)
+                elif label == "下一步":
+                    sections["next_actions"] = self._section_items(content)
+        return {
+            "answer": answer or normalized,
+            "evidence": sections["evidence"],
+            "risks": sections["risks"],
+            "next_actions": sections["next_actions"],
+            "intent": "overview",
+        }
+
+    def _section_items(self, content: str) -> list[str]:
+        items = [
+            re.sub(r"^[\-•\d.、\s]+", "", item).strip()
+            for item in re.split(r"[\n；;]", content)
+        ]
+        return [item for item in items if item][:5]
 
     def _answer_text(self, parsed: dict[str, Any]) -> str:
         answer = self._string_or_none(parsed.get("answer"))

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -117,6 +117,39 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),
     auth: "Bearer token-ask",
   }]);
+});
+
+it("streams answer text before the final Ask Stock payload arrives", async () => {
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(
+    new ReadableStream<Uint8Array>({
+      start(nextController) {
+        controller = nextController;
+      },
+    }),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  )));
+
+  renderPage();
+  submitAsk("贵州茅台现在主要风险是什么");
+
+  expect(await screen.findByText("读取行情...")).toBeInTheDocument();
+  await act(async () => {
+    controller?.enqueue(encoder.encode('event: status\ndata: {"message":"联网检索"}\n\n'));
+  });
+  expect(await screen.findByText("联网检索...")).toBeInTheDocument();
+  await act(async () => {
+    controller?.enqueue(encoder.encode('event: delta\ndata: {"text":"结论：短线先看量能。"}\n\n'));
+  });
+  expect(await screen.findByText("结论：短线先看量能。")).toBeInTheDocument();
+  await act(async () => {
+    controller?.enqueue(encoder.encode(`event: final\ndata: ${JSON.stringify({ result: stockAnswer })}\n\n`));
+    controller?.close();
+  });
+
+  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(screen.queryByText("结论：短线先看量能。")).not.toBeInTheDocument();
 });
 
 it("uses market board context for focused Ask Stock prompts", async () => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
@@ -692,6 +693,65 @@ class MarketService:
             holding=holding_context,
             observed_at=snapshot.meta.observed_at,
         )
+
+    async def stream_ask_stock(
+        self,
+        question: str,
+        user_id: int | None = None,
+        *,
+        context_symbol: str | None = None,
+        context_name: str | None = None,
+        conversation: list[AskStockConversationMessage] | None = None,
+        source_context: AskStockSourceContext | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        yield {"event": "status", "message": "读取行情"}
+        snapshot = await self.market()
+        holdings = self.store.list_holdings(user_id) if user_id is not None else []
+        source_stock = source_context.stock if source_context is not None else None
+        context_symbol = context_symbol or (source_stock.symbol if source_stock else None)
+        context_name = context_name or (source_stock.name if source_stock else None)
+        context_quote = self._resolve_ask_context_stock(
+            snapshot.equities, context_symbol, context_name
+        )
+        streamer = getattr(self.provider, "stream_ask_stock_with_llm", None)
+        if callable(streamer) and bool(getattr(self.provider, "llm_web_configured", False)):
+            llm_context = self._build_llm_ask_context(
+                question=question,
+                snapshot=snapshot,
+                holdings=holdings,
+                context_quote=context_quote,
+                context_symbol=context_symbol,
+                context_name=context_name,
+                conversation=conversation or [],
+                source_context=source_context,
+            )
+            yield {"event": "status", "message": "联网检索"}
+            parts: list[str] = []
+            try:
+                async for chunk in streamer(llm_context):
+                    parts.append(chunk)
+                    yield {"event": "delta", "text": chunk}
+                builder = getattr(self.provider, "build_streamed_llm_answer", None)
+                if callable(builder):
+                    result = cast(AskStockResponse, builder(llm_context, "".join(parts)))
+                else:
+                    result = self._llm_unavailable_answer(question, snapshot, context_quote, "流式结果缺少解析器")
+                yield {"event": "final", "result": result}
+                return
+            except ProviderUnavailable as error:
+                result = self._llm_unavailable_answer(question, snapshot, context_quote, str(error))
+                yield {"event": "final", "result": result}
+                return
+
+        result = await self.ask_stock(
+            question,
+            user_id,
+            context_symbol=context_symbol,
+            context_name=context_name,
+            conversation=conversation,
+            source_context=source_context,
+        )
+        yield {"event": "final", "result": result}
 
     def _build_llm_ask_context(
         self,

@@ -411,6 +411,30 @@ class LLMAskProvider(EquityBrowserProvider):
             disclaimer="联网研究辅助信息，不构成投资建议。",
         )
 
+    async def stream_ask_stock_with_llm(self, context: LLMWebAskContext):
+        self.received_context = context
+        yield "结论：先看最新公告。\n"
+        yield "依据：联网检索已核对最新公开信息。"
+
+    def build_streamed_llm_answer(
+        self, context: LLMWebAskContext, text: str
+    ) -> AskStockResponse:
+        return AskStockResponse(
+            kind="llm_answer",
+            question=context.question,
+            intent="overview",
+            symbol=context.stock["symbol"] if context.stock else None,
+            name=context.stock["name"] if context.stock else None,
+            answer=text,
+            evidence=["联网检索已核对最新公开信息。"],
+            risks=["公开信息可能滞后。"],
+            next_actions=["回到个股研究页复核本地指标。"],
+            metrics=[AskStockMetric(label="回答模式", value="联网问答", tone="neutral")],
+            observed_at=context.observed_at,
+            source="联网大模型问答",
+            disclaimer="联网研究辅助信息，不构成投资建议。",
+        )
+
 
 def authenticated_client(
     service: MarketService, email: str = "fixture-user@example.com"
@@ -478,6 +502,29 @@ def test_ask_stock_uses_configured_llm_web_answer_with_context(tmp_path) -> None
     assert provider.received_context.source_context.origin == "BOARD BRIDGE"
     assert provider.received_context.stock is not None
     assert provider.received_context.stock["sector"] == "白酒"
+
+
+def test_ask_stock_streams_llm_answer_before_final_payload(tmp_path) -> None:
+    provider = LLMAskProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-llm-stream.db"))
+    api = authenticated_client(service)
+
+    with api.stream(
+        "POST",
+        "/api/v1/ask-stock/stream",
+        json={"question": "贵州茅台现在主要风险是什么", "context_symbol": "SH.600519"},
+    ) as response:
+        body = response.read().decode()
+
+    assert response.status_code == 200
+    assert "event: status" in body
+    assert "event: delta" in body
+    assert "结论：先看最新公告" in body
+    assert "event: final" in body
+    assert '"kind": "llm_answer"' in body
+    assert provider.received_context is not None
+    assert provider.received_context.stock is not None
+    assert provider.received_context.stock["symbol"] == "SH.600519"
 
 
 def test_ask_stock_configured_llm_handles_multi_stock_questions(tmp_path) -> None:

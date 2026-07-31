@@ -113,6 +113,47 @@ async def test_llm_web_provider_supports_dashscope_openai_compatible_search() ->
     assert body["tools"] == [{"type": "web_search"}]
 
 
+@pytest.mark.asyncio
+async def test_llm_web_provider_streams_responses_api_text() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            content=(
+                'data: {"type":"response.output_text.delta","delta":"结论：先看公告。\\n"}\n\n'
+                'data: {"type":"response.output_text.delta","delta":"依据：近期公告需要核对。"}\n\n'
+                "data: [DONE]\n\n"
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = LLMWebAskProvider(
+            settings=Settings(
+                llm_web_api_key="test-key",
+                llm_web_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                llm_web_model="qwen3.7-plus",
+            ),
+            client=client,
+        )
+        context = LLMWebAskContext(
+            question="贵州茅台现在主要风险是什么",
+            stock={"symbol": "SH.600519", "name": "贵州茅台"},
+            observed_at=datetime.now(UTC),
+        )
+        chunks = [chunk async for chunk in provider.stream_answer_text(context)]
+        result = provider.streamed_response(context, "".join(chunks))
+
+    assert chunks == ["结论：先看公告。\n", "依据：近期公告需要核对。"]
+    assert result.answer == "先看公告。"
+    assert result.evidence == ["近期公告需要核对。"]
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["stream"] is True
+
+
 def test_settings_accepts_dashscope_api_key_alias(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("MARKETDESK_LLM_WEB_API_KEY", raising=False)
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)

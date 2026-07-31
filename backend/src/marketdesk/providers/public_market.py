@@ -5,6 +5,7 @@ import json
 import math
 import re
 import subprocess
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -162,6 +163,13 @@ class PublicMarketProvider:
 
     async def ask_stock_with_llm(self, context: LLMWebAskContext) -> AskStockResponse:
         return await self.llm_web_provider.ask_stock(context)
+
+    async def stream_ask_stock_with_llm(self, context: LLMWebAskContext) -> AsyncIterator[str]:
+        async for chunk in self.llm_web_provider.stream_answer_text(context):
+            yield chunk
+
+    def build_streamed_llm_answer(self, context: LLMWebAskContext, text: str) -> AskStockResponse:
+        return self.llm_web_provider.streamed_response(context, text)
 
     def _mark_fund_flow_status(self, status: str, error: str | None = None) -> None:
         payload: dict[str, Any] = {

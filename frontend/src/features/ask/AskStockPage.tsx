@@ -1,9 +1,8 @@
-import { useMutation } from "@tanstack/react-query";
 import { History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { ApiError, api, getAuthToken, type AskStockConversationMessage, type AskStockResponse, type AskStockSourceContext as AskStockSourcePayload } from "../../lib/api";
+import { ApiError, getAuthToken, type AskStockConversationMessage, type AskStockResponse, type AskStockSourceContext as AskStockSourcePayload } from "../../lib/api";
 
 type AskPlaybookScene = {
   intent: AskStockResponse["intent"];
@@ -134,6 +133,7 @@ type AskSourceContext = {
 type AskMessage =
   | { id: string; role: "user"; content: string; carriedStock: StockAnchor | null }
   | { id: string; role: "assistant"; result: AskStockResponse }
+  | { id: string; role: "assistant_stream"; content: string }
   | { id: string; role: "error"; content: string; retryValue: string };
 type AskThread = { id: string; title: string; updatedAt: number; messages: AskMessage[] };
 type AskThreadState = { activeThreadId: string; threads: AskThread[] };
@@ -163,6 +163,65 @@ function requestConversation(messages: AskMessage[]): AskStockConversationMessag
     if (message.role === "assistant") return [{ role: "assistant" as const, content: message.result.answer }];
     return [];
   }).slice(-8);
+}
+
+async function streamAskStock(
+  payload: AskRequestPayload,
+  handlers: { onDelta: (text: string) => void; onStatus: (message: string) => void },
+): Promise<AskStockResponse> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch("/api/v1/ask-stock/stream", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      question: payload.question,
+      ...(payload.context ? { context_symbol: payload.context.symbol, context_name: payload.context.name } : {}),
+      ...(payload.conversation.length > 0 ? { conversation: payload.conversation } : {}),
+      ...(payload.sourceContext ? { source_context: requestSourceContext(payload.sourceContext) } : {}),
+    }),
+  });
+  if (!response.ok) {
+    let detail = `请求失败 (${response.status})`;
+    try {
+      const body = await response.json() as { detail?: unknown };
+      if (typeof body.detail === "string" && body.detail.trim()) detail = body.detail;
+    } catch {
+      // Keep the status fallback when the stream could not return JSON.
+    }
+    throw new ApiError(response.status, detail);
+  }
+  if (!response.body) return response.json() as Promise<AskStockResponse>;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: AskStockResponse | null = null;
+
+  const handleBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() ?? "message";
+    const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+    if (!data) return;
+    const parsed = JSON.parse(data) as { text?: unknown; message?: unknown; result?: AskStockResponse; detail?: unknown };
+    if (event === "delta" && typeof parsed.text === "string") handlers.onDelta(parsed.text);
+    if (event === "status" && typeof parsed.message === "string") handlers.onStatus(parsed.message);
+    if (event === "final" && parsed.result) finalResult = parsed.result;
+    if (event === "error") throw new ApiError(503, typeof parsed.detail === "string" ? parsed.detail : "问股请求失败，请稍后重试。");
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const blocks = buffer.split(/\n\n/);
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) handleBlock(block);
+    if (done) break;
+  }
+  if (buffer.trim()) handleBlock(buffer);
+  if (!finalResult) throw new ApiError(504, "问股没有返回结果，请重试。");
+  return finalResult;
 }
 
 function requestSourceContext(context: AskSourceContext | null): AskStockSourcePayload | null {
@@ -336,6 +395,7 @@ function threadTitle(messages: AskMessage[]) {
 function threadMeta(thread: AskThread) {
   const last = thread.messages.at(-1);
   if (last?.role === "error") return "失败";
+  if (last?.role === "assistant_stream") return "生成中";
   if (last?.role === "user") return "待回答";
   const stock = latestStock(thread.messages);
   if (stock) return stockLabel(stock);
@@ -406,6 +466,10 @@ function storeThreadState(state: AskThreadState) {
   if (!canUseLocalStorage()) return;
   const threads = state.threads
     .filter((thread) => thread.messages.length > 0 || thread.id === state.activeThreadId)
+    .map((thread) => ({
+      ...thread,
+      messages: thread.messages.filter((message) => message.role !== "assistant_stream"),
+    }))
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, maxStoredThreads);
   localStorage.setItem(threadStorageKey(), JSON.stringify({
@@ -709,25 +773,15 @@ export function AskStockPage() {
   const [searchParams] = useSearchParams();
   const [question, setQuestion] = useState("");
   const [threadState, setThreadState] = useState<AskThreadState>(() => loadThreadState());
+  const [streaming, setStreaming] = useState(false);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const inboundQuestionRef = useRef<string | null>(null);
-  const ask = useMutation({
-    mutationFn: ({ question: value, context, conversation, sourceContext }: AskRequestPayload) => api<AskStockResponse>("/api/v1/ask-stock", {
-      method: "POST",
-      body: JSON.stringify({
-        question: value,
-        ...(context ? { context_symbol: context.symbol, context_name: context.name } : {}),
-        ...(conversation.length > 0 ? { conversation } : {}),
-        ...(sourceContext ? { source_context: requestSourceContext(sourceContext) } : {}),
-      }),
-    }),
-  });
   const activeThread = useMemo(() => activeThreadFrom(threadState), [threadState]);
   const messages = activeThread.messages;
   const activeStock = useMemo(() => latestStock(messages), [messages]);
   const sourceContext = useMemo(() => askSourceContext(searchParams), [searchParams]);
   const focusStock = sourceContext?.stock ?? activeStock ?? null;
-  const unresolvedQuestion = !ask.isPending ? trailingUnansweredUser(messages) : null;
+  const unresolvedQuestion = !streaming ? trailingUnansweredUser(messages) : null;
   const visibleThreads = useMemo(
     () => sortedThreads(threadState.threads).filter((thread) => shouldShowThread(thread, threadState.activeThreadId)),
     [threadState],
@@ -737,7 +791,7 @@ export function AskStockPage() {
     if (typeof threadEndRef.current?.scrollIntoView === "function") {
       threadEndRef.current.scrollIntoView({ block: "end" });
     }
-  }, [activeThread.id, messages, ask.isPending]);
+  }, [activeThread.id, messages, streaming]);
 
   useEffect(() => {
     saveIfUseful(threadState);
@@ -746,7 +800,7 @@ export function AskStockPage() {
 
   const submitQuestion = async (value: string, options: { forceSourceStock?: boolean } = {}) => {
     const normalized = value.trim();
-    if (normalized.length < 2 || ask.isPending) return;
+    if (normalized.length < 2 || streaming) return;
 
     const threadId = activeThread.id;
     const carriedStock = stockContextForQuestion(
@@ -760,30 +814,54 @@ export function AskStockPage() {
     const conversationContext = sourceContext?.stock && activeStock?.symbol !== sourceContext.stock.symbol
       ? []
       : requestConversation(messages);
+    const streamId = messageId();
     setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
       ...currentMessages,
       { id: messageId(), role: "user", content: normalized, carriedStock },
+      { id: streamId, role: "assistant_stream", content: "读取行情..." },
     ]));
     setQuestion("");
+    setStreaming(true);
 
     try {
-      const result = await ask.mutateAsync({
+      const result = await streamAskStock({
         question: requestQuestion,
         context: requestContext,
         conversation: conversationContext,
         sourceContext,
+      }, {
+        onDelta: (text) => {
+          setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => (
+            currentMessages.map((message) => (
+              message.role === "assistant_stream" && message.id === streamId
+                ? { ...message, content: `${message.content.endsWith("...") ? "" : message.content}${text}` }
+                : message
+            ))
+          )));
+        },
+        onStatus: (message) => {
+          setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => (
+            currentMessages.map((item) => (
+              item.role === "assistant_stream" && item.id === streamId && item.content.endsWith("...")
+                ? { ...item, content: `${message}...` }
+                : item
+            ))
+          )));
+        },
       });
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
-        ...currentMessages,
+        ...currentMessages.filter((message) => !(message.role === "assistant_stream" && message.id === streamId)),
         { id: messageId(), role: "assistant", result },
       ]));
     } catch (error) {
       const detail = error instanceof ApiError ? error.detail : "问股请求失败，请稍后重试。";
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
-        ...currentMessages,
+        ...currentMessages.filter((message) => !(message.role === "assistant_stream" && message.id === streamId)),
         { id: messageId(), role: "error", content: detail, retryValue: requestQuestion },
       ]));
       setQuestion(value);
+    } finally {
+      setStreaming(false);
     }
   };
 
@@ -856,14 +934,14 @@ export function AskStockPage() {
               type="button"
               key={prompt}
               onClick={() => void submitQuestion(prompt, { forceSourceStock: true })}
-              disabled={ask.isPending}
+              disabled={streaming}
             >{prompt}</button>)}
           </div>
         </section> : null}
         <section className="ask-history" aria-label="历史对话">
           <header>
             <span><History size={15} />历史对话</span>
-            <button type="button" onClick={newThread} disabled={ask.isPending} aria-label="新建问股对话"><Plus size={13} />新对话</button>
+            <button type="button" onClick={newThread} disabled={streaming} aria-label="新建问股对话"><Plus size={13} />新对话</button>
           </header>
           <div>
             {visibleThreads.map((thread) => (
@@ -872,7 +950,7 @@ export function AskStockPage() {
                   type="button"
                   className="ask-history-item"
                   onClick={() => openThread(thread.id)}
-                  disabled={ask.isPending}
+                  disabled={streaming}
                   aria-current={thread.id === activeThread.id ? "true" : undefined}
                   aria-label={`打开历史对话：${thread.title}`}
                 >
@@ -883,14 +961,14 @@ export function AskStockPage() {
                   type="button"
                   className="ask-history-delete"
                   onClick={() => deleteThread(thread.id)}
-                  disabled={ask.isPending}
+                  disabled={streaming}
                   aria-label={`删除历史对话：${thread.title}`}
                 >×</button> : null}
               </article>
             ))}
           </div>
         </section>
-        <button className="ask-reset" type="button" onClick={clearThread} disabled={messages.length === 0 || ask.isPending}>
+        <button className="ask-reset" type="button" onClick={clearThread} disabled={messages.length === 0 || streaming}>
           <RotateCcw size={14} />清空对话
         </button>
       </aside>
@@ -908,7 +986,7 @@ export function AskStockPage() {
                 type="button"
                 key={scene.intent}
                 onClick={() => void submitQuestion(nextQuestion)}
-                disabled={ask.isPending}
+                disabled={streaming}
               >
                 <span>{intentLabel[scene.intent]}</span>
                 <strong>{scene.label}</strong>
@@ -931,18 +1009,23 @@ export function AskStockPage() {
             if (message.role === "error") {
               return <article className="ask-message error" key={message.id} role="alert">
                 <span>{message.content}</span>
-                <button type="button" onClick={() => void submitQuestion(message.retryValue)} disabled={ask.isPending}>重试</button>
+                <button type="button" onClick={() => void submitQuestion(message.retryValue)} disabled={streaming}>重试</button>
+              </article>;
+            }
+            if (message.role === "assistant_stream") {
+              return <article className="ask-message assistant pending streaming" key={message.id}>
+                <span>问股</span>
+                <p>{message.content}</p>
               </article>;
             }
             return <article className="ask-message assistant" key={message.id}>
               <span>问股</span>
               <AskResult result={message.result} />
               {message.result.kind === "stock_analysis" ? <div className="ask-followups" aria-label="追问建议">
-                {followUpPrompts.map((prompt) => <button type="button" key={prompt.label} onClick={() => void submitQuestion(prompt.question)} disabled={ask.isPending}>{prompt.label}</button>)}
+                {followUpPrompts.map((prompt) => <button type="button" key={prompt.label} onClick={() => void submitQuestion(prompt.question)} disabled={streaming}>{prompt.label}</button>)}
               </div> : null}
             </article>;
           })}
-          {ask.isPending ? <article className="ask-message assistant pending"><span>问股</span><p>正在联网检索...</p></article> : null}
           {unresolvedQuestion ? <article className="ask-message unresolved" role="status">
             <span>没有收到回答，可能是刷新或网络中断。</span>
             <button type="button" onClick={() => resendUnanswered(unresolvedQuestion)}>重新发送</button>
@@ -960,8 +1043,8 @@ export function AskStockPage() {
               maxLength={160}
               placeholder={focusStock ? `继续问 ${focusStock.name}：例如 那估值呢` : "例如：贵州茅台现在主要风险是什么"}
             />
-            <button className="button ask-submit" type="submit" disabled={ask.isPending || question.trim().length < 2}>
-              <Send size={16} />{ask.isPending ? "分析中" : "发送"}
+            <button className="button ask-submit" type="submit" disabled={streaming || question.trim().length < 2}>
+              <Send size={16} />{streaming ? "分析中" : "发送"}
             </button>
           </div>
           <small>{question.length}/160{focusStock ? ` · ${stockLabel(focusStock)}` : ""}</small>

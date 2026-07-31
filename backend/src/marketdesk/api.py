@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import csv
 import io
+import json
 import logging
 import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -491,6 +493,39 @@ def create_app(
                 status_code=503,
                 detail="条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。",
             ) from error
+
+    @app.post("/api/v1/ask-stock/stream")
+    async def ask_stock_stream(payload: AskStockRequest, request: Request) -> StreamingResponse:
+        user = current_user(request.headers.get("authorization"))
+
+        def encode(event: str, data: dict[str, Any]) -> str:
+            return f"event: {event}\ndata: {json.dumps(jsonable_encoder(data), ensure_ascii=False)}\n\n"
+
+        async def events() -> AsyncIterator[str]:
+            try:
+                async for item in market_service.stream_ask_stock(
+                    payload.question,
+                    user.id,
+                    context_symbol=payload.context_symbol,
+                    context_name=payload.context_name,
+                    conversation=payload.conversation,
+                    source_context=payload.source_context,
+                ):
+                    event = str(item.pop("event"))
+                    yield encode(event, item)
+            except AmbiguousStockQuestion as error:
+                yield encode("error", {"detail": str(error)})
+            except ProviderUnavailable:
+                yield encode(
+                    "error",
+                    {"detail": "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"},
+                )
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/v1/data-status")
     async def data_status() -> dict[str, Any]:
