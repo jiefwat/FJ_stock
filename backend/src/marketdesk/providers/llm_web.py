@@ -136,20 +136,35 @@ class LLMWebAskProvider:
         if not self.configured:
             raise ProviderUnavailable("llm web answer is not configured")
 
-        payload = {
-            "model": self.settings.llm_web_model,
-            "tools": [self._web_search_tool()],
-            "max_output_tokens": 900,
-            "stream": True,
-            "input": [
-                {"role": "system", "content": self._stream_system_prompt()},
-                {"role": "user", "content": self._user_prompt(context)},
-            ],
-        }
+        if self._uses_dashscope():
+            url = f"{self.settings.llm_web_base_url.rstrip('/')}/chat/completions"
+            payload = {
+                "model": self.settings.llm_web_model,
+                "messages": [
+                    {"role": "system", "content": self._stream_system_prompt()},
+                    {"role": "user", "content": self._user_prompt(context)},
+                ],
+                "max_tokens": 900,
+                "stream": True,
+                "enable_search": True,
+                "enable_thinking": False,
+            }
+        else:
+            url = f"{self.settings.llm_web_base_url.rstrip('/')}/responses"
+            payload = {
+                "model": self.settings.llm_web_model,
+                "tools": [self._web_search_tool()],
+                "max_output_tokens": 900,
+                "stream": True,
+                "input": [
+                    {"role": "system", "content": self._stream_system_prompt()},
+                    {"role": "user", "content": self._user_prompt(context)},
+                ],
+            }
         try:
             async with self.client.stream(
                 "POST",
-                f"{self.settings.llm_web_base_url.rstrip('/')}/responses",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.settings.llm_web_api_key}",
                     "Content-Type": "application/json",

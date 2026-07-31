@@ -118,12 +118,13 @@ async def test_llm_web_provider_streams_responses_api_text() -> None:
     seen: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
         seen["body"] = json.loads(request.content.decode())
         return httpx.Response(
             200,
             content=(
-                'data: {"type":"response.output_text.delta","delta":"结论：先看公告。\\n"}\n\n'
-                'data: {"type":"response.output_text.delta","delta":"依据：近期公告需要核对。"}\n\n'
+                'data: {"choices":[{"delta":{"content":"结论：先看公告。\\n"}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":"依据：近期公告需要核对。"}}]}\n\n'
                 "data: [DONE]\n\n"
             ),
             headers={"content-type": "text/event-stream"},
@@ -149,9 +150,12 @@ async def test_llm_web_provider_streams_responses_api_text() -> None:
     assert chunks == ["结论：先看公告。\n", "依据：近期公告需要核对。"]
     assert result.answer == "先看公告。"
     assert result.evidence == ["近期公告需要核对。"]
+    assert seen["url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     body = seen["body"]
     assert isinstance(body, dict)
     assert body["stream"] is True
+    assert body["enable_search"] is True
+    assert body["enable_thinking"] is False
 
 
 def test_settings_accepts_dashscope_api_key_alias(tmp_path, monkeypatch) -> None:
