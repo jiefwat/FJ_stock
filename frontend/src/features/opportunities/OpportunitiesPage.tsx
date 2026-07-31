@@ -190,7 +190,7 @@ export function OpportunitiesPage() {
   const [expandedSymbols, setExpandedSymbols] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["opportunities", preset],
-    queryFn: () => api<Result>(`/api/v1/opportunities?preset=${preset}&limit=20`),
+    queryFn: () => api<Result>(`/api/v1/opportunities?preset=${preset}&limit=10`),
   });
   const presetLabel = presets.find((item) => item[0] === preset)?.[1];
   const candidateRows = useMemo(() => (query.data?.candidates ?? []).map((item) => ({ item, badge: leadBadge(item) })), [query.data?.candidates]);

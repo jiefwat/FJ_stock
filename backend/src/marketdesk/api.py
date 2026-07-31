@@ -405,7 +405,7 @@ def create_app(
 
     @app.get("/api/v1/opportunities")
     async def opportunities(
-        preset: str = "trend", limit: int = Query(default=20, ge=1, le=50)
+        preset: str = "trend", limit: int = Query(default=10, ge=1, le=50)
     ) -> OpportunityResult:
         try:
             return await market_service.opportunities(preset, limit)
