@@ -30,3 +30,20 @@ def test_production_service_enables_two_hour_market_refresh() -> None:
 
     assert "Environment=MARKETDESK_AUTO_REFRESH_ENABLED=true" in service
     assert "Environment=MARKETDESK_AUTO_REFRESH_INTERVAL_SECONDS=7200" in service
+
+
+def test_production_env_file_cannot_override_persistent_data_dir() -> None:
+    service = (ROOT / "deploy" / "stock-ts.service").read_text(encoding="utf-8")
+
+    env_file_index = service.index("EnvironmentFile=-/opt/aster-market/.env")
+    data_dir_index = service.index("Environment=MARKETDESK_DATA_DIR=/opt/aster-market/data")
+
+    assert env_file_index < data_dir_index
+
+
+def test_deploy_script_removes_data_dir_from_uploaded_env() -> None:
+    script = (ROOT / "deploy" / "deploy_public.sh").read_text(encoding="utf-8")
+
+    assert "SAFE_ENV" in script
+    assert "MARKETDESK_DATA_DIR" in script
+    assert 'startswith("MARKETDESK_DATA_DIR=")' in script

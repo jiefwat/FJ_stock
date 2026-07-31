@@ -47,7 +47,22 @@ COPYFILE_DISABLE=1 tar \
 
 "${SSH[@]}" "$REMOTE" "mkdir -p /opt/aster-market/releases /opt/aster-market/data /tmp/aster-market-deploy"
 if [[ -f "$ROOT/.env" ]]; then
-  "${RSYNC[@]}" "$ROOT/.env" "$REMOTE:/opt/aster-market/.env"
+  SAFE_ENV="$ROOT/.run/$RELEASE_ID.env"
+  python3 - "$ROOT/.env" "$SAFE_ENV" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+lines = source.read_text(encoding="utf-8").splitlines()
+safe_lines = [
+    line
+    for line in lines
+    if not line.strip().startswith("MARKETDESK_DATA_DIR=")
+]
+target.write_text("\n".join(safe_lines) + ("\n" if safe_lines else ""), encoding="utf-8")
+PY
+  "${RSYNC[@]}" "$SAFE_ENV" "$REMOTE:/opt/aster-market/.env"
   "${SSH[@]}" "$REMOTE" "chmod 600 /opt/aster-market/.env"
 fi
 "${RSYNC[@]}" "$ARCHIVE" "$REMOTE:/tmp/aster-market-deploy/$RELEASE_ID.tar.gz"

@@ -8,11 +8,11 @@ User=admin
 Group=admin
 WorkingDirectory=/opt/aster-market/current
 Environment=PYTHONPATH=/opt/aster-market/current/backend/src
+EnvironmentFile=-/opt/aster-market/.env
 Environment=MARKETDESK_DATA_DIR=/opt/aster-market/data
 Environment=MARKETDESK_AUTO_REFRESH_ENABLED=true
 Environment=MARKETDESK_AUTO_REFRESH_INTERVAL_SECONDS=7200
 Environment=MARKETDESK_AUTO_REFRESH_RUN_IMMEDIATELY=true
-EnvironmentFile=-/opt/aster-market/.env
 ExecStart=/opt/aster-market/current/.venv/bin/python -m uvicorn marketdesk.api:app --host 127.0.0.1 --port 8501
 Restart=always
 RestartSec=3
