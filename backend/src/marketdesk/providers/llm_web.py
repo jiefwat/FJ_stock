@@ -180,7 +180,9 @@ class LLMWebAskProvider:
             raise ProviderUnavailable(f"llm web answer failed: {error}") from error
 
     def streamed_response(self, context: LLMWebAskContext, text: str) -> AskStockResponse:
-        parsed = self._parse_stream_sections(text)
+        parsed = self._parse_answer(text)
+        if not self._has_structured_answer(parsed):
+            parsed = self._parse_stream_sections(text)
         return AskStockResponse(
             kind="llm_answer",
             question=context.question,
@@ -311,6 +313,14 @@ class LLMWebAskProvider:
                 except ValueError:
                     return {"answer": text}
             return {"answer": text}
+
+    def _has_structured_answer(self, parsed: dict[str, Any]) -> bool:
+        if "intent" in parsed and self._string_or_none(parsed.get("answer")):
+            return True
+        return any(
+            key in parsed and parsed.get(key) not in (None, "", [])
+            for key in ("evidence", "risks", "next_actions")
+        )
 
     def _parse_stream_sections(self, text: str) -> dict[str, Any]:
         normalized = text.strip()

@@ -1,4 +1,4 @@
-import { History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -728,6 +728,25 @@ function AskResult({ result }: { result: AskStockResponse }) {
   const stockAnalysis = result.kind === "stock_analysis";
   const [supportOpen, setSupportOpen] = useState(false);
   const fallbackTitle = result.kind === "portfolio_analysis" ? "账户组合" : result.kind === "llm_answer" ? "联网问答" : "自然语言选股";
+  if (result.kind === "llm_answer") {
+    return <section className="ask-result ask-result-chat" aria-live="polite">
+      <article className="ask-answer">
+        <p>{result.answer}</p>
+      </article>
+      <details className="ask-answer-more">
+        <summary>依据 / 风险 / 下一步</summary>
+        <div>
+          <EvidenceList title="判断依据" items={result.evidence} tone="evidence" />
+          <EvidenceList title="主要风险" items={result.risks} tone="risk" />
+          <EvidenceList title="下一步" items={result.next_actions} tone="action" />
+        </div>
+      </details>
+      <footer className="ask-answer-foot">
+        <span>{result.source}</span>
+        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
+      </footer>
+    </section>;
+  }
   return <section className="ask-result" aria-live="polite">
     <header className="ask-result-head">
       <div>
@@ -912,16 +931,45 @@ export function AskStockPage() {
   };
 
   return <>
-    <header className="page-head ask-page-head">
-      <div><h1>问股</h1></div>
-      <div className="data-stamp"><MessageSquareText size={14} />联网问答</div>
-    </header>
     <section className="ask-chat-layout">
-      <aside className="ask-context panel">
-        <div>
-          <span><Sparkles size={15} />上下文</span>
-          <p>{focusStock ? `正在围绕 ${stockLabel(focusStock)} 追问` : "直接问股票、板块、组合或最新消息。"}</p>
-        </div>
+      <div className="ask-chat-main">
+        <header className="ask-chat-top">
+          <div>
+            <h1>问股</h1>
+            <p>{focusStock ? `正在围绕 ${stockLabel(focusStock)} 追问` : "直接问股票、板块、组合或最新消息。"}</p>
+          </div>
+          <nav aria-label="问股对话操作">
+            <button type="button" onClick={newThread} disabled={streaming} aria-label="新建问股对话"><Plus size={13} />新对话</button>
+            <button type="button" onClick={clearThread} disabled={messages.length === 0 || streaming}><RotateCcw size={14} />清空</button>
+            <details className="ask-history-menu" aria-label="历史对话">
+              <summary><History size={15} />历史</summary>
+              <div>
+                {visibleThreads.map((thread) => (
+                  <article className={`ask-history-row ${thread.id === activeThread.id ? "active" : ""}`} key={thread.id}>
+                    <button
+                      type="button"
+                      className="ask-history-item"
+                      onClick={() => openThread(thread.id)}
+                      disabled={streaming}
+                      aria-current={thread.id === activeThread.id ? "true" : undefined}
+                      aria-label={`打开历史对话：${thread.title}`}
+                    >
+                      <strong>{thread.title}</strong>
+                      <small>{threadMeta(thread)}</small>
+                    </button>
+                    {thread.messages.length > 0 ? <button
+                      type="button"
+                      className="ask-history-delete"
+                      onClick={() => deleteThread(thread.id)}
+                      disabled={streaming}
+                      aria-label={`删除历史对话：${thread.title}`}
+                    >×</button> : null}
+                  </article>
+                ))}
+              </div>
+            </details>
+          </nav>
+        </header>
         {sourceContext ? <section className="ask-source-context" aria-label="问股来源上下文">
           <header>
             <span>{sourceContext.origin}</span>
@@ -938,41 +986,6 @@ export function AskStockPage() {
             >{prompt}</button>)}
           </div>
         </section> : null}
-        <section className="ask-history" aria-label="历史对话">
-          <header>
-            <span><History size={15} />历史对话</span>
-            <button type="button" onClick={newThread} disabled={streaming} aria-label="新建问股对话"><Plus size={13} />新对话</button>
-          </header>
-          <div>
-            {visibleThreads.map((thread) => (
-              <article className={`ask-history-row ${thread.id === activeThread.id ? "active" : ""}`} key={thread.id}>
-                <button
-                  type="button"
-                  className="ask-history-item"
-                  onClick={() => openThread(thread.id)}
-                  disabled={streaming}
-                  aria-current={thread.id === activeThread.id ? "true" : undefined}
-                  aria-label={`打开历史对话：${thread.title}`}
-                >
-                  <strong>{thread.title}</strong>
-                  <small>{threadMeta(thread)}</small>
-                </button>
-                {thread.messages.length > 0 ? <button
-                  type="button"
-                  className="ask-history-delete"
-                  onClick={() => deleteThread(thread.id)}
-                  disabled={streaming}
-                  aria-label={`删除历史对话：${thread.title}`}
-                >×</button> : null}
-              </article>
-            ))}
-          </div>
-        </section>
-        <button className="ask-reset" type="button" onClick={clearThread} disabled={messages.length === 0 || streaming}>
-          <RotateCcw size={14} />清空对话
-        </button>
-      </aside>
-      <div className="ask-chat-main">
         <section className="ask-playbook compact ask-main-playbook" aria-label="问股场景路由">
           <header>
             <span>快捷</span>

@@ -158,6 +158,40 @@ async def test_llm_web_provider_streams_responses_api_text() -> None:
     assert body["enable_thinking"] is False
 
 
+def test_streamed_response_parses_json_fenced_dashscope_text() -> None:
+    provider = LLMWebAskProvider(
+        settings=Settings(
+            llm_web_api_key="test-key",
+            llm_web_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            llm_web_model="qwen3.7-plus",
+        )
+    )
+    context = LLMWebAskContext(
+        question="贵州茅台怎么看",
+        stock={"symbol": "SH.600519", "name": "贵州茅台"},
+        observed_at=datetime.now(UTC),
+    )
+    text = """```json
+{
+  "answer": "干净结论：先看量能和公告确认。",
+  "evidence": ["联网依据 1"],
+  "risks": ["公开信息可能滞后"],
+  "next_actions": ["打开个股页复核"],
+  "intent": "movement",
+  "symbol": "SH.600519",
+  "name": "贵州茅台"
+}
+```"""
+
+    result = provider.streamed_response(context, text)
+
+    assert result.answer == "干净结论：先看量能和公告确认。"
+    assert result.evidence == ["联网依据 1"]
+    assert result.risks == ["公开信息可能滞后"]
+    assert result.next_actions == ["打开个股页复核"]
+    assert "```" not in result.answer
+
+
 def test_settings_accepts_dashscope_api_key_alias(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("MARKETDESK_LLM_WEB_API_KEY", raising=False)
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)

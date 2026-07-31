@@ -763,9 +763,9 @@ it("renders a concise web LLM answer without deterministic review rails", async 
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
   expect(await screen.findByText("联网结论：白酒板块今天先看公告、消费数据和资金回流。")).toBeInTheDocument();
-  expect(screen.getAllByText("联网问答").length).toBeGreaterThan(0);
   expect(screen.getByText("联网大模型问答")).toBeInTheDocument();
-  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("回答模式联网问答");
+  expect(screen.getByText("依据 / 风险 / 下一步")).toBeInTheDocument();
+  expect(screen.queryByLabelText("回答关键指标")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
 });
 
