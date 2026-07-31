@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -1019,6 +1021,31 @@ def test_opportunities_route_enriches_top_candidates_with_history(tmp_path) -> N
     assert candidate["history_check"]["trend_20d_pct"] is not None
     assert "历史确认" in {item["label"] for item in candidate["dimensions"]}
     assert "历史确认" in {item["label"] for item in candidate["components"]}
+
+
+class HangingKlineProvider(FixtureProvider):
+    async def fetch_kline(self, symbol: str, limit: int = 180):
+        await asyncio.sleep(60)
+        return []
+
+
+def test_opportunities_route_degrades_when_history_provider_hangs(tmp_path) -> None:
+    service = MarketService(
+        provider=HangingKlineProvider(), store=Store(tmp_path / "opportunity-timeout.db")
+    )
+    service._opportunity_kline_timeout_seconds = 0.01
+    api = authenticated_client(service)
+
+    started = time.monotonic()
+    response = api.get("/api/v1/opportunities", params={"preset": "trend", "limit": 1})
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200
+    assert elapsed < 1
+    payload = response.json()
+    assert payload["candidates"][0]["quote"]["symbol"] == "SH.600519"
+    assert payload["candidates"][0]["history_check"] is None
+
 
 
 def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:

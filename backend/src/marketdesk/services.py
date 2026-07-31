@@ -92,6 +92,7 @@ class MarketService:
         self._provider_errors: dict[str, str] = {}
         self._capability_cache: dict[str, tuple[float, Any]] = {}
         self._capability_cache_lock = asyncio.Lock()
+        self._opportunity_kline_timeout_seconds = 4.0
 
     async def refresh(self) -> MarketSnapshot:
         equities = await self.provider.fetch_equities()
@@ -500,7 +501,15 @@ class MarketService:
                     self._provider_errors["opportunity_kline"] = str(error)
                     return symbol, []
 
-        pairs = await asyncio.gather(*(fetch(symbol) for symbol in unique_symbols))
+        tasks = [asyncio.create_task(fetch(symbol)) for symbol in unique_symbols]
+        done, pending = await asyncio.wait(
+            tasks, timeout=self._opportunity_kline_timeout_seconds
+        )
+        if pending:
+            self._provider_errors["opportunity_kline"] = "history fetch timeout"
+            for task in pending:
+                task.cancel()
+        pairs = [task.result() for task in done if not task.cancelled() and task.exception() is None]
         return dict(pairs)
 
     async def opportunities(self, preset: str = "trend", limit: int = 50) -> OpportunityResult:
