@@ -56,6 +56,7 @@ const events = {
   ],
   events: [
     { id: "e1", title: "两家央企宣布增持", summary: "中国国新、中国诚通继续增持央企和科技企业股票。", source: "东方财富快讯", url: "https://finance.eastmoney.com/a/e1.html", published_at: "2026-07-19T13:30:00Z", related_symbols: ["SH.600519"], related_sectors: ["央企改革"], category: "policy_support", sentiment: "positive", importance_score: 86, tags: ["央企改革", "增持"], impact: "稳定风险偏好，利好央企和核心资产。", action: "回到板块温度页检查央企改革。" },
+    { id: "e2", title: "资金与风格", summary: "近期市场风格剧烈波动，低波稳健型资金关注银行板块。", source: "东方财富快讯", url: "https://finance.eastmoney.com/a/e2.html", published_at: "2026-07-19T13:20:00Z", related_symbols: ["SH.600351"], related_sectors: ["银行"], category: "capital_style", sentiment: "neutral", importance_score: 72, tags: ["资金与风格", "资金风格", "银行"], impact: "提示市场风格切换。", action: "对照涨跌家数和成交额。" },
   ],
 };
 
@@ -154,6 +155,13 @@ function renderPage(initialPath = "/market") {
   return requests;
 }
 
+async function openMarketBrowser() {
+  fireEvent.click(await screen.findByRole("button", { name: "查看全市场行情（可选）" }));
+  const browser = await screen.findByRole("region", { name: "全市场行情" });
+  await within(browser).findByLabelText("搜索全市场");
+  return browser;
+}
+
 afterEach(() => {
   cleanup();
   requestBodies.length = 0;
@@ -168,19 +176,25 @@ it("opens a sector research panel with constituents and stock links", async () =
   expect(await screen.findByText("白酒板块简析")).toBeInTheDocument();
   const reviewDesk = within(await screen.findByLabelText("白酒板块简析"));
   expect(reviewDesk.getByText("板块")).toBeInTheDocument();
-  expect(reviewDesk.getByText("主线可继续看")).toBeInTheDocument();
+  expect(reviewDesk.getByText("可以小仓关注前排")).toBeInTheDocument();
   expect(reviewDesk.getByText("上涨扩散")).toBeInTheDocument();
-  expect(reviewDesk.getByText("净流入扩散")).toBeInTheDocument();
+  expect(reviewDesk.getByText("获得资金买入的股票")).toBeInTheDocument();
   expect(reviewDesk.getByText("领涨核心")).toBeInTheDocument();
-  expect(reviewDesk.getByText("资金核心")).toBeInTheDocument();
+  expect(reviewDesk.getByText("资金最关注")).toBeInTheDocument();
   expect(reviewDesk.getAllByRole("link", { name: /贵州茅台/ })[0]).toHaveAttribute("href", "/stocks?symbol=SH.600519");
   expect(screen.getByText("市场异动")).toBeInTheDocument();
   expect(screen.getByText("两家央企宣布增持")).toBeInTheDocument();
   expect(screen.getByText("政策与监管")).toBeInTheDocument();
+  const eventRadar = within(screen.getByRole("region", { name: "市场异动" }));
+  expect(eventRadar.getByText("近期市场风格剧烈价格起伏，低波稳健型资金关注银行板块")).toBeInTheDocument();
+  expect(eventRadar.queryByText("可能影响")).not.toBeInTheDocument();
+  expect(eventRadar.queryByText("下一步")).not.toBeInTheDocument();
+  expect(eventRadar.queryByRole("link", { name: "SH.600351" })).not.toBeInTheDocument();
+  expect(eventRadar.queryByText("资金风格")).not.toBeInTheDocument();
   expect(screen.queryByText("事件-板块核验矩阵")).not.toBeInTheDocument();
   expect(screen.queryByText("价格是否确认")).not.toBeInTheDocument();
   expect(screen.queryByText("资金是否确认")).not.toBeInTheDocument();
-  expect(screen.getAllByText("主力净流入 1.00 亿，板块热度偏强。").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("大额买入资金比卖出资金多 1.00 亿，板块热度偏强。").length).toBeGreaterThan(0);
   const detail = screen.getByText("白酒板块简析").closest("section");
   expect(detail).not.toBeNull();
   const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
@@ -188,15 +202,15 @@ it("opens a sector research panel with constituents and stock links", async () =
   const handoff = within(await screen.findByLabelText("白酒板块优先个股线索"));
   expect(handoff.getByText("个股")).toBeInTheDocument();
   expect(handoff.getByText("优先个股")).toBeInTheDocument();
-  expect(handoff.getByText(/价格与资金同向/)).toBeInTheDocument();
-  expect(handoff.getByText("先看交易计划")).toBeInTheDocument();
+  expect(handoff.getByText(/股价上涨且买入资金更多/)).toBeInTheDocument();
+  expect(handoff.getByText("可小仓试探")).toBeInTheDocument();
   expect(handoff.queryByText(/先看入场/)).toBeNull();
   expect(handoff.getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
   const row = within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ });
   expect(row).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK1&boardName=%E7%99%BD%E9%85%92&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
-  expect(within(row).getByText(/价格与资金同向/)).toBeInTheDocument();
-  expect(within(row).getByText("先看交易计划")).toBeInTheDocument();
+  expect(within(row).getByText(/股价上涨且买入资金更多/)).toBeInTheDocument();
+  expect(within(row).getByText("可小仓试探")).toBeInTheDocument();
 });
 
 it("opens a theme research panel from Stock Lab theme links", async () => {
@@ -204,9 +218,9 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
 
   expect(await screen.findByText("酿酒概念题材简析")).toBeInTheDocument();
   const reviewDesk = within(await screen.findByLabelText("酿酒概念题材简析"));
-  expect(reviewDesk.getByText("只看前排，等待确认")).toBeInTheDocument();
-  expect(reviewDesk.getByText(/资金证据待增强/)).toBeInTheDocument();
-  expect(reviewDesk.getByText("缺口：板块资金流")).toBeInTheDocument();
+  expect(reviewDesk.getByText("暂不买入")).toBeInTheDocument();
+  expect(reviewDesk.getByText(/资金情况待补/)).toBeInTheDocument();
+  expect(reviewDesk.getByText("待补资料：板块资金流")).toBeInTheDocument();
   await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/themes/BK0896"))).toBe(true));
   expect(requests.some((url) => url.includes("name=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5"))).toBe(true);
   const detail = screen.getByText("酿酒概念题材简析").closest("section");
@@ -215,10 +229,10 @@ it("opens a theme research panel from Stock Lab theme links", async () => {
   const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
   expect(constituents).not.toBeNull();
   const handoff = within(await screen.findByLabelText("酿酒概念题材优先个股线索"));
-  expect(handoff.getByText(/价格走强，资金待确认/)).toBeInTheDocument();
-  expect(handoff.getByText("先看依据")).toBeInTheDocument();
+  expect(handoff.getByText(/股价在涨，但资金情况还不清楚/)).toBeInTheDocument();
+  expect(handoff.getByText("暂不买入")).toBeInTheDocument();
   expect(within(constituents as HTMLElement).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market&board=BK0896&boardName=%E9%85%BF%E9%85%92%E6%A6%82%E5%BF%B5&boardType=%E9%A2%98%E6%9D%90#stock-evidence-audit");
-  expect(within(detail as HTMLElement).getAllByText("缺口：板块资金流").length).toBeGreaterThan(0);
+  expect(within(detail as HTMLElement).getAllByText("还缺：板块资金流").length).toBeGreaterThan(0);
 });
 
 it("scrolls directly to the selected theme dossier when landing from deep links", async () => {
@@ -240,25 +254,16 @@ it("renders sourced sector flows and dragon-tiger observations as market intelli
   renderPage();
 
   expect(screen.queryByRole("navigation", { name: "大盘页阅读顺序" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("市场概览")).not.toBeInTheDocument();
 
-  const command = within(await screen.findByLabelText("市场概览"));
-  expect(command.getByText("市场")).toBeInTheDocument();
-  expect(command.getByText("大盘")).toBeInTheDocument();
-  expect(command.getByText("均衡 · 58/100")).toBeInTheDocument();
-  expect(command.getAllByText("可以找机会").length).toBeGreaterThan(0);
-  expect(command.getByText("盘面三问")).toBeInTheDocument();
-  expect(command.getByText("宽度够不够：够")).toBeInTheDocument();
-  expect(command.getByText("主线清不清：电力设备")).toBeInTheDocument();
-  expect(command.getByText("风险挡不挡：不挡")).toBeInTheDocument();
-  expect(command.getByText("方向")).toBeInTheDocument();
-  expect(command.getByText(/广度占优/)).toBeInTheDocument();
-  expect(command.getByText("资金主线")).toBeInTheDocument();
-  expect(command.getByRole("button", { name: "电力设备" })).toBeInTheDocument();
-  expect(command.getByText("事件风险")).toBeInTheDocument();
-  expect(command.getByText(/央企改革出现政策支持信号/)).toBeInTheDocument();
-  expect(command.getByText("下一步")).toBeInTheDocument();
-  expect(command.getByText("摘要")).toBeInTheDocument();
-  expect(command.getByRole("link", { name: "找机会" })).toHaveAttribute("href", "/opportunities");
+  expect(screen.queryByLabelText("市场广度")).not.toBeInTheDocument();
+  const pulse = within(await screen.findByLabelText("大盘速览"));
+  expect(pulse.getByText("广度")).toBeInTheDocument();
+  expect(pulse.getByText("61%")).toBeInTheDocument();
+  expect(pulse.getByText("温度")).toBeInTheDocument();
+  expect(pulse.getByText("上证指数")).toBeInTheDocument();
+  expect(pulse.queryByText("评分证据")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("板块与资金主线")).toBeInTheDocument();
 
   const panel = within(await screen.findByLabelText("A股市场情报"));
   expect(panel.getByText("板块资金确认")).toBeInTheDocument();
@@ -285,12 +290,12 @@ it("opens sector details from market intelligence flow leaders", async () => {
   await waitFor(() => expect(requests.some((url) => url.includes("/api/v1/sectors/BK1031"))).toBe(true));
   const detail = screen.getByText("电力设备板块简析").closest("section");
   expect(detail).not.toBeNull();
-  expect(within(detail as HTMLElement).getAllByText("主力净流入 64.66 亿，板块热度偏强。").length).toBeGreaterThan(0);
+  expect(within(detail as HTMLElement).getAllByText("大额买入资金比卖出资金多 64.66 亿，板块热度偏强。").length).toBeGreaterThan(0);
   const constituents = (detail as HTMLElement).querySelector(".sector-constituents");
   expect(constituents).not.toBeNull();
   const handoff = within(await screen.findByLabelText("电力设备板块优先个股线索"));
   expect(handoff.getByText("优先个股")).toBeInTheDocument();
-  expect(handoff.getAllByText("先看交易计划").length).toBeGreaterThan(0);
+  expect(handoff.getAllByText("可小仓试探").length).toBeGreaterThan(0);
   expect(within(constituents as HTMLElement).getByRole("link", { name: /立讯精密/ })).toHaveAttribute("href", "/stocks?symbol=SZ.002475&from=market&board=BK1031&boardName=%E7%94%B5%E5%8A%9B%E8%AE%BE%E5%A4%87&boardType=%E6%9D%BF%E5%9D%97#stock-investment-advice");
 });
 
@@ -331,39 +336,45 @@ it("sorts and filters dossier constituents like a compact screener", async () =>
 it("browses, ranks, and searches the full market without loading every quote", async () => {
   const requests = renderPage();
 
-  const title = await screen.findByText("全市场行情");
-  const browser = title.closest("section");
-  expect(browser).not.toBeNull();
-  expect(await within(browser as HTMLElement).findByRole("link", { name: /贵州茅台/ })).toHaveAttribute(
+  const browser = await openMarketBrowser();
+  expect(await within(browser).findByRole("link", { name: /贵州茅台/ })).toHaveAttribute(
     "href",
     "/stocks?symbol=SH.600519",
   );
-  const missingRow = within(browser as HTMLElement).getByRole("link", { name: /缺失样本/ }).closest("tr");
+  const missingRow = within(browser).getByRole("link", { name: /缺失样本/ }).closest("tr");
   expect(missingRow?.children[2]).not.toHaveClass("up");
   expect(missingRow?.children[2]).not.toHaveClass("down");
 
-  fireEvent.change(screen.getByLabelText("排序字段"), { target: { value: "change_pct" } });
-  await waitFor(() => expect(requests.some((url) => url.includes("sort_by=change_pct"))).toBe(true));
+  expect(within(browser).queryByLabelText("交易所")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("排序字段")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("排序方向")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("每页数量")).not.toBeInTheDocument();
+  expect(within(browser).getByText("高级筛选")).toBeInTheDocument();
+  expect(within(browser).getByLabelText("行业")).toBeInTheDocument();
+  expect(within(browser).getByLabelText("成交额不低于（亿元）")).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("搜索全市场"), { target: { value: "茅台" } });
   fireEvent.click(screen.getByRole("button", { name: "搜索" }));
   await waitFor(() => expect(requests.some((url) => url.includes("q=%E8%8C%85%E5%8F%B0"))).toBe(true));
+  await waitFor(() => expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled());
 
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
   await waitFor(() => expect(requests.some((url) => url.includes("page=2"))).toBe(true));
 });
 
-it("filters exchanges and jumps across the full result set", async () => {
+it("jumps across the full result set without secondary toolbar filters", async () => {
   const requests = renderPage();
 
-  await screen.findByText("全市场行情");
-  fireEvent.change(screen.getByLabelText("交易所"), { target: { value: "bj" } });
-  await waitFor(() => expect(requests.some((url) => url.includes("exchange=bj") && url.includes("page=1"))).toBe(true));
+  const browser = await openMarketBrowser();
+  expect(within(browser).queryByLabelText("交易所")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("排序字段")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("排序方向")).not.toBeInTheDocument();
+  expect(within(browser).queryByLabelText("每页数量")).not.toBeInTheDocument();
   await waitFor(() => expect(screen.getByRole("button", { name: "跳转" })).toBeEnabled());
 
   fireEvent.change(screen.getByLabelText("跳转页码"), { target: { value: "999" } });
   fireEvent.click(screen.getByRole("button", { name: "跳转" }));
-  await waitFor(() => expect(requests.some((url) => url.includes("exchange=bj") && url.includes("page=2"))).toBe(true));
+  await waitFor(() => expect(requests.some((url) => url.includes("exchange=all") && url.includes("page=2"))).toBe(true));
   await waitFor(() => expect(screen.getByRole("button", { name: "首页" })).toBeEnabled());
 
   fireEvent.click(screen.getByRole("button", { name: "首页" }));
@@ -373,9 +384,6 @@ it("filters exchanges and jumps across the full result set", async () => {
   const lastPageRequests = requests.filter((url) => url.includes("page=2")).length;
   fireEvent.click(screen.getByRole("button", { name: "末页" }));
   await waitFor(() => expect(requests.filter((url) => url.includes("page=2")).length).toBeGreaterThan(lastPageRequests));
-
-  fireEvent.change(screen.getByLabelText("每页数量"), { target: { value: "50" } });
-  await waitFor(() => expect(requests.some((url) => url.includes("page_size=50") && url.includes("page=1"))).toBe(true));
 });
 
 it("restores advanced filters from the URL and sends normalized server units", async () => {
@@ -384,17 +392,17 @@ it("restores advanced filters from the URL and sends normalized server units", a
   );
 
   expect(await screen.findByLabelText("行业")).toHaveValue("白酒");
-  expect(screen.getByLabelText("涨跌幅下限（%）")).toHaveValue(1);
-  expect(screen.getByLabelText("成交额下限（亿元）")).toHaveValue(15);
-  expect(screen.getByLabelText("仅看核心数据完整")).toBeChecked();
+  expect(screen.getByLabelText("涨跌幅不低于（%）")).toHaveValue(1);
+  expect(screen.getByLabelText("成交额不低于（亿元）")).toHaveValue(15);
+  expect(screen.getByLabelText("核心数据完整")).toBeChecked();
+  expect(screen.queryByLabelText("总市值下限（亿元）")).not.toBeInTheDocument();
   await waitFor(() => expect(requests.some((url) => url.includes("min_amount=1500000000"))).toBe(true));
 
-  fireEvent.change(screen.getByLabelText("换手率上限（%）"), { target: { value: "3.5" } });
-  fireEvent.change(screen.getByLabelText("总市值下限（亿元）"), { target: { value: "100" } });
+  fireEvent.change(screen.getByLabelText("换手率不低于（%）"), { target: { value: "3.5" } });
   fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
 
-  await waitFor(() => expect(requests.some((url) => url.includes("max_turnover_rate=3.5") && url.includes("min_market_cap=10000000000"))).toBe(true));
-  expect(screen.getByTestId("location-search")).toHaveTextContent("max_turnover_rate=3.5");
+  await waitFor(() => expect(requests.some((url) => url.includes("min_turnover_rate=3.5") && !url.includes("min_market_cap"))).toBe(true));
+  expect(screen.getByTestId("location-search")).toHaveTextContent("min_turnover_rate=3.5");
 
   fireEvent.click(screen.getByRole("button", { name: "重置全部" }));
   await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent(/^$/));
@@ -403,9 +411,12 @@ it("restores advanced filters from the URL and sends normalized server units", a
 it("applies, creates, and deletes reusable saved views", async () => {
   const requests = renderPage();
 
+  await openMarketBrowser();
   fireEvent.click(await screen.findByRole("button", { name: "应用视图 白酒放量" }));
   await waitFor(() => expect(requests.some((url) => url.includes("sector=%E7%99%BD%E9%85%92") && url.includes("page=1"))).toBe(true));
-  expect(screen.getByLabelText("交易所")).toHaveValue("sh");
+  expect(screen.queryByLabelText("交易所")).not.toBeInTheDocument();
+  expect(await screen.findByLabelText("行业")).toHaveValue("白酒");
+  expect(screen.getByLabelText("核心数据完整")).toBeChecked();
 
   fireEvent.change(screen.getByLabelText("视图名称"), { target: { value: "我的白酒池" } });
   fireEvent.click(screen.getByRole("button", { name: "保存当前视图" }));

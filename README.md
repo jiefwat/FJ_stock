@@ -4,7 +4,6 @@
 
 ## 模块
 
-- 今日：市场温度、持仓提醒、市场异动、指数和当天动作。
 - 大盘：指数、广度、板块热度、资金主线、龙虎榜和市场异动。
 - 机会：按趋势、放量、低估、超跌等条件筛出未来更可能上涨的候选。
 - 个股：价格趋势、直接建议、风险、估值、公告、研报和题材。
@@ -43,21 +42,23 @@ make verify
 - 公司公告：巨潮资讯公告元数据与原文链接；不缓存公告正文或 PDF。
 - 研报与题材：东方财富研报元数据、原文链接和题材归属；只作研究上下文，不进入评分。
 - 市场异动：东方财富龙虎榜与公开快讯；快讯不可用时尝试财联社独立备源。
-- 联网问股：可选增强项；配置 DashScope/OpenAI 兼容接口后用于自然语言联网回答，未配置时不影响核心行情、持仓和个股分析。
+- 金融大模型问股：可选增强项；通过 OpenAI 兼容接口接收本地行情、确定性分析、账户持仓和最近对话，未配置或调用失败时自动回退到本地分析。
 - AInvest：仅用于产品交互参考，不是数据依赖。
 
 公开接口可能限流或调整。服务优先展示最后一次有效快照并标记时效；外部证据分别标记 ready、partial、empty 或 unavailable，不把上游失败解释为没有数据。当前产品用于个人投研辅助，不构成投资建议。公开或商业部署前需要重新核查巨潮资讯、东方财富、财联社等数据授权与服务条款。
 
 ## 问股边界
 
-问股会保留最近对话里的股票、板块、机会和持仓上下文。涉及具体股票时，优先结合当前全市场快照和个股确定性分析；需要最新消息或开放问题时，会走服务端联网大模型。回答不会把缺失数据补成确定结论。
+问股会保留最近对话里的股票、板块、机会和持仓上下文。涉及具体股票时，服务端先整理当前全市场快照、个股确定性结论、技术指标、风险证据和账户持仓，再把这份有界上下文交给金融大模型。全市场排行与硬指标仍由确定性代码计算；模型未配置或调用失败时自动回退到本地答案，不会把缺失数据补成确定结论。
 
-服务端可配置 DashScope/OpenAI 兼容接口：
+服务端可配置任意 OpenAI Chat Completions 兼容的金融模型；以下示例使用 DashScope，默认只使用系统提供的上下文：
 
 ```bash
-export DASHSCOPE_API_KEY="<server-side-secret>"
-export MARKETDESK_LLM_WEB_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-export MARKETDESK_LLM_WEB_MODEL="qwen3.7-plus"
+export MARKETDESK_FINANCIAL_LLM_API_KEY="<server-side-secret>"
+export MARKETDESK_FINANCIAL_LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export MARKETDESK_FINANCIAL_LLM_MODEL="qwen3.7-plus"
+export MARKETDESK_FINANCIAL_LLM_API_STYLE="chat_completions"
+export MARKETDESK_FINANCIAL_LLM_WEB_SEARCH_ENABLED="false"
 ```
 
-凭证只允许放在服务端环境中，不返回浏览器，也不能写入仓库。公网部署脚本会把本机 `.env` 单独同步到远端 `/opt/aster-market/.env`，不会打进发布代码包。
+旧的 `DASHSCOPE_API_KEY` 与 `MARKETDESK_LLM_WEB_*` 配置继续兼容。若模型支持服务端搜索，可显式把 `MARKETDESK_FINANCIAL_LLM_WEB_SEARCH_ENABLED` 设为 `true`。凭证只允许放在服务端环境中，不返回浏览器，也不能写入仓库。公网部署脚本会把本机 `.env` 单独同步到远端 `/opt/aster-market/.env`，不会打进发布代码包。

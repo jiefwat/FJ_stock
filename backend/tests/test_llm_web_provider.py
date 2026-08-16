@@ -10,6 +10,131 @@ from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.llm_web import LLMWebAskContext, LLMWebAskProvider
 
 
+def test_financial_llm_prompts_require_plain_language() -> None:
+    provider = LLMWebAskProvider(
+        settings=Settings(llm_web_api_key="test-key")
+    )
+
+    assert "日常中文" in provider._system_prompt()
+    assert "为什么值得看" in provider._system_prompt()
+    assert "不要堆砌K线" in provider._system_prompt()
+    assert "紧接着解释" in provider._stream_system_prompt()
+    assert "主要担心" in provider._user_prompt(
+        LLMWebAskContext(question="这只股票怎么看")
+    )
+
+
+@pytest.mark.asyncio
+async def test_financial_llm_uses_openai_chat_completions_with_local_context() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer": "结论：等待回踩确认。",
+                                    "evidence": ["本地趋势评分为 68。"],
+                                    "risks": ["短线波动偏高。"],
+                                    "next_actions": ["观察支撑位。"],
+                                    "intent": "action",
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = LLMWebAskProvider(
+            settings=Settings(
+                llm_web_api_key="test-key",
+                llm_web_base_url="https://finance-model.example/v1",
+                llm_web_model="finance-model",
+                llm_web_api_style="chat_completions",
+                llm_web_search_enabled=False,
+            ),
+            client=client,
+        )
+        result = await provider.ask_stock(
+            LLMWebAskContext(
+                question="结合我的持仓，现在应该怎么处理",
+                conversation=(
+                    AskStockConversationMessage(role="user", content="贵州茅台趋势怎么样"),
+                    AskStockConversationMessage(role="assistant", content="趋势仍需确认。"),
+                ),
+                stock={"symbol": "SH.600519", "name": "贵州茅台", "price": 1500},
+                holdings=("贵州茅台(SH.600519) 数量100 成本1450 状态holding",),
+                market_notes=("上证指数 -0.50%",),
+                analysis_notes=("确定性结论：偏多观察；趋势评分 68；支撑位 1460",),
+            )
+        )
+
+    assert result.kind == "llm_answer"
+    assert result.answer == "结论：等待回踩确认。"
+    assert seen["url"] == "https://finance-model.example/v1/chat/completions"
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert "tools" not in body
+    assert "enable_search" not in body
+    prompt = body["messages"][1]["content"]
+    assert "确定性分析上下文" in prompt
+    assert "趋势评分 68" in prompt
+    assert "当前账号持仓上下文" in prompt
+    assert "最近对话" in prompt
+
+
+@pytest.mark.asyncio
+async def test_financial_llm_streams_generic_chat_completions() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            content=(
+                'data: {"choices":[{"delta":{"content":"结论：等待确认。"}}]}\n\n'
+                "data: [DONE]\n\n"
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = LLMWebAskProvider(
+            settings=Settings(
+                llm_web_api_key="test-key",
+                llm_web_base_url="https://finance-model.example/v1",
+                llm_web_model="finance-model",
+                llm_web_api_style="chat_completions",
+                llm_web_search_enabled=False,
+            ),
+            client=client,
+        )
+        chunks = [
+            chunk
+            async for chunk in provider.stream_answer_text(
+                LLMWebAskContext(question="贵州茅台怎么看")
+            )
+        ]
+
+    assert chunks == ["结论：等待确认。"]
+    assert seen["url"] == "https://finance-model.example/v1/chat/completions"
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["stream"] is True
+    assert "messages" in body
+    assert "tools" not in body
+
+
 @pytest.mark.asyncio
 async def test_llm_web_provider_calls_responses_api_with_web_search_context() -> None:
     seen: dict[str, object] = {}
@@ -23,7 +148,7 @@ async def test_llm_web_provider_calls_responses_api_with_web_search_context() ->
             json={
                 "output_text": json.dumps(
                     {
-                        "answer": "联网结论：先看最新公告和行业消息。",
+                        "answer": "结论：先看最新公告和行业消息。",
                         "evidence": ["检索到近期公告线索。"],
                         "risks": ["信息可能滞后。"],
                         "next_actions": ["回到个股研究页复核。"],
@@ -42,6 +167,7 @@ async def test_llm_web_provider_calls_responses_api_with_web_search_context() ->
                 llm_web_api_key="test-key",
                 llm_web_base_url="https://llm.example/v1",
                 llm_web_model="test-model",
+                llm_web_search_enabled=True,
             ),
             client=client,
         )
@@ -60,7 +186,8 @@ async def test_llm_web_provider_calls_responses_api_with_web_search_context() ->
 
     assert result.kind == "llm_answer"
     assert result.intent == "catalyst"
-    assert result.source == "联网大模型问答"
+    assert result.source == "智能分析"
+    assert result.evidence == ["核对到近期公告线索。"]
     assert seen["url"] == "https://llm.example/v1/responses"
     assert seen["auth"] == "Bearer test-key"
     body = seen["body"]
@@ -102,6 +229,7 @@ async def test_llm_web_provider_supports_dashscope_openai_compatible_search() ->
                 llm_web_api_key="test-key",
                 llm_web_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                 llm_web_model="qwen3.7-plus",
+                llm_web_search_enabled=True,
             ),
             client=client,
         )
@@ -136,6 +264,7 @@ async def test_llm_web_provider_streams_responses_api_text() -> None:
                 llm_web_api_key="test-key",
                 llm_web_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                 llm_web_model="qwen3.7-plus",
+                llm_web_search_enabled=True,
             ),
             client=client,
         )
@@ -174,7 +303,7 @@ def test_streamed_response_parses_json_fenced_dashscope_text() -> None:
     text = """```json
 {
   "answer": "干净结论：先看量能和公告确认。",
-  "evidence": ["联网依据 1"],
+  "evidence": ["依据 1"],
   "risks": ["公开信息可能滞后"],
   "next_actions": ["打开个股页复核"],
   "intent": "movement",
@@ -186,7 +315,7 @@ def test_streamed_response_parses_json_fenced_dashscope_text() -> None:
     result = provider.streamed_response(context, text)
 
     assert result.answer == "干净结论：先看量能和公告确认。"
-    assert result.evidence == ["联网依据 1"]
+    assert result.evidence == ["依据 1"]
     assert result.risks == ["公开信息可能滞后"]
     assert result.next_actions == ["打开个股页复核"]
     assert "```" not in result.answer
@@ -201,3 +330,34 @@ def test_settings_accepts_dashscope_api_key_alias(tmp_path, monkeypatch) -> None
     settings = Settings(_env_file=env_file)
 
     assert settings.llm_web_api_key == "test-dashscope-key"
+
+
+def test_settings_accepts_financial_llm_configuration(tmp_path, monkeypatch) -> None:
+    for key in (
+        "MARKETDESK_LLM_WEB_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "MARKETDESK_FINANCIAL_LLM_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            (
+                "MARKETDESK_FINANCIAL_LLM_API_KEY=finance-key",
+                "MARKETDESK_FINANCIAL_LLM_BASE_URL=https://finance.example/v1",
+                "MARKETDESK_FINANCIAL_LLM_MODEL=finance-model",
+                "MARKETDESK_FINANCIAL_LLM_API_STYLE=chat_completions",
+                "MARKETDESK_FINANCIAL_LLM_WEB_SEARCH_ENABLED=false",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.llm_web_api_key == "finance-key"
+    assert settings.llm_web_base_url == "https://finance.example/v1"
+    assert settings.llm_web_model == "finance-model"
+    assert settings.llm_web_api_style == "chat_completions"
+    assert settings.llm_web_search_enabled is False

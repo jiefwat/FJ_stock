@@ -1644,3 +1644,35 @@ git diff --check
 ```
 
 Result: Ask Stock frontend tests passed, 19 tests; frontend typecheck passed; diff check passed. Coverage asserts stale-history handoffs from 贵州茅台 to 宁德时代 show 宁德时代 in the context panel and generated playbook prompts.
+
+## 2026-08-16 Decision Intelligence Release Verification
+
+The release combines the decision center, strategy-specific recommendation history, financial/news intelligence, OpenAI-compatible financial-model context, account-scoped monitoring, morning email delivery, ten-minute market/opportunity warming, holding workflow improvements, and the conclusion-first frontend redesign.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 31 source files |
+| Backend tests | Passed, 223 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 84 tests across 11 files |
+| Production build | Passed, 1,657 modules transformed |
+| Live data | Passed, 5,542 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Public acceptance at `https://stock.jiewat-kaka-fj.com/#/opportunities`:
+
+- Deployment health returned `{"status":"ok"}` and `stock-ts.service` remained active.
+- Desktop candidate expansion showed only decision, reason, risk, decision-change condition, and the ten-minute system-monitoring status by default.
+- Low-confidence evidence was merged into one concise warning; strategy validation, historical metrics, thesis, and dimension evidence remained under `查看专业数据`.
+- The removed `降级条件` and `后续核对` task blocks were absent before and after professional-data expansion.
+- Desktop and 390-pixel layouts had no document overflow; the browser console reported no errors or warnings.
+- The dedicated acceptance account created for the production browser test was removed after verification.

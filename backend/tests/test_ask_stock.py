@@ -9,7 +9,10 @@ from marketdesk.analysis.ask_stock import (
     classify_stock_question,
     is_portfolio_diagnostic_question,
     is_rebalance_plan_question,
+    is_stock_screening_question,
     resolve_stock_question,
+    stock_screening_limit,
+    stock_screening_period_days,
 )
 from marketdesk.analysis.stock import analyse_stock
 from marketdesk.models import Bar, EquityQuote
@@ -143,6 +146,28 @@ def test_detects_portfolio_diagnostics_without_swallowing_single_holding_questio
     assert is_rebalance_plan_question("帮我生成调仓计划")
     assert is_rebalance_plan_question("组合怎么调仓")
     assert not is_rebalance_plan_question("我的持仓里风险最大的是哪个")
+
+
+@pytest.mark.parametrize(
+    ("question", "expected", "limit"),
+    [
+        ("A股近十个交易日，综合上涨效果最好的100支股票", True, 100),
+        ("低估值白酒股", True, 20),
+        ("前999只涨幅最大的股票", True, 100),
+        ("白酒板块今天怎么看", False, 20),
+        ("贵州茅台主要风险", False, 20),
+    ],
+)
+def test_detects_broad_stock_screening_questions(
+    question: str, expected: bool, limit: int
+) -> None:
+    assert is_stock_screening_question(question) is expected
+    assert stock_screening_limit(question) == limit
+
+
+def test_extracts_supported_stock_screening_period() -> None:
+    assert stock_screening_period_days("A股近十个交易日涨幅最高的100支股票") == 10
+    assert stock_screening_period_days("低估值白酒股") is None
 
 
 @pytest.mark.parametrize("intent", ["risk", "trend", "valuation", "fundamental", "catalyst", "action", "movement", "overview"])

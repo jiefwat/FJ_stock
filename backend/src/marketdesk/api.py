@@ -21,11 +21,14 @@ from pydantic import BaseModel, Field, field_validator
 from marketdesk.analysis.ask_stock import AmbiguousStockQuestion
 from marketdesk.auth import hash_password, new_token, verify_password
 from marketdesk.config import Settings
+from marketdesk.decision_email import dispatch_decision_emails
 from marketdesk.models import (
     AskStockConversationMessage,
     AskStockResponse,
     AskStockSourceContext,
     AuthResult,
+    DecisionEvent,
+    DecisionEventFeed,
     EquityPage,
     EquityQuote,
     EquityViewFilters,
@@ -36,6 +39,7 @@ from marketdesk.models import (
     MarketPayload,
     MorningEmailBrief,
     OpportunityResult,
+    RecommendationHistoryResult,
     SavedEquityView,
     SectorDossier,
     StockDossier,
@@ -45,7 +49,11 @@ from marketdesk.models import (
     WatchlistItem,
 )
 from marketdesk.providers.base import ProviderUnavailable
-from marketdesk.services import MarketService
+from marketdesk.services import (
+    MONITORED_OPPORTUNITY_PRESETS,
+    RECOMMENDATION_REVIEW_PRESETS,
+    MarketService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +76,14 @@ class HoldingCreate(BaseModel):
     name: str
     quantity: float = Field(gt=0)
     cost_price: float = Field(gt=0)
-    target_weight: float = Field(ge=0, le=1)
-    thesis: str = Field(min_length=1)
-    invalidation: str = Field(min_length=1)
+    target_weight: float = Field(default=0, ge=0, le=1)
+    thesis: str = ""
+    invalidation: str = ""
 
 
 class HoldingUpdate(BaseModel):
+    symbol: str | None = Field(default=None, min_length=1)
+    name: str | None = Field(default=None, min_length=1)
     quantity: float | None = Field(default=None, gt=0)
     cost_price: float | None = Field(default=None, gt=0)
     target_weight: float | None = Field(default=None, ge=0, le=1)
@@ -111,9 +121,9 @@ class AskStockRequest(StrictModel):
 
 class PreferenceUpdate(BaseModel):
     default_symbol: str | None = Field(default=None, min_length=1)
-    start_page: Literal[
-        "today", "market", "opportunities", "stocks", "holdings", "watchlist", "data"
-    ] | None = None
+    start_page: (
+        Literal["market", "opportunities", "stocks", "holdings", "watchlist", "data"] | None
+    ) = None
     risk_profile: Literal["defensive", "balanced", "active"] | None = None
     morning_email_enabled: bool | None = None
 
@@ -143,6 +153,30 @@ async def _safe_auto_refresh(service: MarketService) -> None:
         await service.market(force=True)
     except Exception:
         logger.exception("scheduled market data refresh failed")
+        return
+    try:
+        stock_summary = await service.refresh_stock_monitor()
+        logger.info("scheduled stock monitor refreshed: %s", stock_summary)
+    except Exception:
+        logger.exception("scheduled stock monitor failed")
+    monitored_presets: list[str] = []
+    for preset in MONITORED_OPPORTUNITY_PRESETS:
+        try:
+            await service.refresh_opportunity_monitor(preset)
+            monitored_presets.append(preset)
+        except Exception:
+            logger.exception("scheduled opportunity monitor failed: %s", preset)
+    logger.info("scheduled opportunity monitor refreshed: %s", ",".join(monitored_presets))
+    for preset in RECOMMENDATION_REVIEW_PRESETS:
+        try:
+            await service.capture_daily_recommendations(preset)
+        except Exception:
+            logger.exception("scheduled recommendation capture failed: %s", preset)
+    try:
+        summary = await service.refresh_decision_monitor()
+        logger.info("scheduled decision monitor refreshed: %s", summary)
+    except Exception:
+        logger.exception("scheduled decision monitor failed")
 
 
 async def _auto_refresh_loop(
@@ -155,6 +189,17 @@ async def _auto_refresh_loop(
     while True:
         await asyncio.sleep(interval_seconds)
         await _safe_auto_refresh(service)
+
+
+async def _decision_email_loop(
+    service: MarketService, settings: Settings, interval_seconds: float = 60
+) -> None:
+    while True:
+        try:
+            await dispatch_decision_emails(service.store, settings)
+        except Exception:
+            logger.exception("scheduled decision email dispatch failed")
+        await asyncio.sleep(interval_seconds)
 
 
 def create_app(
@@ -184,6 +229,9 @@ def create_app(
             app_.state.auto_refresh_task = asyncio.create_task(
                 _auto_refresh_loop(market_service, configured_interval, configured_run_immediately)
             )
+            app_.state.decision_email_task = asyncio.create_task(
+                _decision_email_loop(market_service, settings)
+            )
         try:
             yield
         finally:
@@ -192,12 +240,18 @@ def create_app(
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            email_task = app_.state.decision_email_task
+            if email_task is not None:
+                email_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await email_task
 
     app = FastAPI(title="StockTS", version="0.1.0", lifespan=lifespan)
     app.state.service = market_service
     app.state.auto_refresh_interval_seconds = configured_interval
     app.state.auto_refresh_run_immediately = configured_run_immediately
     app.state.auto_refresh_task = None
+    app.state.decision_email_task = None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -279,9 +333,7 @@ def create_app(
         return market_service.store.get_preferences(user.id)
 
     @app.patch("/api/v1/preferences")
-    async def update_preferences(
-        payload: PreferenceUpdate, request: Request
-    ) -> UserPreferences:
+    async def update_preferences(payload: PreferenceUpdate, request: Request) -> UserPreferences:
         user = current_user(request.headers.get("authorization"))
         return market_service.store.update_preferences(
             user.id, **payload.model_dump(exclude_none=True)
@@ -295,9 +347,7 @@ def create_app(
     async def equities(
         q: str | None = Query(default=None, max_length=40),
         exchange: Literal["all", "sh", "sz", "bj"] = "all",
-        sort_by: Literal[
-            "amount", "change_pct", "turnover_rate", "market_cap"
-        ] = "amount",
+        sort_by: Literal["amount", "change_pct", "turnover_rate", "market_cap"] = "amount",
         direction: Literal["asc", "desc"] = "desc",
         page: int = Query(default=1, ge=1),
         page_size: int = Query(default=25, ge=1, le=50),
@@ -345,14 +395,10 @@ def create_app(
         return market_service.store.list_equity_views(user.id)
 
     @app.post("/api/v1/equity-views", response_model=SavedEquityView, status_code=201)
-    async def create_equity_view(
-        payload: EquityViewCreate, request: Request
-    ) -> SavedEquityView:
+    async def create_equity_view(payload: EquityViewCreate, request: Request) -> SavedEquityView:
         user = current_user(request.headers.get("authorization"))
         try:
-            return market_service.store.create_equity_view(
-                payload.name, payload.filters, user.id
-            )
+            return market_service.store.create_equity_view(payload.name, payload.filters, user.id)
         except sqlite3.IntegrityError as error:
             raise HTTPException(status_code=409, detail="view name already exists") from error
 
@@ -385,10 +431,6 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-    @app.get("/api/v1/today")
-    async def today() -> dict[str, Any]:
-        return await market_service.today()
-
     @app.get("/api/v1/morning-email/preview", response_model=MorningEmailBrief)
     async def morning_email_preview(
         request: Request,
@@ -409,6 +451,15 @@ def create_app(
     ) -> OpportunityResult:
         try:
             return await market_service.opportunities(preset, limit)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/api/v1/recommendation-history")
+    async def recommendation_history(
+        preset: str = "trend", limit: int = Query(default=60, ge=1, le=180)
+    ) -> RecommendationHistoryResult:
+        try:
+            return await market_service.recommendation_history(preset, limit)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -518,7 +569,9 @@ def create_app(
             except ProviderUnavailable:
                 yield encode(
                     "error",
-                    {"detail": "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"},
+                    {
+                        "detail": "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"
+                    },
                 )
 
         return StreamingResponse(
@@ -535,7 +588,26 @@ def create_app(
             "interval_seconds": configured_interval,
             "run_immediately": configured_run_immediately,
         }
+        status["opportunity_monitor"] = market_service.opportunity_monitor_status()
         return status
+
+    @app.get("/api/v1/decision-events")
+    async def decision_events(request: Request) -> DecisionEventFeed:
+        user = current_user(request.headers.get("authorization"))
+        return market_service.decision_events(user.id)
+
+    @app.post("/api/v1/decision-events/read-all")
+    async def read_all_decision_events(request: Request) -> dict[str, int]:
+        user = current_user(request.headers.get("authorization"))
+        return {"read": market_service.store.mark_all_decision_events_read(user.id)}
+
+    @app.post("/api/v1/decision-events/{event_id}/read")
+    async def read_decision_event(event_id: int, request: Request) -> DecisionEvent:
+        user = current_user(request.headers.get("authorization"))
+        try:
+            return market_service.store.mark_decision_event_read(event_id, user.id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="decision event not found") from error
 
     @app.get("/api/v1/watchlist")
     async def watchlist(request: Request) -> list[WatchlistItem]:
@@ -548,13 +620,13 @@ def create_app(
         return await market_service.holdings(user.id)
 
     @app.post("/api/v1/holdings", status_code=201)
-    async def create_holding(
-        payload: HoldingCreate, request: Request
-    ) -> HoldingDossier:
+    async def create_holding(payload: HoldingCreate, request: Request) -> HoldingDossier:
         user = current_user(request.headers.get("authorization"))
         try:
             return await market_service.create_holding(payload.model_dump(), user.id)
-        except Exception as error:
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
             raise HTTPException(status_code=409, detail="holding already exists") from error
 
     @app.patch("/api/v1/holdings/{item_id}")
@@ -566,21 +638,21 @@ def create_app(
             return await market_service.update_holding(
                 item_id, payload.model_dump(exclude_none=True), user.id
             )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail="holding already exists") from error
         except KeyError as error:
             raise HTTPException(status_code=404, detail="holding not found") from error
 
     @app.delete("/api/v1/holdings/{item_id}", status_code=204)
-    async def delete_holding(
-        item_id: int, request: Request
-    ) -> Response:
+    async def delete_holding(item_id: int, request: Request) -> Response:
         user = current_user(request.headers.get("authorization"))
         market_service.delete_holding(item_id, user.id)
         return Response(status_code=204)
 
     @app.post("/api/v1/watchlist", status_code=201)
-    async def create_watchlist(
-        payload: WatchlistCreate, request: Request
-    ) -> WatchlistItem:
+    async def create_watchlist(payload: WatchlistCreate, request: Request) -> WatchlistItem:
         user = current_user(request.headers.get("authorization"))
         try:
             return market_service.store.create_watchlist(**payload.model_dump(), user_id=user.id)
@@ -600,9 +672,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="watchlist item not found") from error
 
     @app.delete("/api/v1/watchlist/{item_id}", status_code=204)
-    async def delete_watchlist(
-        item_id: int, request: Request
-    ) -> Response:
+    async def delete_watchlist(item_id: int, request: Request) -> Response:
         user = current_user(request.headers.get("authorization"))
         market_service.store.delete_watchlist(item_id, user.id)
         return Response(status_code=204)

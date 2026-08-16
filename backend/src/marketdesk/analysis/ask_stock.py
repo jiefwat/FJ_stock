@@ -29,6 +29,7 @@ AskStockIntent = Literal[
     "overview",
 ]
 AskStockMetricTone = Literal["positive", "neutral", "negative", "missing"]
+MAX_STOCK_SCREEN_RESULTS = 100
 
 
 class PortfolioConcentration(TypedDict):
@@ -47,6 +48,61 @@ class StockQuestionNotFound(ValueError):
 
 class AmbiguousStockQuestion(ValueError):
     """Raised when a question identifies more than one local stock."""
+
+
+def is_stock_screening_question(question: str) -> bool:
+    normalized = _compact(question).casefold()
+    if not normalized:
+        return False
+    screening_keywords = (
+        "低估值",
+        "高股息",
+        "龙头股",
+        "筛选",
+        "选股",
+        "股票池",
+        "有哪些",
+        "哪些股票",
+        "推荐股票",
+        "股票排名",
+        "股票排行",
+        "涨幅最高",
+        "涨幅最大",
+        "top",
+    )
+    if any(keyword in normalized for keyword in screening_keywords):
+        return True
+    if ("股票" in normalized or "a股" in normalized) and any(
+        keyword in normalized for keyword in ("最好", "最强")
+    ):
+        return True
+    return bool(
+        re.search(r"(?:前|top)\s*\d{1,3}", normalized)
+        or re.search(r"\d{1,3}\s*[只支个]\s*(?:a股|股票)", normalized)
+    )
+
+
+def stock_screening_limit(question: str, default: int = 20) -> int:
+    normalized = _compact(question).casefold()
+    patterns = (
+        r"(?:前|top)\s*(\d{1,3})",
+        r"(\d{1,3})\s*[只支个]\s*(?:a股|股票)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            return min(max(int(match.group(1)), 1), MAX_STOCK_SCREEN_RESULTS)
+    return min(max(default, 1), MAX_STOCK_SCREEN_RESULTS)
+
+
+def stock_screening_period_days(question: str) -> int | None:
+    normalized = _compact(question).casefold()
+    if any(
+        period in normalized
+        for period in ("近十个交易日", "近10个交易日", "近十日", "近10日", "10日涨跌")
+    ):
+        return 10
+    return None
 
 
 def resolve_stock_question(question: str, quotes: list[EquityQuote]) -> EquityQuote:
@@ -476,9 +532,9 @@ def build_portfolio_answer(
     rebalance_mode = is_rebalance_plan_question(question)
     if not holdings:
         empty_answer = (
-            "当前账户没有持仓记录，无法生成调仓计划。先在持仓页录入股票、成本、目标仓位后再问调仓。"
+            "当前账户没有持仓记录，无法生成调仓计划。先在持仓页录入股票、成本、持仓逻辑后再问调仓。"
             if rebalance_mode
-            else "当前账户没有持仓记录，无法生成组合风险排序。先在持仓页录入股票、成本、目标仓位后再问组合问题。"
+            else "当前账户没有持仓记录，无法生成组合风险排序。先在持仓页录入股票、成本、持仓逻辑后再问组合问题。"
         )
         return AskStockResponse(
             kind="portfolio_analysis",
@@ -487,7 +543,7 @@ def build_portfolio_answer(
             answer=empty_answer,
             evidence=["账户持仓为空，未使用默认账户或其他用户数据。"],
             risks=["缺少个人持仓上下文"],
-            next_actions=["在持仓页新增至少一条持仓", "录入成本价、目标仓位、持仓逻辑和失效条件"],
+            next_actions=["在持仓页新增至少一条持仓", "录入成本价、持仓逻辑和失效条件"],
             metrics=[
                 AskStockMetric(label="持仓数量", value="0", tone="missing"),
                 AskStockMetric(label="总市值", value="—", tone="missing"),
@@ -504,18 +560,17 @@ def build_portfolio_answer(
     concentration = _portfolio_concentration(holdings)
     risky = sum(1 for item in holdings if item.risk_flags)
     top = ranked[0]
-    overweight = sum(1 for item in holdings if item.drift is not None and item.drift > 0.1)
     missing_invalidation = sum(1 for item in holdings if not item.item.invalidation.strip())
     focused = next((item for item in holdings if item.item.symbol == focus_symbol), None)
-    actionable = sum(1 for item in holdings if _rebalance_abs_value(item) >= 1_000)
-    net_rebalance = sum(item.rebalance_value or 0 for item in holdings)
+    actionable = sum(1 for item in holdings if item.action in {"trim", "exit_watch", "add_watch", "review"})
     if rebalance_mode:
         priority = plan_rows[0]
         answer = (
             f"调仓计划先处理 {priority.item.name}（{priority.item.symbol}）："
-            f"当前占比 {_percent(priority.portfolio_weight)}，目标 {_percent(priority.item.target_weight)}，"
-            f"偏离金额 {_money(priority.rebalance_value)}，建议股数 {_signed_shares(priority.rebalance_quantity)}。"
-            f"全组合共有 {actionable} 个持仓偏离金额超过 1,000 元。"
+            f"当前占比 {_percent(priority.portfolio_weight)}，持仓盈亏 {_pct(priority.pnl_pct)}，"
+            f"近10日 {_pct(_holding_ten_day_change(priority))}，"
+            f"动作建议 {_action_label(priority.action)}。"
+            f"全组合共有 {risky} 个持仓触发风险标记。"
         )
     elif focus_symbol and focused is None:
         answer = (
@@ -526,13 +581,13 @@ def build_portfolio_answer(
         rank = ranked.index(focused) + 1
         answer = (
             f"{focused.item.name}（{focused.item.symbol}）在当前组合风险排序第 {rank}，"
-            f"组合占比 {_percent(focused.portfolio_weight)}，目标仓位 {_percent(focused.item.target_weight)}，"
-            f"偏离 {_signed_percent(focused.drift)}，动作建议 {focused.action}。"
+            f"组合占比 {_percent(focused.portfolio_weight)}，持仓盈亏 {_pct(focused.pnl_pct)}，"
+            f"动作建议 {_action_label(focused.action)}。"
         )
     else:
         answer = (
             f"当前组合最需要先复核的是 {top.item.name}（{top.item.symbol}）。"
-            f"持仓动作建议为 {top.action}，"
+            f"持仓动作建议为 {_action_label(top.action)}，"
             f"当前盈亏 {_pct(top.pnl_pct)}，组合占比 {_percent(top.portfolio_weight)}。"
         )
     answer = (
@@ -552,7 +607,7 @@ def build_portfolio_answer(
         evidence=[
             f"最大单票：{concentration['max_holding_text']}",
             f"行业集中：{concentration['top_sector_text']}",
-            f"超目标持仓 {overweight} 个，缺少失效条件 {missing_invalidation} 个。",
+            f"风险持仓 {risky} 个，缺少失效条件 {missing_invalidation} 个。",
             *[item.conclusion for item in ranked[:3]],
         ][:5],
         risks=_unique(flag for item in ranked for flag in item.risk_flags)[:5],
@@ -563,14 +618,9 @@ def build_portfolio_answer(
             *(
                 [
                     AskStockMetric(
-                        label="需调仓",
+                        label="待复核",
                         value=str(actionable),
                         tone="negative" if actionable else "positive",
-                    ),
-                    AskStockMetric(
-                        label="净调整",
-                        value=_money(net_rebalance),
-                        tone=_rebalance_tone(net_rebalance),
                     ),
                 ]
                 if rebalance_mode
@@ -596,7 +646,6 @@ def build_portfolio_answer(
         factors=_portfolio_factors(
             concentration=concentration,
             risky=risky,
-            overweight=overweight,
             missing_invalidation=missing_invalidation,
             actionable=actionable,
             rebalance_mode=rebalance_mode,
@@ -611,10 +660,9 @@ def build_portfolio_answer(
                 "股票简称",
                 "行业",
                 "组合占比",
-                "目标仓位",
-                "偏离",
-                "偏离金额",
-                "建议股数",
+                "盈亏",
+                "10日走势",
+                "10日贡献",
                 "优先级",
                 "动作",
                 "风险",
@@ -625,9 +673,9 @@ def build_portfolio_answer(
                 "股票简称",
                 "行业",
                 "组合占比",
-                "目标仓位",
-                "偏离",
                 "盈亏",
+                "10日走势",
+                "10日贡献",
                 "动作",
                 "风险",
             ]
@@ -739,7 +787,7 @@ def _final_gate(dossier: StockDossier) -> tuple[str, AskStockMetricTone]:
     if score is None or dossier.evidence_coverage < 0.45:
         return "证据不足", "missing"
     if action in {"可小仓试错", "持有观察"} and support_count >= risk_count:
-        return "进入交易计划", "positive"
+        return "进入处理纪律", "positive"
     if action in {"等待回踩", "继续观察"}:
         return "观察等确认", "neutral"
     if risk_count > support_count:
@@ -1010,6 +1058,8 @@ def _holding_context(holding: HoldingDossier | None) -> AskStockHoldingContext |
         pnl_pct=holding.pnl_pct,
         portfolio_weight=holding.portfolio_weight,
         drift=holding.drift,
+        ten_day_change_pct=_holding_ten_day_change(holding),
+        ten_day_contribution=round(_holding_ten_day_contribution(holding), 2),
         action=holding.action,
         risk_flags=holding.risk_flags,
     )
@@ -1019,8 +1069,21 @@ def _with_holding_summary(answer: str, holding: HoldingDossier) -> str:
     return (
         f"{answer} 结合你的账户持仓：当前持有 {holding.item.quantity:g} 股，"
         f"成本 {holding.item.cost_price:.2f}，持仓盈亏 {_pct(holding.pnl_pct)}，"
-        f"组合占比 {_percent(holding.portfolio_weight)}，持仓动作建议 {holding.action}。"
+        f"组合占比 {_percent(holding.portfolio_weight)}，"
+        f"近10日走势 {_pct(_holding_ten_day_change(holding))}，"
+        f"10日贡献 {_money(_holding_ten_day_contribution(holding))}，"
+        f"持仓动作建议 {_action_label(holding.action)}。"
     )
+
+
+def _action_label(action: str | None) -> str:
+    return {
+        "hold": "继续持有",
+        "trim": "建议分批减仓",
+        "add_watch": "仅小幅加仓",
+        "review": "暂不操作",
+        "exit_watch": "优先减仓或止损",
+    }.get(action or "", action or "—")
 
 
 def _holding_risk_score(holding: HoldingDossier) -> float:
@@ -1031,7 +1094,33 @@ def _holding_risk_score(holding: HoldingDossier) -> float:
         score += min(holding.drift * 100, 25)
     if holding.quote.change_pct is not None and holding.quote.change_pct < 0:
         score += min(abs(holding.quote.change_pct), 10)
+    ten_day_change = _holding_ten_day_change(holding)
+    if ten_day_change is not None and ten_day_change < 0:
+        score += min(abs(ten_day_change), 20)
     return score
+
+
+def _holding_ten_day_change(holding: HoldingDossier) -> float | None:
+    values = [
+        item.change_pct
+        for item in holding.recent_daily_changes
+        if item.change_pct is not None
+    ]
+    return round(sum(values), 2) if values else None
+
+
+def _holding_day_contribution(holding: HoldingDossier, change_pct: float | None) -> float | None:
+    if holding.market_value is None or change_pct is None or change_pct <= -100:
+        return None
+    base_value = holding.market_value / (1 + change_pct / 100)
+    return holding.market_value - base_value
+
+
+def _holding_ten_day_contribution(holding: HoldingDossier) -> float:
+    return sum(
+        _holding_day_contribution(holding, item.change_pct) or 0
+        for item in holding.recent_daily_changes
+    )
 
 
 def _holding_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
@@ -1040,10 +1129,10 @@ def _holding_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
         "股票简称": holding.item.name,
         "行业": holding.quote.sector or "待补",
         "组合占比": _percent(holding.portfolio_weight),
-        "目标仓位": _percent(holding.item.target_weight),
-        "偏离": _signed_percent(holding.drift),
         "盈亏": _pct(holding.pnl_pct),
-        "动作": holding.action,
+        "10日走势": _pct(_holding_ten_day_change(holding)),
+        "10日贡献": _money(_holding_ten_day_contribution(holding)),
+        "动作": _action_label(holding.action),
         "风险": "；".join(holding.risk_flags) if holding.risk_flags else "未触发",
     }
 
@@ -1054,12 +1143,11 @@ def _rebalance_row(holding: HoldingDossier) -> dict[str, JsonScalar]:
         "股票简称": holding.item.name,
         "行业": holding.quote.sector or "待补",
         "组合占比": _percent(holding.portfolio_weight),
-        "目标仓位": _percent(holding.item.target_weight),
-        "偏离": _signed_percent(holding.drift),
-        "偏离金额": _signed_money(holding.rebalance_value),
-        "建议股数": _signed_shares(holding.rebalance_quantity),
+        "盈亏": _pct(holding.pnl_pct),
+        "10日走势": _pct(_holding_ten_day_change(holding)),
+        "10日贡献": _money(_holding_ten_day_contribution(holding)),
         "优先级": _rebalance_priority_label(holding),
-        "动作": holding.action,
+        "动作": _action_label(holding.action),
         "风险": "；".join(holding.risk_flags) if holding.risk_flags else "未触发",
     }
 
@@ -1096,7 +1184,6 @@ def _portfolio_factors(
     *,
     concentration: PortfolioConcentration,
     risky: int,
-    overweight: int,
     missing_invalidation: int,
     actionable: int,
     rebalance_mode: bool,
@@ -1115,12 +1202,6 @@ def _portfolio_factors(
             impact=-8 if top_sector_weight > 0.5 else 2,
             signal="negative" if top_sector_weight > 0.5 else "neutral",
             evidence=f"最高行业为 {concentration['top_sector_text']}，超过 50% 需要检查同向风险。",
-        ),
-        AskStockFactor(
-            label="目标仓位偏离",
-            impact=-6 if overweight else 2,
-            signal="negative" if overweight else "neutral",
-            evidence=f"{overweight} 个持仓高于目标仓位 10 个百分点以上。",
         ),
         AskStockFactor(
             label="风控记录完整度",
@@ -1142,18 +1223,24 @@ def _portfolio_factors(
                 label="调仓执行量",
                 impact=-6 if actionable else 3,
                 signal="negative" if actionable else "positive",
-                evidence=f"{actionable} 个持仓偏离金额超过 1,000 元，建议先处理高优先级项。",
+                evidence=f"{risky} 个持仓触发风险标记，建议先处理高优先级项。",
             ),
         )
     return factors[:12]
 
 
 def _rebalance_abs_value(holding: HoldingDossier) -> float:
-    return abs(holding.rebalance_value or 0.0)
+    return abs(_holding_ten_day_contribution(holding))
 
 
 def _rebalance_priority(holding: HoldingDossier) -> float:
-    return _rebalance_abs_value(holding) + _holding_risk_score(holding) * 500
+    action_boost = {
+        "exit_watch": 80_000,
+        "trim": 60_000,
+        "review": 35_000,
+        "add_watch": 20_000,
+    }.get(holding.action, 0)
+    return action_boost + _rebalance_abs_value(holding) + _holding_risk_score(holding) * 500
 
 
 def _rebalance_priority_label(holding: HoldingDossier) -> str:
@@ -1176,13 +1263,12 @@ def _rebalance_tone(value: float | None) -> AskStockMetricTone:
 def _rebalance_next_actions(holdings: list[HoldingDossier]) -> list[str]:
     actions = []
     for item in holdings[:3]:
-        shares = _signed_shares(item.rebalance_quantity)
-        if item.rebalance_value is None or abs(item.rebalance_value) < 1_000:
-            actions.append(f"{item.item.name} 接近目标仓位，暂不因微小偏离交易")
-        elif item.rebalance_value < 0:
-            actions.append(f"{item.item.name} 优先减仓 {shares}，先把单票/目标偏离降下来")
+        if item.action in {"exit_watch", "trim"}:
+            actions.append(f"{item.item.name} 优先复核减仓或退出，先看风控和趋势是否修复")
+        elif item.action == "add_watch":
+            actions.append(f"{item.item.name} 只适合小幅加仓，并按退出条件分批执行")
         else:
-            actions.append(f"{item.item.name} 可补仓 {shares}，但需先确认个股证据未恶化")
+            actions.append(f"{item.item.name} 维持当前仓位，暂不因组合比例做机械交易")
     actions.append("调仓前核对流动性、失效条件和是否触发止损，不按表格机械交易")
     return _unique(actions)[:5]
 

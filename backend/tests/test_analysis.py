@@ -5,16 +5,19 @@ from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
 from marketdesk.analysis.opportunities import rank_candidates
 from marketdesk.analysis.stock import analyse_stock
+from marketdesk.analysis.stock_intelligence import analyse_financial_health, analyse_stock_news
 from marketdesk.models import (
     Bar,
     DatasetMeta,
     EquityQuote,
+    FinancialPeriod,
     Freshness,
     HoldingItem,
     IndexQuote,
     MarketEventRaw,
     MarketSnapshot,
     SectorSnapshot,
+    StockNewsItem,
 )
 
 
@@ -246,6 +249,96 @@ def test_opportunity_presets_are_distinct_and_effective_with_current_fields() ->
     assert all(result.available for result in [trend, breakout, value, oversold])
 
 
+def test_strategy_profiles_rank_different_specialists_from_the_same_pool() -> None:
+    rows = [
+        equity(
+            name="趋势专家",
+            symbol="SH.600301",
+            code="600301",
+            change_pct=5.5,
+            amount=300_000_000,
+            turnover_rate=1.5,
+            volume_ratio=1.0,
+            net_flow=20_000_000,
+            pe=40,
+            sector="冷门板块",
+        ),
+        equity(
+            name="资金专家",
+            symbol="SH.600302",
+            code="600302",
+            change_pct=0.5,
+            amount=300_000_000,
+            turnover_rate=1.5,
+            volume_ratio=1.0,
+            net_flow=150_000_000,
+            pe=40,
+            sector="中性板块",
+        ),
+        equity(
+            name="板块专家",
+            symbol="SH.600303",
+            code="600303",
+            change_pct=2.5,
+            amount=300_000_000,
+            turnover_rate=1.5,
+            volume_ratio=1.0,
+            net_flow=20_000_000,
+            pe=40,
+            sector="强势板块",
+        ),
+    ]
+    sector_strength = {"冷门板块": -2.0, "中性板块": 0.0, "强势板块": 5.0}
+
+    trend = rank_candidates(rows, "balanced", "trend", sector_strength=sector_strength)
+    capital = rank_candidates(
+        rows, "balanced", "capital_confirmed", sector_strength=sector_strength
+    )
+    sector = rank_candidates(rows, "balanced", "sector_momentum", sector_strength=sector_strength)
+
+    assert trend.candidates[0].quote.name == "趋势专家"
+    assert capital.candidates[0].quote.name == "资金专家"
+    assert sector.candidates[0].quote.name == "板块专家"
+    assert (
+        len(
+            {
+                trend.candidates[0].quote.symbol,
+                capital.candidates[0].quote.symbol,
+                sector.candidates[0].quote.symbol,
+            }
+        )
+        == 3
+    )
+
+
+def test_sector_strategy_requires_matching_strength_when_snapshot_is_available() -> None:
+    rows = [
+        equity(
+            name="板块已覆盖",
+            symbol="SH.600304",
+            code="600304",
+            sector="强势板块",
+        ),
+        equity(
+            name="板块未覆盖",
+            symbol="SH.600305",
+            code="600305",
+            sector="未知板块",
+        ),
+    ]
+
+    result = rank_candidates(
+        rows,
+        "balanced",
+        "sector_momentum",
+        sector_strength={"强势板块": 3.0},
+    )
+
+    assert [item.quote.name for item in result.candidates] == ["板块已覆盖"]
+    assert result.candidates[0].strategy_validation.checks[1] == "板块强度已覆盖"
+    assert result.excluded[0].reasons == ["sector_strength_missing"]
+
+
 def test_opportunity_candidates_include_history_confirmation() -> None:
     rows = [
         equity(symbol="SH.600040", code="600040", name="稳健趋势", change_pct=3.0),
@@ -311,6 +404,300 @@ def test_value_rebound_strategy_does_not_require_sector_mapping() -> None:
     assert result.available is True
     assert [item.quote.symbol for item in result.candidates] == ["SH.600022"]
     assert "板块归属暂缺" in result.candidates[0].risk_flags
+
+
+def test_additional_strategies_are_strictly_validated() -> None:
+    rows = [
+        equity(
+            symbol="SH.600101",
+            code="600101",
+            change_pct=2.2,
+            amount=700_000_000,
+            net_flow=45_000_000,
+        ),
+        equity(
+            symbol="SH.600102",
+            code="600102",
+            change_pct=2.2,
+            amount=700_000_000,
+            net_flow=-5_000_000,
+        ),
+    ]
+
+    result = rank_candidates(rows, "balanced", "capital_confirmed")
+
+    assert [item.quote.symbol for item in result.candidates] == ["SH.600101"]
+    assert result.candidates[0].strategy_validation.passed is True
+    assert "资金净流入 >= 2000 万" in result.candidates[0].strategy_validation.checks
+    assert any(item.key == "strategy_validation" for item in result.candidates[0].dimensions)
+    assert "capital_not_confirmed" in result.excluded[0].reasons
+
+
+def test_new_effective_strategy_presets_use_available_quote_fields() -> None:
+    assert [
+        item.quote.symbol
+        for item in rank_candidates(
+            [
+                equity(
+                    symbol="SH.600201",
+                    code="600201",
+                    change_pct=1.6,
+                    sector="半导体",
+                    amount=700_000_000,
+                    volume_ratio=1.2,
+                ),
+                equity(
+                    symbol="SH.600299",
+                    code="600299",
+                    change_pct=1.6,
+                    sector=None,
+                    amount=700_000_000,
+                ),
+            ],
+            "balanced",
+            "sector_momentum",
+        ).candidates
+    ] == ["SH.600201"]
+    assert [
+        item.quote.symbol
+        for item in rank_candidates(
+            [
+                equity(
+                    symbol="SH.600202",
+                    code="600202",
+                    change_pct=-1.2,
+                    net_flow=8_000_000,
+                    amount=260_000_000,
+                    pe=22,
+                ),
+                equity(
+                    symbol="SH.600298",
+                    code="600298",
+                    change_pct=-1.2,
+                    net_flow=-8_000_000,
+                    amount=260_000_000,
+                ),
+            ],
+            "balanced",
+            "pullback_support",
+        ).candidates
+    ] == ["SH.600202"]
+    assert [
+        item.quote.symbol
+        for item in rank_candidates(
+            [
+                equity(
+                    symbol="SH.600203",
+                    code="600203",
+                    change_pct=0.6,
+                    pe=18,
+                    pb=1.8,
+                    market_cap=18_000_000_000,
+                    amount=220_000_000,
+                ),
+                equity(
+                    symbol="SH.600297",
+                    code="600297",
+                    change_pct=0.6,
+                    pe=38,
+                    pb=1.8,
+                    market_cap=18_000_000_000,
+                    amount=220_000_000,
+                ),
+            ],
+            "balanced",
+            "quality_value",
+        ).candidates
+    ] == ["SH.600203"]
+    assert [
+        item.quote.symbol
+        for item in rank_candidates(
+            [
+                equity(
+                    symbol="SH.600204",
+                    code="600204",
+                    change_pct=1.1,
+                    market_cap=90_000_000_000,
+                    amount=900_000_000,
+                    turnover_rate=2.0,
+                    pe=24,
+                ),
+                equity(
+                    symbol="SH.600296",
+                    code="600296",
+                    change_pct=1.1,
+                    market_cap=9_000_000_000,
+                    amount=900_000_000,
+                    turnover_rate=2.0,
+                    pe=24,
+                ),
+            ],
+            "balanced",
+            "large_cap_stability",
+        ).candidates
+    ] == ["SH.600204"]
+
+
+def test_financial_health_rewards_profitable_growth_with_sound_cash_conversion() -> None:
+    health = analyse_financial_health(
+        [
+            FinancialPeriod(
+                report_date=date(2026, 6, 30),
+                report_label="2026中报",
+                report_type="中报",
+                revenue_yoy=10.2,
+                net_profit_yoy=12.5,
+                roe=16.8,
+                gross_margin=42.0,
+                operating_cash_flow_per_share=1.3,
+                cash_receipts_to_revenue=104.0,
+                debt_to_assets=35.0,
+            )
+        ]
+    )
+
+    assert health.available is True
+    assert health.score is not None and health.score >= 65
+    assert 0 < health.score_impact <= 6
+    assert health.report_date == date(2026, 6, 30)
+
+
+def test_financial_health_penalizes_profit_cash_and_leverage_risks() -> None:
+    health = analyse_financial_health(
+        [
+            FinancialPeriod(
+                report_date=date(2026, 6, 30),
+                report_label="2026中报",
+                report_type="中报",
+                revenue_yoy=2.0,
+                net_profit_yoy=-38.0,
+                roe=3.0,
+                operating_cash_flow_per_share=-0.2,
+                cash_receipts_to_revenue=55.0,
+                debt_to_assets=76.0,
+            )
+        ]
+    )
+
+    assert -10 <= health.score_impact < 0
+    assert any("盈利" in item for item in health.risks)
+    assert any("现金" in item for item in health.risks)
+    assert any("负债" in item for item in health.risks)
+
+
+def test_financial_health_does_not_treat_missing_values_as_zero() -> None:
+    health = analyse_financial_health(
+        [
+            FinancialPeriod(
+                report_date=date(2026, 6, 30),
+                report_label="2026中报",
+                report_type="中报",
+            )
+        ]
+    )
+
+    assert health.available is True
+    assert health.score is None
+    assert health.score_impact == 0
+    assert health.risks == []
+
+
+def test_financial_health_detects_multi_period_growth_slowdown() -> None:
+    health = analyse_financial_health(
+        [
+            FinancialPeriod(
+                report_date=date(2026, 6, 30),
+                report_label="2026中报",
+                report_type="中报",
+                revenue_yoy=2.0,
+                net_profit_yoy=3.0,
+                operating_cash_flow_per_share=1.0,
+            ),
+            FinancialPeriod(
+                report_date=date(2026, 3, 31),
+                report_label="2026一季报",
+                report_type="一季报",
+                revenue_yoy=12.0,
+                net_profit_yoy=16.0,
+                operating_cash_flow_per_share=0.8,
+            ),
+            FinancialPeriod(
+                report_date=date(2025, 12, 31),
+                report_label="2025年报",
+                report_type="年报",
+                revenue_yoy=18.0,
+                net_profit_yoy=24.0,
+                operating_cash_flow_per_share=2.0,
+            ),
+        ]
+    )
+
+    assert "营业收入增速连续放缓" in health.risks
+    assert "盈利增速连续放缓" in health.risks
+    assert health.score_impact <= 1
+
+
+def stock_news_item(
+    title: str,
+    *,
+    published_at: datetime,
+    summary: str = "",
+) -> StockNewsItem:
+    return StockNewsItem(
+        id=f"news:{title}",
+        title=title,
+        summary=summary,
+        media="测试媒体",
+        url="https://example.com/news",
+        published_at=published_at,
+    )
+
+
+def test_stock_news_only_penalizes_recent_explicit_hard_risks() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    sentiment = analyse_stock_news(
+        [
+            stock_news_item("公司被证监会立案调查", published_at=now - timedelta(days=2)),
+            stock_news_item("行业需求短期承压", published_at=now - timedelta(days=3)),
+            stock_news_item("公司订单增长", published_at=now - timedelta(days=4)),
+            stock_news_item("公司收到监管处罚", published_at=now - timedelta(days=45)),
+        ],
+        now=now,
+    )
+
+    assert sentiment.available is True
+    assert sentiment.hard_risk_count == 1
+    assert -6 <= sentiment.score_impact < 0
+    assert len(sentiment.items) == 3
+    assert next(item for item in sentiment.items if "立案" in item.title).hard_risk is True
+    assert next(item for item in sentiment.items if "承压" in item.title).hard_risk is False
+
+
+def test_positive_stock_news_never_raises_the_stock_score() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    sentiment = analyse_stock_news(
+        [stock_news_item("公司订单增长并获批新产品", published_at=now)],
+        now=now,
+    )
+
+    assert sentiment.positive_count == 1
+    assert sentiment.score_impact == 0
+
+
+def test_stock_news_deduplicates_the_same_syndicated_event() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    sentiment = analyse_stock_news(
+        [
+            stock_news_item("公司被证监会立案调查", published_at=now - timedelta(hours=2)),
+            stock_news_item("公司被证监会立案调查！", published_at=now - timedelta(hours=3)),
+        ],
+        now=now,
+    )
+
+    assert sentiment.hard_risk_count == 1
+    assert sentiment.negative_count == 1
+    assert len(sentiment.items) == 1
+    assert sentiment.score_impact == -3
 
 
 def test_stock_analysis_is_insufficient_without_history() -> None:
@@ -532,16 +919,16 @@ def test_holding_conclusion_leads_with_action_and_key_reasons() -> None:
     )
 
     assert result.action == "exit_watch"
-    assert result.conclusion.startswith("建议动作：退出复核")
+    assert result.conclusion.startswith("建议动作：优先减仓或止损")
     assert "分析维度：" not in result.conclusion
     assert "亏损 -20.73% 已触发风控" in result.conclusion
     assert "估值压力偏高，PE 120.60" in result.conclusion
-    assert "建议先减仓约 22 股" in result.conclusion
+    assert "建议优先减仓或止损" in result.conclusion
     assert "当前盈亏" not in result.conclusion
     assert "持仓数量 800 股" not in result.conclusion
 
 
-def test_holding_conclusion_can_recommend_add_when_under_target_and_clean() -> None:
+def test_holding_conclusion_does_not_add_from_target_gap() -> None:
     result = analyse_holding(
         holding_item(
             symbol="SH.600001",
@@ -556,11 +943,12 @@ def test_holding_conclusion_can_recommend_add_when_under_target_and_clean() -> N
         total_market_value=120_000,
     )
 
-    assert result.action == "add_watch"
-    assert result.conclusion.startswith("建议动作：可加仓")
+    assert result.action == "hold"
+    assert result.conclusion.startswith("建议动作：继续持有")
     assert "分析维度：" not in result.conclusion
-    assert "仓位低于目标 -20.0%" in result.conclusion
+    assert "不使用目标比例" in result.conclusion
     assert "估值相对温和" in result.conclusion
+    assert "可加仓" not in result.conclusion
 
 
 def test_holding_exit_watch_never_suggests_adding_when_under_target() -> None:
@@ -572,15 +960,15 @@ def test_holding_exit_watch_never_suggests_adding_when_under_target() -> None:
             cost_price=5.7226,
             target_weight=0.125,
             thesis="等待修复。",
-            invalidation="跌破成本后退出复核。",
+            invalidation="跌破成本后风控复核。",
         ),
         equity(symbol="SH.600002", code="600002", name="风控样本", price=3.73, change_pct=-6.98),
         total_market_value=270_233,
     )
 
     assert result.action == "exit_watch"
-    assert result.rebalance_quantity and result.rebalance_quantity > 0
-    assert "暂停补仓" in result.conclusion
+    assert result.rebalance_quantity is None
+    assert "建议优先减仓或止损" in result.conclusion
     assert "可加仓" not in result.conclusion
     assert "补仓约" not in result.conclusion
     assert all(
@@ -706,7 +1094,7 @@ def test_stock_analysis_includes_non_technical_research_dimensions() -> None:
     assert len(result.next_actions) >= 5
     assert "基本面" in result.conclusion
     assert "催化" in result.conclusion
-    assert "交易计划" in result.conclusion
+    assert "处理纪律" in result.conclusion
 
 
 def test_stock_analysis_returns_direct_advice_and_comparisons() -> None:
@@ -789,7 +1177,7 @@ def test_stock_analysis_returns_direct_advice_and_comparisons() -> None:
         "同业" in item.summary or "行业" in item.summary for item in result.horizontal_comparison
     )
     assert any("过去 60 日" in item.summary for item in result.vertical_comparison)
-    assert "投资建议" in result.conclusion
+    assert "处理意见" in result.conclusion
     assert "横向对比" in result.conclusion
     assert "纵向对比" in result.conclusion
 
@@ -882,7 +1270,7 @@ def test_opportunity_result_has_strategy_diagnostics_and_candidate_playbook() ->
     assert result.next_actions
     candidate = result.candidates[0]
     assert candidate.thesis.startswith("趋势延续线索")
-    assert "是否参与以个股证据账本为准" in candidate.thesis
+    assert "系统会继续复查完整个股判断" in candidate.thesis
     assert {item.key for item in candidate.dimensions} >= {
         "future_probability",
         "trend_persistence",
@@ -906,7 +1294,7 @@ def test_opportunity_candidate_thesis_has_clean_readable_punctuation() -> None:
     )
 
     assert result.candidates[0].thesis.startswith("趋势延续线索：价格变化")
-    assert "是否参与以个股证据账本为准" in result.candidates[0].thesis
+    assert "系统会继续复查完整个股判断" in result.candidates[0].thesis
     assert "：，" not in result.candidates[0].thesis
 
 
@@ -951,7 +1339,7 @@ def test_opportunity_candidate_has_multi_dimension_decision_playbook() -> None:
     assert any("公告" in action or "研报" in action for action in candidate.next_actions)
 
 
-def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
+def test_holding_analysis_uses_quantity_and_cost_without_target_rebalance() -> None:
     from marketdesk.analysis.holding import analyse_holding
     from marketdesk.models import HoldingItem
 
@@ -977,27 +1365,27 @@ def test_holding_analysis_uses_quantity_cost_and_target_to_rebalance() -> None:
     assert result.cost_value == 140_000
     assert result.pnl == 10_000
     assert result.pnl_pct == 7.14
-    assert result.target_market_value == 60_000
-    assert result.rebalance_value == -90_000
-    assert result.rebalance_quantity == -60
+    assert result.target_market_value is None
+    assert result.rebalance_value is None
+    assert result.rebalance_quantity is None
     assert result.break_even_price == 1400
     assert result.price_gap_to_cost_pct == 7.14
     assert {item.key for item in result.analysis_dimensions} >= {
         "position",
         "cost",
-        "rebalance",
         "risk",
     }
-    assert result.conclusion.startswith("建议动作：减仓")
+    assert "rebalance" not in {item.key for item in result.analysis_dimensions}
+    assert result.conclusion.startswith("建议动作：继续持有")
     assert "分析维度：" not in result.conclusion
-    assert "仓位高于目标 60.0%" in result.conclusion
+    assert "不使用目标比例" in result.conclusion
     assert "盈亏 +7.14% 未触发止损" in result.conclusion
     assert "持仓数量 100 股" not in result.conclusion
     assert "成本价 1400.00" not in result.conclusion
-    assert "建议先减仓约 60 股" in result.conclusion
+    assert "建议先减仓" not in result.conclusion
 
 
-def test_holding_analysis_splits_total_daily_and_five_day_pnl() -> None:
+def test_holding_analysis_splits_total_daily_three_day_and_five_day_pnl() -> None:
     start = date(2026, 1, 1)
     bars = [
         Bar(
@@ -1023,8 +1411,24 @@ def test_holding_analysis_splits_total_daily_and_five_day_pnl() -> None:
     assert result.pnl_pct == 22.22
     assert result.day_pnl == 1000
     assert result.day_pnl_pct == 10
+    assert result.three_day_pnl == 800
+    assert result.three_day_pnl_pct == 7.84
     assert result.five_day_pnl == 1000
     assert result.five_day_pnl_pct == 10
+    assert [change.date for change in result.recent_daily_changes] == [
+        date(2026, 1, 2),
+        date(2026, 1, 3),
+        date(2026, 1, 4),
+        date(2026, 1, 5),
+        date(2026, 1, 6),
+    ]
+    assert [change.change_pct for change in result.recent_daily_changes] == [
+        1.0,
+        0.99,
+        0.98,
+        0.97,
+        0.96,
+    ]
 
 
 def test_holding_analysis_adds_portfolio_context_and_non_kline_advice() -> None:
@@ -1062,7 +1466,7 @@ def test_holding_analysis_adds_portfolio_context_and_non_kline_advice() -> None:
 
     keys = {item.key for item in result.analysis_dimensions}
     assert keys >= {"liquidity", "valuation", "sector_context", "thesis_quality"}
-    assert len(result.analysis_dimensions) >= 8
+    assert len(result.analysis_dimensions) >= 7
     assert len(result.next_actions) >= 5
     assert any("资金流" in action for action in result.next_actions)
     assert "估值" in result.conclusion

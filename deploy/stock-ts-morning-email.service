@@ -1,0 +1,19 @@
+[Unit]
+Description=Send StockTS morning action-desk emails
+After=network-online.target stock-ts.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+Group=admin
+WorkingDirectory=/opt/aster-market/current
+Environment=PYTHONPATH=/opt/aster-market/current/backend/src
+EnvironmentFile=-/opt/aster-market/.env
+Environment=MARKETDESK_DATA_DIR=/opt/aster-market/data
+ExecStart=/opt/aster-market/current/.venv/bin/python -m marketdesk.cli.send_morning_emails --base-url https://stock.jiewat-kaka-fj.com
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/aster-market/data

@@ -154,7 +154,7 @@ def _action(category: str, raw: MarketEventRaw) -> str:
     if category == "industry_catalyst":
         return f"跟踪{sectors or '相关行业'}的板块温度、订单/政策催化和龙头表现。"
     if category == "risk_alert":
-        return "检查持仓和机会池是否暴露在该风险事件下，必要时降低优先级。"
+        return "检查持仓和候选池是否暴露在该风险事件下，必要时降低优先级。"
     return "把事件加入今日复盘，等待价格、资金和板块共振确认。"
 
 
@@ -212,7 +212,7 @@ def _readable_sectors(title: str, summary: str, related_sectors: list[str]) -> l
 
 def _next_actions(events: list[MarketEvent], clusters: list[MarketEventCluster]) -> list[str]:
     if not events:
-        return ["刷新数据后重新读取市场异动", "先检查板块热度和机会候选是否出现异常集中"]
+        return ["刷新数据后重新读取市场异动", "先检查板块热度和候选股是否出现异常集中"]
     actions = ["先打开关联板块检查资金持续性和领涨股扩散", "补读公告/政策原文再判断事件是否可持续"]
     if any(event.category == "risk_alert" for event in events):
         actions.append("风险扰动事件出现时，先检查持仓和高位候选的暴露")

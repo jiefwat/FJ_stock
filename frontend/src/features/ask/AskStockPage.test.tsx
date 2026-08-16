@@ -20,7 +20,7 @@ const stockAnswer = {
     { label: "建议动作", value: "观察", tone: "positive" },
     { label: "证据覆盖", value: "80%", tone: "positive" },
     { label: "置信度", value: "70%", tone: "positive" },
-    { label: "FINAL GATE", value: "进入交易计划", tone: "positive" },
+    { label: "FINAL GATE", value: "进入处理纪律", tone: "positive" },
     { label: "LEDGER GATE", value: "证据够用", tone: "positive" },
     { label: "最新价", value: "1500.00", tone: "neutral" },
     { label: "涨跌幅", value: "+1.20%", tone: "positive" },
@@ -82,37 +82,37 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   submitAsk("贵州茅台现在主要风险是什么");
 
   await waitFor(() => expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2));
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   expect(screen.getByText("SH.600519")).toBeInTheDocument();
-  expect(screen.getByText("价格仍在 MA20 上方")).toBeInTheDocument();
-  expect(screen.getAllByText("短期波动放大").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("等待下一交易日确认").length).toBeGreaterThan(0);
+  expect(screen.getByText("价格仍在 近20天平均价 上方")).toBeInTheDocument();
+  expect(screen.getAllByText("短期价格起伏放大").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("等待下一交易日数据，届时自动更新结论").length).toBeGreaterThan(0);
   expect(screen.getByText("本地行情快照 + 确定性分析")).toBeInTheDocument();
   expect(screen.getByText("研究辅助信息，不构成投资建议。")).toBeInTheDocument();
-  expect(screen.getByText("结论")).toBeInTheDocument();
-  expect(screen.queryByLabelText("问股决策闸口")).not.toBeInTheDocument();
+  expect(screen.getAllByText("结论").length).toBeGreaterThan(0);
+  expect(screen.getByLabelText("问股决策闸口")).toBeInTheDocument();
   expect(screen.queryByLabelText("回答关键指标")).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("展开更多依据"));
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("综合分62");
-  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("证据覆盖80%");
+  expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("信息完整度80%");
   const gate = screen.getByLabelText("问股决策闸口");
-  expect(gate).toHaveTextContent("依据");
-  expect(gate).toHaveTextContent("结论进入交易计划");
+  expect(gate).toHaveTextContent("当前决定");
+  expect(gate).toHaveTextContent("结论进入处理纪律");
   expect(gate).toHaveTextContent("证据证据够用");
-  expect(gate).toHaveTextContent("下一步等待下一交易日确认");
-  expect(screen.getByRole("link", { name: "去看交易计划 →" })).toHaveAttribute(
+  expect(gate).toHaveTextContent("自动监控等待下一交易日数据，届时自动更新结论");
+  expect(screen.getByRole("link", { name: "查看价格与仓位（可选）→" })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-investment-advice",
   );
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
   expect(screen.getByText("收起依据")).toBeInTheDocument();
-  expect(screen.getByText("展开评分因子")).toBeInTheDocument();
-  expect(screen.getByText("价格与 MA20")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "打开个股研究" })).toHaveAttribute(
+  expect(screen.getByText("展开依据明细")).toBeInTheDocument();
+  expect(screen.getByText("价格与 近20天平均价")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看完整依据（可选）" })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-final-gate",
   );
-  expect(screen.getByRole("button", { name: "继续问估值" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "现在能不能买" })).toBeInTheDocument();
   expect(requests).toEqual([{
     body: JSON.stringify({ question: "贵州茅台现在主要风险是什么" }),
     auth: "Bearer token-ask",
@@ -138,18 +138,46 @@ it("streams answer text before the final Ask Stock payload arrives", async () =>
   await act(async () => {
     controller?.enqueue(encoder.encode('event: status\ndata: {"message":"联网检索"}\n\n'));
   });
-  expect(await screen.findByText("联网检索...")).toBeInTheDocument();
+  expect(await screen.findByText("资料核对...")).toBeInTheDocument();
   await act(async () => {
     controller?.enqueue(encoder.encode('event: delta\ndata: {"text":"结论：短线先看量能。"}\n\n'));
   });
-  expect(await screen.findByText("结论：短线先看量能。")).toBeInTheDocument();
+  expect(await screen.findByText("结论：短线先看成交活跃度。")).toBeInTheDocument();
   await act(async () => {
     controller?.enqueue(encoder.encode(`event: final\ndata: ${JSON.stringify({ result: stockAnswer })}\n\n`));
     controller?.close();
   });
 
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   expect(screen.queryByText("结论：短线先看量能。")).not.toBeInTheDocument();
+});
+
+it("falls back to the regular Ask Stock endpoint when the stream ends without a final result", async () => {
+  const encoder = new TextEncoder();
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.includes("/api/v1/ask-stock/stream")) {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('event: status\ndata: {"message":"联网检索"}\n\n'));
+            controller.close();
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    }
+    return { ok: true, status: 200, json: async () => stockAnswer };
+  }));
+
+  renderPage();
+  submitAsk("贵州茅台现在主要风险是什么");
+
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(urls).toEqual(["/api/v1/ask-stock/stream", "/api/v1/ask-stock"]);
 });
 
 it("uses market board context for focused Ask Stock prompts", async () => {
@@ -168,7 +196,7 @@ it("uses market board context for focused Ask Stock prompts", async () => {
   expect(screen.getByRole("link", { name: "回到个股 →" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
   fireEvent.click(screen.getByRole("button", { name: "为什么它是板块前排样本" }));
 
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(requests).toEqual(["为什么它是板块前排样本"]);
 });
@@ -185,7 +213,7 @@ it("sends focused stock context for short manual follow-up questions", async () 
         ...stockAnswer,
         question: parsed.question,
         intent: "movement",
-        answer: "结论：贵州茅台近期下跌优先看价格破位、量能和板块温度。",
+        answer: "结论：贵州茅台近期下跌先看价格破位、量能和板块温度。",
       }),
     };
   }));
@@ -195,7 +223,7 @@ it("sends focused stock context for short manual follow-up questions", async () 
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-  expect(await screen.findByText("结论：贵州茅台近期下跌优先看价格破位、量能和板块温度。")).toBeInTheDocument();
+  expect(await screen.findByText("结论：贵州茅台近期下跌先看价格跌破重要参考价、成交活跃度和板块温度。")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(requests).toEqual([{
     question: "为什么最近大跌",
@@ -246,7 +274,7 @@ it("prefers the source stock over stale history for short handoff questions", as
 
   expect(screen.getByText("正在围绕 宁德时代 SZ.300750 追问")).toBeInTheDocument();
   expect(screen.getByText("围绕 宁德时代 SZ.300750 生成")).toBeInTheDocument();
-  expect(screen.getByText("最近宁德时代怎么大跌")).toBeInTheDocument();
+  expect(screen.getByText("宁德时代大跌后现在应该买、持有还是卖")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
@@ -257,8 +285,8 @@ it("prefers the source stock over stale history for short handoff questions", as
     context_symbol: "SZ.300750",
     context_name: "宁德时代",
     source_context: {
-      origin: "机会",
-      label: "机会线索",
+      origin: "候选",
+      label: "候选线索",
       detail: "默认围绕 宁德时代 SZ.300750 追问。",
       stock: { symbol: "SZ.300750", name: "宁德时代" },
     },
@@ -279,13 +307,13 @@ it("uses opportunity context for lead upgrade prompts", async () => {
 
   renderPage("/ask?symbol=SZ.300750&name=宁德时代&from=opportunities&preset=trend");
 
-  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("机会");
-  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("机会线索");
-  expect(screen.getByRole("button", { name: "这条趋势延续线索能升级吗" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "这条趋势延续线索能升级吗" }));
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("候选");
+  expect(screen.getByLabelText("问股来源上下文")).toHaveTextContent("候选线索");
+  expect(screen.getByRole("button", { name: "这条趋势延续线索现在能不能买" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "这条趋势延续线索现在能不能买" }));
 
   expect(await screen.findByText("宁德时代这条线索仍需补齐资金确认。")).toBeInTheDocument();
-  expect(requests).toEqual(["这条趋势延续线索能升级吗"]);
+  expect(requests).toEqual(["这条趋势延续线索现在能不能买"]);
 });
 
 it("uses holdings context for portfolio treatment handoffs", async () => {
@@ -319,7 +347,7 @@ it("uses holdings context for portfolio treatment handoffs", async () => {
   expect(context).toHaveTextContent("优先回答这笔仓位的风险、偏离和调仓顺序");
   expect(within(context).getByRole("link", { name: "回到持仓处理 →" })).toHaveAttribute("href", "#/holdings");
   expect(within(context).getByRole("button", { name: "我的持仓里这只要先减仓吗" })).toBeInTheDocument();
-  expect(await screen.findByText("结论：这笔持仓先按减仓复核，不急着补仓。")).toBeInTheDocument();
+  expect(await screen.findByText("结论：这笔持仓先按减仓再确认，不急着补仓。")).toBeInTheDocument();
 
   fireEvent.click(within(context).getByRole("button", { name: "我的持仓里这只要先减仓吗" }));
 
@@ -356,15 +384,15 @@ it("routes users through the Ask Stock playbook before submitting", async () => 
   const playbook = screen.getByLabelText("问股场景路由");
   const thread = screen.getByLabelText("问股对话记录");
   expect(playbook).toHaveTextContent("常用问题");
-  expect(playbook).toHaveTextContent("基本面");
-  expect(playbook).toHaveTextContent("持仓诊断");
+  expect(playbook).toHaveTextContent("经营是否支持持有");
+  expect(playbook).toHaveTextContent("今天先处理谁");
   expect(playbook.compareDocumentPosition(thread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  fireEvent.click(within(playbook).getByRole("button", { name: /异动解释/ }));
+  fireEvent.click(within(playbook).getByRole("button", { name: /异动后怎么做/ }));
 
   expect(await screen.findByText(/大业股份近期下跌/)).toBeInTheDocument();
   expect(screen.getAllByText("异动解释").length).toBeGreaterThan(0);
   expect(screen.getByText("近5日涨跌幅 -18.40%")).toBeInTheDocument();
-  expect(requests).toEqual(["最近大业股份怎么大跌"]);
+  expect(requests).toEqual(["大业股份大跌后现在应该买、持有还是卖"]);
 });
 
 it("lets users resend an interrupted question-only thread", async () => {
@@ -430,7 +458,7 @@ it("auto-submits a question passed from the global research router", async () =>
 
   renderPage("/ask?question=贵州茅台基本面怎么样");
 
-  expect(await screen.findByText("结论：贵州茅台基本面要先看现金流、利润质量和最新公告。")).toBeInTheDocument();
+  expect(await screen.findByText("结论：贵州茅台公司经营情况要先看现金流、利润质量和最新公告。")).toBeInTheDocument();
   expect(screen.getAllByText("贵州茅台基本面怎么样").length).toBeGreaterThanOrEqual(1);
   expect(requests).toEqual(["贵州茅台基本面怎么样"]);
 });
@@ -454,12 +482,12 @@ it("keeps multiple turns and carries the previous stock into a follow-up", async
 
   renderPage();
   submitAsk("贵州茅台现在主要风险是什么");
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "那估值呢" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-  expect(await screen.findByText("贵州茅台估值处于合理偏高区间。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前价格处于合理偏高区间。")).toBeInTheDocument();
   expect(screen.getByText("那估值呢")).toBeInTheDocument();
   expect(screen.getByText("沿用上文：贵州茅台 SH.600519")).toBeInTheDocument();
   expect(requests[0]).toEqual({ question: "贵州茅台现在主要风险是什么" });
@@ -493,7 +521,7 @@ it("carries the previous stock for natural follow-up questions without provider 
 
   renderPage();
   submitAsk("贵州茅台现在主要风险是什么");
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "你觉得多少合理" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -509,12 +537,12 @@ it("restores the current tab conversation for the same session", async () => {
 
   const { unmount } = renderPage();
   submitAsk("贵州茅台现在主要风险是什么");
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   unmount();
 
   renderPage();
   expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2);
-  expect(screen.getByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(screen.getByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
 });
 
@@ -539,30 +567,36 @@ it("keeps separate left-side history conversations and switches between them", a
   renderPage();
   expect(screen.getByLabelText("历史对话")).toHaveTextContent("新对话");
   submitAsk("贵州茅台现在主要风险是什么");
-  expect(await screen.findByText("贵州茅台风险来自估值和需求节奏。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台风险来自当前价格水平和需求节奏。")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "打开历史对话：贵州茅台现在主要风险是什么" })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "新建问股对话" }));
   expect(screen.queryByText("贵州茅台风险来自估值和需求节奏。")).not.toBeInTheDocument();
   submitAsk("平安银行的估值贵不贵");
-  expect(await screen.findByText("平安银行估值不贵，但要看息差风险。")).toBeInTheDocument();
+  expect(await screen.findByText("平安银行当前价格不算贵，但要看息差风险。")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "打开历史对话：平安银行的估值贵不贵" })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "打开历史对话：贵州茅台现在主要风险是什么" }));
 
-  expect(screen.getByText("贵州茅台风险来自估值和需求节奏。")).toBeInTheDocument();
-  expect(screen.queryByText("平安银行估值不贵，但要看息差风险。")).not.toBeInTheDocument();
+  expect(screen.getByText("贵州茅台风险来自当前价格水平和需求节奏。")).toBeInTheDocument();
+  expect(screen.queryByText("平安银行当前价格不算贵，但要看息差风险。")).not.toBeInTheDocument();
   expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
 });
 
 it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns", async () => {
   const requests: string[] = [];
-  let failed = false;
-  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  let regularAttempts = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
     const parsed = JSON.parse(String(init?.body)) as { question: string };
+
+    if (url.includes("/api/v1/ask-stock/stream")) {
+      return { ok: false, status: 503, json: async () => ({ detail: "流式问股暂不可用。" }) };
+    }
+
     requests.push(parsed.question);
-    if (!failed) {
-      failed = true;
+    regularAttempts += 1;
+    if (regularAttempts === 1) {
       return { ok: false, status: 503, json: async () => ({ detail: "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。" }) };
     }
     return { ok: true, status: 200, json: async () => stockAnswer };
@@ -579,7 +613,7 @@ it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns",
   expect(screen.queryByText(/问财/i)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
 
-  expect(await screen.findByText("贵州茅台当前主要风险：短期波动放大。")).toBeInTheDocument();
+  expect(await screen.findByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
   expect(requests).toEqual(["低估值白酒股", "低估值白酒股"]);
 });
 
@@ -606,6 +640,8 @@ it("renders personal holding context when the answer includes account data", asy
         pnl_pct: 7.14,
         portfolio_weight: 0.5,
         drift: 0,
+        ten_day_change_pct: 2.35,
+        ten_day_contribution: 3443,
         action: "hold",
         risk_flags: ["资金净流出"],
       },
@@ -618,6 +654,8 @@ it("renders personal holding context when the answer includes account data", asy
 
   expect(await screen.findByLabelText("个人持仓上下文")).toHaveTextContent("数量 10 股");
   expect(screen.getByLabelText("个人持仓上下文")).toHaveTextContent("盈亏 +7.14%");
+  expect(screen.getByLabelText("个人持仓上下文")).toHaveTextContent("10日走势 +2.35%");
+  expect(screen.getByLabelText("个人持仓上下文")).toHaveTextContent("10日贡献 3443");
   fireEvent.click(screen.getByText("展开更多依据"));
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("持仓盈亏+7.14%");
 });
@@ -662,6 +700,7 @@ it("renders portfolio analysis rows with Stock Lab links", async () => {
   expect(screen.getByRole("cell", { name: "+20.0%" })).toBeInTheDocument();
   expect(screen.getByText("最大单票集中度")).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "亏损超过 10%" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "优先减仓或止损" })).toBeInTheDocument();
 });
 
 it("renders rebalance plan rows and priority evidence", async () => {
@@ -702,6 +741,7 @@ it("renders rebalance plan rows and priority evidence", async () => {
   expect(screen.getByRole("columnheader", { name: "建议股数" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "-8 股" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "高" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "优先减仓或止损" })).toBeInTheDocument();
   expect(screen.getByText("调仓执行量")).toBeInTheDocument();
 });
 
@@ -722,7 +762,11 @@ it("renders bounded semantic screening rows", async () => {
         { label: "增强来源", value: "条件选股", tone: "neutral" },
       ],
       columns: ["股票代码", "股票简称", "市盈率"],
-      rows: [{ 股票代码: "600519", 股票简称: "贵州茅台", 市盈率: 23 }],
+      rows: [
+        { 股票代码: "600519", 股票简称: "贵州茅台", 市盈率: 23 },
+        { 股票代码: "HK.00700", 股票简称: "腾讯控股", 市盈率: 18 },
+        { 股票代码: "US.AAPL", 股票简称: "苹果", 市盈率: 32 },
+      ],
     }),
   })));
 
@@ -735,6 +779,8 @@ it("renders bounded semantic screening rows", async () => {
   expect(screen.getByLabelText("回答关键指标")).toHaveTextContent("增强来源条件选股");
   expect(screen.queryByText(/问财/i)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "600519" })).toHaveAttribute("href", "#/stocks?symbol=SH.600519");
+  expect(screen.getByRole("link", { name: "HK.00700" })).toHaveAttribute("href", "#/stocks?symbol=HK.00700");
+  expect(screen.getByRole("link", { name: "US.AAPL" })).toHaveAttribute("href", "#/stocks?symbol=US.AAPL");
   expect(screen.getByRole("columnheader", { name: "市盈率" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "贵州茅台" })).toBeInTheDocument();
 });
@@ -762,10 +808,12 @@ it("renders a concise web LLM answer without deterministic review rails", async 
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "白酒板块今天怎么看" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-  expect(await screen.findByText("联网结论：白酒板块今天先看公告、消费数据和资金回流。")).toBeInTheDocument();
+  expect(await screen.findByText("结论：白酒板块今天先看公告、消费数据和资金回流。")).toBeInTheDocument();
   expect(screen.getByText("智能分析")).toBeInTheDocument();
   expect(screen.queryByText("联网大模型问答")).not.toBeInTheDocument();
-  expect(screen.getByText("依据 / 风险 / 下一步")).toBeInTheDocument();
+  expect(screen.queryByText(/联网/)).not.toBeInTheDocument();
+  expect(screen.getByText("已核对最新公开信息。")).toBeInTheDocument();
+  expect(screen.getByText("依据 / 风险 / 后续跟踪")).toBeInTheDocument();
   expect(screen.queryByLabelText("回答关键指标")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
 });

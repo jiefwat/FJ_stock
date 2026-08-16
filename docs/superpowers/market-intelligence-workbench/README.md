@@ -9,3 +9,6 @@ Implementation plan: `../plans/2026-07-19-analyst-workflow-v2-implementation.md`
 
 Current release addendum: `../specs/2026-07-28-a-share-evidence-intelligence-design.md`
 Current release plan: `../plans/2026-07-28-a-share-evidence-intelligence-implementation.md`
+
+Current optimization addendum: `../specs/2026-08-16-stock-financial-news-intelligence-design.md`
+Current optimization plan: `../plans/2026-08-16-stock-financial-news-intelligence.md`

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from marketdesk.auth import hash_token
 from marketdesk.models import (
+    DecisionEvent,
+    DecisionSnapshot,
     EquityViewFilters,
     HoldingItem,
+    RecommendationObservation,
+    RecommendationSnapshot,
     SavedEquityView,
     UserAccount,
     UserPreferences,
@@ -30,6 +35,12 @@ class UserRecord:
     password_hash: str
 
 
+@dataclass(frozen=True)
+class RecommendationRunRecord:
+    id: int
+    snapshot: RecommendationSnapshot
+
+
 class Store:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -39,6 +50,7 @@ class Store:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys=ON")
         return connection
 
     def _public_row(self, row: sqlite3.Row) -> dict[str, object]:
@@ -54,7 +66,54 @@ class Store:
                 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
                 CREATE TABLE IF NOT EXISTS user_preferences (user_id INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
                 CREATE TABLE IF NOT EXISTS saved_equity_views (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL, filters TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id, name), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS recommendation_runs (id INTEGER PRIMARY KEY, preset TEXT NOT NULL, algorithm_version TEXT NOT NULL, trading_date TEXT NOT NULL, observed_at TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(preset, trading_date, algorithm_version));
+                CREATE TABLE IF NOT EXISTS recommendation_observations (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL, trading_date TEXT NOT NULL, observed_at TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(run_id, trading_date), FOREIGN KEY(run_id) REFERENCES recommendation_runs(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS decision_snapshots (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    subject_key TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    strategy TEXT,
+                    action TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    user_required INTEGER NOT NULL,
+                    reason_code TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    href TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(user_id,source,subject_key),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS decision_events (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    subject_key TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    strategy TEXT,
+                    previous_action TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    user_required INTEGER NOT NULL,
+                    reason_code TEXT NOT NULL,
+                    href TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    read_at TEXT,
+                    email_status TEXT NOT NULL,
+                    email_attempts INTEGER NOT NULL DEFAULT 0,
+                    email_error TEXT,
+                    email_sent_at TEXT,
+                    dedup_key TEXT NOT NULL UNIQUE,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
             """)
+            self._ensure_recommendation_versioning(connection)
             owner_id = self._ensure_default_user(connection)
             self._ensure_personal_table(
                 connection,
@@ -102,6 +161,51 @@ class Store:
                 "symbol,name,quantity,cost_price,target_weight,thesis,invalidation,status,created_at,updated_at",
             )
 
+    def _ensure_recommendation_versioning(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(recommendation_runs)").fetchall()
+        }
+        if "algorithm_version" in columns:
+            return
+
+        connection.executescript("""
+            CREATE TABLE recommendation_runs_new (
+                id INTEGER PRIMARY KEY,
+                preset TEXT NOT NULL,
+                algorithm_version TEXT NOT NULL,
+                trading_date TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                UNIQUE(preset, trading_date, algorithm_version)
+            );
+            INSERT INTO recommendation_runs_new(
+                id,preset,algorithm_version,trading_date,observed_at,payload
+            )
+            SELECT id,preset,'v1',trading_date,observed_at,payload
+            FROM recommendation_runs;
+            CREATE TABLE recommendation_observations_new (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                trading_date TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                UNIQUE(run_id, trading_date),
+                FOREIGN KEY(run_id) REFERENCES recommendation_runs_new(id)
+                    ON DELETE CASCADE
+            );
+            INSERT INTO recommendation_observations_new(
+                id,run_id,trading_date,observed_at,payload
+            )
+            SELECT id,run_id,trading_date,observed_at,payload
+            FROM recommendation_observations;
+            DROP TABLE recommendation_observations;
+            DROP TABLE recommendation_runs;
+            ALTER TABLE recommendation_runs_new RENAME TO recommendation_runs;
+            ALTER TABLE recommendation_observations_new
+                RENAME TO recommendation_observations;
+        """)
+
     def _ensure_default_user(self, connection: sqlite3.Connection) -> int:
         now = datetime.now(UTC).isoformat()
         connection.execute(
@@ -133,8 +237,7 @@ class Store:
             connection.execute(create_sql)
             return
         columns = {
-            str(row["name"])
-            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
         }
         if "user_id" in columns:
             return
@@ -180,6 +283,130 @@ class Store:
             )
         )
 
+    def recommendation_run_exists(
+        self, preset: str, trading_date: date, algorithm_version: str = "v1"
+    ) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM recommendation_runs
+                WHERE preset=? AND trading_date=? AND algorithm_version=? LIMIT 1
+                """,
+                (preset, trading_date.isoformat(), algorithm_version),
+            ).fetchone()
+        return row is not None
+
+    def save_recommendation_run(self, snapshot: RecommendationSnapshot) -> RecommendationRunRecord:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO recommendation_runs(
+                    preset,algorithm_version,trading_date,observed_at,payload
+                )
+                VALUES(?,?,?,?,?)
+                """,
+                (
+                    snapshot.preset,
+                    snapshot.algorithm_version,
+                    snapshot.trading_date.isoformat(),
+                    snapshot.observed_at.isoformat(),
+                    snapshot.model_dump_json(),
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT id,payload FROM recommendation_runs
+                WHERE preset=? AND trading_date=? AND algorithm_version=?
+                """,
+                (
+                    snapshot.preset,
+                    snapshot.trading_date.isoformat(),
+                    snapshot.algorithm_version,
+                ),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("recommendation run insert did not return a row")
+        return RecommendationRunRecord(
+            id=int(row["id"]),
+            snapshot=RecommendationSnapshot.model_validate_json(row["payload"]),
+        )
+
+    def list_recommendation_runs(
+        self,
+        preset: str,
+        limit: int = 90,
+        algorithm_version: str | None = "v1",
+    ) -> list[RecommendationRunRecord]:
+        with self._connect() as connection:
+            if algorithm_version is None:
+                rows = connection.execute(
+                    """
+                    SELECT id,payload FROM recommendation_runs
+                    WHERE preset=? ORDER BY trading_date DESC, id DESC LIMIT ?
+                    """,
+                    (preset, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT id,payload FROM recommendation_runs
+                    WHERE preset=? AND algorithm_version=?
+                    ORDER BY trading_date DESC, id DESC LIMIT ?
+                    """,
+                    (preset, algorithm_version, limit),
+                ).fetchall()
+        return [
+            RecommendationRunRecord(
+                id=int(row["id"]),
+                snapshot=RecommendationSnapshot.model_validate_json(row["payload"]),
+            )
+            for row in rows
+        ]
+
+    def save_recommendation_observation(
+        self, run_id: int, observation: RecommendationObservation
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO recommendation_observations(run_id,trading_date,observed_at,payload)
+                VALUES(?,?,?,?)
+                ON CONFLICT(run_id,trading_date) DO UPDATE SET
+                    observed_at=excluded.observed_at,
+                    payload=excluded.payload
+                """,
+                (
+                    run_id,
+                    observation.trading_date.isoformat(),
+                    observation.observed_at.isoformat(),
+                    observation.model_dump_json(),
+                ),
+            )
+
+    def list_recommendation_observations(
+        self, run_ids: list[int]
+    ) -> dict[int, list[RecommendationObservation]]:
+        if not run_ids:
+            return {}
+        placeholders = ",".join("?" for _ in run_ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT run_id,payload FROM recommendation_observations
+                WHERE run_id IN ({placeholders})
+                ORDER BY trading_date ASC, id ASC
+                """,
+                run_ids,
+            ).fetchall()
+        observations: dict[int, list[RecommendationObservation]] = {
+            run_id: [] for run_id in run_ids
+        }
+        for row in rows:
+            observations[int(row["run_id"])].append(
+                RecommendationObservation.model_validate_json(row["payload"])
+            )
+        return observations
+
     def create_user(self, email: str, display_name: str, password_hash: str) -> UserAccount:
         normalized_email = email.strip().lower()
         now = datetime.now(UTC).isoformat()
@@ -189,7 +416,13 @@ class Store:
                 INSERT INTO users(email,display_name,password_hash,created_at,updated_at)
                 VALUES(?,?,?,?,?)
                 """,
-                (normalized_email, display_name.strip() or normalized_email, password_hash, now, now),
+                (
+                    normalized_email,
+                    display_name.strip() or normalized_email,
+                    password_hash,
+                    now,
+                    now,
+                ),
             )
             row = connection.execute(
                 "SELECT id,email,display_name,created_at,updated_at FROM users WHERE email=?",
@@ -226,6 +459,13 @@ class Store:
             ),
             password_hash=str(row["password_hash"]),
         )
+
+    def list_users(self) -> list[UserAccount]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id,email,display_name,created_at,updated_at FROM users ORDER BY id"
+            ).fetchall()
+        return [UserAccount(**dict(row)) for row in rows]
 
     def create_session(self, user_id: int, token: str) -> None:
         now = datetime.now(UTC)
@@ -271,9 +511,7 @@ class Store:
             return UserPreferences()
         return UserPreferences.model_validate(json.loads(row["payload"]))
 
-    def update_preferences(
-        self, user_id: int | None = None, **changes: object
-    ) -> UserPreferences:
+    def update_preferences(self, user_id: int | None = None, **changes: object) -> UserPreferences:
         resolved_user_id = user_id or self.default_user_id
         current = self.get_preferences(resolved_user_id).model_dump()
         allowed = set(current)
@@ -488,6 +726,8 @@ class Store:
     ) -> HoldingItem:
         resolved_user_id = user_id or self.default_user_id
         allowed = {
+            "symbol",
+            "name",
             "quantity",
             "cost_price",
             "target_weight",
@@ -511,3 +751,275 @@ class Store:
             connection.execute(
                 "DELETE FROM holdings WHERE id=? AND user_id=?", (item_id, resolved_user_id)
             )
+
+    @staticmethod
+    def _decision_event_from_row(row: sqlite3.Row) -> DecisionEvent:
+        values = dict(row)
+        values.pop("user_id", None)
+        values.pop("dedup_key", None)
+        for key in [key for key in values if key.startswith("account_")]:
+            values.pop(key)
+        values["user_required"] = bool(values["user_required"])
+        return DecisionEvent.model_validate(values)
+
+    def record_decision_snapshot(
+        self, user_id: int, snapshot: DecisionSnapshot
+    ) -> DecisionEvent | None:
+        now = datetime.now(UTC).isoformat()
+        decision = snapshot.decision
+        with self._connect() as connection:
+            current = connection.execute(
+                """
+                SELECT * FROM decision_snapshots
+                WHERE user_id=? AND source=? AND subject_key=?
+                """,
+                (user_id, snapshot.source, snapshot.subject_key),
+            ).fetchone()
+            values = (
+                snapshot.symbol,
+                snapshot.name,
+                snapshot.strategy,
+                decision.action,
+                decision.severity,
+                int(decision.user_required),
+                decision.reason_code,
+                decision.summary,
+                snapshot.href,
+                snapshot.observed_at.isoformat(),
+                now,
+            )
+            if current is None:
+                connection.execute(
+                    """
+                    INSERT INTO decision_snapshots(
+                        user_id,source,subject_key,symbol,name,strategy,action,severity,
+                        user_required,reason_code,summary,href,observed_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (user_id, snapshot.source, snapshot.subject_key, *values),
+                )
+                return None
+            if str(current["action"]) == decision.action:
+                connection.execute(
+                    """
+                    UPDATE decision_snapshots SET
+                        symbol=?,name=?,strategy=?,action=?,severity=?,user_required=?,
+                        reason_code=?,summary=?,href=?,observed_at=?,updated_at=?
+                    WHERE id=?
+                    """,
+                    (*values, current["id"]),
+                )
+                return None
+            email_status = (
+                "pending"
+                if snapshot.source == "holding" and decision.severity in {"critical", "high"}
+                else "not_required"
+            )
+            dedup_source = ":".join(
+                (
+                    str(user_id),
+                    snapshot.source,
+                    snapshot.subject_key,
+                    str(current["action"]),
+                    decision.action,
+                    snapshot.observed_at.isoformat(),
+                )
+            )
+            dedup_key = hashlib.sha256(dedup_source.encode("utf-8")).hexdigest()
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO decision_events(
+                    user_id,source,subject_key,symbol,name,strategy,previous_action,
+                    action,summary,severity,user_required,reason_code,href,observed_at,
+                    created_at,read_at,email_status,email_attempts,email_error,
+                    email_sent_at,dedup_key
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    user_id,
+                    snapshot.source,
+                    snapshot.subject_key,
+                    snapshot.symbol,
+                    snapshot.name,
+                    snapshot.strategy,
+                    current["action"],
+                    decision.action,
+                    decision.summary,
+                    decision.severity,
+                    int(decision.user_required),
+                    decision.reason_code,
+                    snapshot.href,
+                    snapshot.observed_at.isoformat(),
+                    now,
+                    None,
+                    email_status,
+                    0,
+                    None,
+                    None,
+                    dedup_key,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE decision_snapshots SET
+                    symbol=?,name=?,strategy=?,action=?,severity=?,user_required=?,
+                    reason_code=?,summary=?,href=?,observed_at=?,updated_at=?
+                WHERE id=?
+                """,
+                (*values, current["id"]),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM decision_events WHERE id=?", (cursor.lastrowid,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("decision event insert did not return a row")
+        return self._decision_event_from_row(row)
+
+    def delete_missing_holding_decision_snapshots(
+        self, user_id: int, active_subject_keys: set[str]
+    ) -> int:
+        with self._connect() as connection:
+            if not active_subject_keys:
+                cursor = connection.execute(
+                    "DELETE FROM decision_snapshots WHERE user_id=? AND source='holding'",
+                    (user_id,),
+                )
+            else:
+                placeholders = ",".join("?" for _ in active_subject_keys)
+                cursor = connection.execute(
+                    f"""
+                    DELETE FROM decision_snapshots
+                    WHERE user_id=? AND source='holding'
+                    AND subject_key NOT IN ({placeholders})
+                    """,
+                    (user_id, *sorted(active_subject_keys)),
+                )
+        return cursor.rowcount
+
+    def list_decision_events(self, user_id: int, limit: int = 100) -> list[DecisionEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM decision_events WHERE user_id=?
+                ORDER BY read_at IS NULL DESC, observed_at DESC, id DESC LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [self._decision_event_from_row(row) for row in rows]
+
+    def latest_decision_monitored_at(self, user_id: int) -> datetime | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT MAX(observed_at) AS monitored_at FROM decision_snapshots WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
+        value = None if row is None else row["monitored_at"]
+        return None if value is None else datetime.fromisoformat(str(value))
+
+    def get_decision_event(self, event_id: int, user_id: int) -> DecisionEvent:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM decision_events WHERE id=? AND user_id=?",
+                (event_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(event_id)
+        return self._decision_event_from_row(row)
+
+    def mark_decision_event_read(self, event_id: int, user_id: int) -> DecisionEvent:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE decision_events SET read_at=COALESCE(read_at, ?)
+                WHERE id=? AND user_id=?
+                """,
+                (datetime.now(UTC).isoformat(), event_id, user_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(event_id)
+        return self.get_decision_event(event_id, user_id)
+
+    def mark_all_decision_events_read(self, user_id: int) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE decision_events SET read_at=?
+                WHERE user_id=? AND read_at IS NULL
+                """,
+                (datetime.now(UTC).isoformat(), user_id),
+            )
+        return cursor.rowcount
+
+    def list_pending_decision_emails(
+        self, limit: int = 50, max_attempts: int = 3
+    ) -> list[tuple[UserAccount, DecisionEvent]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    decision_events.*,
+                    users.email AS account_email,
+                    users.display_name AS account_display_name,
+                    users.created_at AS account_created_at,
+                    users.updated_at AS account_updated_at
+                FROM decision_events
+                JOIN users ON users.id=decision_events.user_id
+                WHERE decision_events.email_status='pending'
+                AND decision_events.email_attempts < ?
+                ORDER BY decision_events.created_at, decision_events.id
+                LIMIT ?
+                """,
+                (max_attempts, limit),
+            ).fetchall()
+        pending: list[tuple[UserAccount, DecisionEvent]] = []
+        for row in rows:
+            values = dict(row)
+            account = UserAccount(
+                id=values["user_id"],
+                email=values.pop("account_email"),
+                display_name=values.pop("account_display_name"),
+                created_at=values.pop("account_created_at"),
+                updated_at=values.pop("account_updated_at"),
+            )
+            pending.append((account, self._decision_event_from_row(row)))
+        return pending
+
+    def mark_decision_email_result(
+        self, event_id: int, *, sent: bool, error: str | None = None
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT email_attempts FROM decision_events WHERE id=?", (event_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(event_id)
+            attempts = int(row["email_attempts"]) + 1
+            status = "sent" if sent else "failed" if attempts >= 3 else "pending"
+            connection.execute(
+                """
+                UPDATE decision_events SET email_status=?,email_attempts=?,
+                    email_error=?,email_sent_at=? WHERE id=?
+                """,
+                (
+                    status,
+                    attempts,
+                    None if sent else (error or "send failed")[:300],
+                    now if sent else None,
+                    event_id,
+                ),
+            )
+
+    def abandon_decision_email(self, event_id: int, error: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE decision_events SET email_status='failed',email_attempts=3,
+                    email_error=?,email_sent_at=NULL WHERE id=?
+                """,
+                (error[:300], event_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(event_id)

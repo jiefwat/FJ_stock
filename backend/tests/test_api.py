@@ -1,25 +1,32 @@
 import asyncio
 import contextlib
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from marketdesk.api import create_app
+from marketdesk.api import _safe_auto_refresh, create_app
+from marketdesk.cli.send_morning_emails import dispatch_morning_emails
+from marketdesk.config import Settings
 from marketdesk.models import (
     AskStockMetric,
     AskStockResponse,
     DatasetMeta,
+    DecisionPresentation,
+    DecisionSnapshot,
     EquityQuote,
     EvidenceDocument,
+    FinancialPeriod,
     Freshness,
     IndexQuote,
     InstrumentTheme,
     MarketEventRaw,
+    RecommendationObservation,
     SectorSnapshot,
     SemanticScreenResult,
     SourceRef,
+    StockNewsItem,
     TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
@@ -138,6 +145,69 @@ class FixtureProvider:
             for i in range(70)
         ]
 
+    async def fetch_financial_periods(self, symbol: str, limit: int = 5):
+        return [
+            FinancialPeriod(
+                report_date=date(2026, 6, 30),
+                report_label="2026中报",
+                report_type="中报",
+                revenue_yoy=8.2,
+                net_profit_yoy=10.5,
+                roe=16.0,
+                operating_cash_flow_per_share=1.2,
+                cash_receipts_to_revenue=101.0,
+                debt_to_assets=32.0,
+            )
+        ][:limit]
+
+    async def fetch_stock_news(self, symbol: str, name: str, limit: int = 20):
+        return [
+            StockNewsItem(
+                id="fixture-news-1",
+                title=f"{name}发布半年报",
+                summary="营业收入保持增长。",
+                media="测试媒体",
+                url="https://example.com/stock-news",
+                published_at=datetime.now(UTC),
+            )
+        ][:limit]
+
+    async def fetch_global_quote(self, symbol: str, name: str | None = None):
+        normalized = symbol.strip().upper()
+        if normalized in {"HK.700", "HK.00700", "00700"}:
+            return EquityQuote(
+                symbol="HK.00700",
+                code="00700",
+                name=name or "腾讯控股",
+                price=485.8,
+                change_pct=-0.94,
+                amount=10_900_000_000,
+                turnover_rate=0.25,
+                pe=17.74,
+                market_cap=4_417_144_410_000,
+                sector="港股/HKD",
+            )
+        if normalized in {"US.AAPL", "AAPL"}:
+            return EquityQuote(
+                symbol="US.AAPL",
+                code="AAPL",
+                name=name or "苹果",
+                price=303.42,
+                change_pct=-1.78,
+                amount=22_896_288_310,
+                sector="美股/USD",
+            )
+        raise ProviderUnavailable("global quote unavailable")
+
+    async def search_global_quotes(self, query: str, limit: int = 10):
+        normalized = query.strip().lower()
+        rows = []
+        if normalized in {"腾讯", "00700", "hk.00700"}:
+            rows.append(await self.fetch_global_quote("HK.00700"))
+        if normalized in {"苹果", "aapl", "us.aapl"}:
+            rows.append(await self.fetch_global_quote("US.AAPL"))
+        return rows[:limit]
+
 
 class SectorFailProvider(FixtureProvider):
     async def fetch_sectors(self):
@@ -221,6 +291,29 @@ class QinglongAskProvider(EquityBrowserProvider):
                         turnover_rate=2.1,
                         market_cap=4_100_000_000,
                         sector="汽车零部件",
+                    ),
+                ]
+            }
+        )
+
+
+class HoldingNameProvider(EquityBrowserProvider):
+    async def fetch_equities(self):
+        dataset = await super().fetch_equities()
+        return dataset.model_copy(
+            update={
+                "items": [
+                    *dataset.items,
+                    EquityQuote(
+                        symbol="SZ.002487",
+                        code="002487",
+                        name="大金重工",
+                        price=72.1,
+                        change_pct=1.1,
+                        amount=850_000_000,
+                        turnover_rate=2.8,
+                        market_cap=28_000_000_000,
+                        sector="风电设备",
                     ),
                 ]
             }
@@ -383,9 +476,7 @@ class EvidenceCapabilityProvider(FixtureProvider):
 
 
 class SemanticScreenProvider(FixtureProvider):
-    async def query_stock_screen(
-        self, question: str, limit: int = 20
-    ) -> SemanticScreenResult:
+    async def query_stock_screen(self, question: str, limit: int = 20) -> SemanticScreenResult:
         assert question == "低估值白酒股"
         assert limit == 20
         return SemanticScreenResult(
@@ -410,24 +501,22 @@ class LLMAskProvider(EquityBrowserProvider):
             intent="overview",
             symbol=context.stock["symbol"] if context.stock else None,
             name=context.stock["name"] if context.stock else None,
-            answer="联网结论：先看最新公告、行业消息和资金变化。",
-            evidence=["联网检索已核对最新公开信息。"],
+            answer="结论：先看最新公告、行业消息和资金变化。",
+            evidence=["资料核对已核对最新公开信息。"],
             risks=["公开信息可能滞后。"],
             next_actions=["回到个股研究页复核本地指标。"],
-            metrics=[AskStockMetric(label="回答模式", value="联网问答", tone="neutral")],
+            metrics=[AskStockMetric(label="回答模式", value="智能分析", tone="neutral")],
             observed_at=context.observed_at,
-            source="联网大模型问答",
-            disclaimer="联网研究辅助信息，不构成投资建议。",
+            source="智能分析",
+            disclaimer="研究辅助信息，不构成投资建议。",
         )
 
     async def stream_ask_stock_with_llm(self, context: LLMWebAskContext):
         self.received_context = context
         yield "结论：先看最新公告。\n"
-        yield "依据：联网检索已核对最新公开信息。"
+        yield "依据：资料核对已核对最新公开信息。"
 
-    def build_streamed_llm_answer(
-        self, context: LLMWebAskContext, text: str
-    ) -> AskStockResponse:
+    def build_streamed_llm_answer(self, context: LLMWebAskContext, text: str) -> AskStockResponse:
         return AskStockResponse(
             kind="llm_answer",
             question=context.question,
@@ -435,13 +524,73 @@ class LLMAskProvider(EquityBrowserProvider):
             symbol=context.stock["symbol"] if context.stock else None,
             name=context.stock["name"] if context.stock else None,
             answer=text,
-            evidence=["联网检索已核对最新公开信息。"],
+            evidence=["资料核对已核对最新公开信息。"],
             risks=["公开信息可能滞后。"],
             next_actions=["回到个股研究页复核本地指标。"],
-            metrics=[AskStockMetric(label="回答模式", value="联网问答", tone="neutral")],
+            metrics=[AskStockMetric(label="回答模式", value="智能分析", tone="neutral")],
             observed_at=context.observed_at,
-            source="联网大模型问答",
-            disclaimer="联网研究辅助信息，不构成投资建议。",
+            source="智能分析",
+            disclaimer="研究辅助信息，不构成投资建议。",
+        )
+
+
+class FailingLLMAskProvider(EquityBrowserProvider):
+    def __init__(self) -> None:
+        self.llm_calls = 0
+
+    @property
+    def llm_web_configured(self) -> bool:
+        return True
+
+    async def ask_stock_with_llm(self, context: LLMWebAskContext) -> AskStockResponse:
+        self.llm_calls += 1
+        raise ProviderUnavailable("financial model unavailable")
+
+    async def stream_ask_stock_with_llm(self, context: LLMWebAskContext):
+        self.llm_calls += 1
+        if False:
+            yield ""
+        raise ProviderUnavailable("financial model unavailable")
+
+
+class LLMAndSemanticScreenProvider(LLMAskProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.screen_limit: int | None = None
+
+    async def query_stock_screen(self, question: str, limit: int = 20) -> SemanticScreenResult:
+        assert question == "A股近十个交易日，综合上涨效果最好的100支股票"
+        self.screen_limit = limit
+        return SemanticScreenResult(
+            columns=["股票代码", "股票简称", "近10日涨跌幅"],
+            rows=[
+                {
+                    "股票代码": f"{index:06d}",
+                    "股票简称": f"测试股票{index}",
+                    "近10日涨跌幅": 100 - index,
+                }
+                for index in range(1, 101)
+            ],
+        )
+
+
+class LLMAndPeriodRankingProvider(LLMAskProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.ranking_request: tuple[int, int] | None = None
+
+    async def fetch_equity_period_ranking(self, days: int, limit: int) -> SemanticScreenResult:
+        self.ranking_request = (days, limit)
+        return SemanticScreenResult(
+            columns=["股票代码", "股票简称", "近10日涨跌幅"],
+            rows=[
+                {
+                    "股票代码": f"{index:06d}",
+                    "股票简称": f"测试股票{index}",
+                    "近10日涨跌幅": 100 - index,
+                }
+                for index in range(1, 101)
+            ],
         )
 
 
@@ -501,16 +650,18 @@ def test_ask_stock_uses_configured_llm_web_answer_with_context(tmp_path) -> None
     assert response.status_code == 200
     payload = response.json()
     assert payload["kind"] == "llm_answer"
-    assert payload["source"] == "联网大模型问答"
+    assert payload["source"] == "智能分析"
     assert payload["symbol"] == "SH.600519"
     assert payload["name"] == "贵州茅台"
-    assert payload["metrics"] == [{"label": "回答模式", "value": "联网问答", "tone": "neutral"}]
+    assert payload["metrics"] == [{"label": "回答模式", "value": "智能分析", "tone": "neutral"}]
     assert provider.received_context is not None
     assert provider.received_context.conversation[-1].content == "先看需求节奏和估值压力。"
     assert provider.received_context.source_context is not None
     assert provider.received_context.source_context.origin == "BOARD BRIDGE"
     assert provider.received_context.stock is not None
     assert provider.received_context.stock["sector"] == "白酒"
+    assert any("确定性结论" in note for note in provider.received_context.analysis_notes)
+    assert any("技术指标" in note for note in provider.received_context.analysis_notes)
 
 
 def test_ask_stock_streams_llm_answer_before_final_payload(tmp_path) -> None:
@@ -529,6 +680,7 @@ def test_ask_stock_streams_llm_answer_before_final_payload(tmp_path) -> None:
     assert "event: status" in body
     assert "event: delta" in body
     assert "结论：先看最新公告" in body
+    assert "联网" not in body
     assert "event: final" in body
     assert '"kind": "llm_answer"' in body
     assert provider.received_context is not None
@@ -540,12 +692,108 @@ def test_ask_stock_configured_llm_handles_multi_stock_questions(tmp_path) -> Non
     service = MarketService(provider=LLMAskProvider(), store=Store(tmp_path / "ask-llm-multi.db"))
     api = authenticated_client(service)
 
-    response = api.post(
-        "/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更值得关注"}
-    )
+    response = api.post("/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更值得关注"})
 
     assert response.status_code == 200
     assert response.json()["kind"] == "llm_answer"
+
+
+def test_ask_stock_falls_back_to_deterministic_answer_when_financial_llm_fails(
+    tmp_path,
+) -> None:
+    provider = FailingLLMAskProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-llm-fallback.db"))
+    api = authenticated_client(service)
+
+    response = api.post(
+        "/api/v1/ask-stock",
+        json={"question": "贵州茅台主要风险是什么"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "stock_analysis"
+    assert response.json()["source"] == "本地行情快照 + 确定性分析"
+    assert provider.llm_calls == 1
+
+
+def test_ask_stock_stream_falls_back_when_financial_llm_fails(tmp_path) -> None:
+    provider = FailingLLMAskProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-llm-stream-fallback.db"))
+    api = authenticated_client(service)
+
+    with api.stream(
+        "POST",
+        "/api/v1/ask-stock/stream",
+        json={"question": "贵州茅台主要风险是什么"},
+    ) as response:
+        body = response.read().decode()
+
+    assert response.status_code == 200
+    assert '"kind": "stock_analysis"' in body
+    assert '"source": "本地行情快照 + 确定性分析"' in body
+    assert '"kind": "llm_answer"' not in body
+    assert provider.llm_calls == 1
+
+
+def test_ask_stock_routes_top_100_market_ranking_to_semantic_screen(tmp_path) -> None:
+    provider = LLMAndSemanticScreenProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-top-100.db"))
+    api = authenticated_client(service)
+
+    response = api.post(
+        "/api/v1/ask-stock",
+        json={"question": "A股近十个交易日，综合上涨效果最好的100支股票"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "semantic_screen"
+    assert payload["intent"] == "screening"
+    assert provider.screen_limit == 100
+    assert len(payload["rows"]) == 100
+    assert payload["rows"][0]["股票简称"] == "测试股票1"
+
+
+def test_ask_stock_stream_routes_top_100_market_ranking_to_semantic_screen(tmp_path) -> None:
+    provider = LLMAndSemanticScreenProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-top-100-stream.db"))
+    api = authenticated_client(service)
+
+    with api.stream(
+        "POST",
+        "/api/v1/ask-stock/stream",
+        json={"question": "A股近十个交易日，综合上涨效果最好的100支股票"},
+    ) as response:
+        body = response.read().decode()
+
+    assert response.status_code == 200
+    assert "event: final" in body
+    assert '"kind": "semantic_screen"' in body
+    assert '"股票简称": "测试股票100"' in body
+    assert "event: delta" not in body
+    assert provider.screen_limit == 100
+    assert provider.received_context is None
+
+
+def test_ask_stock_top_100_uses_public_period_ranking_without_semantic_credentials(
+    tmp_path,
+) -> None:
+    provider = LLMAndPeriodRankingProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "ask-public-ranking.db"))
+    api = authenticated_client(service)
+
+    with api.stream(
+        "POST",
+        "/api/v1/ask-stock/stream",
+        json={"question": "A股近十个交易日，综合上涨效果最好的100支股票"},
+    ) as response:
+        body = response.read().decode()
+
+    assert response.status_code == 200
+    assert '"kind": "semantic_screen"' in body
+    assert '"股票简称": "测试股票100"' in body
+    assert provider.ranking_request == (10, 100)
+    assert provider.received_context is None
 
 
 def test_ask_stock_answers_named_stock_from_deterministic_dossier(tmp_path) -> None:
@@ -655,18 +903,18 @@ def test_ask_stock_includes_only_current_user_holding_context(tmp_path) -> None:
     }
     assert api_a.post("/api/v1/holdings", json=holding_payload).status_code == 201
 
-    held_response = api_a.post(
-        "/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"}
-    )
-    empty_response = api_b.post(
-        "/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"}
-    )
+    held_response = api_a.post("/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"})
+    empty_response = api_b.post("/api/v1/ask-stock", json={"question": "我持有的贵州茅台要减仓吗"})
 
     assert held_response.status_code == 200
     held = held_response.json()
     assert held["holding_context"]["owned"] is True
     assert held["holding_context"]["quantity"] == 10
+    assert "ten_day_change_pct" in held["holding_context"]
+    assert "ten_day_contribution" in held["holding_context"]
     assert "结合你的账户持仓" in held["answer"]
+    assert "近10日走势" in held["answer"]
+    assert "10日贡献" in held["answer"]
     assert "持仓盈亏" in [item["label"] for item in held["metrics"]]
     assert any(item["label"] == "价格与 MA20" for item in held["factors"])
 
@@ -677,23 +925,24 @@ def test_ask_stock_includes_only_current_user_holding_context(tmp_path) -> None:
 
 
 def test_ask_stock_answers_portfolio_question_without_cross_account_leakage(tmp_path) -> None:
-    service = MarketService(
-        provider=FixtureProvider(), store=Store(tmp_path / "ask-portfolio.db")
-    )
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "ask-portfolio.db"))
     api_a = authenticated_client(service, "portfolio-a@example.com")
     api_b = authenticated_client(service, "portfolio-b@example.com")
-    assert api_a.post(
-        "/api/v1/holdings",
-        json={
-            "symbol": "SH.600519",
-            "name": "贵州茅台",
-            "quantity": 10,
-            "cost_price": 1700,
-            "target_weight": 0.3,
-            "thesis": "白酒龙头",
-            "invalidation": "跌破支撑",
-        },
-    ).status_code == 201
+    assert (
+        api_a.post(
+            "/api/v1/holdings",
+            json={
+                "symbol": "SH.600519",
+                "name": "贵州茅台",
+                "quantity": 10,
+                "cost_price": 1700,
+                "target_weight": 0.3,
+                "thesis": "白酒龙头",
+                "invalidation": "跌破支撑",
+            },
+        ).status_code
+        == 201
+    )
 
     response_a = api_a.post("/api/v1/ask-stock", json={"question": "我的持仓里风险最大的是哪个"})
     response_b = api_b.post("/api/v1/ask-stock", json={"question": "我的持仓里风险最大的是哪个"})
@@ -778,12 +1027,14 @@ def test_ask_stock_named_portfolio_diagnostic_uses_current_account_holdings(tmp_
         "股票简称",
         "行业",
         "组合占比",
-        "目标仓位",
-        "偏离",
         "盈亏",
+        "10日走势",
+        "10日贡献",
         "动作",
         "风险",
     ]
+    assert "10日走势" in payload_a["rows"][0]
+    assert "10日贡献" in payload_a["rows"][0]
     assert any(item["label"] == "最大单票集中度" for item in payload_a["factors"])
     assert {row["股票代码"] for row in payload_a["rows"]} == {
         "SH.600519",
@@ -849,12 +1100,11 @@ def test_ask_stock_generates_account_scoped_rebalance_plan(tmp_path) -> None:
     payload_a = response_a.json()
     assert payload_a["kind"] == "portfolio_analysis"
     assert "调仓计划先处理" in payload_a["answer"]
-    assert "建议股数" in payload_a["answer"]
+    assert "持仓盈亏" in payload_a["answer"]
     assert [item["label"] for item in payload_a["metrics"]] == [
         "持仓数量",
         "总市值",
-        "需调仓",
-        "净调整",
+        "待复核",
         "最大单票",
         "行业集中",
         "风险持仓",
@@ -865,14 +1115,15 @@ def test_ask_stock_generates_account_scoped_rebalance_plan(tmp_path) -> None:
         "股票简称",
         "行业",
         "组合占比",
-        "目标仓位",
-        "偏离",
-        "偏离金额",
-        "建议股数",
+        "盈亏",
+        "10日走势",
+        "10日贡献",
         "优先级",
         "动作",
         "风险",
     ]
+    assert "近10日" in payload_a["answer"]
+    assert "10日贡献" in payload_a["rows"][0]
     assert payload_a["rows"][0]["优先级"] == "高"
     assert any(item["label"] == "调仓执行量" for item in payload_a["factors"])
     assert any("不按表格机械交易" in item for item in payload_a["next_actions"])
@@ -887,9 +1138,7 @@ def test_ask_stock_generates_account_scoped_rebalance_plan(tmp_path) -> None:
 def test_ask_stock_validates_question_length(tmp_path) -> None:
     api = client(tmp_path)
     assert api.post("/api/v1/ask-stock", json={"question": " "}).status_code == 422
-    assert api.post(
-        "/api/v1/ask-stock", json={"question": "茅" * 161}
-    ).status_code == 422
+    assert api.post("/api/v1/ask-stock", json={"question": "茅" * 161}).status_code == 422
 
 
 def test_ask_stock_rejects_multiple_local_stocks(tmp_path) -> None:
@@ -898,9 +1147,7 @@ def test_ask_stock_rejects_multiple_local_stocks(tmp_path) -> None:
     )
     api = authenticated_client(service)
 
-    response = api.post(
-        "/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更好"}
-    )
+    response = api.post("/api/v1/ask-stock", json={"question": "贵州茅台和平安银行哪个更好"})
 
     assert response.status_code == 422
     assert response.json()["detail"] == "一次只问一只股票"
@@ -950,9 +1197,12 @@ def test_ask_stock_semantic_unavailable_does_not_break_market(tmp_path) -> None:
     response = api.post("/api/v1/ask-stock", json={"question": "低估值白酒股"})
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"
+    assert (
+        response.json()["detail"]
+        == "条件选股增强暂不可用；你也可以在问题中包含一个 A 股股票名称或代码继续分析。"
+    )
     assert "问财" not in response.json()["detail"]
-    assert api.get("/api/v1/today").status_code == 200
+    assert api.get("/api/v1/market").status_code == 200
 
 
 def test_application_routes_require_authentication(tmp_path) -> None:
@@ -968,8 +1218,8 @@ def test_application_routes_require_authentication(tmp_path) -> None:
         "/api/v1/instruments/SH.600519/evidence",
         "/api/v1/markets/CN/intelligence",
         "/api/v1/sectors/BK1",
-        "/api/v1/today",
         "/api/v1/opportunities",
+        "/api/v1/recommendation-history",
         "/api/v1/search?q=SH.600519",
         "/api/v1/stocks/SH.600519",
         "/api/v1/data-status",
@@ -989,17 +1239,19 @@ def test_application_routes_require_authentication(tmp_path) -> None:
         },
     )
     assert registration.status_code == 201
-    assert api.post(
-        "/api/v1/auth/login",
-        json={"email": "gate-user@example.com", "password": "GatePass-0725"},
-    ).status_code == 200
+    assert (
+        api.post(
+            "/api/v1/auth/login",
+            json={"email": "gate-user@example.com", "password": "GatePass-0725"},
+        ).status_code
+        == 200
+    )
 
 
-def test_market_today_and_stock_routes(tmp_path) -> None:
+def test_market_and_stock_routes(tmp_path) -> None:
     api = client(tmp_path)
 
     market = api.get("/api/v1/market")
-    today = api.get("/api/v1/today")
     stock = api.get("/api/v1/stocks/SH.600519")
 
     assert market.status_code == 200
@@ -1008,12 +1260,113 @@ def test_market_today_and_stock_routes(tmp_path) -> None:
     assert market_payload["snapshot"]["indices"][0]["symbol"] == "SH.000001"
     assert market_payload["snapshot"]["sectors"][0]["code"] == "BK1"
     assert "equities" not in market_payload["snapshot"]
-    assert today.json()["top_opportunities"][0]["quote"]["name"] == "贵州茅台"
     stock_payload = stock.json()
     assert stock_payload["stance"] in {"strong_watch", "watch", "neutral", "avoid"}
     assert "signal_validation" in stock_payload
     assert stock_payload["technical"]["macd_histogram"] is not None
     assert stock_payload["technical"]["atr_pct"] is not None
+    assert stock_payload["financial_health"]["available"] is True
+    assert stock_payload["financial_health"]["periods"][0]["report_label"] == "2026中报"
+    assert stock_payload["news_sentiment"]["available"] is True
+    assert stock_payload["news_sentiment"]["items"][0]["media"] == "测试媒体"
+
+
+def test_stock_financial_and_news_failures_degrade_independently(tmp_path) -> None:
+    class FinancialFailureProvider(FixtureProvider):
+        async def fetch_financial_periods(self, symbol: str, limit: int = 5):
+            raise ProviderUnavailable("financial timeout")
+
+    class NewsFailureProvider(FixtureProvider):
+        async def fetch_stock_news(self, symbol: str, name: str, limit: int = 20):
+            raise ProviderUnavailable("news timeout")
+
+    finance_api = authenticated_client(
+        MarketService(
+            provider=FinancialFailureProvider(),
+            store=Store(tmp_path / "finance-failure.db"),
+        )
+    )
+    news_api = authenticated_client(
+        MarketService(
+            provider=NewsFailureProvider(),
+            store=Store(tmp_path / "news-failure.db"),
+        )
+    )
+
+    finance_response = finance_api.get("/api/v1/stocks/SH.600519")
+    news_response = news_api.get("/api/v1/stocks/SH.600519")
+
+    assert finance_response.status_code == 200
+    assert finance_response.json()["financial_health"]["available"] is False
+    assert finance_response.json()["news_sentiment"]["available"] is True
+    assert news_response.status_code == 200
+    assert news_response.json()["financial_health"]["available"] is True
+    assert news_response.json()["news_sentiment"]["available"] is False
+
+
+def test_stock_financial_and_news_are_cached_between_page_opens(tmp_path) -> None:
+    class CountingProvider(FixtureProvider):
+        def __init__(self) -> None:
+            self.financial_calls = 0
+            self.news_calls = 0
+
+        async def fetch_financial_periods(self, symbol: str, limit: int = 5):
+            self.financial_calls += 1
+            return await super().fetch_financial_periods(symbol, limit)
+
+        async def fetch_stock_news(self, symbol: str, name: str, limit: int = 20):
+            self.news_calls += 1
+            return await super().fetch_stock_news(symbol, name, limit)
+
+    provider = CountingProvider()
+    api = authenticated_client(
+        MarketService(provider=provider, store=Store(tmp_path / "stock-cache.db"))
+    )
+
+    assert api.get("/api/v1/stocks/SH.600519").status_code == 200
+    assert api.get("/api/v1/stocks/SH.600519").status_code == 200
+
+    assert provider.financial_calls == 1
+    assert provider.news_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_stock_reuses_monitored_history_when_live_kline_fails(tmp_path) -> None:
+    class IntermittentKlineProvider(FixtureProvider):
+        fail_kline = False
+
+        async def fetch_kline(self, symbol: str, limit: int = 180):
+            if self.fail_kline:
+                raise ProviderUnavailable("temporary K-line failure")
+            return await super().fetch_kline(symbol, limit)
+
+    provider = IntermittentKlineProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "stock-history.db"))
+    await service.refresh_opportunity_monitor("trend", limit=1)
+
+    provider.fail_kline = True
+    dossier = await service.stock("SH.600519")
+
+    assert len(dossier.bars) == 70
+    assert dossier.technical is not None
+    assert dossier.stance != "insufficient_data"
+
+
+@pytest.mark.asyncio
+async def test_stock_returns_safe_decision_when_kline_is_unavailable(tmp_path) -> None:
+    class UnavailableKlineProvider(FixtureProvider):
+        async def fetch_kline(self, symbol: str, limit: int = 180):
+            raise ProviderUnavailable("temporary K-line failure")
+
+    service = MarketService(
+        provider=UnavailableKlineProvider(), store=Store(tmp_path / "stock-degraded.db")
+    )
+
+    dossier = await service.stock("SH.600519")
+
+    assert dossier.stance == "insufficient_data"
+    assert dossier.investment_advice.action == "暂不参与"
+    assert dossier.bars == []
 
 
 def test_opportunities_route_enriches_top_candidates_with_history(tmp_path) -> None:
@@ -1028,6 +1381,55 @@ def test_opportunities_route_enriches_top_candidates_with_history(tmp_path) -> N
     assert candidate["history_check"]["trend_20d_pct"] is not None
     assert "历史确认" in {item["label"] for item in candidate["dimensions"]}
     assert "历史确认" in {item["label"] for item in candidate["components"]}
+
+
+def test_recommendation_history_freezes_one_daily_run_and_tracks_current_price(
+    tmp_path,
+) -> None:
+    api = client(tmp_path)
+
+    first = api.get("/api/v1/recommendation-history")
+    second = api.get("/api/v1/recommendation-history")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["preset"] == "trend"
+    assert payload["summary"]["run_count"] == 1
+    assert payload["summary"]["pick_count"] == 1
+    assert payload["summary"]["evaluated_count"] == 0
+    assert payload["days"][0]["picks"][0]["symbol"] == "SH.600519"
+    assert payload["days"][0]["picks"][0]["entry_price"] == 1500
+    assert payload["days"][0]["picks"][0]["current_return"] == 0
+    assert payload["days"][0]["picks"][0]["status"] == "tracking"
+    assert "自动刷新归档" in payload["methodology"][1]
+    assert "首次启用" in payload["methodology"][4]
+
+
+def test_opportunities_route_accepts_strict_new_strategy_preset(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/opportunities", params={"preset": "capital_confirmed", "limit": 1})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preset"] == "capital_confirmed"
+    candidate = payload["candidates"][0]
+    assert candidate["strategy_validation"]["passed"] is True
+    assert "资金净流入 >= 2000 万" in candidate["strategy_validation"]["checks"]
+    assert "策略校验" in {item["label"] for item in candidate["dimensions"]}
+
+
+def test_sector_strategy_uses_snapshot_sector_strength(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.get("/api/v1/opportunities", params={"preset": "sector_momentum", "limit": 1})
+
+    assert response.status_code == 200
+    candidate = response.json()["candidates"][0]
+    strategy_fit = next(item for item in candidate["dimensions"] if item["key"] == "strategy_fit")
+    assert "白酒 板块涨跌 +1.4%" in strategy_fit["summary"]
+    assert "板块强度数据暂缺" not in candidate["risk_flags"]
 
 
 class ManyExcludedOpportunityProvider(FixtureProvider):
@@ -1070,7 +1472,6 @@ def test_opportunities_route_does_not_send_full_excluded_universe(tmp_path) -> N
     assert len(response.content) < 80_000
 
 
-
 class HangingKlineProvider(FixtureProvider):
     async def fetch_kline(self, symbol: str, limit: int = 180):
         await asyncio.sleep(60)
@@ -1092,8 +1493,8 @@ def test_opportunities_route_degrades_when_history_provider_hangs(tmp_path) -> N
     assert elapsed < 1
     payload = response.json()
     assert payload["candidates"][0]["quote"]["symbol"] == "SH.600519"
-    assert payload["candidates"][0]["history_check"] is None
-
+    assert payload["candidates"][0]["history_check"]["available"] is False
+    assert payload["candidates"][0]["history_check"]["lookback_days"] == 0
 
 
 def test_equity_browser_searches_sorts_and_paginates(tmp_path) -> None:
@@ -1247,13 +1648,17 @@ def test_cn_market_intelligence_returns_flow_and_latest_anomalies(tmp_path) -> N
     assert provider.anomaly_calls == 1
 
 
-def test_instrument_evidence_rejects_non_a_share_symbols(tmp_path) -> None:
+def test_instrument_evidence_returns_empty_capabilities_for_global_symbols(tmp_path) -> None:
     api = client(tmp_path)
 
     response = api.get("/api/v1/instruments/US.AAPL/evidence")
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == "A-share symbol required"
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "US.AAPL"
+    assert payload["filings"] == []
+    assert payload["capabilities"]["filings"]["status"] == "empty"
+    assert payload["capabilities"]["filings"]["provider"] == "not_supported"
 
 
 def test_sector_route_returns_analysis_and_constituents(tmp_path) -> None:
@@ -1386,6 +1791,63 @@ def test_holdings_are_editable_and_return_position_analysis(tmp_path) -> None:
     assert len(api.get("/api/v1/holdings").json()) == 1
 
 
+def test_holding_update_can_correct_symbol_and_refresh_price(tmp_path) -> None:
+    service = MarketService(provider=QinglongAskProvider(), store=Store(tmp_path / "rename.db"))
+    api = authenticated_client(service)
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "贵州茅台",
+            "quantity": 1000,
+            "cost_price": 10,
+            "target_weight": 0.3,
+            "thesis": "先录错的持仓",
+            "invalidation": "跌破支撑",
+        },
+    )
+    item_id = created.json()["item"]["id"]
+
+    updated = api.patch(
+        f"/api/v1/holdings/{item_id}",
+        json={"symbol": "SZ.002457", "name": "青龙管业"},
+    )
+
+    assert updated.status_code == 200
+    payload = updated.json()
+    assert payload["item"]["symbol"] == "SZ.002457"
+    assert payload["item"]["name"] == "青龙管业"
+    assert payload["quote"]["price"] == 11.2
+    assert payload["market_value"] == 11_200
+
+
+def test_holdings_repair_legacy_symbol_name_mismatch_for_analysis(tmp_path) -> None:
+    service = MarketService(
+        provider=QinglongAskProvider(), store=Store(tmp_path / "legacy-mismatch.db")
+    )
+    api = authenticated_client(service)
+    account = service.store.get_user_by_email("fixture-user@example.com")
+    assert account is not None
+    service.store.create_holding(
+        symbol="SH.600519",
+        name="青龙管业",
+        quantity=1000,
+        cost_price=10,
+        target_weight=0.3,
+        thesis="旧版本录入时名称和代码错配",
+        invalidation="跌破支撑",
+        user_id=account.account.id,
+    )
+
+    payload = api.get("/api/v1/holdings").json()[0]
+
+    assert payload["item"]["symbol"] == "SZ.002457"
+    assert payload["item"]["name"] == "青龙管业"
+    assert payload["quote"]["price"] == 11.2
+    assert payload["market_value"] == 11_200
+
+
 def test_holding_create_normalizes_six_digit_symbol_for_price_lookup(tmp_path) -> None:
     api = client(tmp_path)
 
@@ -1408,6 +1870,89 @@ def test_holding_create_normalizes_six_digit_symbol_for_price_lookup(tmp_path) -
     assert payload["quote"]["price"] == 1500
     assert payload["market_value"] == 150_000
     assert payload["pnl"] == 10_000
+
+
+def test_holding_create_accepts_empty_research_notes(tmp_path) -> None:
+    service = MarketService(
+        provider=HoldingNameProvider(), store=Store(tmp_path / "empty-notes.db")
+    )
+    api = authenticated_client(service)
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "",
+            "name": "大金重工",
+            "quantity": 800,
+            "cost_price": 76.574,
+            "target_weight": 0,
+            "thesis": "",
+            "invalidation": "",
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["item"]["symbol"] == "SZ.002487"
+    assert payload["item"]["name"] == "大金重工"
+    assert "持仓逻辑待补充" in payload["item"]["thesis"]
+    assert "复核降仓或退出" in payload["item"]["invalidation"]
+
+
+def test_holding_create_resolves_name_only_and_rejects_symbol_name_mismatch(
+    tmp_path,
+) -> None:
+    service = MarketService(provider=QinglongAskProvider(), store=Store(tmp_path / "name.db"))
+    api = authenticated_client(service)
+
+    qinglong = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "",
+            "name": "青龙管业",
+            "quantity": 1000,
+            "cost_price": 10,
+            "target_weight": 0.3,
+            "thesis": "水泥建材修复观察",
+            "invalidation": "跌破支撑",
+        },
+    )
+    pingan = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "",
+            "name": "平安银行",
+            "quantity": 2000,
+            "cost_price": 11,
+            "target_weight": 0.2,
+            "thesis": "低波红利观察",
+            "invalidation": "银行板块走弱",
+        },
+    )
+
+    assert qinglong.status_code == 201
+    assert qinglong.json()["item"]["symbol"] == "SZ.002457"
+    assert qinglong.json()["quote"]["price"] == 11.2
+    assert qinglong.json()["market_value"] == 11_200
+    assert pingan.status_code == 201
+    assert pingan.json()["item"]["symbol"] == "SZ.000001"
+    assert len(api.get("/api/v1/holdings").json()) == 2
+
+    mismatch = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "SH.600519",
+            "name": "青龙管业",
+            "quantity": 100,
+            "cost_price": 10,
+            "target_weight": 0.1,
+            "thesis": "代码和名称不一致",
+            "invalidation": "拒绝错误价格",
+        },
+    )
+
+    assert mismatch.status_code == 400
+    assert "代码和名称不一致" in mismatch.json()["detail"]
 
 
 def test_holding_create_reuses_existing_unprefixed_symbol(tmp_path) -> None:
@@ -1594,7 +2139,7 @@ def test_user_preferences_are_personal(tmp_path) -> None:
     assert updated.json()["start_page"] == "holdings"
     assert updated.json()["risk_profile"] == "defensive"
     assert updated.json()["morning_email_enabled"] is False
-    assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "today"
+    assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "market"
     assert (
         api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
     )
@@ -1602,27 +2147,33 @@ def test_user_preferences_are_personal(tmp_path) -> None:
 
 def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     api = client(tmp_path)
-    assert api.post(
-        "/api/v1/holdings",
-        json={
-            "symbol": "SH.600519",
-            "name": "贵州茅台",
-            "quantity": 10,
-            "cost_price": 1700,
-            "target_weight": 0.5,
-            "thesis": "白酒龙头现金流稳定",
-            "invalidation": "跌破长期均线",
-        },
-    ).status_code == 201
-    assert api.post(
-        "/api/v1/watchlist",
-        json={
-            "symbol": "SH.600519",
-            "name": "贵州茅台",
-            "thesis": "等待资金确认",
-            "invalidation": "跌破长期均线",
-        },
-    ).status_code == 201
+    assert (
+        api.post(
+            "/api/v1/holdings",
+            json={
+                "symbol": "SH.600519",
+                "name": "贵州茅台",
+                "quantity": 10,
+                "cost_price": 1700,
+                "target_weight": 0.5,
+                "thesis": "白酒龙头现金流稳定",
+                "invalidation": "跌破长期均线",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        api.post(
+            "/api/v1/watchlist",
+            json={
+                "symbol": "SH.600519",
+                "name": "贵州茅台",
+                "thesis": "等待资金确认",
+                "invalidation": "跌破长期均线",
+            },
+        ).status_code
+        == 201
+    )
 
     response = api.get(
         "/api/v1/morning-email/preview",
@@ -1634,33 +2185,59 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert payload["recipient"] == "fixture-user@example.com"
     assert payload["enabled"] is True
     assert payload["subject"].startswith("StockTS 晨报")
-    assert "上涨" in payload["preheader"]
-    assert "一、开盘前结论" in payload["text"]
-    assert "三、资金主线" in payload["text"]
-    assert "四、事件与异动" in payload["text"]
-    assert "五、推荐股票（需复核）" in payload["text"]
-    assert "六、持仓和跟踪池" in payload["text"]
-    assert "七、开盘检查清单" in payload["text"]
-    assert "八、今日禁止动作" in payload["text"]
+    assert "风险预算" in payload["preheader"]
+    assert "一、今日行动台" in payload["text"]
+    assert "二、市场闸门" in payload["text"]
+    assert "三、持仓优先" in payload["text"]
+    assert "四、候选复核（必须过闸）" in payload["text"]
+    assert "五、严格校验清单" in payload["text"]
+    assert "六、资金与事件证据" in payload["text"]
+    assert "八、开盘检查清单" in payload["text"]
+    assert "九、今日禁止动作" in payload["text"]
     assert "09:25 集合竞价" in payload["text"]
     assert "不因邮件出现某只股票就直接交易" in payload["text"]
-    assert "确认项：强于大盘、板块延续、回踩不破" in payload["text"]
+    assert "必须强于大盘和所属板块" in payload["text"]
     assert "贵州茅台 SH.600519" in payload["text"]
     assert "https://stock.example.com/#/stocks?symbol=SH.600519" in payload["text"]
     assert "不构成投资建议" in payload["text"]
     assert "<html" in payload["html"]
-    assert "MARKET DESK MORNING BRIEF" in payload["html"]
-    assert "今日大盘" in payload["html"]
-    assert "今日开盘路线" in payload["html"]
+    assert "STOCKTS OPENING ACTION DESK" in payload["html"]
+    assert "今日行动台" in payload["html"]
     assert "市场广度仪表" in payload["html"]
     assert "上涨占比" in payload["html"]
-    assert "大盘温度" in payload["html"]
-    assert "推荐股票（需复核）" in payload["html"]
-    assert "推荐股票 #1" in payload["html"]
-    assert "复核级别" in payload["html"]
-    assert "板块资金主线" in payload["html"]
-    assert "持仓风险雷达" in payload["html"]
+    assert "市场闸门" in payload["html"]
+    assert "候选复核（必须过闸）" in payload["html"]
+    assert "候选线索 #1" in payload["html"]
+    assert "先给结论" in payload["html"]
+    assert "资金与事件证据" in payload["html"]
+    assert "持仓优先" in payload["html"]
     assert "开盘检查清单" in payload["html"]
+
+
+def test_morning_email_dispatch_sends_enabled_platform_users(tmp_path) -> None:
+    service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "dispatch.db"))
+    service.store.create_user("dispatch@stock.test", "Dispatch User", "disabled")
+    settings = Settings(
+        data_dir=tmp_path,
+        email_sender="sender@qq.com",
+        email_password="secret",
+        email_receivers="ops@example.com",
+    )
+
+    summary = asyncio.run(
+        dispatch_morning_emails(
+            settings=settings,
+            service=service,
+            base_url="https://stock.example.com",
+            dry_run=True,
+            force=True,
+        )
+    )
+
+    assert summary.sent == 1
+    assert summary.failed == 0
+    assert summary.attempts[0].recipient == "ops@example.com"
+    assert "dry-run" in summary.attempts[0].detail
 
 
 def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
@@ -1744,6 +2321,62 @@ def test_data_status_marks_semantic_research_optional(tmp_path) -> None:
     assert provider["description"] == "语义研究增强"
 
 
+def test_decision_feed_groups_events_and_enforces_read_ownership(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "decision-feed.db")
+    )
+    first_api = authenticated_client(service, "first-feed@example.com")
+    second_api = authenticated_client(service, "second-feed@example.com")
+    first = service.store.get_user_by_email("first-feed@example.com")
+    assert first is not None
+    observed = datetime.now(UTC)
+
+    def record(previous: str, current: str, *, required: bool, severity: str, key: str):
+        def value(action: str, when: datetime) -> DecisionSnapshot:
+            return DecisionSnapshot.model_validate(
+                {
+                    "source": "holding" if required else "opportunity",
+                    "subject_key": key,
+                    "symbol": "SH.600519",
+                    "name": "贵州茅台",
+                    "decision": DecisionPresentation(
+                        action=action,
+                        summary=f"决定变为{action}",
+                        severity=severity if action == current else "info",
+                        user_required=required if action == current else False,
+                        reason_code=f"reason_{key}",
+                    ),
+                    "href": "/holdings",
+                    "observed_at": when,
+                }
+            )
+
+        service.store.record_decision_snapshot(first.account.id, value(previous, observed))
+        return service.store.record_decision_snapshot(
+            first.account.id, value(current, observed + timedelta(minutes=10))
+        )
+
+    actionable = record(
+        "继续持有", "建议分批减仓", required=True, severity="high", key="holding-1"
+    )
+    record("仅观察", "暂不买入", required=False, severity="info", key="trend")
+    assert actionable is not None
+
+    response = first_api.get("/api/v1/decision-events")
+
+    assert response.status_code == 200
+    assert response.json()["unread_count"] == 2
+    assert response.json()["requires_action"][0]["action"] == "建议分批减仓"
+    assert response.json()["monitoring"][0]["action"] == "暂不买入"
+    assert (
+        second_api.post(f"/api/v1/decision-events/{actionable.id}/read").status_code
+        == 404
+    )
+    assert first_api.post(f"/api/v1/decision-events/{actionable.id}/read").status_code == 200
+    assert first_api.post("/api/v1/decision-events/read-all").json() == {"read": 1}
+    assert first_api.get("/api/v1/decision-events").json()["unread_count"] == 0
+
+
 @pytest.mark.asyncio
 async def test_market_service_keeps_core_data_when_sector_source_fails(tmp_path) -> None:
     service = MarketService(provider=SectorFailProvider(), store=Store(tmp_path / "partial.db"))
@@ -1772,7 +2405,9 @@ async def test_market_service_returns_cached_snapshot_before_slow_cold_refresh(t
             await task
 
 
-def test_app_can_refresh_market_data_on_a_two_hour_schedule(tmp_path) -> None:
+def test_app_can_refresh_market_data_and_all_review_strategies_on_a_schedule(
+    tmp_path,
+) -> None:
     class CountingProvider(FixtureProvider):
         def __init__(self) -> None:
             self.calls = 0
@@ -1782,7 +2417,8 @@ def test_app_can_refresh_market_data_on_a_two_hour_schedule(tmp_path) -> None:
             return await super().fetch_equities()
 
     provider = CountingProvider()
-    service = MarketService(provider=provider, store=Store(tmp_path / "scheduled.db"))
+    store = Store(tmp_path / "scheduled.db")
+    service = MarketService(provider=provider, store=store)
     app = create_app(
         service,
         auto_refresh_interval_seconds=0.01,
@@ -1792,9 +2428,258 @@ def test_app_can_refresh_market_data_on_a_two_hour_schedule(tmp_path) -> None:
     import time
 
     with TestClient(app):
-        deadline = time.time() + 1
-        while provider.calls < 2 and time.time() < deadline:
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            ready = all(
+                store.list_recommendation_runs(preset, algorithm_version="strategy-profiles-v3")
+                for preset in (
+                    "trend",
+                    "volume_breakout",
+                    "capital_confirmed",
+                    "sector_momentum",
+                    "pullback_support",
+                )
+            )
+            monitored = set(service.opportunity_monitor_status()["presets"])
+            if provider.calls >= 2 and ready and monitored == {
+                "trend",
+                "volume_breakout",
+                "capital_confirmed",
+                "sector_momentum",
+                "pullback_support",
+                "value_rebound",
+                "quality_value",
+                "large_cap_stability",
+                "oversold_repair",
+            }:
+                break
             time.sleep(0.02)
 
     assert provider.calls >= 2
+    assert ready is True
+    assert monitored == {
+        "trend",
+        "volume_breakout",
+        "capital_confirmed",
+        "sector_momentum",
+        "pullback_support",
+        "value_rebound",
+        "quality_value",
+        "large_cap_stability",
+        "oversold_repair",
+    }
     assert app.state.auto_refresh_interval_seconds == 0.01
+
+
+@pytest.mark.asyncio
+async def test_scheduled_refresh_warms_user_stocks_before_strategy_work() -> None:
+    class RecordingService:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def market(self, force: bool = False):
+            self.calls.append("market")
+
+        async def refresh_stock_monitor(self):
+            self.calls.append("stocks")
+            return {"symbols": 1, "ready": 1}
+
+        async def refresh_opportunity_monitor(self, preset: str):
+            self.calls.append(f"opportunity:{preset}")
+
+        async def capture_daily_recommendations(self, preset: str):
+            self.calls.append(f"history:{preset}")
+
+        async def refresh_decision_monitor(self):
+            self.calls.append("decisions")
+            return {"events": 0}
+
+    service = RecordingService()
+
+    await _safe_auto_refresh(service)  # type: ignore[arg-type]
+
+    assert service.calls[:2] == ["market", "stocks"]
+    assert service.calls.index("stocks") < next(
+        index for index, call in enumerate(service.calls) if call.startswith("opportunity:")
+    )
+
+
+@pytest.mark.asyncio
+async def test_stock_monitor_prewarms_default_stock_intelligence(tmp_path) -> None:
+    class CountingProvider(FixtureProvider):
+        def __init__(self) -> None:
+            self.financial_calls = 0
+            self.news_calls = 0
+
+        async def fetch_financial_periods(self, symbol: str, limit: int = 5):
+            self.financial_calls += 1
+            return await super().fetch_financial_periods(symbol, limit)
+
+        async def fetch_stock_news(self, symbol: str, name: str, limit: int = 20):
+            self.news_calls += 1
+            return await super().fetch_stock_news(symbol, name, limit)
+
+    provider = CountingProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "stock-monitor.db"))
+
+    result = await service.refresh_stock_monitor()
+    await service.stock("SH.600519")
+
+    assert result["symbols"] == 1
+    assert result["ready"] == 1
+    assert provider.financial_calls == 1
+    assert provider.news_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_opportunity_monitor_warms_results_for_page_requests(tmp_path) -> None:
+    class CountingKlineProvider(FixtureProvider):
+        def __init__(self) -> None:
+            self.kline_calls = 0
+
+        async def fetch_kline(self, symbol: str, limit: int = 180):
+            self.kline_calls += 1
+            return await super().fetch_kline(symbol, limit)
+
+    provider = CountingKlineProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "monitor-cache.db"))
+
+    warmed = await service.refresh_opportunity_monitor("trend", limit=10)
+    calls_after_warm = provider.kline_calls
+    served = await service.opportunities("trend", limit=1)
+
+    assert warmed.monitoring_active is True
+    assert warmed.monitored_at is not None
+    assert served.monitoring_active is True
+    assert served.monitored_at == warmed.monitored_at
+    assert provider.kline_calls == calls_after_warm
+
+    api = authenticated_client(service)
+    monitor = api.get("/api/v1/data-status").json()["opportunity_monitor"]
+    assert monitor["active"] is True
+    assert monitor["presets"] == ["trend"]
+    assert monitor["checked_at"] == warmed.monitored_at.isoformat().replace("+00:00", "Z")
+
+
+@pytest.mark.asyncio
+async def test_decision_monitor_establishes_baseline_then_records_one_change(tmp_path) -> None:
+    class MutableHoldingProvider(FixtureProvider):
+        price = 1_500.0
+        change_pct = 1.2
+
+        async def fetch_equities(self):
+            dataset = await super().fetch_equities()
+            return dataset.model_copy(
+                update={
+                    "items": [
+                        dataset.items[0].model_copy(
+                            update={"price": self.price, "change_pct": self.change_pct}
+                        )
+                    ]
+                }
+            )
+
+    provider = MutableHoldingProvider()
+    store = Store(tmp_path / "decision-monitor.db")
+    user = store.create_user("decision-monitor@example.test", "Decision Monitor", "hash")
+    store.create_holding(
+        symbol="SH.600519",
+        name="贵州茅台",
+        quantity=100,
+        cost_price=1_500,
+        target_weight=0.2,
+        thesis="现金流稳定",
+        invalidation="亏损超过 10%",
+        user_id=user.id,
+    )
+    service = MarketService(provider=provider, store=store)
+    await service.refresh()
+
+    first = await service.refresh_decision_monitor()
+    provider.price = 1_200
+    provider.change_pct = -8
+    await service.refresh()
+    second = await service.refresh_decision_monitor()
+    repeated = await service.refresh_decision_monitor()
+
+    events = store.list_decision_events(user.id)
+    assert first["events"] == 0
+    assert second["events"] == 1
+    assert repeated["events"] == 0
+    assert len(events) == 1
+    assert events[0].action == "优先减仓或止损"
+
+
+@pytest.mark.asyncio
+async def test_cached_recommendation_history_does_not_rewrite_observations(
+    tmp_path,
+) -> None:
+    class CountingStore(Store):
+        observation_writes = 0
+
+        def save_recommendation_observation(
+            self, run_id: int, observation: RecommendationObservation
+        ) -> None:
+            self.observation_writes += 1
+            super().save_recommendation_observation(run_id, observation)
+
+    store = CountingStore(tmp_path / "cached-history.db")
+    service = MarketService(provider=FixtureProvider(), store=store)
+    await service.recommendation_history("trend")
+    store.observation_writes = 0
+
+    await service.recommendation_history("trend")
+
+    assert store.observation_writes == 0
+
+
+def test_global_stock_search_stock_and_holding_flow(tmp_path) -> None:
+    api = client(tmp_path)
+
+    search = api.get("/api/v1/search", params={"q": "AAPL"}).json()
+    assert search[0]["symbol"] == "US.AAPL"
+    assert search[0]["sector"] == "美股/USD"
+
+    stock = api.get("/api/v1/stocks/US.AAPL")
+    assert stock.status_code == 200
+    payload = stock.json()
+    assert payload["quote"]["symbol"] == "US.AAPL"
+    assert payload["quote"]["name"] == "苹果"
+    assert payload["bars"]
+
+    created = api.post(
+        "/api/v1/holdings",
+        json={
+            "symbol": "HK.700",
+            "name": "腾讯控股",
+            "quantity": 100,
+            "cost_price": 470,
+            "thesis": "港股核心互联网持仓",
+            "invalidation": "跌破成本且趋势转弱",
+        },
+    )
+    assert created.status_code == 201
+    holding = created.json()
+    assert holding["item"]["symbol"] == "HK.00700"
+    assert holding["quote"]["sector"] == "港股/HKD"
+    assert holding["market_value"] == 48_580
+
+    rows = api.get("/api/v1/holdings").json()
+    assert rows[0]["item"]["symbol"] == "HK.00700"
+    assert rows[0]["day_pnl"] is not None
+    assert len(rows[0]["recent_daily_changes"]) == 10
+    assert rows[0]["target_market_value"] is None
+    assert rows[0]["rebalance_value"] is None
+
+
+def test_ask_stock_accepts_explicit_global_symbol(tmp_path) -> None:
+    api = client(tmp_path)
+
+    response = api.post("/api/v1/ask-stock", json={"question": "US.AAPL 现在怎么样"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "stock_analysis"
+    assert payload["symbol"] == "US.AAPL"
+    assert payload["name"] == "苹果"
+    assert payload["holding_context"] is None

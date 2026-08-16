@@ -1,13 +1,7 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Binoculars, Briefcase, MessageSquareText, RefreshCw, Search, Star, UserRound } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { HashRouter, Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
-import { AskStockPage } from "../features/ask/AskStockPage";
-import { HoldingsPage } from "../features/holdings/HoldingsPage";
-import { MarketPage } from "../features/market/MarketPage";
-import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
-import { StockLabPage } from "../features/stocks/StockLabPage";
-import { TodayPage } from "../features/today/TodayPage";
+import { BellRing, Binoculars, Briefcase, History, MessageSquareText, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
+import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
+import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
 import {
   api,
@@ -15,20 +9,95 @@ import {
   getAuthToken,
   setAuthToken,
   type AuthResult,
+  type DecisionEventFeed,
   type UserAccount,
   type UserPreferences,
   type Quote,
 } from "../lib/api";
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: 1 } } });
+function createQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: 1 } } });
+}
+
+const loadMarketPage = () => import("../features/market/MarketPage");
+const loadDecisionCenterPage = () => import("../features/decisions/DecisionCenterPage");
+const loadOpportunitiesPage = () => import("../features/opportunities/OpportunitiesPage");
+const loadStockLabPage = () => import("../features/stocks/StockLabPage");
+const loadRecommendationHistoryPage = () => import("../features/history/RecommendationHistoryPage");
+const loadAskStockPage = () => import("../features/ask/AskStockPage");
+const loadHoldingsPage = () => import("../features/holdings/HoldingsPage");
+
+const MarketPage = lazy(() => loadMarketPage().then((module) => ({ default: module.MarketPage })));
+const DecisionCenterPage = lazy(() => loadDecisionCenterPage().then((module) => ({ default: module.DecisionCenterPage })));
+const OpportunitiesPage = lazy(() => loadOpportunitiesPage().then((module) => ({ default: module.OpportunitiesPage })));
+const StockLabPage = lazy(() => loadStockLabPage().then((module) => ({ default: module.StockLabPage })));
+const RecommendationHistoryPage = lazy(() => loadRecommendationHistoryPage().then((module) => ({ default: module.RecommendationHistoryPage })));
+const AskStockPage = lazy(() => loadAskStockPage().then((module) => ({ default: module.AskStockPage })));
+const HoldingsPage = lazy(() => loadHoldingsPage().then((module) => ({ default: module.HoldingsPage })));
+
+const PHONE_MODE_QUERY = "(max-width: 767px)";
+const TABLET_MODE_QUERY = "(min-width: 768px) and (max-width: 1023px)";
+type DeviceMode = "mobile" | "tablet" | "web";
+
 const nav = [
-  ["/", "今日", Activity],
+  ["/decisions", "决定", BellRing],
   ["/market", "大盘", Binoculars],
-  ["/opportunities", "机会", Search],
+  ["/opportunities", "候选", Search],
+  ["/history", "复盘", History],
   ["/stocks", "个股", Star],
   ["/ask", "问股", MessageSquareText],
   ["/holdings", "持仓", Briefcase],
 ] as const;
+
+const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unknown>>> = {
+  "/decisions": loadDecisionCenterPage,
+  "/market": loadMarketPage,
+  "/opportunities": loadOpportunitiesPage,
+  "/history": loadRecommendationHistoryPage,
+  "/stocks": loadStockLabPage,
+  "/ask": loadAskStockPage,
+  "/holdings": loadHoldingsPage,
+};
+
+function preloadRoute(path: (typeof nav)[number][0]) {
+  void routePreloads[path]?.();
+}
+
+function readDeviceMode(): DeviceMode {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "web";
+  if (window.matchMedia(PHONE_MODE_QUERY).matches) return "mobile";
+  if (window.matchMedia(TABLET_MODE_QUERY).matches) return "tablet";
+  return "web";
+}
+
+function useDeviceMode(): DeviceMode {
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>(() => readDeviceMode());
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return undefined;
+    const phoneMedia = window.matchMedia(PHONE_MODE_QUERY);
+    const tabletMedia = window.matchMedia(TABLET_MODE_QUERY);
+    const sync = () => setDeviceMode(phoneMedia.matches ? "mobile" : tabletMedia.matches ? "tablet" : "web");
+    sync();
+    phoneMedia.addEventListener("change", sync);
+    tabletMedia.addEventListener("change", sync);
+    return () => {
+      phoneMedia.removeEventListener("change", sync);
+      tabletMedia.removeEventListener("change", sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.deviceMode = deviceMode;
+    document.body.dataset.deviceMode = deviceMode;
+    return () => {
+      delete document.documentElement.dataset.deviceMode;
+      delete document.body.dataset.deviceMode;
+    };
+  }, [deviceMode]);
+
+  return deviceMode;
+}
 
 function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: AuthResult) => void }) {
   const client = useQueryClient();
@@ -78,22 +147,35 @@ function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: Aut
 }
 
 
+function useDebouncedValue(value: string, delay = 250) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [delay, value]);
+  return debounced;
+}
+
 function CommandDock() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [recent, setRecent] = useState<RecentResearch[]>(() => loadRecentResearch());
   const inputRef = useRef<HTMLInputElement | null>(null);
   const query = draft.trim();
+  const debouncedQuery = useDebouncedValue(query);
   const search = useQuery({
-    queryKey: ["global-stock-search", query],
-    queryFn: () => api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(query)}`),
-    enabled: query.length >= 2,
+    queryKey: ["global-stock-search", debouncedQuery],
+    queryFn: () => api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(debouncedQuery)}`),
+    enabled: debouncedQuery.length >= 2,
     staleTime: 30_000,
   });
   const results = Array.isArray(search.data) ? search.data.slice(0, 5) : [];
   const primary = results[0] ?? null;
   const askHref = `/ask?question=${encodeURIComponent(query || "最近大业股份怎么大跌")}`;
+
+  useEffect(() => setActiveIndex(-1), [debouncedQuery]);
 
   useEffect(() => {
     const handleKeydown = (event: KeyboardEvent) => {
@@ -101,6 +183,7 @@ function CommandDock() {
         event.preventDefault();
         inputRef.current?.focus();
         setExpanded(true);
+        setActiveIndex(-1);
       }
     };
     window.addEventListener("keydown", handleKeydown);
@@ -110,8 +193,35 @@ function CommandDock() {
   const openStock = (stock: Pick<Quote, "symbol" | "name" | "sector">) => {
     setRecent(rememberRecentResearch(stock));
     setExpanded(false);
+    setActiveIndex(-1);
     setDraft("");
     navigate(`/stocks?symbol=${encodeURIComponent(stock.symbol)}#stock-final-gate`);
+  };
+
+  const closePanel = () => {
+    setExpanded(false);
+    setActiveIndex(-1);
+    inputRef.current?.blur();
+  };
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePanel();
+      return;
+    }
+    if (event.key === "Enter" && activeIndex >= 0 && results[activeIndex]) {
+      event.preventDefault();
+      openStock(results[activeIndex]);
+      return;
+    }
+    if (!results.length || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+    event.preventDefault();
+    setExpanded(true);
+    setActiveIndex((current) => {
+      if (event.key === "ArrowDown") return current >= results.length - 1 ? 0 : current + 1;
+      return current <= 0 ? results.length - 1 : current - 1;
+    });
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -138,20 +248,36 @@ function CommandDock() {
         type="search"
         value={draft}
         onChange={(event) => { setDraft(event.target.value); setExpanded(true); }}
+        onKeyDown={handleInputKeyDown}
         placeholder="搜股票 / 直接问股"
         aria-label="搜索股票或输入问题"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={expanded}
+        aria-controls={query.length >= 2 ? "command-result-list" : "command-panel"}
+        aria-activedescendant={activeIndex >= 0 ? `command-result-${activeIndex}` : undefined}
       />
       <span>⌘K</span>
-      {expanded ? <div className="command-panel">
+      {expanded ? <div className="command-panel" id="command-panel">
         <div className="command-panel-head">
-          <strong>搜索</strong>
-          <small>{query.length >= 2 ? "打开个股，或直接问股" : "输入名称或 6 位代码"}</small>
+          <div><strong>搜索</strong><small>{query.length >= 2 ? "方向键选择，回车打开个股" : "输入名称或 6 位代码"}</small></div>
+          <button type="button" className="command-close" aria-label="关闭搜索面板" onMouseDown={(event) => event.preventDefault()} onClick={closePanel}><X size={15} /></button>
         </div>
-        {query.length >= 2 ? <div className="command-results">
+        {query.length >= 2 ? <div className="command-results" id="command-result-list" role="listbox" aria-label="股票搜索结果">
           {search.isLoading ? <p>正在搜索股票…</p> : null}
           {!search.isLoading && results.length === 0 ? <p>没找到股票，可以把这句话交给问股。</p> : null}
-          {results.map((item) => (
-            <button type="button" key={item.symbol} onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item)}>
+          {results.map((item, index) => (
+            <button
+              type="button"
+              role="option"
+              id={`command-result-${index}`}
+              aria-selected={activeIndex === index}
+              className={activeIndex === index ? "active" : ""}
+              key={item.symbol}
+              onMouseEnter={() => setActiveIndex(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => openStock(item)}
+            >
               <b>{item.name}</b>
               <span>{item.symbol}</span>
               <small>{item.sector ?? "未标注板块"}</small>
@@ -159,24 +285,24 @@ function CommandDock() {
           ))}
         </div> : <div className="command-zero-state">
           {recent.length ? <section aria-label="最近研究">
-            <div><strong>最近研究</strong><small>打开个股或问风险。</small></div>
+            <div><strong>最近决定</strong><small>历史研究记录</small></div>
             {recent.slice(0, 4).map((item) => <article key={item.symbol}>
               <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(item)}>
                 <b>{item.name}</b><span>{item.symbol}</span><small>{item.sector ?? "未标注板块"}</small>
               </button>
-              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`${item.name}现在主要风险是什么`)}`}>问风险</Link>
-              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`最近${item.name}怎么大跌`)}`}>问异动</Link>
+              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`${item.name}现在能不能买，直接给我结论`)}`}>现在能不能买</Link>
+              <Link to={`/ask?symbol=${encodeURIComponent(item.symbol)}&name=${encodeURIComponent(item.name)}&question=${encodeURIComponent(`如果已经持有${item.name}，现在怎么处理`)}`}>已经持有怎么办</Link>
             </article>)}
           </section> : null}
           <div className="command-shortcuts">
             <Link to="/market#market-board-zone">板块热度</Link>
-            <Link to="/opportunities">机会</Link>
+            <Link to="/opportunities">候选决策</Link>
             <Link to="/holdings">持仓风险</Link>
           </div>
         </div>}
         <div className="command-actions">
-          {primary ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(primary)}>打开 {primary.name} 研究</button> : null}
-          <Link to={askHref}>交给问股判断</Link>
+          {primary ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openStock(primary)}>查看 {primary.name} 决定</button> : null}
+          <Link to={askHref}>直接给我决定</Link>
         </div>
       </div> : null}
     </form>
@@ -185,6 +311,8 @@ function CommandDock() {
 
 function AccountPanel({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
   const client = useQueryClient();
+  const menuRef = useRef<HTMLDetailsElement | null>(null);
+  const summaryRef = useRef<HTMLElement | null>(null);
   const preferences = useQuery({
     queryKey: ["preferences", user.id],
     queryFn: () => api<UserPreferences>("/api/v1/preferences"),
@@ -197,10 +325,30 @@ function AccountPanel({ user, onLogout }: { user: UserAccount; onLogout: () => v
     onSuccess: () => client.invalidateQueries({ queryKey: ["preferences", user?.id] }),
   });
 
+  useEffect(() => {
+    const close = (restoreFocus = false) => {
+      if (!menuRef.current?.open) return;
+      menuRef.current.open = false;
+      if (restoreFocus) summaryRef.current?.focus();
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) close();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close(true);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
     <div className="account-box">
-      <details className="account-menu">
-        <summary><UserRound size={15} /><span>{user.display_name}</span></summary>
+      <details className="account-menu" ref={menuRef}>
+        <summary ref={summaryRef} aria-label={`账户：${user.display_name}`}><UserRound size={15} /><span>{user.display_name}</span></summary>
         <div className="account-popover">
           <strong>{user.email}</strong>
           <label>风险偏好
@@ -221,15 +369,38 @@ function AccountPanel({ user, onLogout }: { user: UserAccount; onLogout: () => v
   );
 }
 
+function RouteFallback() {
+  return <div className="route-loading" role="status"><div className="loader" /><span>正在打开页面…</span></div>;
+}
+
 function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
   const client = useQueryClient();
+  const deviceMode = useDeviceMode();
+  const [refreshNotice, setRefreshNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const decisions = useQuery({
+    queryKey: ["decision-events"],
+    queryFn: () => api<DecisionEventFeed>("/api/v1/decision-events"),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
   const refresh = useMutation({
     mutationFn: () => api("/api/v1/refresh", { method: "POST" }),
-    onSuccess: () => client.invalidateQueries(),
+    onMutate: () => setRefreshNotice(null),
+    onSuccess: async () => {
+      await client.invalidateQueries();
+      setRefreshNotice({ kind: "success", message: "数据已同步" });
+    },
+    onError: () => setRefreshNotice({ kind: "error", message: "刷新失败，请稍后重试" }),
   });
 
+  useEffect(() => {
+    if (!refreshNotice) return undefined;
+    const timer = window.setTimeout(() => setRefreshNotice(null), 3_200);
+    return () => window.clearTimeout(timer);
+  }, [refreshNotice]);
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${deviceMode}-shell`} data-device-mode={deviceMode}>
       <a className="skip-link" href="#main">跳到主要内容</a>
       <aside className="sidebar">
         <div className="brand">
@@ -241,9 +412,18 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
         </div>
         <nav aria-label="主导航">
           {nav.map(([path, label, Icon]) => (
-            <NavLink key={path} to={path} end={path === "/"}>
+            <NavLink
+              key={path}
+              to={path}
+              end={path === "/market"}
+              onFocus={() => preloadRoute(path)}
+              onPointerEnter={() => preloadRoute(path)}
+            >
               <Icon size={18} />
               <span>{label}</span>
+              {path === "/decisions" && (decisions.data?.unread_count ?? 0) > 0
+                ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读决定`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
+                : null}
             </NavLink>
           ))}
         </nav>
@@ -256,22 +436,28 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
         <div className="topbar">
           <div className="topbar-left"><div className="session"><i />A 股 · 最近交易快照</div><CommandDock /></div>
           <div className="topbar-actions">
+            {refreshNotice ? <div className={`refresh-notice ${refreshNotice.kind}`} role={refreshNotice.kind === "error" ? "alert" : "status"} aria-live={refreshNotice.kind === "error" ? "assertive" : "polite"}><i />{refreshNotice.message}</div> : null}
             <AccountPanel user={user} onLogout={onLogout} />
-            <button className="refresh-button" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+            <button className="refresh-button" aria-label={refresh.isPending ? "刷新中" : "刷新"} title={refresh.isPending ? "正在刷新数据" : "刷新全部数据"} onClick={() => refresh.mutate()} disabled={refresh.isPending}>
               <RefreshCw size={15} className={refresh.isPending ? "spin" : ""} />
               {refresh.isPending ? "刷新中" : "刷新"}
             </button>
           </div>
         </div>
         <div className="page-wrap">
-          <Routes>
-            <Route path="/" element={<TodayPage />} />
-            <Route path="/market" element={<MarketPage />} />
-            <Route path="/opportunities" element={<OpportunitiesPage />} />
-            <Route path="/stocks" element={<StockLabPage />} />
-            <Route path="/ask" element={<AskStockPage />} />
-            <Route path="/holdings" element={<HoldingsPage />} />
-          </Routes>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/market" replace />} />
+              <Route path="/market" element={<MarketPage />} />
+              <Route path="/decisions" element={<DecisionCenterPage />} />
+              <Route path="/opportunities" element={<OpportunitiesPage />} />
+              <Route path="/history" element={<RecommendationHistoryPage />} />
+              <Route path="/stocks" element={<StockLabPage />} />
+              <Route path="/ask" element={<AskStockPage />} />
+              <Route path="/holdings" element={<HoldingsPage />} />
+              <Route path="*" element={<Navigate to="/market" replace />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
@@ -285,7 +471,7 @@ function SessionGate() {
   const me = useQuery({
     queryKey: ["auth-me", token],
     queryFn: () => api<UserAccount>("/api/v1/auth/me"),
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !sessionUser,
     retry: false,
   });
   const user = sessionUser ?? me.data ?? null;
@@ -316,8 +502,9 @@ function SessionGate() {
 }
 
 export function App() {
+  const [appQueryClient] = useState(createQueryClient);
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={appQueryClient}>
       <HashRouter>
         <SessionGate />
       </HashRouter>

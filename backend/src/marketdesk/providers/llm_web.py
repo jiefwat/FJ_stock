@@ -54,6 +54,7 @@ class LLMWebAskContext:
     holdings: tuple[str, ...] = ()
     observed_at: datetime | None = None
     market_notes: tuple[str, ...] = field(default_factory=tuple)
+    analysis_notes: tuple[str, ...] = field(default_factory=tuple)
 
 
 class LLMWebAskProvider:
@@ -74,8 +75,10 @@ class LLMWebAskProvider:
             "llm_web_answer": {
                 "status": "configured" if self.configured else "not_configured",
                 "required": False,
-                "description": "联网大模型问股",
+                "description": "金融大模型问股",
                 "model": self.settings.llm_web_model,
+                "api_style": self.settings.llm_web_api_style,
+                "web_search": self.settings.llm_web_search_enabled,
             }
         }
 
@@ -83,18 +86,35 @@ class LLMWebAskProvider:
         if not self.configured:
             raise ProviderUnavailable("llm web answer is not configured")
 
-        payload = {
-            "model": self.settings.llm_web_model,
-            "tools": [self._web_search_tool()],
-            "max_output_tokens": 1200,
-            "input": [
-                {"role": "system", "content": self._system_prompt()},
-                {"role": "user", "content": self._user_prompt(context)},
-            ],
-        }
+        api_style = self._api_style(stream=False)
+        if api_style == "chat_completions":
+            url = f"{self.settings.llm_web_base_url.rstrip('/')}/chat/completions"
+            payload: dict[str, Any] = {
+                "model": self.settings.llm_web_model,
+                "messages": [
+                    {"role": "system", "content": self._system_prompt()},
+                    {"role": "user", "content": self._user_prompt(context)},
+                ],
+                "max_tokens": 1200,
+            }
+            if self._uses_dashscope() and self.settings.llm_web_search_enabled:
+                payload["enable_search"] = True
+                payload["enable_thinking"] = False
+        else:
+            url = f"{self.settings.llm_web_base_url.rstrip('/')}/responses"
+            payload = {
+                "model": self.settings.llm_web_model,
+                "max_output_tokens": 1200,
+                "input": [
+                    {"role": "system", "content": self._system_prompt()},
+                    {"role": "user", "content": self._user_prompt(context)},
+                ],
+            }
+            if self.settings.llm_web_search_enabled:
+                payload["tools"] = [self._web_search_tool()]
         try:
             response = await self.client.post(
-                f"{self.settings.llm_web_base_url.rstrip('/')}/responses",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.settings.llm_web_api_key}",
                     "Content-Type": "application/json",
@@ -113,14 +133,27 @@ class LLMWebAskProvider:
             intent=self._intent(parsed),
             symbol=self._string_or_none(parsed.get("symbol")) or self._context_symbol(context),
             name=self._string_or_none(parsed.get("name")) or self._context_name(context),
-            answer=self._answer_text(parsed),
-            evidence=self._string_list(parsed.get("evidence"), fallback="联网检索未返回可结构化依据。"),
-            risks=self._string_list(parsed.get("risks"), fallback="公开信息可能滞后，需复核公告、行情和成交。"),
-            next_actions=self._string_list(
-                parsed.get("next_actions"), fallback="打开个股研究页核对本地证据，再决定是否行动。"
+            answer=self._clean_display_text(self._answer_text(parsed)),
+            evidence=self._clean_display_list(
+                self._string_list(
+                    parsed.get("evidence"),
+                    fallback="公开信息核对未返回可结构化依据。",
+                )
+            ),
+            risks=self._clean_display_list(
+                self._string_list(
+                    parsed.get("risks"),
+                    fallback="公开信息可能滞后，需复核公告、行情和成交。",
+                )
+            ),
+            next_actions=self._clean_display_list(
+                self._string_list(
+                    parsed.get("next_actions"),
+                    fallback="打开个股研究页核对本地证据，再决定是否行动。",
+                )
             ),
             metrics=[
-                AskStockMetric(label="回答模式", value="联网问答", tone="neutral"),
+                AskStockMetric(label="回答模式", value="智能分析", tone="neutral"),
                 AskStockMetric(
                     label="上下文",
                     value="已带入" if context.conversation or context.stock else "仅本轮",
@@ -128,17 +161,17 @@ class LLMWebAskProvider:
                 ),
             ],
             observed_at=context.observed_at,
-            source="联网大模型问答",
-            disclaimer="联网研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
+            source="智能分析",
+            disclaimer="研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
     async def stream_answer_text(self, context: LLMWebAskContext) -> AsyncIterator[str]:
         if not self.configured:
             raise ProviderUnavailable("llm web answer is not configured")
 
-        if self._uses_dashscope():
+        if self._api_style(stream=True) == "chat_completions":
             url = f"{self.settings.llm_web_base_url.rstrip('/')}/chat/completions"
-            payload = {
+            payload: dict[str, Any] = {
                 "model": self.settings.llm_web_model,
                 "messages": [
                     {"role": "system", "content": self._stream_system_prompt()},
@@ -146,14 +179,14 @@ class LLMWebAskProvider:
                 ],
                 "max_tokens": 900,
                 "stream": True,
-                "enable_search": True,
-                "enable_thinking": False,
             }
+            if self._uses_dashscope() and self.settings.llm_web_search_enabled:
+                payload["enable_search"] = True
+                payload["enable_thinking"] = False
         else:
             url = f"{self.settings.llm_web_base_url.rstrip('/')}/responses"
             payload = {
                 "model": self.settings.llm_web_model,
-                "tools": [self._web_search_tool()],
                 "max_output_tokens": 900,
                 "stream": True,
                 "input": [
@@ -161,6 +194,8 @@ class LLMWebAskProvider:
                     {"role": "user", "content": self._user_prompt(context)},
                 ],
             }
+            if self.settings.llm_web_search_enabled:
+                payload["tools"] = [self._web_search_tool()]
         try:
             async with self.client.stream(
                 "POST",
@@ -189,12 +224,27 @@ class LLMWebAskProvider:
             intent=self._intent(parsed),
             symbol=self._string_or_none(parsed.get("symbol")) or self._context_symbol(context),
             name=self._string_or_none(parsed.get("name")) or self._context_name(context),
-            answer=self._answer_text(parsed),
-            evidence=self._string_list(parsed.get("evidence"), fallback="联网检索未返回可结构化依据。"),
-            risks=self._string_list(parsed.get("risks"), fallback="公开信息可能滞后，需复核公告、行情和成交。"),
-            next_actions=self._string_list(parsed.get("next_actions"), fallback="打开个股研究页核对本地证据，再决定是否行动。"),
+            answer=self._clean_display_text(self._answer_text(parsed)),
+            evidence=self._clean_display_list(
+                self._string_list(
+                    parsed.get("evidence"),
+                    fallback="公开信息核对未返回可结构化依据。",
+                )
+            ),
+            risks=self._clean_display_list(
+                self._string_list(
+                    parsed.get("risks"),
+                    fallback="公开信息可能滞后，需复核公告、行情和成交。",
+                )
+            ),
+            next_actions=self._clean_display_list(
+                self._string_list(
+                    parsed.get("next_actions"),
+                    fallback="打开个股研究页核对本地证据，再决定是否行动。",
+                )
+            ),
             metrics=[
-                AskStockMetric(label="回答模式", value="联网问答", tone="neutral"),
+                AskStockMetric(label="回答模式", value="智能分析", tone="neutral"),
                 AskStockMetric(
                     label="上下文",
                     value="已带入" if context.conversation or context.stock else "仅本轮",
@@ -202,8 +252,8 @@ class LLMWebAskProvider:
                 ),
             ],
             observed_at=context.observed_at,
-            source="联网大模型问答",
-            disclaimer="联网研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
+            source="智能分析",
+            disclaimer="研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
     def _web_search_tool(self) -> dict[str, str]:
@@ -213,9 +263,20 @@ class LLMWebAskProvider:
     def _uses_dashscope(self) -> bool:
         return "dashscope" in self.settings.llm_web_base_url.lower()
 
+    def _api_style(self, *, stream: bool) -> Literal["responses", "chat_completions"]:
+        configured = self.settings.llm_web_api_style
+        if configured != "auto":
+            return configured
+        if stream and self._uses_dashscope():
+            return "chat_completions"
+        return "responses"
+
     def _system_prompt(self) -> str:
         return (
-            "你是 A 股问答助手。必须优先使用联网检索核对最新公开信息，回答要短、结论先行。"
+            "你是金融投研问答助手。必须优先使用系统提供的本地行情、确定性分析、持仓和对话上下文，"
+            "只有上下文不足时才使用公开信息补充，回答要短、结论先行。"
+            "必须使用普通投资者能直接听懂的日常中文，围绕为什么值得看、主要担心什么、下一步做什么来回答。"
+            "不要堆砌K线、MA、MACD、RSI、ATR、波动率等术语；必须使用时，要紧接着用一句白话解释它代表什么。"
             "不要写成说明书，不要复述系统能力，不要编造数据或承诺收益。"
             "如果公开信息不足，明确说哪些点未确认。"
             "输出必须是 JSON，字段：answer, evidence, risks, next_actions, intent, symbol, name。"
@@ -223,7 +284,10 @@ class LLMWebAskProvider:
 
     def _stream_system_prompt(self) -> str:
         return (
-            "你是 A 股问答助手。必须优先联网核对最新公开信息，直接输出中文短回答。"
+            "你是金融投研问答助手。必须优先使用系统提供的本地行情、确定性分析、持仓和对话上下文，"
+            "只有上下文不足时才使用公开信息补充，直接输出中文短回答。"
+            "必须使用普通投资者能直接听懂的日常中文，不堆砌K线、MA、MACD、RSI、ATR、波动率等术语；"
+            "必须使用时，要紧接着解释它代表什么。先讲为什么值得看或不值得看，再讲主要担心和下一步。"
             "不要输出 JSON，不要写说明书，不要复述系统能力，不要承诺收益。"
             "格式固定为：结论：...\n依据：...\n风险：...\n下一步：..."
         )
@@ -243,6 +307,8 @@ class LLMWebAskProvider:
             blocks.append(f"股票上下文：{json.dumps(context.stock, ensure_ascii=False)}")
         if context.market_notes:
             blocks.append("本地市场摘要：" + "；".join(context.market_notes[:6]))
+        if context.analysis_notes:
+            blocks.append("确定性分析上下文：" + "；".join(context.analysis_notes[:12]))
         if context.holdings:
             blocks.append("当前账号持仓上下文：" + "；".join(context.holdings[:8]))
         if context.conversation:
@@ -251,7 +317,8 @@ class LLMWebAskProvider:
             ]
             blocks.append("最近对话：\n" + "\n".join(history))
         blocks.append(
-            "请直接回答用户问题。answer 控制在 2-4 句；evidence/risks/next_actions 每项不超过 5 条。"
+            "请直接用日常中文回答用户问题。answer 控制在 2-4 句；先说结论和原因，"
+            "再分别给出主要担心与可执行的下一步；evidence/risks/next_actions 每项不超过 5 条。"
         )
         return "\n\n".join(blocks)
 
@@ -271,6 +338,13 @@ class LLMWebAskProvider:
                 for part in content:
                     if isinstance(part, dict) and isinstance(part.get("text"), str):
                         chunks.append(cast(str, part["text"]))
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                message = first.get("message")
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    chunks.append(cast(str, message["content"]))
         return "\n".join(chunks).strip()
 
     def _stream_delta(self, line: str) -> str:
@@ -364,7 +438,25 @@ class LLMWebAskProvider:
         answer = self._string_or_none(parsed.get("answer"))
         if answer:
             return answer
-        return "联网问答已返回，但没有形成可用结论；请换一种更具体的问法。"
+        return "智能分析已返回，但没有形成可用结论；请换一种更具体的问法。"
+
+    def _clean_display_text(self, value: str) -> str:
+        return (
+            value.replace("联网大模型问答", "智能分析")
+            .replace("联网问答", "智能分析")
+            .replace("联网检索", "资料核对")
+            .replace("联网结论：", "结论：")
+            .replace("联网结论:", "结论：")
+            .replace("联网依据", "依据")
+            .replace("联网研究", "研究")
+            .replace("已检索", "已核对")
+            .replace("检索", "核对")
+            .replace("联网", "")
+            .strip()
+        )
+
+    def _clean_display_list(self, values: list[str]) -> list[str]:
+        return [item for item in (self._clean_display_text(value) for value in values) if item]
 
     def _intent(self, parsed: dict[str, Any]) -> LLMIntent:
         intent = self._string_or_none(parsed.get("intent"))

@@ -1,5 +1,6 @@
 from math import sqrt
 
+from marketdesk.analysis.decisions import candidate_decision
 from marketdesk.analysis.indicators import maximum_drawdown
 from marketdesk.models import (
     Bar,
@@ -10,6 +11,7 @@ from marketdesk.models import (
     OpportunityResult,
     RankedCandidate,
     ScoreComponent,
+    StrategyValidation,
 )
 
 STRATEGY_LABELS = {
@@ -17,13 +19,31 @@ STRATEGY_LABELS = {
     "volume_breakout": "放量突破",
     "value_rebound": "低估反弹",
     "oversold_repair": "超跌修复",
+    "capital_confirmed": "资金确认",
+    "sector_momentum": "板块共振",
+    "pullback_support": "回踩企稳",
+    "quality_value": "估值质量",
+    "large_cap_stability": "蓝筹稳健",
+}
+
+STRATEGY_RULES = {
+    "trend": ["涨幅 0.5% 至 7%", "成交额至少 3 亿元", "排除涨停追高"],
+    "volume_breakout": ["涨幅 1% 至 8%", "成交额至少 5 亿元", "量比高于 1.3 或换手率高于 3%"],
+    "value_rebound": ["涨跌幅 -1% 至 2%", "PE 介于 0 至 30", "PB 不高于 5 且成交额至少 1 亿元"],
+    "oversold_repair": ["当日跌幅 -7% 至 -1%", "PE 介于 0 至 60", "成交额至少 1 亿元"],
+    "capital_confirmed": ["涨跌幅 -1% 至 6%", "主力净流入至少 2000 万", "成交额至少 3 亿元"],
+    "sector_momentum": ["已归属行业板块", "涨幅 0% 至 6%", "成交额至少 3 亿元且量能/换手不弱"],
+    "pullback_support": ["涨跌幅 -3% 至 1.5%", "资金不净流出", "成交额至少 2 亿元"],
+    "quality_value": ["PE 介于 0 至 25", "PB 介于 0 至 3.5", "市值至少 100 亿元"],
+    "large_cap_stability": ["市值至少 500 亿元", "成交额至少 5 亿元", "涨跌幅 -1.5% 至 3.5%"],
 }
 
 PRESET_ALIASES = {
-    "sector_improving": "volume_breakout",
-    "capital_confirmed": "volume_breakout",
+    "sector_improving": "sector_momentum",
     "oversold_rebound": "oversold_repair",
 }
+
+RECOMMENDATION_ALGORITHM_VERSION = "strategy-profiles-v3"
 
 
 def _score(value: float | None, low: float, high: float) -> float:
@@ -71,15 +91,10 @@ def rank_candidates(
     market_regime: str,
     preset: str = "trend",
     history_by_symbol: dict[str, list[Bar]] | None = None,
+    sector_strength: dict[str, float] | None = None,
 ) -> OpportunityResult:
     preset = PRESET_ALIASES.get(preset, preset)
-    strategy_rules = {
-        "trend": ["涨幅 0.5% 至 7%", "成交额至少 3 亿元", "排除涨停追高"],
-        "volume_breakout": ["涨幅 1% 至 8%", "成交额至少 5 亿元", "量比高于 1.3 或换手率高于 3%"],
-        "value_rebound": ["涨跌幅 -1% 至 2%", "PE 介于 0 至 30", "PB 不高于 5 且成交额至少 1 亿元"],
-        "oversold_repair": ["当日跌幅 -7% 至 -1%", "PE 介于 0 至 60", "成交额至少 1 亿元"],
-    }
-    if preset not in strategy_rules:
+    if preset not in STRATEGY_RULES:
         raise ValueError("unknown preset")
 
     excluded: list[ExcludedCandidate] = []
@@ -94,8 +109,9 @@ def rank_candidates(
             reasons.append("insufficient_liquidity")
         if quote.market_cap is not None and quote.market_cap < 2_000_000_000:
             reasons.append("insufficient_market_cap")
-        if not reasons and not _matches_preset(quote, preset):
-            reasons.append("strategy_mismatch")
+        validation = _strategy_validation(quote, preset, sector_strength)
+        if not reasons and not validation.passed:
+            reasons.extend(validation.failures or ["strategy_mismatch"])
         if reasons:
             excluded.append(ExcludedCandidate(quote=quote, reasons=reasons))
             continue
@@ -154,7 +170,10 @@ def rank_candidates(
             else:
                 risk_flags.append("历史K线不足")
             risk_flags.extend(history_check.risk_flags)
-        risk_flags.append("板块归属暂缺" if quote.sector is None else "板块强度数据暂缺")
+        if quote.sector is None:
+            risk_flags.append("板块归属暂缺")
+        elif sector_strength is None or quote.sector not in sector_strength:
+            risk_flags.append("板块强度数据暂缺")
         risk_flags.append("催化证据暂缺")
         available_weight = sum(item[3] for item in component_values)
         components = [
@@ -169,19 +188,23 @@ def rank_candidates(
             for key, label, score, weight, raw in component_values
         ]
         base_score = round(sum(item.weighted_score for item in components), 2)
-        context_penalty = 15.0 if market_regime == "risk_off" else 8.0 if market_regime == "cautious" else 0.0
-        upside_score, upside_label, upside_summary, upside_drivers, upside_risks = _candidate_upside(
-            quote=quote,
-            preset=preset,
-            components=components,
-            context_penalty=context_penalty,
-            history_check=history_check,
+        context_penalty = (
+            15.0 if market_regime == "risk_off" else 8.0 if market_regime == "cautious" else 0.0
+        )
+        upside_score, upside_label, upside_summary, upside_drivers, upside_risks = (
+            _candidate_upside(
+                quote=quote,
+                preset=preset,
+                components=components,
+                context_penalty=context_penalty,
+                history_check=history_check,
+                sector_strength=sector_strength,
+            )
         )
         if market_regime in {"risk_off", "cautious"}:
             risk_flags.append("市场偏弱")
         risk_flags = list(dict.fromkeys(risk_flags))
-        ranked.append(
-            RankedCandidate(
+        candidate = RankedCandidate(
                 quote=quote,
                 base_score=base_score,
                 context_penalty=context_penalty,
@@ -194,15 +217,22 @@ def rank_candidates(
                 evidence_coverage=round(min(1.0, available_weight), 2),
                 components=components,
                 dimensions=_candidate_dimensions(
-                    quote, preset, components, context_penalty, history_check
+                    quote,
+                    preset,
+                    components,
+                    context_penalty,
+                    history_check,
+                    validation,
+                    sector_strength,
                 ),
                 history_check=history_check,
+                strategy_validation=validation,
                 thesis=_candidate_thesis(quote, preset),
                 invalidation=_candidate_invalidation(quote, preset),
                 next_actions=_candidate_next_actions(quote, context_penalty),
                 risk_flags=risk_flags,
-            )
         )
+        ranked.append(candidate.model_copy(update={"decision": candidate_decision(candidate)}))
     ranked.sort(key=lambda item: item.upside_score, reverse=True)
     funnel = {"universe": len(equities), "excluded": len(excluded), "ranked": len(ranked)}
     diagnostics = _strategy_diagnostics(
@@ -217,7 +247,7 @@ def rank_candidates(
         preset=preset,
         available=True,
         summary=_strategy_summary(preset, market_regime, funnel),
-        rules=strategy_rules[preset],
+        rules=STRATEGY_RULES[preset],
         diagnostics=diagnostics,
         next_actions=_strategy_next_actions(preset, diagnostics, market_regime, available=True),
         funnel=funnel,
@@ -240,9 +270,9 @@ def analyse_opportunity_history(bars: list[Bar]) -> OpportunityHistoryCheck:
 
     latest = closes[-1]
     ma20 = sum(closes[-20:]) / 20
-    trend_20d = (latest / closes[-21] - 1) * 100 if len(closes) >= 21 else (
-        latest / closes[0] - 1
-    ) * 100
+    trend_20d = (
+        (latest / closes[-21] - 1) * 100 if len(closes) >= 21 else (latest / closes[0] - 1) * 100
+    )
     trend_60d = (latest / closes[-61] - 1) * 100 if len(closes) >= 61 else None
     ma20_gap = (latest / ma20 - 1) * 100 if ma20 > 0 else None
     returns = [
@@ -347,30 +377,226 @@ def analyse_opportunity_history(bars: list[Bar]) -> OpportunityHistoryCheck:
     )
 
 
-def _matches_preset(quote: EquityQuote, preset: str) -> bool:
+def _gate(checks: list[str], failures: list[str], passed: bool, ok: str, fail: str) -> None:
+    if passed:
+        checks.append(ok)
+    else:
+        failures.append(fail)
+
+
+def _strategy_validation(
+    quote: EquityQuote,
+    preset: str,
+    sector_strength: dict[str, float] | None = None,
+) -> StrategyValidation:
+    checks: list[str] = []
+    failures: list[str] = []
     change = quote.change_pct
-    if change is None:
-        return False
+    amount = quote.amount or 0.0
+    net_flow = quote.net_flow
+    volume_active = (quote.volume_ratio or 0) >= 1.3 or (quote.turnover_rate or 0) >= 3
+    mild_activity = (quote.volume_ratio or 0) >= 1.0 or (quote.turnover_rate or 0) >= 1.5
+
     if preset == "trend":
-        return 0.5 <= change <= 7 and (quote.amount or 0) >= 300_000_000
-    if preset == "volume_breakout":
-        active_volume = (quote.volume_ratio or 0) >= 1.3 or (quote.turnover_rate or 0) >= 3
-        return 1 <= change <= 8 and (quote.amount or 0) >= 500_000_000 and active_volume
-    if preset == "value_rebound":
-        pb_ok = quote.pb is None or quote.pb <= 5
-        return (
-            -1 <= change <= 2
-            and quote.pe is not None
-            and 0 < quote.pe <= 30
-            and pb_ok
-            and (quote.amount or 0) >= 100_000_000
+        _gate(
+            checks,
+            failures,
+            change is not None and 0.5 <= change <= 7,
+            "涨幅在趋势区间",
+            "strategy_mismatch",
         )
-    return (
-        -7 <= change <= -1
-        and quote.pe is not None
-        and 0 < quote.pe <= 60
-        and (quote.amount or 0) >= 100_000_000
+        _gate(checks, failures, amount >= 300_000_000, "成交额 >= 3 亿", "insufficient_liquidity")
+        _gate(
+            checks,
+            failures,
+            change is not None and change < 9.5,
+            "未触及涨停追高",
+            "limit_up_chasing",
+        )
+    elif preset == "volume_breakout":
+        _gate(
+            checks,
+            failures,
+            change is not None and 1 <= change <= 8,
+            "涨幅在突破区间",
+            "strategy_mismatch",
+        )
+        _gate(checks, failures, amount >= 500_000_000, "成交额 >= 5 亿", "insufficient_liquidity")
+        _gate(checks, failures, volume_active, "量比或换手确认", "volume_not_confirmed")
+    elif preset == "value_rebound":
+        _gate(
+            checks,
+            failures,
+            change is not None and -1 <= change <= 2,
+            "价格未明显追高",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pe is not None and 0 < quote.pe <= 30,
+            "PE 在低估区间",
+            "valuation_not_qualified",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pb is None or quote.pb <= 5,
+            "PB 未拥挤",
+            "valuation_not_qualified",
+        )
+        _gate(checks, failures, amount >= 100_000_000, "成交额 >= 1 亿", "insufficient_liquidity")
+    elif preset == "oversold_repair":
+        _gate(
+            checks,
+            failures,
+            change is not None and -7 <= change <= -1,
+            "跌幅进入修复观察区",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pe is not None and 0 < quote.pe <= 60,
+            "PE 未失真",
+            "valuation_not_qualified",
+        )
+        _gate(checks, failures, amount >= 100_000_000, "成交额 >= 1 亿", "insufficient_liquidity")
+    elif preset == "capital_confirmed":
+        _gate(
+            checks,
+            failures,
+            change is not None and -1 <= change <= 6,
+            "价格未过热",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            net_flow is not None and net_flow >= 20_000_000,
+            "资金净流入 >= 2000 万",
+            "capital_not_confirmed",
+        )
+        _gate(checks, failures, amount >= 300_000_000, "成交额 >= 3 亿", "insufficient_liquidity")
+        _gate(
+            checks,
+            failures,
+            quote.turnover_rate is None or quote.turnover_rate <= 12,
+            "换手未异常过热",
+            "overheated_turnover",
+        )
+    elif preset == "sector_momentum":
+        _gate(checks, failures, quote.sector is not None, "板块归属明确", "sector_missing")
+        if sector_strength is not None:
+            _gate(
+                checks,
+                failures,
+                quote.sector is not None and quote.sector in sector_strength,
+                "板块强度已覆盖",
+                "sector_strength_missing",
+            )
+        _gate(
+            checks,
+            failures,
+            change is not None and 0 <= change <= 6,
+            "个股涨幅跟随板块",
+            "strategy_mismatch",
+        )
+        _gate(checks, failures, amount >= 300_000_000, "成交额 >= 3 亿", "insufficient_liquidity")
+        _gate(checks, failures, mild_activity, "量能或换手不弱", "volume_not_confirmed")
+    elif preset == "pullback_support":
+        _gate(
+            checks,
+            failures,
+            change is not None and -3 <= change <= 1.5,
+            "回踩幅度可控",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            net_flow is not None and net_flow >= 0,
+            "资金没有净流出",
+            "capital_not_confirmed",
+        )
+        _gate(checks, failures, amount >= 200_000_000, "成交额 >= 2 亿", "insufficient_liquidity")
+        _gate(
+            checks,
+            failures,
+            quote.pe is None or 0 < quote.pe <= 50,
+            "估值未明显失真",
+            "valuation_not_qualified",
+        )
+    elif preset == "quality_value":
+        _gate(
+            checks,
+            failures,
+            change is not None and -2 <= change <= 3,
+            "价格仍在低位观察区",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pe is not None and 0 < quote.pe <= 25,
+            "PE <= 25",
+            "valuation_not_qualified",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pb is not None and 0 < quote.pb <= 3.5,
+            "PB <= 3.5",
+            "valuation_not_qualified",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.market_cap is not None and quote.market_cap >= 10_000_000_000,
+            "市值 >= 100 亿",
+            "insufficient_market_cap",
+        )
+        _gate(checks, failures, amount >= 150_000_000, "成交额 >= 1.5 亿", "insufficient_liquidity")
+    elif preset == "large_cap_stability":
+        _gate(
+            checks,
+            failures,
+            quote.market_cap is not None and quote.market_cap >= 50_000_000_000,
+            "市值 >= 500 亿",
+            "insufficient_market_cap",
+        )
+        _gate(checks, failures, amount >= 500_000_000, "成交额 >= 5 亿", "insufficient_liquidity")
+        _gate(
+            checks,
+            failures,
+            change is not None and -1.5 <= change <= 3.5,
+            "波动在稳健区间",
+            "strategy_mismatch",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.turnover_rate is None or quote.turnover_rate <= 8,
+            "换手不过热",
+            "overheated_turnover",
+        )
+        _gate(
+            checks,
+            failures,
+            quote.pe is None or 0 < quote.pe <= 40,
+            "估值未明显失真",
+            "valuation_not_qualified",
+        )
+    else:
+        failures.append("strategy_mismatch")
+
+    return StrategyValidation(
+        passed=not failures, checks=checks, failures=list(dict.fromkeys(failures))
     )
+
+
+def _matches_preset(quote: EquityQuote, preset: str) -> bool:
+    return _strategy_validation(quote, preset).passed
 
 
 def _strategy_summary(preset: str, market_regime: str, funnel: dict[str, int]) -> str:
@@ -384,7 +610,9 @@ def _strategy_summary(preset: str, market_regime: str, funnel: dict[str, int]) -
         "balanced": "均衡市况下可按复核优先级推进线索短名单",
         "risk_on": "积极市况下可放宽观察范围，但仍需控制追高",
     }.get(market_regime, "市场环境待确认")
-    return f"{label}线索策略当前可运行，筛出线索 {ranked}/{universe}（{rate:.1f}%）；{regime_text}。"
+    return (
+        f"{label}线索策略当前可运行，筛出线索 {ranked}/{universe}（{rate:.1f}%）；{regime_text}。"
+    )
 
 
 def _strategy_diagnostics(
@@ -471,15 +699,25 @@ def _strategy_next_actions(
     actions = ["先核对前 10 名的资金、行业和流动性证据"]
     data_quality = next((item for item in diagnostics if item.key == "data_quality"), None)
     if data_quality and data_quality.score is not None and data_quality.score < 70:
-        actions.append("数据完整度不足的线索只保留候选，不直接升级为参与判断")
+        actions.append("数据完整度不足的线索只保留候选，不直接通过为参与判断")
     if market_regime in {"risk_off", "cautious"}:
         actions.append("市场偏弱时优先保留有资金确认和成交额支撑的线索")
     if preset == "oversold_repair":
         actions.append("超跌修复线索必须等待止跌确认，不能只因便宜而参与")
     elif preset == "value_rebound":
-        actions.append("低估反弹线索必须复核基本面和估值陷阱，不因低 PE 直接升级为参与")
+        actions.append("低估反弹线索必须复核基本面和估值陷阱，不因低 PE 直接通过复核")
     elif preset == "volume_breakout":
         actions.append("放量突破线索必须复核是否有真实催化，避免单日放量骗线")
+    elif preset == "capital_confirmed":
+        actions.append("资金确认线索必须复核净流入是否连续，单日流入不直接通过")
+    elif preset == "sector_momentum":
+        actions.append("板块共振线索必须回到大盘页确认板块资金和扩散")
+    elif preset == "pullback_support":
+        actions.append("回踩企稳线索必须等止跌和重新放量，不接下跌惯性")
+    elif preset == "quality_value":
+        actions.append("估值质量线索必须排除价值陷阱，先看业绩和现金流证据")
+    elif preset == "large_cap_stability":
+        actions.append("蓝筹稳健线索重在低波和流动性，不按短线涨幅追高")
     else:
         actions.append("风险收益不足的线索不追高，等待回踩后的新证据")
     return actions[:4]
@@ -570,12 +808,176 @@ def _valuation_room_score(quote: EquityQuote) -> tuple[float, str]:
     return _clamp_score(score), "，".join(parts)
 
 
+def _weighted_available_score(inputs: list[tuple[float | None, float]]) -> float:
+    available = [(score, weight) for score, weight in inputs if score is not None]
+    available_weight = sum(weight for _, weight in available)
+    if not available_weight:
+        return 50.0
+    return _clamp_score(sum(score * weight for score, weight in available) / available_weight)
+
+
+def _strategy_fit_score(
+    quote: EquityQuote,
+    preset: str,
+    history_check: OpportunityHistoryCheck | None,
+    sector_strength: dict[str, float] | None,
+) -> tuple[float, str]:
+    change = quote.change_pct
+    history_score = (
+        history_check.score if history_check is not None and history_check.available else None
+    )
+    capital_intensity = (
+        quote.net_flow / quote.amount
+        if quote.net_flow is not None and quote.amount is not None and quote.amount > 0
+        else None
+    )
+    sector_change = (
+        sector_strength.get(quote.sector)
+        if sector_strength is not None and quote.sector is not None
+        else None
+    )
+
+    if preset == "trend":
+        score = _weighted_available_score(
+            [
+                (_score(change, 0.5, 5.5) if change is not None else None, 0.45),
+                (history_score, 0.55),
+            ]
+        )
+        return score, f"趋势专属分 {score:.0f}/100，侧重价格延续和历史确认"
+    if preset == "volume_breakout":
+        score = _weighted_available_score(
+            [
+                (_score(change, 1, 7) if change is not None else None, 0.20),
+                (
+                    _score(quote.volume_ratio, 1.3, 3.5)
+                    if quote.volume_ratio is not None
+                    else None,
+                    0.35,
+                ),
+                (
+                    _score(quote.turnover_rate, 3, 8) if quote.turnover_rate is not None else None,
+                    0.20,
+                ),
+                (
+                    _score(quote.amount, 500_000_000, 2_000_000_000)
+                    if quote.amount is not None
+                    else None,
+                    0.25,
+                ),
+            ]
+        )
+        return score, f"突破专属分 {score:.0f}/100，侧重放量、换手和成交承接"
+    if preset == "capital_confirmed":
+        score = _weighted_available_score(
+            [
+                (
+                    _score(capital_intensity, 0.03, 0.25)
+                    if capital_intensity is not None
+                    else None,
+                    0.70,
+                ),
+                (
+                    _score(quote.net_flow, 20_000_000, 150_000_000)
+                    if quote.net_flow is not None
+                    else None,
+                    0.30,
+                ),
+            ]
+        )
+        intensity_text = (
+            f"净流入占成交额 {capital_intensity:.1%}"
+            if capital_intensity is not None
+            else "资金强度待补"
+        )
+        return score, f"资金专属分 {score:.0f}/100，{intensity_text}"
+    if preset == "sector_momentum":
+        score = _weighted_available_score(
+            [
+                (
+                    _score(sector_change, -2, 5) if sector_change is not None else None,
+                    0.75,
+                ),
+                (_score(change, 0, 5) if change is not None else None, 0.25),
+            ]
+        )
+        sector_text = (
+            f"{quote.sector} 板块涨跌 {sector_change:+.1f}%"
+            if sector_change is not None
+            else "板块强度待补，仅按个股跟随度"
+        )
+        return score, f"板块专属分 {score:.0f}/100，{sector_text}"
+    if preset == "pullback_support":
+        pullback_score = _clamp_score(100 - abs(change + 0.8) * 35) if change is not None else None
+        score = _weighted_available_score(
+            [
+                (pullback_score, 0.50),
+                (
+                    _score(capital_intensity, 0, 0.12) if capital_intensity is not None else None,
+                    0.30,
+                ),
+                (history_score, 0.20),
+            ]
+        )
+        return score, f"回踩专属分 {score:.0f}/100，侧重回踩幅度、承接和趋势结构"
+    if preset in {"value_rebound", "quality_value"}:
+        pe_score = (
+            _clamp_score(100 - max(0.0, quote.pe - 8) * 3.5)
+            if quote.pe is not None and quote.pe > 0
+            else None
+        )
+        pb_score = (
+            _clamp_score(100 - max(0.0, quote.pb - 1) * 16)
+            if quote.pb is not None and quote.pb > 0
+            else None
+        )
+        score = _weighted_available_score([(pe_score, 0.60), (pb_score, 0.40)])
+        return score, f"估值专属分 {score:.0f}/100，侧重 PE/PB 安全边际"
+    if preset == "oversold_repair":
+        repair_score = _clamp_score(100 - abs(change + 3.5) * 22) if change is not None else None
+        score = _weighted_available_score(
+            [
+                (repair_score, 0.60),
+                (history_score, 0.20),
+                (
+                    _score(capital_intensity, -0.05, 0.08)
+                    if capital_intensity is not None
+                    else None,
+                    0.20,
+                ),
+            ]
+        )
+        return score, f"修复专属分 {score:.0f}/100，侧重超跌幅度和止跌承接"
+    if preset == "large_cap_stability":
+        stability = _clamp_score(100 - abs(change) * 20) if change is not None else None
+        score = _weighted_available_score(
+            [
+                (
+                    _score(quote.market_cap, 50_000_000_000, 500_000_000_000)
+                    if quote.market_cap is not None
+                    else None,
+                    0.45,
+                ),
+                (
+                    _score(quote.amount, 500_000_000, 3_000_000_000)
+                    if quote.amount is not None
+                    else None,
+                    0.30,
+                ),
+                (stability, 0.25),
+            ]
+        )
+        return score, f"稳健专属分 {score:.0f}/100，侧重大市值、流动性和低波动"
+    return 50.0, "策略专属证据待补"
+
+
 def _candidate_upside(
     quote: EquityQuote,
     preset: str,
     components: list[ScoreComponent],
     context_penalty: float,
     history_check: OpportunityHistoryCheck | None,
+    sector_strength: dict[str, float] | None = None,
 ) -> tuple[float, str, str, list[str], list[str]]:
     trend_score = _component_score(components, "trend")
     capital_score = _component_score(components, "capital")
@@ -583,18 +985,77 @@ def _candidate_upside(
     valuation_component = _component_score(components, "valuation")
     history_score = history_check.score if history_check and history_check.available else None
     persistence_score = history_score if history_score is not None else trend_score
-    risk_reward, risk_reward_drivers, risk_reward_risks = _risk_reward_score(
-        quote, history_check
-    )
+    risk_reward, risk_reward_drivers, risk_reward_risks = _risk_reward_score(quote, history_check)
     valuation_room, valuation_summary = _valuation_room_score(quote)
-
-    score_inputs = [
-        (persistence_score, 0.30),
-        (capital_score, 0.22),
-        (risk_reward, 0.22),
-        (liquidity_score, 0.14),
-        (valuation_component if valuation_component is not None else valuation_room, 0.12),
-    ]
+    strategy_fit, strategy_driver = _strategy_fit_score(
+        quote, preset, history_check, sector_strength
+    )
+    valuation_score = valuation_component if valuation_component is not None else valuation_room
+    profiles: dict[str, list[tuple[float | None, float]]] = {
+        "trend": [
+            (strategy_fit, 0.46),
+            (persistence_score, 0.25),
+            (capital_score, 0.10),
+            (risk_reward, 0.12),
+            (liquidity_score, 0.07),
+        ],
+        "volume_breakout": [
+            (strategy_fit, 0.50),
+            (persistence_score, 0.12),
+            (capital_score, 0.10),
+            (risk_reward, 0.12),
+            (liquidity_score, 0.16),
+        ],
+        "capital_confirmed": [
+            (strategy_fit, 0.52),
+            (capital_score, 0.18),
+            (persistence_score, 0.08),
+            (risk_reward, 0.12),
+            (liquidity_score, 0.10),
+        ],
+        "sector_momentum": [
+            (strategy_fit, 0.52),
+            (persistence_score, 0.13),
+            (capital_score, 0.10),
+            (risk_reward, 0.13),
+            (liquidity_score, 0.12),
+        ],
+        "pullback_support": [
+            (strategy_fit, 0.48),
+            (risk_reward, 0.22),
+            (capital_score, 0.12),
+            (valuation_score, 0.12),
+            (persistence_score, 0.06),
+        ],
+        "value_rebound": [
+            (strategy_fit, 0.48),
+            (valuation_score, 0.22),
+            (risk_reward, 0.15),
+            (capital_score, 0.08),
+            (liquidity_score, 0.07),
+        ],
+        "oversold_repair": [
+            (strategy_fit, 0.48),
+            (risk_reward, 0.22),
+            (valuation_score, 0.12),
+            (capital_score, 0.10),
+            (liquidity_score, 0.08),
+        ],
+        "quality_value": [
+            (strategy_fit, 0.50),
+            (valuation_score, 0.25),
+            (risk_reward, 0.15),
+            (liquidity_score, 0.10),
+        ],
+        "large_cap_stability": [
+            (strategy_fit, 0.50),
+            (liquidity_score, 0.18),
+            (risk_reward, 0.16),
+            (valuation_score, 0.10),
+            (persistence_score, 0.06),
+        ],
+    }
+    score_inputs = profiles[preset]
     available = [(score, weight) for score, weight in score_inputs if score is not None]
     available_weight = sum(weight for _, weight in available) or 1.0
     raw_score = sum(score * weight for score, weight in available) / available_weight
@@ -603,7 +1064,7 @@ def _candidate_upside(
     if score >= 82:
         label = "高概率延续"
     elif score >= 72:
-        label = "大概率候选"
+        label = "优先复核"
     elif score >= 62:
         label = "有弹性待确认"
     elif score >= 52:
@@ -611,7 +1072,7 @@ def _candidate_upside(
     else:
         label = "上涨证据偏弱"
 
-    drivers: list[str] = []
+    drivers: list[str] = [strategy_driver]
     if persistence_score is not None and persistence_score >= 65:
         if history_score is not None:
             drivers.append(f"趋势持续性 {persistence_score:.0f}/100，未来上涨线索更强")
@@ -641,9 +1102,9 @@ def _candidate_upside(
 
     drivers = list(dict.fromkeys(drivers))[:4]
     risks = list(dict.fromkeys(risks))[:4]
-    driver_text = "；".join(drivers) if drivers else "上涨线索主要来自策略触发，仍需补确认"
+    driver_text = "；".join(drivers) if drivers else "候选线索主要来自策略触发，仍需补确认"
     risk_text = "；".join(risks[:2]) if risks else "暂无突出硬伤"
-    summary = f"{label}：上涨评分 {score:.0f}/100，{driver_text}。风险：{risk_text}。"
+    summary = f"{label}：复核分 {score:.0f}/100，{driver_text}。风险：{risk_text}。"
     return score, label, summary, drivers, risks
 
 
@@ -653,6 +1114,8 @@ def _candidate_dimensions(
     components: list[ScoreComponent],
     context_penalty: float,
     history_check: OpportunityHistoryCheck | None = None,
+    validation: StrategyValidation | None = None,
+    sector_strength: dict[str, float] | None = None,
 ) -> list[OpportunityDimension]:
     trend_score = _component_score(components, "trend")
     capital_score = _component_score(components, "capital")
@@ -665,14 +1128,36 @@ def _candidate_dimensions(
     )
     risk_reward_score, _, _ = _risk_reward_score(quote, history_check)
     valuation_room_score, valuation_room_summary = _valuation_room_score(quote)
+    strategy_fit, strategy_fit_summary = _strategy_fit_score(
+        quote, preset, history_check, sector_strength
+    )
     upside_score, upside_label, upside_summary, upside_drivers, upside_risks = _candidate_upside(
-        quote, preset, components, context_penalty, history_check
+        quote, preset, components, context_penalty, history_check, sector_strength
     )
     trigger_summary = {
-        "trend": f"涨幅 {quote.change_pct:.2f}% 处在温和趋势区间" if quote.change_pct is not None else "涨跌幅暂缺",
-        "volume_breakout": f"涨幅 {quote.change_pct:.2f}%，成交额 {_money(quote.amount)}，量能具备突破观察价值" if quote.change_pct is not None else "涨跌幅暂缺",
-        "value_rebound": f"PE {quote.pe:.1f} 处在低估观察区，价格未明显追高" if quote.pe is not None else "估值暂缺",
-        "oversold_repair": f"跌幅 {quote.change_pct:.2f}%，先按超跌修复处理" if quote.change_pct is not None else "涨跌幅暂缺",
+        "trend": f"涨幅 {quote.change_pct:.2f}% 处在温和趋势区间"
+        if quote.change_pct is not None
+        else "涨跌幅暂缺",
+        "volume_breakout": f"涨幅 {quote.change_pct:.2f}%，成交额 {_money(quote.amount)}，量能具备突破观察价值"
+        if quote.change_pct is not None
+        else "涨跌幅暂缺",
+        "value_rebound": f"PE {quote.pe:.1f} 处在低估观察区，价格未明显追高"
+        if quote.pe is not None
+        else "估值暂缺",
+        "oversold_repair": f"跌幅 {quote.change_pct:.2f}%，先按超跌修复处理"
+        if quote.change_pct is not None
+        else "涨跌幅暂缺",
+        "capital_confirmed": f"资金净流入 {_signed_money(quote.net_flow)}，价格未明显过热",
+        "sector_momentum": f"{quote.sector or '板块待补'} 板块内个股放量跟随，涨幅 {quote.change_pct:.2f}%"
+        if quote.change_pct is not None
+        else "涨跌幅暂缺",
+        "pullback_support": f"回踩 {quote.change_pct:.2f}%，资金没有明显撤退"
+        if quote.change_pct is not None
+        else "涨跌幅暂缺",
+        "quality_value": f"PE {quote.pe:.1f}、PB {quote.pb:.1f} 通过估值质量门槛"
+        if quote.pe is not None and quote.pb is not None
+        else "估值暂缺",
+        "large_cap_stability": f"市值 {_money(quote.market_cap)}，成交额 {_money(quote.amount)}，用于稳健观察",
     }.get(preset, "触发条件待确认")
     confirmation_bits = []
     if quote.amount is not None:
@@ -684,7 +1169,7 @@ def _candidate_dimensions(
     capital_summary = (
         f"资金净流入 {_signed_money(quote.net_flow)}，可作为线索确认"
         if quote.net_flow is not None and quote.net_flow > 0
-        else f"资金净流出 {_signed_money(quote.net_flow)}，只适合观察不升级"
+        else f"资金净流出 {_signed_money(quote.net_flow)}，只适合观察不通过"
         if quote.net_flow is not None
         else "资金流暂缺，不能确认主动资金态度"
     )
@@ -695,7 +1180,9 @@ def _candidate_dimensions(
     )
     liquidity_summary = (
         f"成交额 {_money(quote.amount)}，换手率 {quote.turnover_rate:.2f}%，量比 {quote.volume_ratio:.2f}"
-        if quote.amount is not None and quote.turnover_rate is not None and quote.volume_ratio is not None
+        if quote.amount is not None
+        and quote.turnover_rate is not None
+        and quote.volume_ratio is not None
         else f"成交额 {_money(quote.amount)}，换手率或量比仍需补齐"
     )
     liquidity_score = liquidity_score if liquidity_score is not None else 45.0
@@ -705,8 +1192,32 @@ def _candidate_dimensions(
         else "PE/PB 不完整，不能只凭涨跌幅排序"
     )
     catalyst_summary = "公告、业绩预告、研报催化待核验；没有催化的线索只做候选复核"
-    follow_up_summary = "先打开个股证据账本，确认参与条件、放弃条件和下次复盘触发点"
+    follow_up_summary = "系统继续检查个股条件、放弃条件和下次复盘触发点"
     dimensions = [
+        OpportunityDimension(
+            key="strategy_validation",
+            label="策略校验",
+            signal="positive" if validation is None or validation.passed else "negative",
+            score=100.0 if validation is None or validation.passed else 0.0,
+            summary=(
+                f"通过 {len(validation.checks)} 项硬条件：{'；'.join(validation.checks[:4])}"
+                if validation is not None and validation.passed
+                else "策略硬条件未通过，本应被剔除"
+            ),
+            evidence=validation.checks
+            if validation is not None
+            else STRATEGY_RULES.get(preset, []),
+            available=True,
+        ),
+        OpportunityDimension(
+            key="strategy_fit",
+            label="策略匹配",
+            signal=_signal(strategy_fit),
+            score=round(strategy_fit, 2),
+            summary=strategy_fit_summary,
+            evidence=[strategy_fit_summary],
+            available=True,
+        ),
         OpportunityDimension(
             key="future_probability",
             label="上涨概率",
@@ -722,7 +1233,9 @@ def _candidate_dimensions(
             score=persistence_score,
             summary=(
                 f"历史趋势给出 {persistence_score:.0f}/100，越高越接近可延续上涨"
-                if history_check is not None and history_check.available and persistence_score is not None
+                if history_check is not None
+                and history_check.available
+                and persistence_score is not None
                 else f"当前价格动量 {persistence_score:.0f}/100，仍需历史K线确认持续性"
                 if persistence_score is not None
                 else "缺少趋势确认，不能判断上涨持续性"
@@ -779,7 +1292,7 @@ def _candidate_dimensions(
             signal=_signal(55 - context_penalty),
             score=max(0.0, 55 - context_penalty),
             summary=f"最终分已扣除市场环境 {context_penalty:.0f} 分，避免弱市高分误判",
-            evidence=[f"context_penalty={context_penalty:.0f}", "仍需打开个股证据账本复核"],
+            evidence=[f"context_penalty={context_penalty:.0f}", "系统继续复查个股判断"],
         ),
         OpportunityDimension(
             key="execution",
@@ -819,7 +1332,9 @@ def _candidate_dimensions(
             summary=liquidity_summary,
             evidence=[
                 f"成交额 {_money(quote.amount)}",
-                f"换手率 {quote.turnover_rate:.2f}%" if quote.turnover_rate is not None else "换手率暂缺",
+                f"换手率 {quote.turnover_rate:.2f}%"
+                if quote.turnover_rate is not None
+                else "换手率暂缺",
                 f"量比 {quote.volume_ratio:.2f}" if quote.volume_ratio is not None else "量比暂缺",
             ],
             available=quote.amount is not None,
@@ -851,7 +1366,7 @@ def _candidate_dimensions(
             signal="neutral",
             score=55.0,
             summary=follow_up_summary,
-            evidence=["个股证据账本", "参与条件", "失效条件", "复盘触发点"],
+            evidence=["个股判断", "检查条件", "失效条件", "复盘触发点"],
         ),
     ]
     if history_check is not None:
@@ -880,11 +1395,11 @@ def _candidate_thesis(quote: EquityQuote, preset: str) -> str:
     if quote.net_flow is not None:
         pieces.append(f"资金 {_signed_money(quote.net_flow)}")
     evidence = "，".join(pieces) if pieces else "核心行情证据待补齐"
-    return f"{label}线索：{evidence}，先进入证据复核；是否参与以个股证据账本为准。"
+    return f"{label}线索：{evidence}；系统会继续复查完整个股判断。"
 
 
 def _candidate_invalidation(quote: EquityQuote, preset: str) -> list[str]:
-    rules = ["个股证据账本转为回避或证据不足"]
+    rules = ["系统判断转为回避或信息不足"]
     if preset == "trend":
         rules.extend(["跌回策略涨幅区间外", "成交额低于 3 亿元"])
     elif preset == "volume_breakout":
@@ -893,22 +1408,32 @@ def _candidate_invalidation(quote: EquityQuote, preset: str) -> list[str]:
         rules.extend(["PE/PB 优势消失", "低估原因被公告或业绩证伪"])
     elif preset == "oversold_repair":
         rules.extend(["继续放量下跌未见止跌", "PE 数据失真或转负"])
+    elif preset == "capital_confirmed":
+        rules.extend(["资金净流入低于 2000 万", "价格涨幅超过策略上限"])
+    elif preset == "sector_momentum":
+        rules.extend(["板块归属或板块资金无法确认", "量能/换手跌回策略门槛以下"])
+    elif preset == "pullback_support":
+        rules.extend(["资金重新净流出", "回踩跌幅扩大且未止跌"])
+    elif preset == "quality_value":
+        rules.extend(["PE/PB 不再满足质量门槛", "业绩或公告证伪估值优势"])
+    elif preset == "large_cap_stability":
+        rules.extend(["市值或成交额跌出稳健门槛", "换手异常过热"])
     if quote.amount is not None and quote.amount < 300_000_000:
         rules.append("流动性不足以支撑继续跟踪")
     return rules[:4]
 
 
 def _candidate_next_actions(quote: EquityQuote, context_penalty: float) -> list[str]:
-    actions = ["打开个股证据账本复核趋势、资金和风险收益"]
+    actions = ["系统持续复查个股趋势、资金、收益空间和风险"]
     if context_penalty > 0:
-        actions.insert(0, "市场环境有扣分，先做复核不急于升级")
+        actions.insert(0, "系统持续检查市场环境，环境偏弱时自动降级")
     if quote.sector:
-        actions.append(f"回到大盘页检查 {quote.sector} 板块温度")
+        actions.append(f"系统持续比较 {quote.sector} 板块温度和个股表现")
     if quote.net_flow is None:
-        actions.append("补齐资金流后再判断是否资金确认")
+        actions.append("资金流数据补齐后自动重算资金判断")
     else:
-        actions.append("复核资金流是否连续，而不是只看单日净流入")
-    actions.append("补读公告、业绩预告和研报摘要，确认是否存在真实催化")
-    actions.append("比较同行估值和市值风格，避免只按涨幅排序")
-    actions.append("写清参与条件和放弃条件，不满足就放弃")
+        actions.append("系统持续检查资金流是否连续，而不是只看单日净流入")
+    actions.append("系统持续扫描公告、业绩预告和研报摘要")
+    actions.append("系统持续比较同行估值和市值风格，避免只按涨幅排序")
+    actions.append("系统按参与条件和放弃条件检查，不满足时自动降级")
     return actions[:6]

@@ -89,3 +89,29 @@ Approved for deployment after a fresh repository gate. No high-priority finding 
 ### Production Confirmation
 
 Release `20260724-120226-72e4c59` passed independent exchange-count, prefix, validation, page-size, persistence, service-state, and real-browser checks. The production universe contains all three supported exchange partitions and no release-blocking finding remains.
+
+## 2026-08-16 Decision Intelligence Release Review
+
+### Scope
+
+Reviewed the complete pending release: decision-first analysis, recommendation history, financial/news intelligence, OpenAI-compatible question answering, account-scoped decision monitoring, morning email delivery, ten-minute cache warming, holding identity repair, frontend interaction changes, and public deployment configuration.
+
+### Findings
+
+No unresolved P0 or P1 finding blocks submission. Provider access remains isolated under `backend/src/marketdesk/providers/`; deterministic scoring remains under `analysis/`; browser code uses only `/api/v1/*`; account-scoped persistence and decision-event ownership are covered by regression tests. The committed configuration contains placeholders only, and the staged file set excludes `.env`, runtime databases, provider caches, Python caches, Playwright output, and `frontend/dist`.
+
+### Open Questions And Assumptions
+
+- The current public deployment remains a small-account workbench; the ten-minute decision monitor has not been load-tested for a large multi-tenant user base.
+- SMTP delivery tests use a mocked transport. Production sender credentials, provider throttling, and mailbox deliverability remain operational concerns rather than code-contract guarantees.
+- Public market, filing, research, news, Hong Kong, and US endpoints remain external dependencies whose field contracts can change.
+
+### Residual Risks And Testing Gaps
+
+- Real-provider financial-model calls were not exercised with a committed credential; timeout, parsing, fallback, and provider-style branches are covered with deterministic tests.
+- Browser acceptance covered the deployed candidate workflow at desktop and 390 CSS pixels. Other pages are covered by component regressions and the production build but were not all replayed end to end in this final pass.
+- FastAPI TestClient continues to emit the known third-party Starlette/httpx deprecation warning.
+
+### Decision
+
+Approved for commit and push. Full repository verification and public deployment acceptance passed, and no high-priority finding remains open.

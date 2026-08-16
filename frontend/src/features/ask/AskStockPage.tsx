@@ -3,6 +3,9 @@ import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useStat
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, getAuthToken, type AskStockConversationMessage, type AskStockResponse, type AskStockSourceContext as AskStockSourcePayload } from "../../lib/api";
+import { holdingDecision } from "../../lib/decision";
+import { monitoringItem } from "../../lib/monitoring";
+import { plainLanguage } from "../../lib/plainLanguage";
 
 type AskPlaybookScene = {
   intent: AskStockResponse["intent"];
@@ -15,31 +18,31 @@ type AskPlaybookScene = {
 const askPlaybookScenes: AskPlaybookScene[] = [
   {
     intent: "movement",
-    label: "异动解释",
-    detail: "为什么大涨/大跌，先量化 1/5/20 日走势，再看量能、资金和板块。",
-    example: "最近大业股份怎么大跌",
-    question: (stock) => `最近${stock?.name ?? "大业股份"}怎么大跌`,
+    label: "异动后怎么做",
+    detail: "大涨或大跌后，直接判断买入、持有、减仓还是退出。",
+    example: "大业股份大跌后现在怎么处理",
+    question: (stock) => `${stock?.name ?? "大业股份"}大跌后现在应该买、持有还是卖`,
   },
   {
     intent: "fundamental",
-    label: "基本面",
-    detail: "财报、业绩、现金流、负债与公告研报，避免用 K 线冒充基本面。",
-    example: "贵州茅台基本面怎么样",
-    question: (stock) => `${stock?.name ?? "贵州茅台"}基本面怎么样`,
+    label: "经营是否支持持有",
+    detail: "把财报、现金流和公告翻译成继续持有或放弃的决定。",
+    example: "贵州茅台的经营情况还支持持有吗",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}的经营情况还支持持有吗，直接给结论`,
   },
   {
     intent: "catalyst",
-    label: "消息催化",
-    detail: "公告、研报、题材、龙虎榜和板块联动；没证据就明确说未确认。",
+    label: "利好消息",
+    detail: "看公告、机构报告、热门题材和板块是否一起走强；没有可靠信息就明确说未确认。",
     example: "贵州茅台有什么公告催化",
     question: (stock) => `${stock?.name ?? "贵州茅台"}有什么公告催化`,
   },
   {
     intent: "risk",
-    label: "风险核对",
-    detail: "主要风险、利空、失效条件和必须放弃的情形。",
-    example: "贵州茅台现在主要风险是什么",
-    question: (stock) => `${stock?.name ?? "贵州茅台"}现在主要风险是什么`,
+    label: "什么情况退出",
+    detail: "直接给应该减仓或放弃的价格与条件。",
+    example: "贵州茅台什么情况下应该退出",
+    question: (stock) => `${stock?.name ?? "贵州茅台"}什么情况下应该减仓或退出`,
   },
   {
     intent: "action",
@@ -50,19 +53,19 @@ const askPlaybookScenes: AskPlaybookScene[] = [
   },
   {
     intent: "portfolio",
-    label: "持仓诊断",
-    detail: "只读取当前账号持仓，做组合风险、集中度和调仓。",
-    example: "我的持仓里风险最大的是哪个",
-    question: () => "我的持仓里风险最大的是哪个",
+    label: "今天先处理谁",
+    detail: "读取当前账号持仓，直接给出今天的调仓顺序。",
+    example: "我的组合今天先处理哪只，分别怎么做",
+    question: () => "我的组合今天先处理哪只，分别怎么做",
   },
 ];
 
 const intentLabel: Record<AskStockResponse["intent"], string> = {
   risk: "风险核对",
   trend: "趋势判断",
-  valuation: "估值比较",
-  fundamental: "基本面",
-  catalyst: "消息催化",
+  valuation: "价格贵不贵",
+  fundamental: "公司经营",
+  catalyst: "利好消息",
   action: "操作纪律",
   movement: "异动解释",
   overview: "综合研究",
@@ -73,9 +76,9 @@ const storageVersion = 1;
 const maxStoredMessages = 24;
 const maxStoredThreads = 12;
 const followUpPrompts = [
-  { label: "继续问估值", question: "那估值呢" },
-  { label: "继续问趋势", question: "趋势呢" },
-  { label: "继续问风险", question: "还有哪些风险" },
+  { label: "现在能不能买", question: "现在能不能买，直接给我结论" },
+  { label: "已经持有怎么办", question: "如果已经持有，现在怎么处理" },
+  { label: "什么价格放弃", question: "跌到什么价格应该放弃" },
   { label: "仓位怎么定", question: "仓位和止损怎么定" },
 ];
 const compactPlaybookIntents = new Set<AskStockResponse["intent"]>(["risk", "movement", "fundamental", "portfolio"]);
@@ -165,6 +168,37 @@ function requestConversation(messages: AskMessage[]): AskStockConversationMessag
   }).slice(-8);
 }
 
+function askRequestBody(payload: AskRequestPayload) {
+  return JSON.stringify({
+    question: payload.question,
+    ...(payload.context ? { context_symbol: payload.context.symbol, context_name: payload.context.name } : {}),
+    ...(payload.conversation.length > 0 ? { conversation: payload.conversation } : {}),
+    ...(payload.sourceContext ? { source_context: requestSourceContext(payload.sourceContext) } : {}),
+  });
+}
+
+async function askStock(payload: AskRequestPayload): Promise<AskStockResponse> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch("/api/v1/ask-stock", {
+    method: "POST",
+    headers,
+    body: askRequestBody(payload),
+  });
+  if (!response.ok) {
+    let detail = `请求失败 (${response.status})`;
+    try {
+      const body = await response.json() as { detail?: unknown };
+      if (typeof body.detail === "string" && body.detail.trim()) detail = body.detail;
+    } catch {
+      // Keep the status fallback when the backend did not return JSON.
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return response.json() as Promise<AskStockResponse>;
+}
+
 async function streamAskStock(
   payload: AskRequestPayload,
   handlers: { onDelta: (text: string) => void; onStatus: (message: string) => void },
@@ -175,12 +209,7 @@ async function streamAskStock(
   const response = await fetch("/api/v1/ask-stock/stream", {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      question: payload.question,
-      ...(payload.context ? { context_symbol: payload.context.symbol, context_name: payload.context.name } : {}),
-      ...(payload.conversation.length > 0 ? { conversation: payload.conversation } : {}),
-      ...(payload.sourceContext ? { source_context: requestSourceContext(payload.sourceContext) } : {}),
-    }),
+    body: askRequestBody(payload),
   });
   if (!response.ok) {
     let detail = `请求失败 (${response.status})`;
@@ -242,7 +271,7 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
   const preset = safeParam(params, "preset");
   const presetLabel = sourcePresetLabels[preset] ?? preset;
   const inboundQuestion = safeParam(params, "question");
-  const holdingBridge = from === "holdings" || (from === "today" && /(持仓|组合|调仓|仓位)/.test(inboundQuestion));
+  const holdingBridge = from === "holdings";
 
   if (from === "market") {
     return {
@@ -275,15 +304,15 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
   if (from === "opportunities") {
     return {
       stock,
-      origin: "机会",
-      label: "机会线索",
+      origin: "候选",
+      label: "候选线索",
       detail: stock
         ? `默认围绕 ${stockLabel(stock)} 追问。`
-        : "可以追问升级条件和风险。",
+        : "给出是否参与、仓位和放弃条件。",
       promptSeeds: [
-        presetLabel ? `这条${presetLabel}线索能升级吗` : "这条机会线索能升级吗",
-        "证据缺口是什么",
-        "应该等回踩还是观察",
+        presetLabel ? `这条${presetLabel}线索现在能不能买` : "这条候选线索现在能不能买",
+        "如果已经持有，现在怎么处理",
+        "什么情况应该放弃",
       ],
     };
   }
@@ -294,7 +323,7 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
       origin: "个股",
       label: `围绕${stockLabel(stock)}继续问`,
       detail: "短句追问会自动带上这只股票。",
-      promptSeeds: ["把依据讲清楚", "现在最大风险是什么", "仓位和止损怎么定"],
+      promptSeeds: ["现在能不能买", "如果已经持有怎么处理", "什么价格应该放弃"],
     };
   }
 
@@ -585,8 +614,12 @@ function saveIfUseful(state: AskThreadState) {
 
 function symbolFromCode(value: unknown) {
   const raw = String(value ?? "").trim().toUpperCase();
+  const global = raw.match(/^(HK)\.?\s*(\d{1,5})$/) ?? raw.match(/^(US)\.?\s*([A-Z][A-Z0-9.-]{0,14})$/);
+  if (global) return global[1] === "HK" ? `HK.${global[2].padStart(5, "0")}` : `US.${global[2]}`;
   const prefixed = raw.match(/^(SH|SZ|BJ)\.?\s*(\d{6})$/);
   if (prefixed) return `${prefixed[1]}.${prefixed[2]}`;
+  const hk = raw.match(/^\d{1,5}$/);
+  if (hk) return `HK.${raw.padStart(5, "0")}`;
   const plain = raw.match(/^\d{6}$/);
   if (!plain) return null;
   if (raw.startsWith("6")) return `SH.${raw}`;
@@ -597,6 +630,7 @@ function symbolFromCode(value: unknown) {
 
 function renderScreenCell(column: string, value: unknown) {
   const text = String(value ?? "—");
+  if (column === "动作") return displayAction(text);
   if (!stockCodeColumnPattern.test(column)) return text;
   const symbol = symbolFromCode(value);
   if (!symbol) return text;
@@ -607,7 +641,7 @@ function EvidenceList({ title, items, tone }: { title: string; items: string[]; 
   if (items.length === 0) return null;
   return <section className={`ask-list ${tone}`}>
     <h3>{title}</h3>
-    <ol>{items.map((item) => <li key={item}>{item}</li>)}</ol>
+    <ol>{items.map((item) => <li key={item}>{displayAskText(item)}</li>)}</ol>
   </section>;
 }
 
@@ -616,10 +650,16 @@ function AskMetrics({ result }: { result: AskStockResponse }) {
   if (metrics.length === 0) return null;
   return <div className="ask-metrics" aria-label="回答关键指标">
     {metrics.map((metric) => <span className={`ask-metric ${metric.tone}`} key={metric.label}>
-      <small>{metric.label}</small>
-      <b>{metric.value}</b>
+      <small>{displayAskText(metric.label)}</small>
+      <b>{displayAskText(metric.value)}</b>
     </span>)}
   </div>;
+}
+
+function displayAction(value: string | null | undefined) {
+  if (!value) return "—";
+  if (["hold", "trim", "add_watch", "review", "exit_watch"].includes(value)) return holdingDecision(value).action;
+  return value;
 }
 
 function HoldingContext({ result }: { result: AskStockResponse }) {
@@ -632,8 +672,10 @@ function HoldingContext({ result }: { result: AskStockResponse }) {
     <span>市值 {moneyValue(holding.market_value)}</span>
     <span>盈亏 {signedPercentValue(holding.pnl_pct)}</span>
     <span>组合占比 {percentValue(holding.portfolio_weight)}</span>
-    <span>动作 {holding.action ?? "—"}</span>
-    {holding.risk_flags.length > 0 ? <small>风险：{holding.risk_flags.join(" / ")}</small> : null}
+    <span>10日走势 {signedPercentValue(holding.ten_day_change_pct)}</span>
+    <span>10日贡献 {moneyValue(holding.ten_day_contribution)}</span>
+    <span>动作 {displayAction(holding.action)}</span>
+    {holding.risk_flags.length > 0 ? <small>风险：{holding.risk_flags.map(plainLanguage).join(" / ")}</small> : null}
   </aside>;
 }
 
@@ -652,15 +694,15 @@ function gateReviewRoute(result: AskStockResponse) {
   const finalGate = metricByLabel(result, "FINAL GATE")?.value ?? "";
   const ledgerGate = metricByLabel(result, "LEDGER GATE")?.value ?? "";
   if (/反方|失效|守/.test(`${finalGate}${ledgerGate}`)) {
-    return { anchor: "stock-risk-controls", label: "去看失效条件", detail: "先核对反方证据和放弃线。" };
+    return { anchor: "stock-risk-controls", label: "查看退出条件", detail: "主要风险和退出条件已核对。" };
   }
   if (/补|不足|缺口/.test(`${finalGate}${ledgerGate}`)) {
-    return { anchor: "stock-company-evidence", label: "去补公告研报", detail: "先查公告、研报和题材来源。" };
+    return { anchor: "stock-company-evidence", label: "查看缺失资料", detail: "待补公告、研报和题材来源。" };
   }
   if (/交易|够用|计划/.test(`${finalGate}${ledgerGate}`)) {
-    return { anchor: "stock-investment-advice", label: "去看交易计划", detail: "直接看入场、止损、止盈。" };
+    return { anchor: "stock-investment-advice", label: "查看价格与仓位", detail: "参与条件、止损和止盈已经整理好。" };
   }
-  return { anchor: "stock-evidence-audit", label: "去看依据", detail: "先看支持、反方和缺口。" };
+  return { anchor: "stock-evidence-audit", label: "查看判断依据", detail: "支持、主要担心和缺失信息已经整理好。" };
 }
 
 function AskGateBrief({ result }: { result: AskStockResponse }) {
@@ -670,29 +712,29 @@ function AskGateBrief({ result }: { result: AskStockResponse }) {
   if (!finalGate || !ledgerGate) return null;
   const action = metricByLabel(result, "建议动作");
   const coverage = metricByLabel(result, "证据覆盖");
-  const nextCheck = result.next_actions[0] ?? "补齐依据后再看";
+  const nextCheck = monitoringItem(result.next_actions[0] ?? "持续补齐依据并更新判断");
   const route = gateReviewRoute(result);
 
   return <section className="ask-gate-brief" aria-label="问股决策闸口">
     <div>
-      <span>依据</span>
-      <strong>决策摘要</strong>
-      <a className="ask-gate-link" href={stockResearchHref(result, route.anchor)}>{route.label} →</a>
+      <span>当前决定</span>
+      <strong>现在怎么做</strong>
+      <a className="ask-gate-link" href={stockResearchHref(result, route.anchor)}>{route.label}（可选）→</a>
     </div>
     <article className={finalGate.tone}>
       <small>结论</small>
-      <b>{finalGate.value}</b>
-      <p>{action ? `当前动作：${action.value}` : "先看直接建议，再定仓位。"}</p>
+      <b>{displayAskText(finalGate.value)}</b>
+      <p>{displayAskText(action ? `当前动作：${action.value}` : "先看处理意见，再定仓位。")}</p>
     </article>
     <article className={ledgerGate.tone}>
       <small>证据</small>
-      <b>{ledgerGate.value}</b>
-      <p>{coverage ? `证据覆盖：${coverage.value}` : "先确认支持、反方和缺口。"}</p>
+      <b>{displayAskText(ledgerGate.value)}</b>
+      <p>{displayAskText(coverage ? `信息完整度：${coverage.value}` : "先确认为什么值得看、主要担心和还缺的信息。")}</p>
     </article>
     <article className="neutral">
-      <small>下一步</small>
-      <b>{nextCheck}</b>
-      <p>{route.detail}</p>
+      <small>{nextCheck.label}</small>
+      <b>{displayAskText(nextCheck.text)}</b>
+      <p>{nextCheck.owner === "system" ? "后续核对自动更新。" : displayAskText(route.detail)}</p>
     </article>
   </section>;
 }
@@ -701,12 +743,12 @@ function AskFactors({ result }: { result: AskStockResponse }) {
   const factors = result.factors ?? [];
   if (factors.length === 0) return null;
   return <details className="ask-factors">
-    <summary>展开评分因子</summary>
+    <summary>展开依据明细</summary>
     <div>
       {factors.map((factor) => <article className={`ask-factor ${factor.signal}`} key={`${factor.label}-${factor.evidence}`}>
         <b>{factor.impact > 0 ? `+${factor.impact}` : factor.impact}</b>
-        <span>{factor.label}</span>
-        <p>{factor.evidence}</p>
+        <span>{displayAskText(factor.label)}</span>
+        <p>{displayAskText(factor.evidence)}</p>
       </article>)}
     </div>
   </details>;
@@ -724,8 +766,33 @@ function AskRowsTable({ result }: { result: AskStockResponse }) {
   </div>;
 }
 
+function displayAskText(value: string) {
+  return plainLanguage(value
+    .replace(/联网大模型问答|联网问答/g, "智能分析")
+    .replace(/联网检索/g, "资料核对")
+    .replace(/联网结论\s*[：:]/g, "结论：")
+    .replace(/联网依据/g, "依据")
+    .replace(/联网研究/g, "研究")
+    .replace(/已检索/g, "已核对")
+    .replace(/检索/g, "核对")
+    .replace(/联网/g, "")
+    .replace(/：：/g, "：")
+    .trim());
+}
+
+function displayAskList(items: string[]) {
+  return items.map(displayAskText);
+}
+
+function displayMonitoringList(items: string[]) {
+  return items.map((item) => {
+    const monitor = monitoringItem(displayAskText(item));
+    return monitor.owner === "user" ? `${monitor.label}：${monitor.text}` : monitor.text;
+  });
+}
+
 function displayAskSource(source: string) {
-  return source.replace(/联网大模型问答|联网问答/g, "智能分析");
+  return displayAskText(source) || "智能分析";
 }
 
 function AskResult({ result }: { result: AskStockResponse }) {
@@ -736,19 +803,19 @@ function AskResult({ result }: { result: AskStockResponse }) {
   if (result.kind === "llm_answer") {
     return <section className="ask-result ask-result-chat" aria-live="polite">
       <article className="ask-answer">
-        <p>{result.answer}</p>
+        <p>{displayAskText(result.answer)}</p>
       </article>
       <details className="ask-answer-more">
-        <summary>依据 / 风险 / 下一步</summary>
+        <summary>依据 / 风险 / 后续跟踪</summary>
         <div>
-          <EvidenceList title="判断依据" items={result.evidence} tone="evidence" />
-          <EvidenceList title="主要风险" items={result.risks} tone="risk" />
-          <EvidenceList title="下一步" items={result.next_actions} tone="action" />
+          <EvidenceList title="判断依据" items={displayAskList(result.evidence)} tone="evidence" />
+          <EvidenceList title="主要风险" items={displayAskList(result.risks)} tone="risk" />
+          <EvidenceList title="后续跟踪" items={displayMonitoringList(result.next_actions)} tone="action" />
         </div>
       </details>
       <footer className="ask-answer-foot">
         <span>{sourceLabel}</span>
-        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
+        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
       </footer>
     </section>;
   }
@@ -762,19 +829,20 @@ function AskResult({ result }: { result: AskStockResponse }) {
       <div className="ask-provenance">
         <span>{sourceLabel}</span>
         <small>行情时间 {observedTime(result.observed_at)}</small>
-        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>打开个股研究</a> : null}
+        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
       </div>
     </header>
     <article className="ask-answer">
       <span>结论</span>
-      <p>{result.answer}</p>
+      <p>{displayAskText(result.answer)}</p>
     </article>
+    {stockAnalysis ? <AskGateBrief result={result} /> : null}
     <HoldingContext result={result} />
     <AskRowsTable result={result} />
     <div className="ask-evidence-grid">
-      <EvidenceList title="判断依据" items={result.evidence} tone="evidence" />
-      <EvidenceList title="主要风险" items={result.risks} tone="risk" />
-      <EvidenceList title="下一步" items={result.next_actions} tone="action" />
+      <EvidenceList title="判断依据" items={displayAskList(result.evidence)} tone="evidence" />
+      <EvidenceList title="主要风险" items={displayAskList(result.risks)} tone="risk" />
+      <EvidenceList title="后续跟踪" items={displayMonitoringList(result.next_actions)} tone="action" />
     </div>
     {stockAnalysis ? <section className="ask-support-package">
       <button className="ask-support-toggle" type="button" aria-expanded={supportOpen} onClick={() => setSupportOpen((open) => !open)}>
@@ -782,14 +850,13 @@ function AskResult({ result }: { result: AskStockResponse }) {
       </button>
       {supportOpen && <>
         <AskMetrics result={result} />
-        <AskGateBrief result={result} />
         <AskFactors result={result} />
       </>}
     </section> : <>
       <AskMetrics result={result} />
       <AskFactors result={result} />
     </>}
-    <p className="ask-disclaimer"><ShieldAlert size={14} />{result.disclaimer}</p>
+    <p className="ask-disclaimer"><ShieldAlert size={14} />{displayAskText(result.disclaimer)}</p>
   </section>;
 }
 
@@ -812,15 +879,19 @@ export function AskStockPage() {
   );
 
   useEffect(() => {
-    if (typeof threadEndRef.current?.scrollIntoView === "function") {
-      threadEndRef.current.scrollIntoView({ block: "end" });
-    }
-  }, [activeThread.id, messages, streaming]);
+    const frame = window.requestAnimationFrame(() => {
+      if (typeof threadEndRef.current?.scrollIntoView === "function") {
+        threadEndRef.current.scrollIntoView({ block: "end" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeThread.id, messages.length, streaming]);
 
   useEffect(() => {
+    if (streaming) return;
     saveIfUseful(threadState);
     removeLegacyThread();
-  }, [threadState]);
+  }, [streaming, threadState]);
 
   const submitQuestion = async (value: string, options: { forceSourceStock?: boolean } = {}) => {
     const normalized = value.trim();
@@ -848,17 +919,18 @@ export function AskStockPage() {
     setStreaming(true);
 
     try {
-      const result = await streamAskStock({
+      const payload = {
         question: requestQuestion,
         context: requestContext,
         conversation: conversationContext,
         sourceContext,
-      }, {
+      };
+      const result = await streamAskStock(payload, {
         onDelta: (text) => {
           setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => (
             currentMessages.map((message) => (
               message.role === "assistant_stream" && message.id === streamId
-                ? { ...message, content: `${message.content.endsWith("...") ? "" : message.content}${text}` }
+                ? { ...message, content: displayAskText(`${message.content.endsWith("...") ? "" : message.content}${text}`) }
                 : message
             ))
           )));
@@ -867,11 +939,20 @@ export function AskStockPage() {
           setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => (
             currentMessages.map((item) => (
               item.role === "assistant_stream" && item.id === streamId && item.content.endsWith("...")
-                ? { ...item, content: `${message}...` }
+                ? { ...item, content: `${displayAskText(message)}...` }
                 : item
             ))
           )));
         },
+      }).catch(async () => {
+        setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => (
+          currentMessages.map((item) => (
+            item.role === "assistant_stream" && item.id === streamId
+              ? { ...item, content: "流式回答中断，正在切换普通请求..." }
+              : item
+          ))
+        )));
+        return askStock(payload);
       });
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
         ...currentMessages.filter((message) => !(message.role === "assistant_stream" && message.id === streamId)),
@@ -881,7 +962,7 @@ export function AskStockPage() {
       const detail = error instanceof ApiError ? error.detail : "问股请求失败，请稍后重试。";
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
         ...currentMessages.filter((message) => !(message.role === "assistant_stream" && message.id === streamId)),
-        { id: messageId(), role: "error", content: detail, retryValue: requestQuestion },
+        { id: messageId(), role: "error", content: displayAskText(detail), retryValue: requestQuestion },
       ]));
       setQuestion(value);
     } finally {

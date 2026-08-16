@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -82,6 +83,163 @@ def test_eastmoney_board_constituents_normalize_to_quotes() -> None:
     assert quotes[0].sector == "电力"
 
 
+def test_eastmoney_financial_periods_normalize_and_deduplicate_reports() -> None:
+    payload = {
+        "result": {
+            "data": [
+                {
+                    "REPORT_DATE": "2026-06-30 00:00:00",
+                    "REPORT_DATE_NAME": "2026中报",
+                    "REPORT_TYPE": "中报",
+                    "TOTALOPERATEREVE": "90703000000",
+                    "TOTALOPERATEREVETZ": "1.47",
+                    "PARENTNETPROFIT": "44517000000",
+                    "PARENTNETPROFITTZ": "-1.95",
+                    "ROEJQ": "18.2",
+                    "XSMLL": "91.3",
+                    "MGJYXJJE": "16.8",
+                    "JYXJLYYSR": "0.984",
+                    "ZCFZL": "13.1",
+                },
+                {
+                    "REPORT_DATE": "2026-06-30 00:00:00",
+                    "REPORT_DATE_NAME": "重复中报",
+                    "REPORT_TYPE": "中报",
+                },
+                {
+                    "REPORT_DATE": "2026-03-31 00:00:00",
+                    "REPORT_DATE_NAME": "2026一季报",
+                    "REPORT_TYPE": "一季报",
+                    "TOTALOPERATEREVE": "--",
+                    "PARENTNETPROFIT": "",
+                },
+            ]
+        }
+    }
+
+    periods = PublicMarketProvider.normalize_financial_periods(payload)
+
+    assert [item.report_label for item in periods] == ["2026中报", "2026一季报"]
+    assert periods[0].revenue_yoy == 1.47
+    assert periods[0].net_profit_yoy == -1.95
+    assert periods[0].cash_receipts_to_revenue == 98.4
+    assert periods[1].revenue is None
+    assert periods[1].net_profit is None
+
+
+def test_eastmoney_stock_news_jsonp_normalizes_clean_articles() -> None:
+    payload = "stockts(" + json.dumps(
+        {
+            "code": 0,
+            "result": {
+                "cmsArticleWebOld": [
+                    {
+                        "date": "2026-08-15 09:30:00",
+                        "code": "202608151234",
+                        "title": "<em>贵州茅台</em>半年报",
+                        "content": "营业收入增长，<b>净利润</b>小幅下降。",
+                        "mediaName": "证券时报",
+                        "url": "https://finance.eastmoney.com/a/202608151234.html",
+                    }
+                ]
+            },
+        },
+        ensure_ascii=False,
+    ) + ")"
+
+    items = PublicMarketProvider.normalize_stock_news(payload)
+
+    assert items[0].id == "eastmoney-news:202608151234"
+    assert items[0].title == "贵州茅台半年报"
+    assert items[0].summary == "营业收入增长，净利润小幅下降。"
+    assert items[0].media == "证券时报"
+    assert items[0].published_at.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_eastmoney_financial_and_stock_news_fetch_contracts() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if "datacenter-web" in request.url.host:
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "data": [
+                            {
+                                "REPORT_DATE": "2026-06-30 00:00:00",
+                                "REPORT_DATE_NAME": "2026中报",
+                                "REPORT_TYPE": "中报",
+                            }
+                        ]
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            text='stockts({"code":0,"result":{"cmsArticleWebOld":[]}})',
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = PublicMarketProvider(client)
+        periods = await provider.fetch_financial_periods("SH.600519", 5)
+        news = await provider.fetch_stock_news("SH.600519", "贵州茅台", 20)
+
+    assert periods[0].report_label == "2026中报"
+    assert news == []
+    assert requests[0].url.params["reportName"] == "RPT_F10_FINANCE_MAINFINADATA"
+    assert requests[0].url.params["filter"] == '(SECUCODE="600519.SH")'
+    assert '"keyword":"贵州茅台"' in requests[1].url.params["param"]
+
+
+@pytest.mark.asyncio
+async def test_eastmoney_returns_bounded_ten_day_equity_ranking() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "diff": [
+                        {
+                            "f12": "300862",
+                            "f14": "蓝盾光电",
+                            "f2": 47.29,
+                            "f3": 19.99,
+                            "f160": 148.76,
+                        },
+                        {
+                            "f12": "300615",
+                            "f14": "欣天科技",
+                            "f2": 17.62,
+                            "f3": 1.85,
+                            "f160": 102.76,
+                        },
+                    ]
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await PublicMarketProvider(client).fetch_equity_period_ranking(10, 100)
+
+    assert result.columns == ["股票代码", "股票简称", "近10日涨跌幅", "最新价", "今日涨跌幅"]
+    assert result.rows[0] == {
+        "股票代码": "300862",
+        "股票简称": "蓝盾光电",
+        "近10日涨跌幅": 148.76,
+        "最新价": 47.29,
+        "今日涨跌幅": 19.99,
+    }
+    assert requests[0].url.params["fid"] == "f160"
+    assert requests[0].url.params["pz"] == "100"
+    assert "f160" in requests[0].url.params["fields"]
+
+
 @pytest.mark.asyncio
 async def test_eastmoney_json_falls_back_to_curl_when_httpx_disconnects(monkeypatch) -> None:
     class BrokenClient:
@@ -155,3 +313,29 @@ async def test_market_events_fall_back_to_cls_when_eastmoney_is_unavailable() ->
     assert events[0].source == "财联社电报"
     assert provider.provider_status()["eastmoney_fast_news"]["status"] == "partial"
     assert provider.provider_status()["cls_fast_news"]["status"] == "ready"
+
+
+def test_global_provider_normalizes_tencent_search_quote_and_kline() -> None:
+    from marketdesk.providers.global_market import GlobalMarketProvider
+
+    provider = GlobalMarketProvider()
+    search_text = 'v_hint="hk~00700~腾讯控股~txkg~GP^us~aapl.oq~苹果~pg~GP^jj~007005~基金~jj~KJ"'
+    quote_text = 'v_hk00700="100~腾讯控股~00700~485.800~490.400~491.000~22450645.0~0~0~485.800~0~0~0~0~0~0~0~0~0~485.800~0~0~0~0~0~0~0~0~0~22450645.0~2026/08/04 15:39:08~-4.600~-0.94~494.800~480.800~485.800~22450645.0~10916258976.780~0~17.74~~0~0~2.85~44171.4441~44171.4441~TENCENT";'
+    kline = {
+        "data": {
+            "hk00700": {
+                "qfqday": [["2026-08-04", "491.0", "485.8", "494.8", "480.8", "22450645", {}, "0.25", "1091625.9"]]
+            }
+        }
+    }
+    us_text = '/*<script>location.href=\'//sina.com\';</script>*/\nvar _([{"d":"2026-08-03","o":"309.58","h":"311.80","l":"302.56","c":"303.42","v":"75051951","a":"0"}]);'
+
+    assert provider.normalize_tencent_search(search_text) == ["HK.00700", "US.AAPL"]
+    quote = provider.normalize_tencent_quote(quote_text, "HK.700")
+    assert quote.symbol == "HK.00700"
+    assert quote.name == "腾讯控股"
+    assert quote.price == 485.8
+    assert quote.change_pct == -0.94
+    assert quote.sector == "港股/HKD"
+    assert provider.normalize_tencent_kline(kline, "hk00700")[0].close == 485.8
+    assert provider.normalize_sina_us_kline(us_text)[0].close == 303.42

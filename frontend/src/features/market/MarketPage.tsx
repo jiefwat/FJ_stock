@@ -1,23 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
-import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
-import { EquityBrowser } from "./EquityBrowser";
+import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketEvent, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
+import { plainLanguage } from "../../lib/plainLanguage";
 
 type MarketData = { snapshot: { meta: Meta; indices: IndexQuote[]; sectors: Sector[] }; analysis: Analysis };
 type DetailSort = "net_flow" | "change_pct" | "amount";
 type DetailFilter = "all" | "net_inflow" | "up";
-type MarketCommandTone = "positive" | "caution" | "negative";
 
-const regimeCopy: Record<string, { label: string; action: string }> = {
-  risk_off: { label: "防守", action: "先保护本金，机会只保留观察。" },
-  cautious: { label: "谨慎", action: "只看板块、量能、价格同时确认的线索。" },
-  balanced: { label: "均衡", action: "可以看机会，但不要追涨。" },
-  risk_on: { label: "进攻", action: "可以更积极，仍守失效条件。" },
-};
+const EquityBrowser = lazy(() => import("./EquityBrowser").then((module) => ({ default: module.EquityBrowser })));
+const browserParamKeys = [
+  "q",
+  "industry",
+  "min_change_pct",
+  "max_change_pct",
+  "min_amount",
+  "max_amount",
+  "min_turnover_rate",
+  "max_turnover_rate",
+  "min_market_cap",
+  "max_market_cap",
+  "complete_only",
+  "sort_by",
+  "direction",
+  "page_size",
+  "page",
+] as const;
+
+function hasBrowserParams(params: URLSearchParams) {
+  return browserParamKeys.some((key) => params.has(key));
+}
 
 export function MarketPage() {
   const [showAllSectors, setShowAllSectors] = useState(false);
@@ -28,7 +43,6 @@ export function MarketPage() {
   const selectedThemeName = params.get("themeName") ?? selectedTheme ?? "";
   const selectedThemeChange = params.get("themeChange");
   const query = useQuery({ queryKey: ["market"], queryFn: () => api<MarketData>("/api/v1/market") });
-  const eventsQuery = useQuery({ queryKey: ["market-events"], queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=30") });
   const intelligenceQuery = useQuery({ queryKey: ["cn-market-intelligence"], queryFn: () => api<MarketIntelligenceResult>("/api/v1/markets/CN/intelligence?limit=20") });
   const sectorQuery = useQuery({
     queryKey: ["sector", selectedSector],
@@ -75,118 +89,122 @@ export function MarketPage() {
 
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
     <header className="page-head"><div><h1>市场</h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
-    <MarketCommandCenter market={query.data} intelligence={intelligenceQuery.data} events={eventsQuery.data} onOpenSector={openSector} />
-    <section className="breadth-board" aria-label="市场广度"><div><span>上涨</span><strong className="up">{query.data.analysis.advancing}</strong></div><div><span>下跌</span><strong className="down">{query.data.analysis.declining}</strong></div><div><span>平盘</span><strong>{query.data.analysis.unchanged}</strong></div><div><span>综合温度</span><strong>{fmt(query.data.analysis.score, 0)}</strong></div></section>
-    <div className="two-column"><section className="panel"><div className="panel-title"><span>指数</span></div><div className="market-table">{query.data.snapshot.indices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}</div></section><section className="panel"><div className="panel-title"><span>评分证据</span><small>分数 · 权重 · 事实</small></div><div className="factor-ledger">{query.data.analysis.factors.map((factor) => <article key={factor.key} className={factor.available ? "available" : "missing"}><span>{factor.label}<small>{factor.evidence}</small></span><strong>{factor.available ? fmt(factor.score, 0) : "未计入"}</strong><em>{factor.available ? `权重 ${percent(factor.weight * 100)}` : "权重 0%"}</em></article>)}</div></section></div>
+    <MarketDecisionBanner market={query.data} />
+    <MarketPulseStrip market={query.data} />
     <section id="market-board-workbench" className="market-board-zone" aria-label="板块和题材工作区">
       <div className="section-bridge"><span>板块</span><strong>板块和题材</strong></div>
-      <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
-      <section className="panel" aria-labelledby="sector-heat-title"><div className="panel-title"><span id="sector-heat-title">板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金流待增强" : `净流入 ${fmt(item.net_flow / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">按当前市场找机会 →</Link></div></section>
+      <div className="market-board-grid" aria-label="板块与资金主线">
+        <MarketIntelligencePanel data={intelligenceQuery.data} loading={intelligenceQuery.isLoading} failed={intelligenceQuery.isError} onOpenSector={openSector} />
+        <section className="panel sector-heat-panel" aria-labelledby="sector-heat-title"><div className="panel-title"><span id="sector-heat-title">板块热度</span><small>点击板块查看成分股和简析</small></div><div className="sector-grid">{query.data.snapshot.sectors.slice(0, showAllSectors ? undefined : 12).map((item) => <button key={item.code} className={`sector-card ${selectedSector === item.code ? "active" : ""}`} onClick={() => openSector(item.code)}><span>{item.name}</span><strong className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><small>{item.net_flow == null ? "资金情况待补" : `${item.net_flow >= 0 ? "买入资金更多" : "卖出资金更多"} ${fmt(Math.abs(item.net_flow) / 100000000)} 亿`}</small></button>)}</div><div className="panel-actions"><button className="text-button" onClick={() => setShowAllSectors((value) => !value)}>{showAllSectors ? "收起板块" : `查看全部 ${query.data.snapshot.sectors.length} 个板块`}</button><Link className="button" to="/opportunities">查看候选决策 →</Link></div></section>
+      </div>
       {selectedSector && <DossierPanel key={`sector-${selectedSector}`} containerRef={dossierRef} data={sectorQuery.data} loading={sectorQuery.isLoading} error={sectorQuery.error as Error | null} variant="sector" onClose={closeDossier} />}
       {selectedTheme && <DossierPanel key={`theme-${selectedTheme}`} containerRef={dossierRef} data={themeQuery.data} loading={themeQuery.isLoading} error={themeQuery.error as Error | null} variant="theme" onClose={closeDossier} />}
     </section>
-    <section id="market-events" className="panel event-radar" aria-labelledby="market-events-title">
-      <div className="panel-title"><span id="market-events-title">市场异动</span><small>今天股市正在发生什么</small></div>
-      <AsyncState loading={eventsQuery.isLoading} error={eventsQuery.error as Error | null}>
-        {eventsQuery.data && <MarketEventRadar data={eventsQuery.data} />}
-      </AsyncState>
-    </section>
-    <div id="market-browser" className="market-browser-zone">
-      <EquityBrowser />
-    </div>
+    <DeferredMarketEvents />
+    <DeferredEquityBrowser params={params} />
   </>}</AsyncState>;
 }
 
-function MarketCommandCenter({ market, intelligence, events, onOpenSector }: { market: MarketData; intelligence?: MarketIntelligenceResult; events?: MarketEventResult; onOpenSector: (code: string) => void }) {
-  const regime = regimeCopy[market.analysis.regime] ?? { label: market.analysis.regime, action: "先看市场，再做决定。" };
+function DeferredMarketEvents() {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const [shouldLoad, setShouldLoad] = useState(() => (
+    typeof window === "undefined"
+    || typeof IntersectionObserver !== "function"
+    || window.location.hash === "#market-events"
+  ));
+  const eventsQuery = useQuery({
+    queryKey: ["market-events"],
+    queryFn: () => api<MarketEventResult>("/api/v1/market-events?limit=30"),
+    enabled: shouldLoad,
+    staleTime: 120_000,
+  });
+
+  useEffect(() => {
+    if (shouldLoad || typeof IntersectionObserver !== "function") return undefined;
+    const node = containerRef.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: "360px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  return <section ref={containerRef} id="market-events" className="panel event-radar" aria-labelledby="market-events-title">
+    <div className="panel-title"><span id="market-events-title">市场异动</span><small>今天股市正在发生什么</small></div>
+    {shouldLoad ? <AsyncState loading={eventsQuery.isLoading} error={eventsQuery.error as Error | null}>
+      {eventsQuery.data && <MarketEventRadar data={eventsQuery.data} />}
+    </AsyncState> : <div className="market-events-placeholder" role="status">市场异动待加载</div>}
+  </section>;
+}
+
+function DeferredEquityBrowser({ params }: { params: URLSearchParams }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [shouldLoad, setShouldLoad] = useState(() => hasBrowserParams(params) || window.location.hash === "#market-browser");
+
+  useEffect(() => {
+    if (hasBrowserParams(params) || window.location.hash === "#market-browser") setShouldLoad(true);
+  }, [params]);
+
+  useEffect(() => {
+    if (shouldLoad || typeof IntersectionObserver !== "function") return undefined;
+    const node = containerRef.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: "420px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  return <div ref={containerRef} id="market-browser" className="market-browser-zone">
+    {shouldLoad ? <Suspense fallback={<section className="panel market-browser-placeholder" aria-label="全市场行情" role="status"><span>全市场行情</span></section>}>
+      <EquityBrowser />
+    </Suspense> : <section className="panel market-browser-placeholder" aria-label="全市场行情">
+      <span>全市场行情</span>
+      <button className="button secondary" type="button" onClick={() => setShouldLoad(true)}>查看全市场行情（可选）</button>
+    </section>}
+  </div>;
+}
+
+function MarketPulseStrip({ market }: { market: MarketData }) {
   const total = Math.max(1, market.analysis.advancing + market.analysis.declining + market.analysis.unchanged);
   const breadth = market.analysis.advancing / total * 100;
-  const topFlow = intelligence?.sector_flows[0];
-  const riskEvent = events?.events.find((event) => event.sentiment === "negative" || event.category === "risk_alert");
-  const eventHeadline = riskEvent?.title ?? events?.summary[0] ?? "暂无显著事件风险，继续以指数、板块和资金为主。";
-  const routeText = breadth >= 55 ? "广度占优，优先看资金主线是否扩散。" : breadth >= 45 ? "广度中性，只看强势板块里的少数前排。" : "广度偏弱，候选降级，先处理持仓风险。";
-  const command = marketCommandDecision(market, breadth, Boolean(riskEvent), topFlow?.code);
-  const mainline = topFlow ? `${topFlow.name} ${pct(topFlow.change_pct)} · ${flowAmount(topFlow.net_flow)}` : "资金主线未确认";
+  const primaryIndices = market.snapshot.indices.slice(0, 4);
 
-  return <section id="market-gate" className={`market-command-center ${command.tone}`} aria-label="市场概览">
-    <article className="market-command-verdict">
-      <span>市场</span>
-      <strong>{regime.label} · {fmt(market.analysis.score, 0)}/100</strong>
-      <b className="market-command-badge">{command.title}</b>
-      <p>{regime.action}</p>
-      <small>上涨占比 {percent(breadth)} · 置信度 {percent(market.analysis.confidence * 100)}</small>
-      <em>大盘</em>
-    </article>
-    <div className="market-command-stack">
-      <div className="market-command-checks" aria-label="盘面三问">
-        <span>盘面三问</span>
-        <b>宽度够不够：{breadth >= 55 ? "够" : breadth >= 45 ? "勉强" : "不够"}</b>
-        <b>主线清不清：{topFlow ? topFlow.name : "待确认"}</b>
-        <b>风险挡不挡：{riskEvent ? "先刹车" : "不挡"}</b>
-      </div>
-      <div className="market-command-grid">
-        <article>
-          <span>方向</span>
-          <strong>{routeText}</strong>
-        </article>
-        <article>
-          <span>资金主线</span>
-          {topFlow ? <>
-            <button type="button" onClick={() => onOpenSector(topFlow.code)}>{topFlow.name}</button>
-            <p>{pct(topFlow.change_pct)} · 净流 {flowAmount(topFlow.net_flow)}</p>
-          </> : <>
-            <strong>等待资金确认</strong>
-            <p>板块资金源未返回时，只用指数和广度做防守判断。</p>
-          </>}
-        </article>
-        <article>
-          <span>事件风险</span>
-          <strong>{eventHeadline}</strong>
-        </article>
-        <article className="market-command-route">
-          <span>下一步</span>
-          <Link to={command.href}>{command.action}</Link>
-          <p>{command.detail}</p>
-        </article>
-      </div>
-      <div className="market-command-tape">
-        <span>摘要</span>
-        <strong>{command.title}</strong>
-        <p>{command.reason} · 主线：{mainline} · 风险：{riskEvent ? eventHeadline : "暂无强风险新闻"}</p>
-      </div>
+  return <section className="market-pulse-strip market-pulse-airy" aria-label="大盘速览">
+    <div className="pulse-breadth" aria-label="市场宽度速览">
+      <article><span>上涨</span><strong className="up">{market.analysis.advancing}</strong></article>
+      <article><span>下跌</span><strong className="down">{market.analysis.declining}</strong></article>
+      <article><span>广度</span><strong>{percent(breadth)}</strong></article>
+      <article><span>温度</span><strong>{fmt(market.analysis.score, 0)}</strong></article>
+    </div>
+    <div className="pulse-indices" aria-label="核心指数">
+      <header><span>指数</span><small>只看核心市场</small></header>
+      {primaryIndices.map((item) => <div key={item.symbol}><span>{item.name}</span><b>{fmt(item.price)}</b><i className={(item.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.change_pct)}</i></div>)}
     </div>
   </section>;
 }
 
-function marketCommandDecision(market: MarketData, breadth: number, hasRiskEvent: boolean, topFlowCode?: string): { tone: MarketCommandTone; title: string; action: string; href: string; detail: string; reason: string } {
-  if (market.analysis.regime === "risk_off" || hasRiskEvent || breadth < 40 || market.analysis.score < 45) {
-    return {
-      tone: "negative",
-      title: "先守风险",
-      action: "检查持仓风险",
-      href: "/holdings",
-      detail: "大盘偏弱，先看已有仓位、止损线和风险事件。",
-      reason: "防守优先，机会只保留观察",
-    };
-  }
-  if (breadth >= 55 && market.analysis.score >= 55) {
-    return {
-      tone: "positive",
-      title: "可以找机会",
-      action: "找机会",
-      href: "/opportunities",
-      detail: "市场宽度与温度同时过线，找板块和个股证据能接住的线索。",
-      reason: "宽度过线，可以找候选",
-    };
-  }
-  return {
-    tone: "caution",
-    title: "只看前排板块",
-    action: topFlowCode ? "打开资金主线" : "等待资金确认",
-    href: topFlowCode ? `/market?sector=${topFlowCode}` : "/market",
-    detail: "大盘不够强，只看资金最强、扩散更清楚的前排。",
-    reason: "宽度或温度仍需确认",
-  };
+function MarketDecisionBanner({ market }: { market: MarketData }) {
+  const { advancing, declining, score } = market.analysis;
+  const defensive = score < 45 || declining > advancing * 1.3;
+  const constructive = score >= 65 && advancing > declining;
+  const tone = defensive ? "negative" : constructive ? "positive" : "caution";
+  const action = defensive ? "今天以防守为主" : constructive ? "允许小仓参与强势股" : "今天只做少量试探";
+  const allowed = defensive ? "只处理已持仓风险，不开新仓" : constructive ? "只参与板块和资金同时支持的前排股票" : "只选“可小仓试探”候选";
+  const forbidden = defensive ? "不补仓、不抄底、不等待反弹证明判断" : "不追涨，不因为单日上涨临时加大仓位";
+  const change = defensive ? "上涨股票明显多于下跌股票，且市场温度回到 45 以上" : "下跌股票明显增多，或市场温度跌破 45";
+
+  return <section className={`market-decision-banner ${tone}`} aria-label="今天的市场决定">
+    <article><span>今天怎么做</span><strong>{action}</strong><p>{allowed}</p></article>
+    <div><span>不要做</span><strong>{forbidden}</strong></div>
+    <div><span>什么情况改变决定</span><strong>{change}</strong></div>
+  </section>;
 }
 
 function detailValue(item: Quote, sort: DetailSort) {
@@ -209,11 +227,11 @@ function sortedRows(items: Quote[], sort: DetailSort, filter: DetailFilter) {
 function stockLeadReason(item: Quote) {
   const up = (item.change_pct ?? 0) > 0;
   const inflow = (item.net_flow ?? 0) > 0;
-  if (up && inflow) return "价格与资金同向，优先看";
-  if (up && item.net_flow == null) return "价格走强，资金待确认";
-  if (inflow) return "资金先动但价格未确认，观察是否补涨";
+  if (up && inflow) return "股价上涨且买入资金更多，还要看看能否持续";
+  if (up && item.net_flow == null) return "股价在涨，但资金情况还不清楚";
+  if (inflow) return "买入资金先增加，股价还没跟上，继续观察";
   if ((item.amount ?? 0) >= 1_000_000_000) return "成交活跃，可作板块样本";
-  return "证据较弱，先保留观察";
+  return "支持信息较少，先保留观察";
 }
 
 function stockLeadTarget(item: Quote) {
@@ -223,35 +241,35 @@ function stockLeadTarget(item: Quote) {
   if (up && inflow) {
     return {
       anchor: "stock-investment-advice",
-      label: "先看交易计划",
-      detail: "先看入场、仓位和止损。",
+      label: "可小仓试探",
+      detail: "价格和买入资金同时走强；参与时仍要控制仓位和退出条件。",
     };
   }
   if (up && item.net_flow == null) {
     return {
       anchor: "stock-evidence-audit",
-      label: "先看依据",
-      detail: "价格已动但资金缺口待补，先看支持、反方和缺口。",
+      label: "暂不买入",
+      detail: "价格已动，资金依据不足。",
     };
   }
   if (inflow) {
     return {
       anchor: "stock-final-gate",
-      label: "先看结论",
-      detail: "资金先动但价格未确认，先判断是否观察。",
+      label: "继续观察",
+      detail: "买入资金先增加，但价格还没有确认。",
     };
   }
   if ((item.amount ?? 0) >= 1_000_000_000) {
     return {
       anchor: "stock-company-evidence",
-      label: "先补公告研报",
-      detail: "成交活跃但方向证据不足，先核验外部证据。",
+      label: "仅作样本",
+      detail: "成交活跃但方向不明确，不作为买入候选。",
     };
   }
   return {
     anchor: "stock-risk-controls",
-    label: "先看风控条件",
-    detail: "证据较弱，先确认放弃线和反方证据。",
+    label: "暂不参与",
+      detail: "支持信息较少，暂不操作。",
   };
 }
 
@@ -307,8 +325,8 @@ function DossierPanel({ data, loading, error, variant, onClose, containerRef }: 
     <AsyncState loading={loading} error={error}>{data && <>
       <div className="sector-detail-head"><div><span>{variant === "theme" ? "题材" : "板块"}</span><h2>{data.sector.name}{suffix}简析</h2></div><button className="text-button" onClick={onClose}>关闭</button></div>
       <SectorReviewDesk data={data} suffix={suffix} />
-      <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待增强" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>证据覆盖</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
-      <div className="sector-summary">{data.summary.map((item) => <p key={item}>{item}</p>)}{data.missing_evidence.length > 0 && <small>缺口：{data.missing_evidence.join("、")}</small>}</div>
+      <div className="sector-digest"><article><span>{suffix}涨跌</span><strong className={(data.sector.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(data.sector.change_pct)}</strong></article><article><span>资金温度</span><strong>{data.sector.net_flow == null ? "待补" : `${fmt(data.sector.net_flow / 100000000)} 亿`}</strong></article><article><span>信息完整度</span><strong>{percent(data.evidence_coverage * 100)}</strong></article></div>
+      <div className="sector-summary">{data.summary.map((item) => <p key={item}>{plainLanguage(item)}</p>)}{data.missing_evidence.length > 0 && <small>还缺：{data.missing_evidence.map(plainLanguage).join("、")}</small>}</div>
       <BoardStockLeads data={data} suffix={suffix} />
       <div className="dossier-tools" aria-label={`${data.sector.name}${suffix}筛选`}>
         <label>排序<select aria-label="详情排序" value={sort} onChange={(event) => setSort(event.target.value as DetailSort)}><option value="net_flow">资金优先</option><option value="change_pct">涨幅优先</option><option value="amount">成交额优先</option></select></label>
@@ -333,16 +351,16 @@ function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: strin
   const inflowRatio = inflow / total * 100;
   const tone = data.missing_evidence.length > 0 ? "caution" : risingRatio >= 55 && inflowRatio >= 45 ? "positive" : risingRatio < 35 ? "negative" : "neutral";
   const verdict = tone === "positive"
-    ? "主线可继续看"
+    ? "可以小仓关注前排"
     : tone === "negative"
-      ? "扩散不足，先降级观察"
-      : "只看前排，等待确认";
+      ? "扩散不足，暂不参与"
+      : "暂不买入";
 
   return <section className={`sector-review-desk ${tone}`} aria-label={`${data.sector.name}${suffix}简析`}>
     <article className="sector-review-verdict">
       <span>板块</span>
       <strong>{verdict}</strong>
-      <p>{data.summary[0] ?? `${data.sector.name}${suffix}需要继续补充价格、资金和成分股证据。`}</p>
+      <p>{plainLanguage(data.summary[0] ?? `${data.sector.name}${suffix}还要补充价格、资金和成分股信息。`)}</p>
     </article>
     <div className="sector-review-grid">
       <article>
@@ -351,9 +369,9 @@ function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: strin
         <p>{percent(risingRatio)} 成分上涨。</p>
       </article>
       <article>
-        <span>净流入扩散</span>
+        <span>获得资金买入的股票</span>
         <strong>{inflow} / {total}</strong>
-        <p>{data.sector.net_flow == null ? "资金证据待增强。" : `${percent(inflowRatio)} 成分净流入，板块净流 ${flowAmount(data.sector.net_flow)}。`}</p>
+        <p>{data.sector.net_flow == null ? "资金情况待补。" : `${percent(inflowRatio)} 的股票买入资金更多，板块合计 ${flowAmount(data.sector.net_flow)}。`}</p>
       </article>
       <article>
         <span>领涨核心</span>
@@ -361,9 +379,9 @@ function SectorReviewDesk({ data, suffix }: { data: SectorDossier; suffix: strin
         <p>强于板块优先。</p>
       </article>
       <article>
-        <span>资金核心</span>
+        <span>资金最关注</span>
         {topFlow && topFlow.net_flow != null ? <Link to={`/stocks?symbol=${topFlow.symbol}`}>{topFlow.name}<small>{flowAmount(topFlow.net_flow)}</small></Link> : <strong>待增强</strong>}
-        <p>{data.missing_evidence.length ? `缺口：${data.missing_evidence.join("、")}` : "与领涨核心交叉确认。"}</p>
+        <p>{data.missing_evidence.length ? `待补资料：${data.missing_evidence.map(plainLanguage).join("、")}` : "筛选条件：涨幅与资金流均靠前。"}</p>
       </article>
     </div>
   </section>;
@@ -376,6 +394,11 @@ function flowAmount(value: number | null) {
 }
 
 function MarketIntelligencePanel({ data, loading, failed, onOpenSector }: { data?: MarketIntelligenceResult; loading: boolean; failed: boolean; onOpenSector: (code: string) => void }) {
+  const leadFlow = data?.sector_flows[0];
+  const restFlows = data?.sector_flows.slice(1, 8) ?? [];
+  const leadAnomaly = data?.anomalies[0];
+  const restAnomalies = data?.anomalies.slice(1, 8) ?? [];
+
   return <section className="panel market-intelligence" aria-label="A股市场情报">
     <div className="panel-title"><span>A 股市场情报</span><small>板块资金 + 交易异动</small></div>
     {loading && <div className="capability-empty">正在读取市场情报…</div>}
@@ -384,23 +407,54 @@ function MarketIntelligencePanel({ data, loading, failed, onOpenSector }: { data
       <div className="flow-leaders">
         <header><span>板块资金确认</span><b>{data.sector_flows.length} 个</b></header>
         {data.capabilities.sector_flows?.status === "unavailable" && <p className="capability-warning">板块资金源暂不可用。</p>}
-        {data.sector_flows.slice(0, 8).map((sector, index) => <button key={sector.code} type="button" onClick={() => onOpenSector(sector.code)}>
-          <em>{String(index + 1).padStart(2, "0")}</em>
-          <span>{sector.name}<small>{pct(sector.change_pct)}</small></span>
-          <strong className={(sector.net_flow ?? 0) >= 0 ? "up" : "down"}>{flowAmount(sector.net_flow)}</strong>
-        </button>)}
+        {leadFlow && <button className="flow-hero-card" type="button" onClick={() => onOpenSector(leadFlow.code)}>
+          <em>01</em>
+          <span><b>{leadFlow.name}</b><small>{pct(leadFlow.change_pct)} · 主线资金</small></span>
+          <strong className={(leadFlow.net_flow ?? 0) >= 0 ? "up" : "down"}>{flowAmount(leadFlow.net_flow)}</strong>
+        </button>}
+        <div className="flow-leader-list">
+          {restFlows.map((sector, index) => <button key={sector.code} type="button" onClick={() => onOpenSector(sector.code)}>
+            <em>{String(index + 2).padStart(2, "0")}</em>
+            <span>{sector.name}<small>{pct(sector.change_pct)}</small></span>
+            <strong className={(sector.net_flow ?? 0) >= 0 ? "up" : "down"}>{flowAmount(sector.net_flow)}</strong>
+          </button>)}
+        </div>
       </div>
       <div className="anomaly-list">
         <header><span>龙虎榜观察</span><b>{data.anomalies.length} 条</b></header>
         {data.capabilities.dragon_tiger?.status === "unavailable" && <p className="capability-warning">龙虎榜源暂不可用，不能据空结果判断当天没有异动。</p>}
-        {data.anomalies.slice(0, 8).map((item) => <article key={`${item.trade_date}-${item.symbol}`}>
-          <time>{item.trade_date.slice(5)}</time>
-          <div><Link to={`/stocks?symbol=${item.symbol}`}>{item.name} <small>{item.symbol}</small></Link><p>{item.reason}</p></div>
-          <strong className={(item.net_buy ?? 0) >= 0 ? "up" : "down"}>{flowAmount(item.net_buy)}</strong>
-        </article>)}
+        {leadAnomaly && <article className="anomaly-hero-card" key={`${leadAnomaly.trade_date}-${leadAnomaly.symbol}`}>
+          <time>{leadAnomaly.trade_date.slice(5)}</time>
+          <div><Link to={`/stocks?symbol=${leadAnomaly.symbol}`}>{leadAnomaly.name} <small>{leadAnomaly.symbol}</small></Link><p>{leadAnomaly.reason}</p></div>
+          <strong className={(leadAnomaly.net_buy ?? 0) >= 0 ? "up" : "down"}>{flowAmount(leadAnomaly.net_buy)}</strong>
+        </article>}
+        <div className="anomaly-rows">
+          {restAnomalies.map((item, index) => <article key={`${item.trade_date}-${item.symbol}-${index}`}>
+            <time>{item.trade_date.slice(5)}</time>
+            <div><Link to={`/stocks?symbol=${item.symbol}`}>{item.name} <small>{item.symbol}</small></Link><p>{item.reason}</p></div>
+            <strong className={(item.net_buy ?? 0) >= 0 ? "up" : "down"}>{flowAmount(item.net_buy)}</strong>
+          </article>)}
+        </div>
       </div>
     </div>}
   </section>;
+}
+
+const genericEventTitles = new Set(["政策与监管", "资金与风格", "公司动作", "行业催化", "风险扰动", "宏观与海外", "其他热点"]);
+const genericEventTags = new Set(["政策支持", "资金风格"]);
+
+function eventHeadline(event: MarketEvent) {
+  const title = event.title.trim();
+  if (!genericEventTitles.has(title)) return title;
+  return plainLanguage((event.summary.split(/[。！？；]/)[0] || title).trim());
+}
+
+function eventTags(event: MarketEvent) {
+  const headline = eventHeadline(event);
+  return event.tags.filter((tag) => {
+    const normalized = tag.trim();
+    return normalized && normalized !== headline && normalized !== event.title.trim() && !genericEventTitles.has(normalized) && !genericEventTags.has(normalized);
+  });
 }
 
 function MarketEventRadar({ data }: { data: MarketEventResult }) {
@@ -412,24 +466,19 @@ function MarketEventRadar({ data }: { data: MarketEventResult }) {
       {data.clusters.map((cluster) => <article key={cluster.key} className={cluster.signal}>
         <span>{cluster.label}</span>
         <strong>{fmt(cluster.hot_score, 0)}</strong>
-        <small>{cluster.count} 条 · {cluster.summary}</small>
+        <small>{cluster.count} 条 · {plainLanguage(cluster.summary)}</small>
       </article>)}
     </div>
     <div className="event-tape">
       {data.events.slice(0, 8).map((event) => <article key={event.id} className={event.sentiment}>
-        <time>{formatEventTime(event.published_at)}</time>
+        <time>{formatEventTime(event.published_at)}<small>{event.source}</small></time>
         <div>
           <header>
-            <h3>{event.url ? <a href={event.url} target="_blank" rel="noreferrer">{event.title}</a> : event.title}</h3>
+            <h3>{event.url ? <a href={event.url} target="_blank" rel="noreferrer">{eventHeadline(event)}</a> : eventHeadline(event)}</h3>
             <b>{fmt(event.importance_score, 0)}</b>
           </header>
-          <p>{event.summary}</p>
-          <div className="event-tags">{event.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-          <dl>
-            <div><dt>可能影响</dt><dd>{event.impact}</dd></div>
-            <div><dt>下一步</dt><dd>{event.action}</dd></div>
-          </dl>
-          {event.related_symbols.length > 0 && <div className="event-symbols">{event.related_symbols.slice(0, 4).map((symbol) => <Link key={symbol} to={`/stocks?symbol=${symbol}`}>{symbol}</Link>)}</div>}
+          <p>{plainLanguage(event.summary)}</p>
+          {eventTags(event).length > 0 && <div className="event-tags">{eventTags(event).map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
       </article>)}
     </div>

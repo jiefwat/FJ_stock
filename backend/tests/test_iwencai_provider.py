@@ -63,7 +63,12 @@ async def test_query_stocks_posts_bounded_semantic_request() -> None:
         requests.append(request)
         return httpx.Response(
             200,
-            json={"data": [{"股票代码": "600519", "股票简称": "贵州茅台"}]},
+            json={
+                "data": [
+                    {"股票代码": f"{index:06d}", "股票简称": f"测试股票{index}"}
+                    for index in range(1, 101)
+                ]
+            },
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -74,12 +79,13 @@ async def test_query_stocks_posts_bounded_semantic_request() -> None:
         )
         result = await provider.query_stocks("低估值白酒股", limit=100)
 
-    assert result.rows[0]["股票代码"] == "600519"
+    assert result.rows[0]["股票代码"] == "000001"
+    assert len(result.rows) == 100
     assert requests[0].headers["Authorization"] == "Bearer test-key"
     assert json.loads(requests[0].content) == {
         "query": "低估值白酒股",
         "query_type": "stock",
-        "limit": 20,
+        "limit": 100,
     }
 
 

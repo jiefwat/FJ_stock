@@ -53,7 +53,7 @@ class IwencaiProvider:
             raise ProviderUnavailable("semantic stock screening is not configured")
         assert self.endpoint is not None
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        bounded_limit = min(max(limit, 1), 20)
+        bounded_limit = min(max(limit, 1), 100)
         try:
             response = await self.client.post(
                 self.endpoint,
@@ -101,7 +101,7 @@ def normalize_stock_screen(
     raw_rows = _extract_rows(payload)
     normalized_rows: list[dict[str, JsonScalar]] = []
     discovered_columns: list[str] = []
-    for raw_row in raw_rows[: min(max(row_limit, 0), 20)]:
+    for raw_row in raw_rows[: min(max(row_limit, 0), 100)]:
         row: dict[str, JsonScalar] = {}
         for raw_key, raw_value in raw_row.items():
             key = " ".join(str(raw_key).split())[:80]

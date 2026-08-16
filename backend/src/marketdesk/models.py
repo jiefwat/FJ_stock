@@ -24,6 +24,18 @@ class CapabilityStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+DecisionSeverity = Literal["critical", "high", "action", "info"]
+
+
+class DecisionPresentation(StrictModel):
+    action: str = Field(min_length=1, max_length=40)
+    summary: str = Field(min_length=1, max_length=300)
+    severity: DecisionSeverity
+    user_required: bool
+    reason_code: str = Field(min_length=1, max_length=80)
+    layer: Literal["priority", "review", "watch_only", "high_risk"] | None = None
+
+
 class DatasetMeta(StrictModel):
     source: str
     observed_at: datetime
@@ -116,6 +128,70 @@ class InstrumentEvidenceResult(StrictModel):
     research: list[EvidenceDocument] = Field(default_factory=list)
     themes: list[InstrumentTheme] = Field(default_factory=list)
     capabilities: dict[str, CapabilityState] = Field(default_factory=dict)
+
+
+class FinancialPeriod(StrictModel):
+    report_date: date
+    report_label: str
+    report_type: str
+    revenue: float | None = None
+    revenue_yoy: float | None = None
+    net_profit: float | None = None
+    net_profit_yoy: float | None = None
+    roe: float | None = None
+    gross_margin: float | None = None
+    operating_cash_flow_per_share: float | None = None
+    cash_receipts_to_revenue: float | None = None
+    debt_to_assets: float | None = None
+
+
+class FinancialHealth(StrictModel):
+    available: bool
+    score: float | None = Field(default=None, ge=0, le=100)
+    score_impact: float = Field(default=0, ge=-10, le=6)
+    conclusion: str
+    report_date: date | None = None
+    risks: list[str] = Field(default_factory=list)
+    periods: list[FinancialPeriod] = Field(default_factory=list)
+    error: str | None = None
+
+
+class StockNewsItem(StrictModel):
+    id: str
+    title: str
+    summary: str
+    media: str
+    url: str
+    published_at: datetime
+    sentiment: Literal["positive", "neutral", "negative"] = "neutral"
+    hard_risk: bool = False
+    hard_risk_terms: list[str] = Field(default_factory=list)
+
+    @field_validator("published_at")
+    @classmethod
+    def require_news_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+    @field_validator("url")
+    @classmethod
+    def require_http_news_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("news URL must use http or https")
+        return value
+
+
+class StockNewsSentiment(StrictModel):
+    available: bool
+    window_days: int = Field(default=30, ge=1, le=90)
+    conclusion: str
+    positive_count: int = Field(default=0, ge=0)
+    negative_count: int = Field(default=0, ge=0)
+    neutral_count: int = Field(default=0, ge=0)
+    hard_risk_count: int = Field(default=0, ge=0)
+    score_impact: float = Field(default=0, ge=-6, le=0)
+    risks: list[str] = Field(default_factory=list)
+    items: list[StockNewsItem] = Field(default_factory=list)
+    error: str | None = None
 
 
 class IndexQuote(StrictModel):
@@ -350,6 +426,12 @@ class OpportunityHistoryCheck(StrictModel):
     risk_flags: list[str] = Field(default_factory=list)
 
 
+class StrategyValidation(StrictModel):
+    passed: bool = True
+    checks: list[str] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)
+
+
 class RankedCandidate(StrictModel):
     quote: EquityQuote
     base_score: float
@@ -364,10 +446,12 @@ class RankedCandidate(StrictModel):
     components: list[ScoreComponent]
     dimensions: list[OpportunityDimension] = Field(default_factory=list)
     history_check: OpportunityHistoryCheck | None = None
+    strategy_validation: StrategyValidation = Field(default_factory=StrategyValidation)
     thesis: str = ""
     invalidation: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
+    decision: DecisionPresentation | None = None
 
 
 class ExcludedCandidate(StrictModel):
@@ -379,6 +463,8 @@ class OpportunityResult(StrictModel):
     preset: str
     available: bool
     unavailable_reason: str | None = None
+    monitoring_active: bool = False
+    monitored_at: datetime | None = None
     summary: str = ""
     rules: list[str]
     diagnostics: list[OpportunityDimension] = Field(default_factory=list)
@@ -386,6 +472,106 @@ class OpportunityResult(StrictModel):
     funnel: dict[str, int]
     candidates: list[RankedCandidate]
     excluded: list[ExcludedCandidate]
+
+
+class RecommendationSnapshotPick(StrictModel):
+    rank: int = Field(ge=1)
+    symbol: str
+    name: str
+    sector: str | None = None
+    entry_price: float | None = Field(default=None, gt=0)
+    score: float
+    evidence_coverage: float = Field(ge=0, le=1)
+    thesis: str
+    risk_flags: list[str] = Field(default_factory=list)
+
+
+class RecommendationSnapshot(StrictModel):
+    preset: str
+    algorithm_version: str = "v1"
+    trading_date: date
+    observed_at: datetime
+    available: bool
+    unavailable_reason: str | None = None
+    summary: str = ""
+    benchmark_symbol: str | None = None
+    benchmark_name: str | None = None
+    benchmark_price: float | None = Field(default=None, gt=0)
+    picks: list[RecommendationSnapshotPick] = Field(default_factory=list)
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_recommendation_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class RecommendationObservation(StrictModel):
+    trading_date: date
+    observed_at: datetime
+    benchmark_price: float | None = Field(default=None, gt=0)
+    prices: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_observation_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class RecommendationPerformancePick(StrictModel):
+    rank: int
+    symbol: str
+    name: str
+    sector: str | None = None
+    entry_price: float | None = None
+    current_price: float | None = None
+    score: float
+    evidence_coverage: float
+    thesis: str
+    risk_flags: list[str] = Field(default_factory=list)
+    observed_sessions: int = Field(ge=0)
+    return_1d: float | None = None
+    return_5d: float | None = None
+    return_20d: float | None = None
+    current_return: float | None = None
+    benchmark_20d_return: float | None = None
+    excess_20d_return: float | None = None
+    current_benchmark_return: float | None = None
+    current_excess_return: float | None = None
+    peak_return: float | None = None
+    max_drawdown: float | None = None
+    status: Literal["tracking", "validating", "evaluated", "missing"]
+
+
+class RecommendationPerformanceDay(StrictModel):
+    preset: str
+    trading_date: date
+    observed_at: datetime
+    available: bool
+    unavailable_reason: str | None = None
+    summary: str = ""
+    picks: list[RecommendationPerformancePick] = Field(default_factory=list)
+
+
+class RecommendationPerformanceSummary(StrictModel):
+    run_count: int = Field(ge=0)
+    pick_count: int = Field(ge=0)
+    evaluated_count: int = Field(ge=0)
+    average_20d_return: float | None = None
+    hit_rate_20d: float | None = Field(default=None, ge=0, le=1)
+    benchmark_win_rate_20d: float | None = Field(default=None, ge=0, le=1)
+    average_20d_excess: float | None = None
+    average_current_return: float | None = None
+    current_positive_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class RecommendationHistoryResult(StrictModel):
+    preset: str
+    generated_at: datetime
+    first_tracking_date: date | None = None
+    last_observed_at: datetime | None = None
+    summary: RecommendationPerformanceSummary
+    days: list[RecommendationPerformanceDay] = Field(default_factory=list)
+    methodology: list[str] = Field(default_factory=list)
 
 
 class Bar(StrictModel):
@@ -495,6 +681,8 @@ class StockDossier(StrictModel):
     vertical_comparison: list[StockComparisonItem] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
     research_evidence: list[str] = Field(default_factory=list)
+    financial_health: FinancialHealth
+    news_sentiment: StockNewsSentiment
     technical: TechnicalSummary | None
     bull_case: list[str]
     bear_case: list[str]
@@ -508,7 +696,7 @@ JsonScalar = str | int | float | bool | None
 
 class SemanticScreenResult(StrictModel):
     columns: list[str] = Field(max_length=12)
-    rows: list[dict[str, JsonScalar]] = Field(max_length=20)
+    rows: list[dict[str, JsonScalar]] = Field(max_length=100)
 
 
 class AskStockMetric(StrictModel):
@@ -532,6 +720,8 @@ class AskStockHoldingContext(StrictModel):
     pnl_pct: float | None = None
     portfolio_weight: float | None = None
     drift: float | None = None
+    ten_day_change_pct: float | None = None
+    ten_day_contribution: float | None = None
     action: str | None = None
     risk_flags: list[str] = Field(default_factory=list)
 
@@ -602,7 +792,7 @@ class AskStockResponse(StrictModel):
     source: str
     disclaimer: str
     columns: list[str] = Field(default_factory=list, max_length=12)
-    rows: list[dict[str, JsonScalar]] = Field(default_factory=list, max_length=20)
+    rows: list[dict[str, JsonScalar]] = Field(default_factory=list, max_length=100)
 
 
 class HoldingItem(StrictModel):
@@ -632,6 +822,11 @@ class HoldingAnalysisDimension(StrictModel):
     evidence: list[str] = Field(default_factory=list)
 
 
+class HoldingDailyChange(StrictModel):
+    date: date
+    change_pct: float | None
+
+
 class HoldingDossier(StrictModel):
     item: HoldingItem
     quote: EquityQuote
@@ -641,8 +836,11 @@ class HoldingDossier(StrictModel):
     pnl_pct: float | None
     day_pnl: float | None = None
     day_pnl_pct: float | None = None
+    three_day_pnl: float | None = None
+    three_day_pnl_pct: float | None = None
     five_day_pnl: float | None = None
     five_day_pnl_pct: float | None = None
+    recent_daily_changes: list[HoldingDailyChange] = Field(default_factory=list)
     portfolio_weight: float | None
     drift: float | None
     target_market_value: float | None
@@ -652,9 +850,66 @@ class HoldingDossier(StrictModel):
     price_gap_to_cost_pct: float | None
     analysis_dimensions: list[HoldingAnalysisDimension] = Field(default_factory=list)
     action: str
+    decision: DecisionPresentation | None = None
     conclusion: str
     risk_flags: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+
+
+class DecisionSnapshot(StrictModel):
+    source: Literal["holding", "opportunity"]
+    subject_key: str = Field(min_length=1, max_length=80)
+    symbol: str = Field(min_length=1, max_length=16)
+    name: str = Field(min_length=1, max_length=40)
+    strategy: str | None = Field(default=None, max_length=40)
+    decision: DecisionPresentation
+    href: str = Field(min_length=1, max_length=300)
+    observed_at: datetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_decision_snapshot_timezone(cls, value: datetime) -> datetime:
+        return DatasetMeta.require_timezone(value)
+
+
+class DecisionEvent(StrictModel):
+    id: int
+    source: Literal["holding", "opportunity"]
+    subject_key: str
+    symbol: str
+    name: str
+    strategy: str | None = None
+    previous_action: str
+    action: str
+    summary: str
+    severity: DecisionSeverity
+    user_required: bool
+    reason_code: str
+    href: str
+    observed_at: datetime
+    created_at: datetime
+    read_at: datetime | None = None
+    email_status: Literal["not_required", "pending", "sent", "failed"]
+    email_attempts: int = Field(ge=0)
+    email_error: str | None = None
+    email_sent_at: datetime | None = None
+
+    @field_validator("observed_at", "created_at", "read_at", "email_sent_at")
+    @classmethod
+    def require_decision_event_timezone(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else DatasetMeta.require_timezone(value)
+
+
+class DecisionEventFeed(StrictModel):
+    unread_count: int = Field(ge=0)
+    requires_action: list[DecisionEvent] = Field(default_factory=list)
+    monitoring: list[DecisionEvent] = Field(default_factory=list)
+    monitored_at: datetime | None = None
+
+    @field_validator("monitored_at")
+    @classmethod
+    def require_decision_feed_timezone(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else DatasetMeta.require_timezone(value)
 
 
 class WatchlistItem(StrictModel):
@@ -694,7 +949,7 @@ class AuthResult(StrictModel):
 
 class UserPreferences(StrictModel):
     default_symbol: str = "SH.600519"
-    start_page: str = "today"
+    start_page: str = "market"
     risk_profile: str = "balanced"
     morning_email_enabled: bool = True
 

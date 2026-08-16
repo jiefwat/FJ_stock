@@ -10,10 +10,12 @@ from marketdesk.analysis.indicators import (
 from marketdesk.models import (
     Bar,
     EquityQuote,
+    FinancialHealth,
     StockAnalysisDimension,
     StockComparisonItem,
     StockDossier,
     StockInvestmentAdvice,
+    StockNewsSentiment,
     StockScoreFactor,
     StockSignalValidation,
     StockTrendForecast,
@@ -88,8 +90,16 @@ def analyse_stock(
     bars: list[Bar],
     research_evidence: list[str] | None = None,
     peer_quotes: list[EquityQuote] | None = None,
+    financial_health: FinancialHealth | None = None,
+    news_sentiment: StockNewsSentiment | None = None,
 ) -> StockDossier:
     research = research_evidence or []
+    financial = financial_health or FinancialHealth(
+        available=False, conclusion="财报待补"
+    )
+    news = news_sentiment or StockNewsSentiment(
+        available=False, conclusion="新闻待补"
+    )
     if not bars:
         advice = StockInvestmentAdvice(
             action="暂不参与",
@@ -125,6 +135,8 @@ def analyse_stock(
             vertical_comparison=[],
             next_actions=["补齐历史行情后再判断趋势、波动和支撑压力"],
             research_evidence=research,
+            financial_health=financial,
+            news_sentiment=news,
             technical=None,
             bull_case=[],
             bear_case=[],
@@ -182,6 +194,7 @@ def analyse_stock(
         resistance=max(closes[-20:]),
     )
     factors = _score_factors(quote, closes[-1], technical)
+    factors.extend(_intelligence_factors(financial, news))
     score = round(max(0.0, min(100.0, 50 + sum(item.impact for item in factors))), 2)
     stance = (
         "strong_watch"
@@ -202,12 +215,18 @@ def analyse_stock(
         missing.append("个股行业映射")
     if quote.net_flow is None:
         missing.append("资金流数据")
+    if not financial.available:
+        missing.append("结构化财报")
+    if not news.available:
+        missing.append("个股新闻舆情")
     history_coverage = 0.55 if len(bars) >= 60 else 0.4 if len(bars) >= 20 else 0.2
     evidence_coverage = history_coverage
     evidence_coverage += 0.15 if quote.pe is not None else 0
     evidence_coverage += 0.10 if quote.sector is not None else 0
     evidence_coverage += 0.10 if quote.net_flow is not None else 0
     evidence_coverage += 0.10 if research else 0
+    evidence_coverage += 0.10 if financial.available else 0
+    evidence_coverage += 0.05 if news.available else 0
     dimensions = _analysis_dimensions(quote, closes[-1], technical, factors, research)
     next_actions = _next_actions(quote, technical, missing, dimensions)
     horizontal = _horizontal_comparison(quote, peer_quotes or [quote])
@@ -254,6 +273,8 @@ def analyse_stock(
         vertical_comparison=vertical,
         next_actions=next_actions,
         research_evidence=research,
+        financial_health=financial,
+        news_sentiment=news,
         technical=technical,
         bull_case=bull,
         bear_case=bear,
@@ -287,6 +308,31 @@ def _factor(
         evidence=evidence,
         available=available,
     )
+
+
+def _intelligence_factors(
+    financial: FinancialHealth, news: StockNewsSentiment
+) -> list[StockScoreFactor]:
+    financial_available = financial.available and financial.score is not None
+    factors = [
+        _factor(
+            "financial_health",
+            "财务健康",
+            financial.score_impact,
+            financial.conclusion,
+            financial_available,
+        )
+    ]
+    factors.append(
+        _factor(
+            "news_risk",
+            "新闻风险",
+            news.score_impact,
+            news.conclusion,
+            news.available,
+        )
+    )
+    return factors
 
 
 def _score_factors(
@@ -758,7 +804,7 @@ def _investment_advice(
         position = "暂不追高，等价格回到支撑/MA20 附近再评估"
     else:
         action = "暂不参与"
-        position = "0-5% 观察仓即可，把资金留给证据更完整的机会"
+        position = "0-5% 观察仓即可，把资金留给证据更完整的候选"
 
     if technical.atr_pct is not None and technical.atr_pct > 5:
         position = (
@@ -1098,7 +1144,7 @@ def _analysis_dimensions(
         else "波动率暂缺",
         f"ATR 占现价 {technical.atr_pct:.1f}%" if technical.atr_pct is not None else "ATR 暂缺",
     ]
-    risk_control_summary = "交易计划先定义结构位、ATR 风险线和复核节奏；" + "，".join(
+    risk_control_summary = "处理纪律先定义结构位、ATR 风险线和复核节奏；" + "，".join(
         risk_control_evidence
     )
 
@@ -1191,7 +1237,7 @@ def _analysis_dimensions(
         ),
         StockAnalysisDimension(
             key="risk_controls",
-            label="交易计划",
+            label="处理纪律",
             signal=_signal(risk_control_score),
             score=round(risk_control_score, 1),
             summary=risk_control_summary,
@@ -1263,7 +1309,7 @@ def _build_conclusion(
         "strong_watch": "可列为重点观察",
         "watch": "可继续观察",
         "neutral": "暂不形成明确倾向",
-        "avoid": "暂先回避进攻性机会",
+        "avoid": "暂先回避进攻性候选",
         "insufficient_data": "暂不形成结论",
     }
     support = "、".join(bull[:2]) if bull else "暂无明确正向证据"
@@ -1289,7 +1335,7 @@ def _build_conclusion(
     vertical_text = "；".join(item.summary for item in vertical[:2]) if vertical else "纵向历史不足"
     return (
         f"总结论：{quote.name} 当前为{label}（{score:.0f}/100），{action}，但不是买卖指令。"
-        f"投资建议：{advice.action}；{advice.position_hint}；入场：{advice.entry_plan}；止损：{advice.stop_loss}；止盈：{advice.take_profit}。"
+        f"处理意见：{advice.action}；{advice.position_hint}；参与：{advice.entry_plan}；止损：{advice.stop_loss}；止盈：{advice.take_profit}。"
         f"技术面：{trend.summary if trend else support}。"
         f"风险收益：{risk_reward.summary if risk_reward else '支撑压力不足'}。"
         f"估值：{valuation.summary if valuation else '估值数据不足'}；"
@@ -1299,7 +1345,7 @@ def _build_conclusion(
         f"资金/行业：{capital.summary if capital else '资金流暂缺'}；{sector.summary if sector else '行业映射暂缺'}。"
         f"横向对比：{horizontal_text}。"
         f"纵向对比：{vertical_text}。"
-        f"交易计划：{risk_controls.summary if risk_controls else '先定义放弃线和复盘节奏'}。"
+        f"处理纪律：{risk_controls.summary if risk_controls else '先定义放弃线和复盘节奏'}。"
         f"主要风险：{risk}；若 {invalid} 则关注理由失效。"
         f"下一步：{next_step}。仍需补齐{missing_text}。"
     )

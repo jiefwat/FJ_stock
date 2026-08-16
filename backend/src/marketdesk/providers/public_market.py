@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import math
 import re
@@ -20,16 +21,19 @@ from marketdesk.models import (
     EquityDataset,
     EquityQuote,
     EvidenceDocument,
+    FinancialPeriod,
     Freshness,
     IndexQuote,
     InstrumentTheme,
     MarketEventRaw,
     SectorSnapshot,
     SemanticScreenResult,
+    StockNewsItem,
     TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
 from marketdesk.providers.cn_evidence import AshareEvidenceProvider
+from marketdesk.providers.global_market import GlobalMarketProvider
 from marketdesk.providers.iwencai import IwencaiProvider
 from marketdesk.providers.llm_web import LLMWebAskContext, LLMWebAskProvider
 
@@ -60,6 +64,8 @@ class PublicMarketProvider:
     )
     tencent_kline_url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
     eastmoney_fast_news_url = "https://np-weblist.eastmoney.com/comm/web/getFastNewsList"
+    eastmoney_financial_url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    eastmoney_stock_news_url = "https://search-api-web.eastmoney.com/search/jsonp"
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self.client = client or httpx.AsyncClient(
@@ -90,6 +96,7 @@ class PublicMarketProvider:
         }
         self.research_provider = IwencaiProvider(client=self.client)
         self.evidence_provider = AshareEvidenceProvider(client=self.client)
+        self.global_provider = GlobalMarketProvider(client=self.client)
         self.llm_web_provider = LLMWebAskProvider()
         if self.research_provider.configured:
             self._mark_research_status("configured")
@@ -207,6 +214,13 @@ class PublicMarketProvider:
             return None if value in (None, "", "-", "--") else float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _ratio_percent(value: Any) -> float | None:
+        number = PublicMarketProvider._float(value)
+        if number is None:
+            return None
+        return number * 100 if abs(number) <= 2 else number
 
     @staticmethod
     def _symbol(raw: str) -> str:
@@ -346,6 +360,91 @@ class PublicMarketProvider:
                 )
             )
         return quotes
+
+    @staticmethod
+    def normalize_financial_periods(payload: dict[str, Any]) -> list[FinancialPeriod]:
+        rows = (payload.get("result") or {}).get("data") or []
+        periods: list[FinancialPeriod] = []
+        seen: set[date] = set()
+        for row in rows:
+            raw_date = str(row.get("REPORT_DATE") or "")[:10]
+            try:
+                report_date = date.fromisoformat(raw_date)
+            except ValueError:
+                continue
+            if report_date in seen:
+                continue
+            seen.add(report_date)
+            periods.append(
+                FinancialPeriod(
+                    report_date=report_date,
+                    report_label=str(row.get("REPORT_DATE_NAME") or raw_date),
+                    report_type=str(row.get("REPORT_TYPE") or "定期报告"),
+                    revenue=PublicMarketProvider._float(row.get("TOTALOPERATEREVE")),
+                    revenue_yoy=PublicMarketProvider._float(row.get("TOTALOPERATEREVETZ")),
+                    net_profit=PublicMarketProvider._float(row.get("PARENTNETPROFIT")),
+                    net_profit_yoy=PublicMarketProvider._float(row.get("PARENTNETPROFITTZ")),
+                    roe=PublicMarketProvider._float(row.get("ROEJQ")),
+                    gross_margin=PublicMarketProvider._float(row.get("XSMLL")),
+                    operating_cash_flow_per_share=PublicMarketProvider._float(
+                        row.get("MGJYXJJE")
+                    ),
+                    cash_receipts_to_revenue=PublicMarketProvider._ratio_percent(
+                        row.get("JYXJLYYSR")
+                    ),
+                    debt_to_assets=PublicMarketProvider._float(row.get("ZCFZL")),
+                )
+            )
+        return sorted(periods, key=lambda item: item.report_date, reverse=True)
+
+    @staticmethod
+    def _clean_article_text(value: Any) -> str:
+        text = re.sub(r"<[^>]+>", "", str(value or ""))
+        return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+    @staticmethod
+    def normalize_stock_news(payload_text: str) -> list[StockNewsItem]:
+        match = re.fullmatch(r"\s*[\w$]+\((.*)\)\s*;?\s*", payload_text, re.S)
+        if not match:
+            raise ProviderUnavailable("invalid Eastmoney stock news JSONP")
+        try:
+            payload = json.loads(match.group(1))
+        except ValueError as error:
+            raise ProviderUnavailable("invalid Eastmoney stock news payload") from error
+        result = payload.get("result") or {}
+        rows = result.get("cmsArticleWebOld") or []
+        if isinstance(rows, dict):
+            rows = rows.get("list") or rows.get("data") or []
+        shanghai = ZoneInfo("Asia/Shanghai")
+        items: list[StockNewsItem] = []
+        seen: set[str] = set()
+        for row in rows:
+            title = PublicMarketProvider._clean_article_text(row.get("title"))
+            url = str(row.get("url") or "").strip()
+            raw_date = str(row.get("date") or "").strip()
+            code = str(row.get("code") or "").strip() or url.rsplit("/", 1)[-1]
+            if not title or not code or not url.startswith(("http://", "https://")):
+                continue
+            try:
+                published_at = datetime.fromisoformat(raw_date).replace(tzinfo=shanghai)
+            except ValueError:
+                continue
+            item_id = f"eastmoney-news:{code}"
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            items.append(
+                StockNewsItem(
+                    id=item_id,
+                    title=title,
+                    summary=PublicMarketProvider._clean_article_text(row.get("content"))[:500],
+                    media=PublicMarketProvider._clean_article_text(row.get("mediaName"))
+                    or "东方财富",
+                    url=url,
+                    published_at=published_at.astimezone(UTC),
+                )
+            )
+        return sorted(items, key=lambda item: item.published_at, reverse=True)
 
     def normalize_indices(self, text: str) -> list[IndexQuote]:
         indices: list[IndexQuote] = []
@@ -534,6 +633,51 @@ class PublicMarketProvider:
         )
         return self.normalize_equities(cast(list[dict[str, Any]], response.json())).items
 
+    async def fetch_equity_period_ranking(
+        self, days: int, limit: int = 100
+    ) -> SemanticScreenResult:
+        period_fields = {5: "f109", 10: "f160", 60: "f24"}
+        field = period_fields.get(days)
+        if field is None:
+            raise ValueError(f"unsupported equity ranking period: {days}")
+        bounded_limit = min(max(limit, 1), 100)
+        payload = await self._get_eastmoney_json(
+            {
+                "pn": 1,
+                "pz": bounded_limit,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "invt": 2,
+                "fid": field,
+                "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+                "fields": f"f12,f14,f2,f3,{field}",
+            }
+        )
+        rows = list((payload.get("data") or {}).get("diff") or [])
+        period_label = f"近{days}日涨跌幅"
+        normalized: list[dict[str, str | float | None]] = []
+        for row in rows:
+            code = str(row.get("f12") or "").strip()
+            change = self._float(row.get(field))
+            if not code or change is None:
+                continue
+            normalized.append(
+                {
+                    "股票代码": code,
+                    "股票简称": str(row.get("f14") or code),
+                    period_label: change,
+                    "最新价": self._float(row.get("f2")),
+                    "今日涨跌幅": self._float(row.get("f3")),
+                }
+            )
+        if not normalized:
+            raise ProviderUnavailable(f"empty Eastmoney {days}-day equity ranking")
+        return SemanticScreenResult(
+            columns=["股票代码", "股票简称", period_label, "最新价", "今日涨跌幅"],
+            rows=normalized[:bounded_limit],
+        )
+
     async def _fetch_eastmoney_sector_funds(self) -> list[SectorSnapshot]:
         payload = await self._get_eastmoney_json(
             {
@@ -585,9 +729,17 @@ class PublicMarketProvider:
         enrichment = await self._fetch_eastmoney_equity_enrichment()
         return enrichment.get(code, {})
 
+    async def fetch_global_quote(self, symbol: str, name: str | None = None) -> EquityQuote:
+        return await self.global_provider.fetch_quote(symbol, name)
+
+    async def search_global_quotes(self, query: str, limit: int = 10) -> list[EquityQuote]:
+        return await self.global_provider.search(query, limit)
+
     async def fetch_research_enrichment(
         self, symbol: str, name: str, sector: str | None
     ) -> list[str]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
         if not self.research_provider.configured:
             self._mark_research_status("not_configured")
             return []
@@ -644,25 +796,91 @@ class PublicMarketProvider:
         except ProviderUnavailable:
             return []
 
+    async def fetch_financial_periods(
+        self, symbol: str, limit: int = 5
+    ) -> list[FinancialPeriod]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
+        market, code = symbol.split(".", 1)
+        response = await self._get(
+            self.eastmoney_financial_url,
+            {
+                "reportName": "RPT_F10_FINANCE_MAINFINADATA",
+                "columns": "ALL",
+                "filter": f'(SECUCODE="{code}.{market}")',
+                "pageNumber": 1,
+                "pageSize": max(1, min(limit, 10)),
+                "sortColumns": "REPORT_DATE",
+                "sortTypes": -1,
+                "source": "WEB",
+                "client": "WEB",
+            },
+        )
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise ProviderUnavailable("invalid Eastmoney financial payload") from error
+        return self.normalize_financial_periods(cast(dict[str, Any], payload))[:limit]
+
+    async def fetch_stock_news(
+        self, symbol: str, name: str, limit: int = 20
+    ) -> list[StockNewsItem]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
+        query = {
+            "uid": "",
+            "keyword": name,
+            "type": ["cmsArticleWebOld"],
+            "client": "web",
+            "clientType": "web",
+            "clientVersion": "curr",
+            "param": {
+                "cmsArticleWebOld": {
+                    "searchScope": "default",
+                    "sort": "time",
+                    "pageIndex": 1,
+                    "pageSize": max(1, min(limit, 30)),
+                    "preTag": "",
+                    "postTag": "",
+                }
+            },
+        }
+        response = await self._get(
+            self.eastmoney_stock_news_url,
+            {
+                "cb": "stockts",
+                "param": json.dumps(query, ensure_ascii=False, separators=(",", ":")),
+            },
+        )
+        return self.normalize_stock_news(response.text)[:limit]
+
     async def fetch_filings(
         self, symbol: str, limit: int = 20
     ) -> list[EvidenceDocument]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
         return await self.evidence_provider.fetch_filings(symbol, limit)
 
     async def fetch_research_documents(
         self, symbol: str, limit: int = 20
     ) -> list[EvidenceDocument]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
         return await self.evidence_provider.fetch_research(symbol, limit)
 
     async def fetch_themes(
         self, symbol: str, limit: int = 30
     ) -> list[InstrumentTheme]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
         return await self.evidence_provider.fetch_themes(symbol, limit)
 
     async def fetch_dragon_tiger(self, limit: int = 20) -> list[TradingAnomaly]:
         return await self.evidence_provider.fetch_dragon_tiger(limit)
 
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Bar]:
+        if symbol.startswith(("HK.", "US.")):
+            return await self.global_provider.fetch_kline(symbol, limit)
         market, code = symbol.split(".", 1)
         raw = f"{market.lower()}{code}"
         response = await self._get(self.tencent_kline_url, {"param": f"{raw},day,,,{limit},qfq"})

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookmarkPlus, Search, SlidersHorizontal, X } from "lucide-react";
+import { BookmarkPlus, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -9,12 +9,9 @@ import {
   getAuthToken,
   pct,
   percent,
-  type EquityExchange,
   type EquityPage,
-  type EquitySort,
   type EquityViewFilters,
   type SavedEquityView,
-  type SortDirection,
 } from "../../lib/api";
 
 const MONEY_UNIT = 100_000_000;
@@ -37,23 +34,11 @@ const filterParamKeys = [
   "page",
 ] as const;
 
-const sortLabels: Record<EquitySort, string> = {
-  amount: "成交额",
-  change_pct: "涨跌幅",
-  turnover_rate: "换手率",
-  market_cap: "总市值",
-};
-
 type AdvancedDraft = {
   sector: string;
   minChangePct: string;
-  maxChangePct: string;
   minAmount: string;
-  maxAmount: string;
   minTurnoverRate: string;
-  maxTurnoverRate: string;
-  minMarketCap: string;
-  maxMarketCap: string;
   completeOnly: boolean;
 };
 
@@ -65,13 +50,9 @@ function numberParam(params: URLSearchParams, key: string, unit = 1): number | n
 }
 
 function readFilters(params: URLSearchParams): EquityViewFilters {
-  const exchange = params.get("exchange");
-  const sortBy = params.get("sort_by");
-  const direction = params.get("direction");
-  const pageSize = Number(params.get("page_size"));
   return {
     query: params.get("q")?.trim() ?? "",
-    exchange: exchange === "sh" || exchange === "sz" || exchange === "bj" ? exchange : "all",
+    exchange: "all",
     sector: params.get("industry")?.trim() || null,
     min_change_pct: numberParam(params, "min_change_pct"),
     max_change_pct: numberParam(params, "max_change_pct"),
@@ -82,9 +63,9 @@ function readFilters(params: URLSearchParams): EquityViewFilters {
     min_market_cap: numberParam(params, "min_market_cap", MONEY_UNIT),
     max_market_cap: numberParam(params, "max_market_cap", MONEY_UNIT),
     complete_only: params.get("complete_only") === "true",
-    sort_by: sortBy === "change_pct" || sortBy === "turnover_rate" || sortBy === "market_cap" ? sortBy : "amount",
-    direction: direction === "asc" ? "asc" : "desc",
-    page_size: pageSize === 50 ? 50 : 25,
+    sort_by: "amount",
+    direction: "desc",
+    page_size: 25,
   };
 }
 
@@ -96,13 +77,8 @@ function draftFromFilters(filters: EquityViewFilters): AdvancedDraft {
   return {
     sector: filters.sector ?? "",
     minChangePct: inputValue(filters.min_change_pct),
-    maxChangePct: inputValue(filters.max_change_pct),
     minAmount: inputValue(filters.min_amount, MONEY_UNIT),
-    maxAmount: inputValue(filters.max_amount, MONEY_UNIT),
     minTurnoverRate: inputValue(filters.min_turnover_rate),
-    maxTurnoverRate: inputValue(filters.max_turnover_rate),
-    minMarketCap: inputValue(filters.min_market_cap, MONEY_UNIT),
-    maxMarketCap: inputValue(filters.max_market_cap, MONEY_UNIT),
     completeOnly: filters.complete_only,
   };
 }
@@ -121,13 +97,13 @@ function advancedFromDraft(draft: AdvancedDraft): Pick<EquityViewFilters,
   return {
     sector: draft.sector || null,
     min_change_pct: optionalNumber(draft.minChangePct),
-    max_change_pct: optionalNumber(draft.maxChangePct),
+    max_change_pct: null,
     min_amount: optionalNumber(draft.minAmount, MONEY_UNIT),
-    max_amount: optionalNumber(draft.maxAmount, MONEY_UNIT),
+    max_amount: null,
     min_turnover_rate: optionalNumber(draft.minTurnoverRate),
-    max_turnover_rate: optionalNumber(draft.maxTurnoverRate),
-    min_market_cap: optionalNumber(draft.minMarketCap, MONEY_UNIT),
-    max_market_cap: optionalNumber(draft.maxMarketCap, MONEY_UNIT),
+    max_turnover_rate: null,
+    min_market_cap: null,
+    max_market_cap: null,
     complete_only: draft.completeOnly,
   };
 }
@@ -156,7 +132,6 @@ function writeFilters(
   const next = new URLSearchParams(current);
   filterParamKeys.forEach((key) => next.delete(key));
   if (filters.query) next.set("q", filters.query);
-  if (filters.exchange !== "all") next.set("exchange", filters.exchange);
   if (filters.sector) next.set("industry", filters.sector);
   setNumber(next, "min_change_pct", filters.min_change_pct);
   setNumber(next, "max_change_pct", filters.max_change_pct);
@@ -167,9 +142,6 @@ function writeFilters(
   setNumber(next, "min_market_cap", filters.min_market_cap, MONEY_UNIT);
   setNumber(next, "max_market_cap", filters.max_market_cap, MONEY_UNIT);
   if (filters.complete_only) next.set("complete_only", "true");
-  if (filters.sort_by !== "amount") next.set("sort_by", filters.sort_by);
-  if (filters.direction !== "desc") next.set("direction", filters.direction);
-  if (filters.page_size !== 25) next.set("page_size", String(filters.page_size));
   if (page > 1) next.set("page", String(page));
   return next;
 }
@@ -178,13 +150,8 @@ function activeAdvancedCount(filters: EquityViewFilters): number {
   return [
     filters.sector,
     filters.min_change_pct,
-    filters.max_change_pct,
     filters.min_amount,
-    filters.max_amount,
     filters.min_turnover_rate,
-    filters.max_turnover_rate,
-    filters.min_market_cap,
-    filters.max_market_cap,
     filters.complete_only ? true : null,
   ].filter((value) => value != null && value !== "").length;
 }
@@ -196,7 +163,6 @@ export function EquityBrowser() {
   const parsedPage = Number(params.get("page"));
   const page = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const [draftQuery, setDraftQuery] = useState(filters.query);
-  const [advancedOpen, setAdvancedOpen] = useState(activeAdvancedCount(filters) > 0);
   const [advancedDraft, setAdvancedDraft] = useState(() => draftFromFilters(filters));
   const [filterError, setFilterError] = useState<string | null>(null);
   const [viewName, setViewName] = useState("");
@@ -293,7 +259,6 @@ export function EquityBrowser() {
   const applyView = (view: SavedEquityView) => {
     setAdvancedDraft(draftFromFilters(view.filters));
     setDraftQuery(view.filters.query);
-    setAdvancedOpen(activeAdvancedCount(view.filters) > 0);
     setFilterError(null);
     setParams(writeFilters(params, view.filters), { replace: true });
   };
@@ -319,51 +284,14 @@ export function EquityBrowser() {
     <section className="panel equity-browser" aria-labelledby="equity-browser-title">
       <div className="panel-title">
         <span id="equity-browser-title">全市场行情</span>
-        <small>多条件筛选 · 服务端排序 · 每页 {filters.page_size} 只 · 缺失数据不冒充有效值</small>
+        <small>只保留高级筛选 · 默认按成交额排序 · 缺失数据不冒充有效值</small>
       </div>
-      <div className="equity-toolbar">
-        <form className="equity-search" onSubmit={submitSearch}>
-          <label>
-            <span>搜索全市场</span>
-            <div><Search size={15} /><input type="search" value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} placeholder="输入代码或名称" /></div>
-          </label>
-          <button type="submit" className="button">搜索</button>
-        </form>
-        <div className="equity-rank-controls">
-          <label>交易所
-            <select value={filters.exchange} onChange={(event) => updateFilters({ exchange: event.target.value as EquityExchange })}>
-              <option value="all">全部 A 股</option>
-              <option value="sh">沪市</option>
-              <option value="sz">深市</option>
-              <option value="bj">北交所</option>
-            </select>
-          </label>
-          <label>排序字段
-            <select value={filters.sort_by} onChange={(event) => updateFilters({ sort_by: event.target.value as EquitySort })}>
-              {Object.entries(sortLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label>排序方向
-            <select value={filters.direction} onChange={(event) => updateFilters({ direction: event.target.value as SortDirection })}>
-              <option value="desc">从高到低</option>
-              <option value="asc">从低到高</option>
-            </select>
-          </label>
-          <label>每页数量
-            <select value={filters.page_size} onChange={(event) => updateFilters({ page_size: Number(event.target.value) as 25 | 50 })}>
-              <option value="25">25 只</option>
-              <option value="50">50 只</option>
-            </select>
-          </label>
-          <button type="button" className={`filter-toggle ${advancedCount ? "active" : ""}`} aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}>
-            <SlidersHorizontal size={14} />高级筛选{advancedCount ? ` ${advancedCount}` : ""}
-          </button>
+      <form className="equity-advanced compact always-open" onSubmit={applyAdvanced}>
+        <div className="advanced-heading">
+          <div><strong>高级筛选</strong><span>常驻在顶部，先缩小池子再看结果；默认按成交额排序。</span></div>
+          {advancedCount ? <small>已启用 {advancedCount} 项</small> : <small>未启用筛选</small>}
         </div>
-      </div>
-
-      {advancedOpen ? <form className="equity-advanced" onSubmit={applyAdvanced}>
-        <div className="advanced-heading"><div><strong>缩小研究范围</strong><span>区间条件按 AND 组合，金额统一使用亿元。</span></div><button type="button" aria-label="关闭高级筛选" onClick={() => setAdvancedOpen(false)}><X size={15} /></button></div>
-        <div className="advanced-grid">
+        <div className="advanced-grid compact">
           <label>行业
             <select value={advancedDraft.sector} onChange={(event) => setAdvancedDraft((draft) => ({ ...draft, sector: event.target.value }))}>
               <option value="">全部可用行业</option>
@@ -371,18 +299,27 @@ export function EquityBrowser() {
               {sectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
             </select>
           </label>
-          <RangeFields label="涨跌幅" unit="%" minimum={advancedDraft.minChangePct} maximum={advancedDraft.maxChangePct} onMinimum={(value) => setAdvancedDraft((draft) => ({ ...draft, minChangePct: value }))} onMaximum={(value) => setAdvancedDraft((draft) => ({ ...draft, maxChangePct: value }))} />
-          <RangeFields label="成交额" unit="亿元" minimum={advancedDraft.minAmount} maximum={advancedDraft.maxAmount} nonNegative onMinimum={(value) => setAdvancedDraft((draft) => ({ ...draft, minAmount: value }))} onMaximum={(value) => setAdvancedDraft((draft) => ({ ...draft, maxAmount: value }))} />
-          <RangeFields label="换手率" unit="%" minimum={advancedDraft.minTurnoverRate} maximum={advancedDraft.maxTurnoverRate} nonNegative onMinimum={(value) => setAdvancedDraft((draft) => ({ ...draft, minTurnoverRate: value }))} onMaximum={(value) => setAdvancedDraft((draft) => ({ ...draft, maxTurnoverRate: value }))} />
-          <RangeFields label="总市值" unit="亿元" minimum={advancedDraft.minMarketCap} maximum={advancedDraft.maxMarketCap} nonNegative onMinimum={(value) => setAdvancedDraft((draft) => ({ ...draft, minMarketCap: value }))} onMaximum={(value) => setAdvancedDraft((draft) => ({ ...draft, maxMarketCap: value }))} />
+          <NumberField label="涨跌幅不低于" unit="%" value={advancedDraft.minChangePct} onChange={(value) => setAdvancedDraft((draft) => ({ ...draft, minChangePct: value }))} />
+          <NumberField label="成交额不低于" unit="亿元" value={advancedDraft.minAmount} nonNegative onChange={(value) => setAdvancedDraft((draft) => ({ ...draft, minAmount: value }))} />
+          <NumberField label="换手率不低于" unit="%" value={advancedDraft.minTurnoverRate} nonNegative onChange={(value) => setAdvancedDraft((draft) => ({ ...draft, minTurnoverRate: value }))} />
+          <label className="complete-toggle compact"><input type="checkbox" checked={advancedDraft.completeOnly} onChange={(event) => setAdvancedDraft((draft) => ({ ...draft, completeOnly: event.target.checked }))} />核心数据完整</label>
         </div>
         <div className="advanced-actions">
-          <label className="complete-toggle"><input type="checkbox" checked={advancedDraft.completeOnly} onChange={(event) => setAdvancedDraft((draft) => ({ ...draft, completeOnly: event.target.checked }))} />仅看核心数据完整</label>
-          {filterError ? <span role="alert">{filterError}</span> : <small>核心数据：价格、涨跌幅、成交额、换手率、总市值</small>}
+          {filterError ? <span role="alert">{filterError}</span> : <small>建议先按行业、成交额和换手率缩小池子，再进入个股研究。</small>}
           <button type="button" className="button secondary" onClick={resetAll}>重置全部</button>
           <button type="submit" className="button">应用筛选</button>
         </div>
-      </form> : null}
+      </form>
+
+      <div className="equity-toolbar search-only">
+        <form className="equity-search" onSubmit={submitSearch}>
+          <label>
+            <span>搜索全市场</span>
+            <div><Search size={15} /><input type="search" value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} placeholder="输入代码或名称" /></div>
+          </label>
+          <button type="submit" className="button">搜索</button>
+        </form>
+      </div>
 
       <div className="saved-view-bar">
         <div className="saved-view-list" aria-label="保存的筛选视图">
@@ -441,27 +378,18 @@ export function EquityBrowser() {
   );
 }
 
-function RangeFields({
+function NumberField({
   label,
   unit,
-  minimum,
-  maximum,
+  value,
   nonNegative = false,
-  onMinimum,
-  onMaximum,
+  onChange,
 }: {
   label: string;
   unit: string;
-  minimum: string;
-  maximum: string;
+  value: string;
   nonNegative?: boolean;
-  onMinimum: (value: string) => void;
-  onMaximum: (value: string) => void;
+  onChange: (value: string) => void;
 }) {
-  return <fieldset className="range-fields">
-    <legend>{label}</legend>
-    <label>{label}下限（{unit}）<input type="number" step="any" min={nonNegative ? 0 : undefined} value={minimum} onChange={(event) => onMinimum(event.target.value)} placeholder="不限" /></label>
-    <i>—</i>
-    <label>{label}上限（{unit}）<input type="number" step="any" min={nonNegative ? 0 : undefined} value={maximum} onChange={(event) => onMaximum(event.target.value)} placeholder="不限" /></label>
-  </fieldset>;
+  return <label className="number-filter">{label}<span>{unit}</span><input aria-label={`${label}（${unit}）`} type="number" step="any" min={nonNegative ? 0 : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder="不限" /></label>;
 }

@@ -62,20 +62,51 @@ safe_lines = [
 ]
 target.write_text("\n".join(safe_lines) + ("\n" if safe_lines else ""), encoding="utf-8")
 PY
-  "${RSYNC[@]}" "$SAFE_ENV" "$REMOTE:/opt/aster-market/.env"
+  "${RSYNC[@]}" "$SAFE_ENV" "$REMOTE:/tmp/aster-market-deploy/$RELEASE_ID.env"
+  "${SSH[@]}" "$REMOTE" "python3 - '/opt/aster-market/.env' '/tmp/aster-market-deploy/$RELEASE_ID.env' <<'PY'
+from pathlib import Path
+import sys
+
+target = Path(sys.argv[1])
+incoming = Path(sys.argv[2])
+
+def read_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        values[key.strip()] = value.strip()
+    return values
+
+merged = read_env(target)
+merged.update(read_env(incoming))
+order = list(read_env(target)) + [key for key in read_env(incoming) if key not in read_env(target)]
+if not order:
+    order = sorted(merged)
+target.write_text('\\n'.join(f'{key}={merged[key]}' for key in order if key in merged) + '\\n', encoding='utf-8')
+PY"
   "${SSH[@]}" "$REMOTE" "chmod 600 /opt/aster-market/.env"
 fi
 "${RSYNC[@]}" "$ARCHIVE" "$REMOTE:/tmp/aster-market-deploy/$RELEASE_ID.tar.gz"
 "${SSH[@]}" "$REMOTE" "rm -rf '$RELEASE_DIR.tmp' && mkdir -p '$RELEASE_DIR.tmp'"
 "${SSH[@]}" "$REMOTE" "tar -xzf '/tmp/aster-market-deploy/$RELEASE_ID.tar.gz' -C '$RELEASE_DIR.tmp'"
+# Keep recent hashed chunks available so tabs opened before a release can still lazy-load routes.
+"${SSH[@]}" "$REMOTE" "for assets in /opt/aster-market/releases/*/frontend/dist/assets; do if [[ \"\$assets\" != '$RELEASE_DIR.tmp/frontend/dist/assets' && -d \"\$assets\" ]]; then cp -a \"\$assets/.\" '$RELEASE_DIR.tmp/frontend/dist/assets/'; fi; done; find '$RELEASE_DIR.tmp/frontend/dist/assets' -type f -mtime +14 -delete"
 "${SSH[@]}" "$REMOTE" "python3 -m venv '$RELEASE_DIR.tmp/.venv'"
 "${SSH[@]}" "$REMOTE" "'$RELEASE_DIR.tmp/.venv/bin/python' -m pip install --upgrade pip"
 "${SSH[@]}" "$REMOTE" "'$RELEASE_DIR.tmp/.venv/bin/python' -m pip install 'fastapi>=0.115,<1' 'httpx>=0.27,<1' 'pydantic-settings>=2.6,<3' 'uvicorn[standard]>=0.32,<1'"
 "${SSH[@]}" "$REMOTE" "rm -rf '$RELEASE_DIR' && mv '$RELEASE_DIR.tmp' '$RELEASE_DIR'"
 "${SSH[@]}" "$REMOTE" "ln -sfn \"$RELEASE_DIR\" /opt/aster-market/current"
 "${SSH[@]}" "$REMOTE" "sudo cp '$RELEASE_DIR/deploy/stock-ts.service' /etc/systemd/system/stock-ts.service"
+"${SSH[@]}" "$REMOTE" "sudo cp '$RELEASE_DIR/deploy/stock-ts-morning-email.service' /etc/systemd/system/stock-ts-morning-email.service"
+"${SSH[@]}" "$REMOTE" "sudo cp '$RELEASE_DIR/deploy/stock-ts-morning-email.timer' /etc/systemd/system/stock-ts-morning-email.timer"
 "${SSH[@]}" "$REMOTE" "sudo systemctl daemon-reload"
 "${SSH[@]}" "$REMOTE" "sudo systemctl restart stock-ts.service"
+"${SSH[@]}" "$REMOTE" "sudo systemctl enable --now stock-ts-morning-email.timer"
 "${SSH[@]}" "$REMOTE" "curl -fsS http://127.0.0.1:8501/healthz"
 
 echo "Deployed $RELEASE_ID to $DEPLOY_HOST"

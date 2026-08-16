@@ -24,7 +24,7 @@
 - [x] Add richer opportunity diagnostics and candidate playbooks.
 - [x] Add direct stock advice, comparison cards, and next actions.
 - [x] Add local holdings CRUD with position analysis and rebalance hints.
-- [x] Enable production auto refresh every 7,200 seconds.
+- [x] Enable production auto refresh every 600 seconds so market and recommendation caches stay warm.
 
 ## Delivery Efficiency
 
@@ -81,6 +81,7 @@
 - [x] Add historical K-line confirmation to Opportunity candidates so lead ranking checks trend, extension, volatility, drawdown, and volume before Stock Lab review.
 - [x] Collapse Opportunity candidates into a compact stock list and expand details only after the user clicks a stock.
 - [x] Simplify Stock Lab by keeping the core decision cards visible and moving deep evidence into an expandable package.
+- [x] Add an OpenAI-compatible financial-model mode with bounded deterministic context and automatic local-analysis fallback.
 
 ## A-share Evidence And Market Intelligence
 
@@ -111,3 +112,42 @@
 - [x] Add an actionable morning email brief preview with market, intelligence, candidates, holdings, and links.
 - [x] Add a Market execution console so broad-market review starts with breadth, capital line, risk brake, and next instruction.
 - [x] Reorder Market page structure so board/theme dossiers stay next to sector heat and the full-market browser moves to deep-scan position.
+
+## Recommendation Performance Ledger
+
+- [x] Freeze each strategy's top three daily candidates without overwriting selection-time prices, ranks, scores, or evidence coverage.
+- [x] Rank candidates with strategy-specific signals and version new snapshots without rewriting legacy recommendation history.
+- [x] Precompute every recommendation-review strategy during scheduled refresh and prefetch a ledger only when the user points to or focuses that strategy.
+- [x] Append daily market observations and calculate deterministic T+1, T+5, T+20, current, peak, drawdown, and benchmark-relative returns.
+- [x] Keep immature samples out of the formal 20-session hit rate and state the non-retroactive tracking boundary explicitly.
+- [x] Add an authenticated Recommendation Review page with strategy switching, daily ledgers, stock handoff links, and responsive mobile navigation.
+- [x] Capture the trend strategy during scheduled refresh while keeping all browser access under `/api/v1/*`.
+- [x] Precompute all nine visible opportunity strategies every ten minutes, serve warmed results, and present research follow-ups as system-owned monitoring instead of user chores.
+
+## Decision-first Experience
+
+- [x] Lead Market, Opportunities, Stock Lab, Ask Stock, and Holdings with a direct action instead of requiring the user to interpret technical evidence.
+- [x] Use one plain-language action vocabulary across candidate and holding decisions while keeping evidence optional.
+- [x] Reuse background-monitored K-line history in Stock Lab and return a safe no-participation decision when the live K-line source is unavailable.
+- [x] Reduce expanded Opportunity details to decision, reason, risk, and change condition while keeping system monitoring visible and professional evidence collapsed.
+
+## Decision Change Center
+
+- [x] Persist account-scoped candidate and holding decision snapshots and material action-change events.
+- [x] Establish a silent first-run baseline, suppress score/ranking noise, and deduplicate repeated observations.
+- [x] Queue email only for holding trim or exit decisions and isolate bounded delivery failures from market refresh.
+- [x] Add an authenticated decision center with action/monitoring separation, unread state, and direct research links.
+- [x] Keep the seven-entry navigation and decision cards usable without horizontal overflow at 390px.
+
+## Stock Financial And News Intelligence
+
+- [x] Add normalized multi-period financial statements and stock-specific news behind the provider boundary.
+- [x] Score financial health conservatively and let only recent explicit hard-risk news reduce the stock score.
+- [x] Keep financial and news failures independent from each other and from the core stock dossier.
+- [x] Show concise financial-health and 30-day sentiment cards with expandable cited details.
+- [x] Cache normalized stock intelligence and prewarm tracked/default stocks during the ten-minute server refresh.
+- [x] Detect multi-period revenue and profit slowdowns instead of judging only the latest report.
+- [x] Deduplicate syndicated copies of the same news event before counting risk or sentiment.
+- [x] Merge company, news, price, and invalidation into one first-screen decision view.
+- [x] Load company evidence only when professional details are opened and keep the stock result fresh for the ten-minute server window.
+- [x] Warm default, holding, and watchlist stocks before the heavier strategy refresh so service restarts do not leave the main stock page cold.
