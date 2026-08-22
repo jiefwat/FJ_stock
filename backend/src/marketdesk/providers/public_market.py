@@ -8,7 +8,7 @@ import re
 import subprocess
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -231,6 +231,25 @@ class PublicMarketProvider:
         market = "SH" if code.startswith(("5", "6", "9")) else "SZ"
         return f"{market}.{code}"
 
+    @staticmethod
+    def _a_share_profile(
+        code: str, name: str
+    ) -> tuple[Literal["SH", "SZ", "BJ"], float | None]:
+        normalized_name = name.upper()
+        if code.startswith(("4", "8")):
+            exchange: Literal["SH", "SZ", "BJ"] = "BJ"
+        else:
+            exchange = "SH" if code.startswith(("5", "6", "9")) else "SZ"
+        if normalized_name.startswith(("N", "C")):
+            return exchange, None
+        if "ST" in normalized_name:
+            return exchange, 5.0
+        if exchange == "BJ":
+            return exchange, 30.0
+        if code.startswith(("300", "301", "688")):
+            return exchange, 20.0
+        return exchange, 10.0
+
     def normalize_equities(self, rows: list[dict[str, Any]]) -> EquityDataset:
         items: list[EquityQuote] = []
         present = 0
@@ -247,11 +266,13 @@ class PublicMarketProvider:
             present += sum(value is not None for value in core)
             required += len(core)
             market_cap_wan = self._float(row.get("mktcap"))
+            name = str(row.get("name") or code)
+            exchange, price_limit_pct = self._a_share_profile(code, name)
             items.append(
                 EquityQuote(
                     symbol=self._symbol(raw_symbol),
                     code=code,
-                    name=str(row.get("name") or code),
+                    name=name,
                     price=core[0],
                     change_pct=core[1],
                     amount=core[2],
@@ -262,6 +283,8 @@ class PublicMarketProvider:
                     market_cap=market_cap_wan * 10_000 if market_cap_wan is not None else None,
                     net_flow=None,
                     sector=None,
+                    exchange=exchange,
+                    price_limit_pct=price_limit_pct,
                 )
             )
         if not items:
@@ -342,11 +365,13 @@ class PublicMarketProvider:
             code = str(row.get("f12") or "")
             if not code:
                 continue
+            name = str(row.get("f14") or code)
+            exchange, price_limit_pct = PublicMarketProvider._a_share_profile(code, name)
             quotes.append(
                 EquityQuote(
                     symbol=PublicMarketProvider._symbol_from_code(code),
                     code=code,
-                    name=str(row.get("f14") or code),
+                    name=name,
                     price=PublicMarketProvider._float(row.get("f2")),
                     change_pct=PublicMarketProvider._float(row.get("f3")),
                     amount=PublicMarketProvider._float(row.get("f6")),
@@ -357,6 +382,8 @@ class PublicMarketProvider:
                     pb=PublicMarketProvider._float(row.get("f23")),
                     net_flow=PublicMarketProvider._float(row.get("f62")),
                     sector=str(row.get("f100") or "") or None,
+                    exchange=exchange,
+                    price_limit_pct=price_limit_pct,
                 )
             )
         return quotes
@@ -603,6 +630,24 @@ class PublicMarketProvider:
             self._mark_fund_flow_status("ready")
             return sorted(funds, key=lambda item: item.change_pct or -999, reverse=True)[:120]
         return sectors
+
+    async def fetch_market_groups(
+        self, kind: Literal["concept", "industry"]
+    ) -> list[SectorSnapshot]:
+        board_type = 3 if kind == "concept" else 2
+        payload = await self._get_eastmoney_json(
+            {
+                "pn": 1,
+                "pz": 200,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "fid": "f3",
+                "fs": f"m:90+t:{board_type}+f:!50",
+                "fields": "f12,f14,f3,f62",
+            }
+        )
+        return self.normalize_eastmoney_sector_funds(payload)
 
     async def fetch_sector_constituents(self, sector_code: str) -> list[EquityQuote]:
         if sector_code.upper().startswith("BK"):
@@ -884,4 +929,12 @@ class PublicMarketProvider:
         market, code = symbol.split(".", 1)
         raw = f"{market.lower()}{code}"
         response = await self._get(self.tencent_kline_url, {"param": f"{raw},day,,,{limit},qfq"})
+        return self.normalize_kline(response.json(), symbol)
+
+    async def fetch_raw_kline(self, symbol: str, limit: int = 30) -> list[Bar]:
+        if not symbol.startswith(("SH.", "SZ.", "BJ.")):
+            return []
+        market, code = symbol.split(".", 1)
+        raw = f"{market.lower()}{code}"
+        response = await self._get(self.tencent_kline_url, {"param": f"{raw},day,,,{limit}"})
         return self.normalize_kline(response.json(), symbol)

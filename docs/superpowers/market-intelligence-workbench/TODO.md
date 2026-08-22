@@ -164,3 +164,14 @@
 - [x] Keep stock identity, intent, evidence time, confidence, and follow-up routes visible on named financial-Skill answers.
 - [x] Put actionable decision changes before reminder filters while keeping system monitoring last.
 - [x] Make global refresh confirmation state its all-site scope and the resulting refresh time.
+
+## Quant Market Structure
+
+- [x] Rebuild the Market overview around one explicit snapshot, breadth distribution, liquidity, capital participation, limit counts, sector extremes, and active stocks.
+- [x] Make Opportunities use a stable strategy registry shared with the existing candidate workflow and recommendation history.
+- [x] Add exchange-aware up/down limit ladders verified only with target-date, unadjusted daily prices.
+- [x] Add separate concept and industry catalogs with search, sorting, group focus, leaders, constituents, confidence, and Stock Lab handoff.
+- [x] Keep sealed-order amount and unsupported rotation history explicitly unavailable instead of estimating them.
+- [x] Retain the last valid group cross-section on catalog failure and label stale or partial evidence as degraded.
+- [x] Preserve N/A semantics, red-up/green-down presentation, desktop density, and narrow-screen usability.
+- [ ] Commit, push, deploy, and independently verify the public market-structure release.

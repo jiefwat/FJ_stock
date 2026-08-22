@@ -34,7 +34,10 @@ from marketdesk.models import (
     EquityViewFilters,
     HoldingDossier,
     InstrumentEvidenceResult,
+    LimitLadderResult,
+    MarketDashboard,
     MarketEventResult,
+    MarketGroupAnalysis,
     MarketIntelligenceResult,
     MarketPayload,
     MorningEmailBrief,
@@ -43,6 +46,7 @@ from marketdesk.models import (
     SavedEquityView,
     SectorDossier,
     StockDossier,
+    StrategyBoard,
     StrictModel,
     UserAccount,
     UserPreferences,
@@ -342,6 +346,26 @@ def create_app(
     @app.get("/api/v1/market", response_model=MarketPayload)
     async def market() -> MarketPayload:
         return await market_service.market_payload()
+
+    @app.get("/api/v1/market-structure/dashboard", response_model=MarketDashboard)
+    async def market_dashboard() -> MarketDashboard:
+        return await market_service.market_dashboard()
+
+    @app.get("/api/v1/market-structure/strategies", response_model=StrategyBoard)
+    async def strategy_board() -> StrategyBoard:
+        return await market_service.strategy_board()
+
+    @app.get("/api/v1/market-structure/limit-ladder", response_model=LimitLadderResult)
+    async def limit_ladder(
+        mode: Literal["up", "down"] = "up",
+    ) -> LimitLadderResult:
+        return await market_service.limit_ladder(mode)
+
+    @app.get("/api/v1/market-structure/groups", response_model=MarketGroupAnalysis)
+    async def market_groups(
+        kind: Literal["concept", "industry"],
+    ) -> MarketGroupAnalysis:
+        return await market_service.market_groups(kind)
 
     @app.get("/api/v1/equities", response_model=EquityPage)
     async def equities(

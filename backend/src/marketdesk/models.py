@@ -217,6 +217,9 @@ class EquityQuote(StrictModel):
     market_cap: float | None = None
     net_flow: float | None = None
     sector: str | None = None
+    asset_type: Literal["stock", "etf", "index", "global"] = "stock"
+    exchange: Literal["SH", "SZ", "BJ", "HK", "US"] | None = None
+    price_limit_pct: float | None = Field(default=None, gt=0)
 
 
 class SectorSnapshot(StrictModel):
@@ -336,6 +339,30 @@ class MarketSummarySnapshot(StrictModel):
 class MarketPayload(StrictModel):
     snapshot: MarketSummarySnapshot
     analysis: MarketAnalysis
+
+
+class MarketDistributionBand(StrictModel):
+    key: str
+    label: str
+    count: int = Field(ge=0)
+    tone: Literal["strong_down", "down", "flat", "up", "strong_up"]
+
+
+class MarketDashboard(StrictModel):
+    meta: DatasetMeta
+    score: float = Field(ge=0, le=100)
+    regime: str
+    confidence: float = Field(ge=0, le=1)
+    breadth_pct: float | None = Field(default=None, ge=0, le=100)
+    capital_inflow_pct: float | None = Field(default=None, ge=0, le=100)
+    total_turnover: float | None = Field(default=None, ge=0)
+    limit_up_count: int = Field(default=0, ge=0)
+    limit_down_count: int = Field(default=0, ge=0)
+    distribution: list[MarketDistributionBand] = Field(default_factory=list)
+    strongest_sectors: list[SectorSnapshot] = Field(default_factory=list)
+    weakest_sectors: list[SectorSnapshot] = Field(default_factory=list)
+    activity_leaders: list[EquityQuote] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
 
 
 class MarketEventRaw(StrictModel):
@@ -473,6 +500,88 @@ class OpportunityResult(StrictModel):
     funnel: dict[str, int]
     candidates: list[RankedCandidate]
     excluded: list[ExcludedCandidate]
+
+
+class StrategyBoardCard(StrictModel):
+    id: str
+    name: str
+    category: str
+    summary: str
+    entry_signal: str
+    exit_signal: str
+    hit_count: int = Field(ge=0)
+    available: bool = True
+    confidence: float = Field(ge=0, le=1)
+    top_candidate: EquityQuote | None = None
+
+
+class StrategyBoard(StrictModel):
+    meta: DatasetMeta
+    cards: list[StrategyBoardCard]
+
+
+class LimitLadderStock(StrictModel):
+    quote: EquityQuote
+    streak: int = Field(ge=1)
+    limit_pct: float = Field(gt=0)
+    one_word: bool | None = None
+    confidence: float = Field(ge=0, le=1)
+    evidence: list[str] = Field(default_factory=list)
+
+
+class LimitLadderLevel(StrictModel):
+    streak: int = Field(ge=1)
+    label: str
+    stocks: list[LimitLadderStock] = Field(default_factory=list)
+
+
+class LimitLadderResult(StrictModel):
+    meta: DatasetMeta
+    mode: Literal["up", "down"]
+    available: bool
+    unavailable_reason: str | None = None
+    total: int = Field(default=0, ge=0)
+    max_streak: int = Field(default=0, ge=0)
+    confidence: float = Field(ge=0, le=1)
+    levels: list[LimitLadderLevel] = Field(default_factory=list)
+    industry_distribution: dict[str, int] = Field(default_factory=dict)
+    methodology: list[str] = Field(default_factory=list)
+
+
+class MarketGroupLeader(StrictModel):
+    quote: EquityQuote
+    score: float = Field(ge=0, le=100)
+
+
+class MarketGroupStat(StrictModel):
+    code: str
+    name: str
+    kind: Literal["concept", "industry"]
+    change_pct: float | None = None
+    net_flow: float | None = None
+    constituent_count: int = Field(default=0, ge=0)
+    advancing: int = Field(default=0, ge=0)
+    declining: int = Field(default=0, ge=0)
+    average_change_pct: float | None = None
+    average_turnover_rate: float | None = None
+    total_amount: float | None = Field(default=None, ge=0)
+    heat_score: float = Field(ge=0, le=100)
+    risk_score: float = Field(ge=0, le=100)
+    evidence_coverage: float = Field(ge=0, le=1)
+    leader: MarketGroupLeader | None = None
+    constituents: list[EquityQuote] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+
+
+class MarketGroupAnalysis(StrictModel):
+    meta: DatasetMeta
+    kind: Literal["concept", "industry"]
+    available: bool
+    degraded: bool = False
+    unavailable_reason: str | None = None
+    summary: str
+    groups: list[MarketGroupStat] = Field(default_factory=list)
+    methodology: list[str] = Field(default_factory=list)
 
 
 class RecommendationSnapshotPick(StrictModel):

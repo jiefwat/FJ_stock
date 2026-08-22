@@ -160,3 +160,27 @@ No unresolved P0, P1, or P2 finding blocks release. Named financial-Skill answer
 ### Decision
 
 Approved for the full repository gate and deployment. The changes remain frontend-only and preserve provider, deterministic-analysis, API, and account boundaries.
+
+## 2026-08-22 Quant Market Structure Review
+
+### Findings
+
+No unresolved P0, P1, or P2 finding blocks release. Provider requests remain under `providers/`, market scoring and ladder/group derivation remain under `analysis/`, and every browser request stays under authenticated `/api/v1/*` routes. Strategy cards reuse the existing opportunity preset IDs instead of creating a second screening system.
+
+The final review resolved four correctness issues before release: delayed raw bars can no longer become target-day streak evidence; zero-valued group flow no longer sorts as missing; missing quote fields no longer become zero-valued leader evidence or positive UI color; and N/C new listings no longer inherit ordinary board price-limit thresholds.
+
+### Assumptions And Boundaries
+
+- The ladder derives current limits from provider-normalized board/ST/name evidence. Historical ST transitions, exchange special-treatment dates beyond the visible name, and order-book sealed amount are unavailable and are not inferred.
+- Concept and industry rankings are current cross-sections. Time-series rotation requires persisted historical group snapshots and is explicitly deferred.
+- The service enriches the top 24 provider-ranked groups with constituents. Remaining catalog rows retain board-level change/flow evidence and lower evidence coverage rather than fabricated constituent statistics.
+
+### Residual Risks And Testing Gaps
+
+- Eastmoney group catalogs and constituents remain an external operational dependency. The service keeps an in-process last-good result and marks partial/stale evidence degraded, but does not yet persist group snapshots across a full service restart.
+- The authenticated local browser remained at the login gate, so final visual and responsive acceptance is performed against the deployed same-origin session. Component tests cover all new interactions before deployment.
+- FastAPI TestClient continues to emit the known third-party Starlette/httpx deprecation warning.
+
+### Decision
+
+Approved for commit, push, and public deployment after the fresh `make verify`: 235 backend tests, 91 frontend tests, production build, and the live-data gate passed.

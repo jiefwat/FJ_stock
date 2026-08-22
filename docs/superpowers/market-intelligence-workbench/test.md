@@ -1739,6 +1739,38 @@ Result:
 | Production build | Passed, 1,657 modules transformed |
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
 
+## 2026-08-22 Quant Market Structure Verification
+
+The release adopts the `jiewat-quant-panel/docs/reconstruction` workflow while keeping StockTS providers, deterministic analysis, confidence semantics, and Stock Lab as the final decision gate. Market, strategy registry, limit ladder, concept analysis, and industry analysis all consume authenticated `/api/v1/*` contracts.
+
+Focused regressions prove:
+
+- Dashboard metrics share one snapshot and expose breadth, distribution, liquidity, capital coverage, limit counts, sector extremes, and Stock Lab drill-downs.
+- Stable strategy IDs show trigger, exit, hit count, confidence, and top candidate, then select the existing detailed candidate queue.
+- Limit rules distinguish ST, main board, ChiNext/STAR, and Beijing; streaks use only unadjusted daily bars matching the target date.
+- Delayed raw bars do not become current-day streak or one-word evidence, and historical ST status is not fabricated.
+- Concept and industry use separate catalogs, preserve missing values as N/A, keep the last valid cross-section after refresh failure, and mark partial/stale results degraded.
+- New structure pages cover search, sorting, mode switches, confidence language, unavailable/empty copy, and Stock Lab handoffs.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 91 tests across 12 files |
+| Production build | Passed, 1,659 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
 ## 2026-08-22 System Interaction Continuity Verification
 
 Focused regressions cover three decision-continuity paths:

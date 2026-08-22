@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Binoculars, Briefcase, History, MessageSquareText, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
+import { BellRing, Binoculars, Briefcase, Flame, History, Layers3, MessageSquareText, Network, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
 import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
 import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { loadRecentResearch, recentResearchUpdatedEvent, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
@@ -27,6 +27,8 @@ const loadStockLabPage = () => import("../features/stocks/StockLabPage");
 const loadRecommendationHistoryPage = () => import("../features/history/RecommendationHistoryPage");
 const loadAskStockPage = () => import("../features/ask/AskStockPage");
 const loadHoldingsPage = () => import("../features/holdings/HoldingsPage");
+const loadLimitLadderPage = () => import("../features/structure/LimitLadderPage");
+const loadMarketGroupPage = () => import("../features/structure/MarketGroupPage");
 
 const MarketPage = lazy(() => loadMarketPage().then((module) => ({ default: module.MarketPage })));
 const DecisionCenterPage = lazy(() => loadDecisionCenterPage().then((module) => ({ default: module.DecisionCenterPage })));
@@ -35,6 +37,9 @@ const StockLabPage = lazy(() => loadStockLabPage().then((module) => ({ default: 
 const RecommendationHistoryPage = lazy(() => loadRecommendationHistoryPage().then((module) => ({ default: module.RecommendationHistoryPage })));
 const AskStockPage = lazy(() => loadAskStockPage().then((module) => ({ default: module.AskStockPage })));
 const HoldingsPage = lazy(() => loadHoldingsPage().then((module) => ({ default: module.HoldingsPage })));
+const LimitLadderPage = lazy(() => loadLimitLadderPage().then((module) => ({ default: module.LimitLadderPage })));
+const ConceptPage = lazy(() => loadMarketGroupPage().then((module) => ({ default: () => <module.MarketGroupPage kind="concept" /> })));
+const IndustryPage = lazy(() => loadMarketGroupPage().then((module) => ({ default: () => <module.MarketGroupPage kind="industry" /> })));
 
 const PHONE_MODE_QUERY = "(max-width: 767px)";
 const TABLET_MODE_QUERY = "(min-width: 768px) and (max-width: 1023px)";
@@ -48,6 +53,9 @@ const nav = [
   ["/stocks", "个股", Star],
   ["/ask", "问股", MessageSquareText],
   ["/holdings", "持仓", Briefcase],
+  ["/limit-ladder", "连板", Flame],
+  ["/concepts", "概念", Network],
+  ["/industries", "行业", Layers3],
 ] as const;
 
 const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unknown>>> = {
@@ -58,6 +66,9 @@ const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unkno
   "/stocks": loadStockLabPage,
   "/ask": loadAskStockPage,
   "/holdings": loadHoldingsPage,
+  "/limit-ladder": loadLimitLadderPage,
+  "/concepts": loadMarketGroupPage,
+  "/industries": loadMarketGroupPage,
 };
 
 function preloadRoute(path: (typeof nav)[number][0]) {
@@ -470,6 +481,9 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
               <Route path="/stocks" element={<StockLabPage />} />
               <Route path="/ask" element={<AskStockPage />} />
               <Route path="/holdings" element={<HoldingsPage />} />
+              <Route path="/limit-ladder" element={<LimitLadderPage />} />
+              <Route path="/concepts" element={<ConceptPage />} />
+              <Route path="/industries" element={<IndustryPage />} />
               <Route path="*" element={<Navigate to="/market" replace />} />
             </Routes>
           </Suspense>

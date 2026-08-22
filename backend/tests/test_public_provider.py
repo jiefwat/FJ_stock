@@ -42,6 +42,9 @@ def test_sina_equities_normalize_market_cap_units() -> None:
 
     assert dataset.items[0].symbol == "SH.600519"
     assert dataset.items[0].market_cap == 1_900_000_000_000
+    assert dataset.items[0].exchange == "SH"
+    assert dataset.items[0].asset_type == "stock"
+    assert dataset.items[0].price_limit_pct == 10
     assert dataset.meta.coverage == 1
 
 
@@ -81,6 +84,45 @@ def test_eastmoney_board_constituents_normalize_to_quotes() -> None:
     assert quotes[0].symbol == "SH.600236"
     assert quotes[0].net_flow == 87_265_482
     assert quotes[0].sector == "电力"
+    assert quotes[0].price_limit_pct == 10
+
+
+def test_a_share_price_limit_profile_is_explicit_at_provider_boundary() -> None:
+    assert PublicMarketProvider._a_share_profile("600519", "贵州茅台") == ("SH", 10.0)
+    assert PublicMarketProvider._a_share_profile("688001", "华兴源创") == ("SH", 20.0)
+    assert PublicMarketProvider._a_share_profile("300750", "宁德时代") == ("SZ", 20.0)
+    assert PublicMarketProvider._a_share_profile("830799", "艾融软件") == ("BJ", 30.0)
+    assert PublicMarketProvider._a_share_profile("600001", "ST 示例") == ("SH", 5.0)
+    assert PublicMarketProvider._a_share_profile("688999", "N 新股") == ("SH", None)
+    assert PublicMarketProvider._a_share_profile("300999", "C 新股") == ("SZ", None)
+
+
+@pytest.mark.asyncio
+async def test_limit_ladder_kline_uses_unadjusted_day_series(monkeypatch) -> None:
+    provider = PublicMarketProvider()
+    captured: dict[str, object] = {}
+
+    class Response:
+        def json(self):
+            return {
+                "data": {
+                    "sh600519": {
+                        "day": [["2026-08-21", "100", "110", "110", "110", "1000"]]
+                    }
+                }
+            }
+
+    async def fake_get(url: str, params: dict[str, object] | None = None):
+        captured.update(params or {})
+        return Response()
+
+    monkeypatch.setattr(provider, "_get", fake_get)
+
+    bars = await provider.fetch_raw_kline("SH.600519", limit=12)
+
+    assert captured["param"] == "sh600519,day,,,12"
+    assert "qfq" not in str(captured["param"])
+    assert bars[0].close == 110
 
 
 def test_eastmoney_financial_periods_normalize_and_deduplicate_reports() -> None:

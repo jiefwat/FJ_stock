@@ -24,6 +24,12 @@ from marketdesk.analysis.decisions import candidate_decision, holding_decision
 from marketdesk.analysis.events import analyse_market_events
 from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
+from marketdesk.analysis.market_structure import (
+    analyse_market_dashboard,
+    analyse_market_groups,
+    build_limit_ladder,
+    build_strategy_board,
+)
 from marketdesk.analysis.morning_brief import build_morning_email_brief
 from marketdesk.analysis.opportunities import (
     RECOMMENDATION_ALGORITHM_VERSION,
@@ -55,8 +61,11 @@ from marketdesk.models import (
     HoldingItem,
     InstrumentEvidenceResult,
     InstrumentTheme,
+    LimitLadderResult,
+    MarketDashboard,
     MarketEventRaw,
     MarketEventResult,
+    MarketGroupAnalysis,
     MarketIntelligenceResult,
     MarketPayload,
     MarketSnapshot,
@@ -72,6 +81,7 @@ from marketdesk.models import (
     StockDossier,
     StockNewsItem,
     StockNewsSentiment,
+    StrategyBoard,
     TradingAnomaly,
 )
 from marketdesk.providers.base import ProviderUnavailable
@@ -119,12 +129,14 @@ class MarketProvider(Protocol):
     async def fetch_equities(self) -> EquityDataset: ...
     async def fetch_indices(self) -> list[Any]: ...
     async def fetch_sectors(self) -> list[Any]: ...
+    async def fetch_market_groups(self, kind: Literal["concept", "industry"]) -> list[Any]: ...
     async def fetch_sector_constituents(self, sector_code: str) -> list[Any]: ...
     async def fetch_research_enrichment(
         self, symbol: str, name: str, sector: str | None
     ) -> list[str]: ...
     async def fetch_market_events(self, limit: int = 50) -> list[MarketEventRaw]: ...
     async def fetch_kline(self, symbol: str, limit: int = 180) -> list[Any]: ...
+    async def fetch_raw_kline(self, symbol: str, limit: int = 30) -> list[Any]: ...
     async def fetch_global_quote(self, symbol: str, name: str | None = None) -> EquityQuote: ...
     async def search_global_quotes(self, query: str, limit: int = 10) -> list[EquityQuote]: ...
     async def fetch_filings(self, symbol: str, limit: int = 20) -> list[EvidenceDocument]: ...
@@ -160,6 +172,9 @@ class MarketService:
         self._opportunity_kline_timeout_seconds = 4.0
         self._refresh_lock = asyncio.Lock()
         self._refresh_task: asyncio.Task[MarketSnapshot] | None = None
+        self._market_structure_cache: dict[str, tuple[float, Any]] = {}
+        self._market_structure_last_good: dict[str, MarketGroupAnalysis] = {}
+        self._limit_history_cache: dict[str, tuple[float, list[Bar]]] = {}
 
     async def refresh(self) -> MarketSnapshot:
         async with self._refresh_lock:
@@ -241,6 +256,162 @@ class MarketService:
             ),
             analysis=analyse_market(snapshot),
         )
+
+    async def market_dashboard(self) -> MarketDashboard:
+        return analyse_market_dashboard(await self.market())
+
+    async def strategy_board(self) -> StrategyBoard:
+        return build_strategy_board(await self.market())
+
+    async def limit_ladder(self, mode: Literal["up", "down"] = "up") -> LimitLadderResult:
+        snapshot = await self.market()
+        candidates = sorted(
+            [
+                item
+                for item in snapshot.equities
+                if item.change_pct is not None
+                and item.price_limit_pct is not None
+                and (
+                    item.change_pct >= item.price_limit_pct - 0.2
+                    if mode == "up"
+                    else item.change_pct <= -item.price_limit_pct + 0.2
+                )
+            ],
+            key=lambda item: (abs(item.change_pct or 0), item.amount or 0),
+            reverse=True,
+        )[:80]
+        history = await self._raw_limit_history([item.symbol for item in candidates], limit=12)
+        return build_limit_ladder(snapshot, history, mode)
+
+    async def _raw_limit_history(
+        self, symbols: list[str], limit: int
+    ) -> dict[str, list[Bar]]:
+        fetcher = getattr(self.provider, "fetch_raw_kline", None)
+        if not callable(fetcher):
+            return {}
+        now = time.monotonic()
+        cached = {
+            symbol: entry[1]
+            for symbol in symbols
+            if (entry := self._limit_history_cache.get(symbol)) is not None
+            and now - entry[0] < self._opportunity_history_cache_ttl_seconds
+        }
+        pending = [symbol for symbol in symbols if symbol not in cached]
+        semaphore = asyncio.Semaphore(6)
+
+        async def fetch(symbol: str) -> tuple[str, list[Bar]]:
+            async with semaphore:
+                try:
+                    payload = await asyncio.wait_for(fetcher(symbol, limit=limit), timeout=4.0)
+                    return symbol, [
+                        item if isinstance(item, Bar) else Bar.model_validate(item)
+                        for item in payload
+                    ]
+                except Exception as error:
+                    self._provider_errors["raw_limit_kline"] = str(error)
+                    return symbol, []
+
+        pairs = await asyncio.gather(*(fetch(symbol) for symbol in pending))
+        for symbol, bars in pairs:
+            if bars:
+                self._limit_history_cache[symbol] = (now, bars)
+        return {**cached, **dict(pairs)}
+
+    async def market_groups(
+        self, kind: Literal["concept", "industry"]
+    ) -> MarketGroupAnalysis:
+        snapshot = await self.market()
+        cache_key = f"groups:{kind}:{snapshot.meta.fetched_at.isoformat()}"
+        cached = self._market_structure_cache.get(cache_key)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < 10 * 60:
+            return cast(MarketGroupAnalysis, cached[1])
+
+        fetcher = getattr(self.provider, "fetch_market_groups", None)
+        unavailable_reason: str | None = None
+        if callable(fetcher):
+            try:
+                groups = [
+                    item if isinstance(item, SectorSnapshot) else SectorSnapshot.model_validate(item)
+                    for item in await fetcher(kind)
+                ]
+                if not groups:
+                    unavailable_reason = f"{kind} catalog returned no groups"
+            except Exception as error:
+                groups = []
+                unavailable_reason = f"{kind} catalog unavailable: {error}"
+        elif kind == "industry":
+            groups = snapshot.sectors
+        else:
+            groups = []
+            unavailable_reason = "concept catalog unavailable"
+
+        if not groups and unavailable_reason:
+            previous = self._market_structure_last_good.get(kind)
+            if previous is not None:
+                stale_meta = previous.meta.model_copy(
+                    update={
+                        "freshness": Freshness.STALE,
+                        "errors": [*previous.meta.errors, unavailable_reason],
+                    }
+                )
+                result = previous.model_copy(
+                    update={
+                        "meta": stale_meta,
+                        "available": True,
+                        "degraded": True,
+                        "unavailable_reason": unavailable_reason,
+                        "summary": f"当前显示上次有效的{kind}横截面；目录刷新失败，请按过期证据使用。",
+                    }
+                )
+                self._market_structure_cache[cache_key] = (now, result)
+                return result
+
+        constituents_by_code: dict[str, list[EquityQuote]] = {}
+        constituent_failures = 0
+        constituent_fetcher = getattr(self.provider, "fetch_sector_constituents", None)
+        if callable(constituent_fetcher) and groups:
+            semaphore = asyncio.Semaphore(6)
+
+            async def fetch_group(group: SectorSnapshot) -> tuple[str, list[EquityQuote]]:
+                nonlocal constituent_failures
+                async with semaphore:
+                    try:
+                        rows = await asyncio.wait_for(
+                            constituent_fetcher(group.code), timeout=5.0
+                        )
+                        return group.code, [
+                            item
+                            if isinstance(item, EquityQuote)
+                            else EquityQuote.model_validate(item)
+                            for item in rows
+                        ]
+                    except Exception as error:
+                        constituent_failures += 1
+                        self._provider_errors[f"{kind}_constituents"] = str(error)
+                        return group.code, []
+
+            selected_groups = groups[:24]
+            pairs = await asyncio.gather(*(fetch_group(group) for group in selected_groups))
+            constituents_by_code = dict(pairs)
+            if constituent_failures:
+                unavailable_reason = (
+                    f"{constituent_failures} {kind} constituent requests unavailable; "
+                    "missing constituent evidence remains N/A"
+                )
+
+        result = analyse_market_groups(
+            snapshot.meta,
+            groups,
+            constituents_by_code,
+            kind,
+            unavailable_reason=unavailable_reason,
+            degraded=constituent_failures > 0,
+        )
+        self._market_structure_cache[cache_key] = (now, result)
+        if result.available:
+            self._market_structure_last_good[kind] = result
+        return result
 
     async def equities_page(
         self,

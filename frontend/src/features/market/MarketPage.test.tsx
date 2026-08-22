@@ -14,6 +14,31 @@ const market = {
   analysis: { score: 58, regime: "balanced", confidence: 0.95, advancing: 3100, declining: 1900, unchanged: 100, factors: [] },
 };
 
+const dashboard = {
+  meta: market.snapshot.meta,
+  score: 58,
+  regime: "balanced",
+  confidence: 0.95,
+  breadth_pct: 60.78,
+  capital_inflow_pct: 54.2,
+  total_turnover: 1_250_000_000_000,
+  limit_up_count: 42,
+  limit_down_count: 6,
+  distribution: [
+    { key: "strong_down", label: "≤ -5%", count: 90, tone: "strong_down" },
+    { key: "down", label: "-5% ~ -1%", count: 1100, tone: "down" },
+    { key: "flat", label: "-1% ~ 1%", count: 1500, tone: "flat" },
+    { key: "up", label: "1% ~ 5%", count: 2000, tone: "up" },
+    { key: "strong_up", label: "≥ 5%", count: 410, tone: "strong_up" },
+  ],
+  strongest_sectors: market.snapshot.sectors,
+  weakest_sectors: [{ code: "BK2", name: "银行", change_pct: -1.2, net_flow: -100000000 }],
+  activity_leaders: [
+    { symbol: "SH.600519", code: "600519", name: "贵州茅台", price: 1500, change_pct: 1.2, amount: 2000000000, turnover_rate: 0.8, volume_ratio: 1.1, pe: 23, pb: 7, market_cap: 1900000000000, net_flow: 80000000, sector: "白酒" },
+  ],
+  missing_evidence: [],
+};
+
 const sector = {
   sector: { code: "BK1", name: "白酒", change_pct: 1.4, net_flow: 100000000 },
   summary: ["主力净流入 1.00 亿，板块热度偏强。"],
@@ -148,6 +173,7 @@ function renderPage(initialPath = "/market") {
     if (url.includes("/api/v1/market-events")) return { ok: true, status: 200, json: async () => events };
     if (url.includes("/api/v1/markets/CN/intelligence")) return { ok: true, status: 200, json: async () => intelligence };
     if (url.includes("/api/v1/equities")) return { ok: true, status: 200, json: async () => equityPage };
+    if (url.includes("/api/v1/market-structure/dashboard")) return { ok: true, status: 200, json: async () => dashboard };
     return { ok: true, status: 200, json: async () => market };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -211,6 +237,18 @@ it("opens a sector research panel with constituents and stock links", async () =
   expect(within(row).getByText("SH.600519")).toBeInTheDocument();
   expect(within(row).getByText(/股价上涨且买入资金更多/)).toBeInTheDocument();
   expect(within(row).getByText("可小仓试探")).toBeInTheDocument();
+});
+
+it("shows one-snapshot market structure evidence and research shortcuts", async () => {
+  renderPage();
+
+  const board = await screen.findByRole("region", { name: "市场量化看板" });
+  expect(within(board).getByText("所有指标使用同一交易快照")).toBeInTheDocument();
+  expect(within(board).getByText("61%")).toBeInTheDocument();
+  expect(within(board).getByText("42")).toBeInTheDocument();
+  expect(within(board).getByRole("link", { name: "连板梯队" })).toHaveAttribute("href", "/limit-ladder");
+  expect(within(board).getByRole("link", { name: "概念分析" })).toHaveAttribute("href", "/concepts");
+  expect(within(board).getByRole("link", { name: "行业分析" })).toHaveAttribute("href", "/industries");
 });
 
 it("opens a theme research panel from Stock Lab theme links", async () => {

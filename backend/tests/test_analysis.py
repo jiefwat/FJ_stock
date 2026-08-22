@@ -3,6 +3,12 @@ from datetime import UTC, date, datetime, timedelta
 from marketdesk.analysis.events import analyse_market_events
 from marketdesk.analysis.holding import analyse_holding
 from marketdesk.analysis.market import analyse_market
+from marketdesk.analysis.market_structure import (
+    analyse_market_dashboard,
+    analyse_market_groups,
+    build_limit_ladder,
+    build_strategy_board,
+)
 from marketdesk.analysis.opportunities import rank_candidates
 from marketdesk.analysis.stock import analyse_stock
 from marketdesk.analysis.stock_intelligence import analyse_financial_health, analyse_stock_news
@@ -152,6 +158,130 @@ def test_market_analysis_renormalizes_missing_external_factor() -> None:
     assert result.confidence < 1
     assert result.regime in {"risk_off", "cautious", "balanced", "risk_on"}
     assert result.factors[0].evidence == "上涨 1 / 下跌 1 / 平盘 0"
+
+
+def test_market_dashboard_uses_one_snapshot_for_breadth_distribution_and_limits() -> None:
+    source = snapshot().model_copy(
+        update={
+            "equities": [
+                equity(change_pct=10.0, price_limit_pct=10.0, amount=800_000_000),
+                equity(
+                    name="下跌公司",
+                    symbol="SZ.000002",
+                    code="000002",
+                    change_pct=-5.2,
+                    price_limit_pct=10.0,
+                    amount=200_000_000,
+                ),
+            ]
+        }
+    )
+
+    result = analyse_market_dashboard(source)
+
+    assert result.breadth_pct == 50
+    assert result.total_turnover == 1_000_000_000
+    assert result.limit_up_count == 1
+    assert result.limit_down_count == 0
+    assert sum(item.count for item in result.distribution) == 2
+    assert result.meta.observed_at == source.meta.observed_at
+
+
+def test_strategy_board_reuses_opportunity_presets_and_reports_evidence_confidence() -> None:
+    result = build_strategy_board(snapshot())
+
+    assert [card.id for card in result.cards[:3]] == [
+        "trend",
+        "volume_breakout",
+        "capital_confirmed",
+    ]
+    assert all(card.entry_signal and card.exit_signal for card in result.cards)
+    assert all(0 <= card.confidence <= 1 for card in result.cards)
+
+
+def test_limit_ladder_uses_raw_daily_prices_and_keeps_st_history_unresolved() -> None:
+    source = snapshot().model_copy(
+        update={
+            "meta": meta().model_copy(
+                update={
+                    "observed_at": datetime(2026, 8, 21, 7, tzinfo=UTC),
+                    "fetched_at": datetime(2026, 8, 21, 7, 1, tzinfo=UTC),
+                }
+            ),
+            "equities": [
+                equity(change_pct=10.0, price_limit_pct=10.0),
+                equity(
+                    name="ST 示例",
+                    symbol="SZ.000003",
+                    code="000003",
+                    change_pct=5.0,
+                    price_limit_pct=5.0,
+                ),
+            ]
+        }
+    )
+    bars = [
+        Bar(date=date(2026, 8, 19), open=10, high=10, low=10, close=10, volume=1, amount=1),
+        Bar(date=date(2026, 8, 20), open=11, high=11, low=11, close=11, volume=1, amount=1),
+        Bar(date=date(2026, 8, 21), open=12.1, high=12.1, low=12.1, close=12.1, volume=1, amount=1),
+    ]
+
+    result = build_limit_ladder(
+        source,
+        {"SH.600001": bars, "SZ.000003": bars},
+        "up",
+    )
+
+    assert result.total == 2
+    assert result.max_streak == 2
+    assert result.levels[0].stocks[0].one_word is True
+    st_row = next(
+        item for level in result.levels for item in level.stocks if item.quote.name == "ST 示例"
+    )
+    assert st_row.streak == 1
+    assert any("历史 ST 状态" in item for item in st_row.evidence)
+
+
+def test_limit_ladder_does_not_reuse_previous_day_streak_as_target_day_evidence() -> None:
+    source = snapshot().model_copy(
+        update={
+            "meta": meta().model_copy(
+                update={
+                    "observed_at": datetime(2026, 8, 21, 7, tzinfo=UTC),
+                    "fetched_at": datetime(2026, 8, 21, 7, 1, tzinfo=UTC),
+                }
+            ),
+            "equities": [equity(change_pct=10.0, price_limit_pct=10.0)],
+        }
+    )
+    delayed_bars = [
+        Bar(date=date(2026, 8, 19), open=10, high=10, low=10, close=10, volume=1, amount=1),
+        Bar(date=date(2026, 8, 20), open=11, high=11, low=11, close=11, volume=1, amount=1),
+    ]
+
+    result = build_limit_ladder(source, {"SH.600001": delayed_bars}, "up")
+    row = result.levels[0].stocks[0]
+
+    assert row.streak == 1
+    assert row.one_word is None
+    assert row.confidence == 0.4
+    assert any("停在 2026-08-20" in item for item in row.evidence)
+
+
+def test_group_analysis_keeps_missing_constituents_out_of_zero_statistics() -> None:
+    group = SectorSnapshot(code="BK100", name="机器人", change_pct=2.5, net_flow=80_000_000)
+    result = analyse_market_groups(
+        meta(),
+        [group],
+        {"BK100": [equity(change_pct=3.0), equity(change_pct=None)]},
+        "concept",
+    )
+
+    assert result.available is True
+    assert result.groups[0].advancing == 1
+    assert result.groups[0].declining == 0
+    assert result.groups[0].average_change_pct == 3.0
+    assert result.groups[0].leader is not None
 
 
 def test_market_event_analysis_infers_readable_sector_names_from_news_text() -> None:

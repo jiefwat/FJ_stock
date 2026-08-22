@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
-import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketEvent, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
+import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketDashboard, type MarketEvent, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
 import { plainLanguage } from "../../lib/plainLanguage";
 
 type MarketData = { snapshot: { meta: Meta; indices: IndexQuote[]; sectors: Sector[] }; analysis: Analysis };
@@ -43,6 +43,7 @@ export function MarketPage() {
   const selectedThemeName = params.get("themeName") ?? selectedTheme ?? "";
   const selectedThemeChange = params.get("themeChange");
   const query = useQuery({ queryKey: ["market"], queryFn: () => api<MarketData>("/api/v1/market") });
+  const dashboardQuery = useQuery({ queryKey: ["market-structure", "dashboard"], queryFn: () => api<MarketDashboard>("/api/v1/market-structure/dashboard") });
   const intelligenceQuery = useQuery({ queryKey: ["cn-market-intelligence"], queryFn: () => api<MarketIntelligenceResult>("/api/v1/markets/CN/intelligence?limit=20") });
   const sectorQuery = useQuery({
     queryKey: ["sector", selectedSector],
@@ -91,6 +92,7 @@ export function MarketPage() {
     <header className="page-head"><div><h1>市场</h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
     <MarketDecisionBanner market={query.data} />
     <MarketPulseStrip market={query.data} />
+    <MarketStructureDashboard data={dashboardQuery.data} loading={dashboardQuery.isLoading} failed={dashboardQuery.isError} />
     <section id="market-board-workbench" className="market-board-zone" aria-label="板块和题材工作区">
       <div className="section-bridge"><span>板块</span><strong>板块和题材</strong></div>
       <div className="market-board-grid" aria-label="板块与资金主线">
@@ -103,6 +105,46 @@ export function MarketPage() {
     <DeferredMarketEvents />
     <DeferredEquityBrowser params={params} />
   </>}</AsyncState>;
+}
+
+function MarketStructureDashboard({ data, loading, failed }: { data?: MarketDashboard; loading: boolean; failed: boolean }) {
+  if (loading) return <section className="panel quant-dashboard-shell" aria-label="市场量化看板" aria-busy="true"><div className="market-events-placeholder">正在汇总同一交易快照…</div></section>;
+  const hasDashboardShape = data
+    && Array.isArray(data.distribution)
+    && Array.isArray(data.strongest_sectors)
+    && Array.isArray(data.weakest_sectors)
+    && Array.isArray(data.activity_leaders)
+    && Array.isArray(data.missing_evidence);
+  if (failed || !hasDashboardShape) return <section className="panel quant-dashboard-shell" aria-label="市场量化看板"><div className="capability-warning">量化看板暂不可用，原有大盘结论仍可继续使用。</div></section>;
+  const maxBand = Math.max(1, ...data.distribution.map((item) => item.count));
+  return <section className="quant-dashboard-shell" aria-label="市场量化看板">
+    <header className="quant-dashboard-head">
+      <div><span>MARKET OVERVIEW</span><strong>市场量化看板</strong><small>所有指标使用同一交易快照</small></div>
+      <nav aria-label="市场结构模块"><Link to="/limit-ladder">连板梯队</Link><Link to="/concepts">概念分析</Link><Link to="/industries">行业分析</Link></nav>
+    </header>
+    <div className="quant-kpi-grid">
+      <article><span>全市场成交</span><strong>{data.total_turnover == null ? "N/A" : `${fmt(data.total_turnover / 100_000_000, 0)} 亿`}</strong><small>{data.total_turnover == null ? "成交额证据缺失" : "当前快照合计"}</small></article>
+      <article><span>上涨广度</span><strong>{data.breadth_pct == null ? "N/A" : percent(data.breadth_pct)}</strong><small>不是上涨概率</small></article>
+      <article><span>资金净流入覆盖</span><strong>{data.capital_inflow_pct == null ? "N/A" : percent(data.capital_inflow_pct)}</strong><small>有资金字段的股票中</small></article>
+      <article><span>涨停 / 跌停</span><strong><b className="up">{data.limit_up_count}</b> / <b className="down">{data.limit_down_count}</b></strong><small>按标的明确涨跌停规则</small></article>
+      <article><span>分析置信度</span><strong>{percent(data.confidence * 100)}</strong><small>信息覆盖，不是上涨概率</small></article>
+    </div>
+    <div className="quant-dashboard-grid">
+      <section className="distribution-card" aria-label="涨跌分布">
+        <header><strong>涨跌分布</strong><small>{data.distribution.reduce((sum, item) => sum + item.count, 0)} 只有效样本</small></header>
+        <div>{data.distribution.map((item) => <article key={item.key} className={item.tone}><b>{item.count}</b><i><em style={{ height: `${Math.max(5, item.count / maxBand * 100)}%` }} /></i><span>{item.label}</span></article>)}</div>
+      </section>
+      <section className="sector-rank-card" aria-label="板块强弱排行">
+        <header><strong>板块强弱</strong><small>涨跌 + 资金</small></header>
+        <div className="sector-rank-columns"><div><span>领涨</span>{data.strongest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="up">{pct(item.change_pct)}</strong></Link>)}</div><div><span>领跌</span>{data.weakest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="down">{pct(item.change_pct)}</strong></Link>)}</div></div>
+      </section>
+      <section className="activity-rank-card" aria-label="成交活跃个股">
+        <header><strong>成交活跃</strong><small>点选进入个股证据账本</small></header>
+        <div>{data.activity_leaders.slice(0, 6).map((item, index) => <Link key={item.symbol} to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=market-dashboard`}><em>{String(index + 1).padStart(2, "0")}</em><span><b>{item.name}</b><small>{item.sector ?? "行业待补"}</small></span><strong className={item.change_pct == null ? "" : item.change_pct >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><i>{item.amount == null ? "成交 N/A" : `${fmt(item.amount / 100_000_000)} 亿`}</i></Link>)}</div>
+      </section>
+    </div>
+    {data.missing_evidence.length > 0 && <p className="quant-missing">降级项：{data.missing_evidence.join("、")}。缺失值不按 0 参与统计。</p>}
+  </section>;
 }
 
 function DeferredMarketEvents() {

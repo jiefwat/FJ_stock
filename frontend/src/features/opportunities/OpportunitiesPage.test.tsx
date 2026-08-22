@@ -191,10 +191,30 @@ it("shows plain-language strategy diagnostics and keeps professional data on dem
 });
 
 it("offers only effective primary strategies instead of data-blocked presets", async () => {
-  const fetchMock = vi.fn(async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/api/v1/market-structure/strategies")) return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        meta: { source: "fixture", observed_at: "2026-08-21T07:00:00Z", fetched_at: "2026-08-21T07:01:00Z", freshness: "fresh", coverage: 1, errors: [] },
+        cards: [{
+          id: "volume_breakout",
+          name: "放量突破",
+          category: "突破",
+          summary: "7 只触发",
+          entry_signal: "量比放大；涨幅确认",
+          exit_signal: "放量失败或跌回突破区间",
+          hit_count: 7,
+          available: true,
+          confidence: 0.86,
+          top_candidate: { symbol: "SZ.300750", code: "300750", name: "宁德时代", price: 188.2, change_pct: 3.2, amount: 5_200_000_000, turnover_rate: 2.4, volume_ratio: 1.8, pe: 18, pb: 4, market_cap: 890_000_000_000, net_flow: 30_000_000, sector: "电池" },
+        }],
+      }),
+    };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
       preset: "trend",
       available: true,
       unavailable_reason: null,
@@ -206,24 +226,27 @@ it("offers only effective primary strategies instead of data-blocked presets", a
       candidates: [],
       excluded: [],
     }),
-  }));
+    };
+  });
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(<QueryClientProvider client={client}><MemoryRouter><OpportunitiesPage /></MemoryRouter></QueryClientProvider>);
 
-  expect(await screen.findByRole("button", { name: "趋势延续" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "放量突破" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "资金确认" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "板块共振" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "回踩企稳" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "低估反弹" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "估值质量" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "蓝筹稳健" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "超跌修复" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /趋势延续/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /放量突破/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /资金确认/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /板块共振/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /回踩企稳/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /低估反弹/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /估值质量/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /蓝筹稳健/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /超跌修复/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "板块改善" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /突破 7 命中 放量突破 量比放大；涨幅确认/ })).toBeInTheDocument();
+  expect(screen.getByText("宁德时代")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "放量突破" }));
+  fireEvent.click(screen.getByRole("button", { name: /突破 7 命中 放量突破/ }));
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/opportunities?preset=volume_breakout&limit=10",
     expect.any(Object),

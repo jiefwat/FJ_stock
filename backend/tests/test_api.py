@@ -12,6 +12,7 @@ from marketdesk.config import Settings
 from marketdesk.models import (
     AskStockMetric,
     AskStockResponse,
+    Bar,
     DatasetMeta,
     DecisionPresentation,
     DecisionSnapshot,
@@ -63,6 +64,8 @@ class FixtureProvider:
                     market_cap=1_900_000_000_000,
                     net_flow=80_000_000,
                     sector="白酒",
+                    exchange="SH",
+                    price_limit_pct=10,
                 )
             ],
         )
@@ -82,7 +85,7 @@ class FixtureProvider:
         return [SectorSnapshot(code="BK1", name="白酒", change_pct=1.4, net_flow=100_000_000)]
 
     async def fetch_sector_constituents(self, sector_code: str):
-        assert sector_code in {"BK1", "BK0896"}
+        assert sector_code in {"BK1", "BK0896", "BK100", "BK200"}
         return [
             EquityQuote(
                 symbol="SH.600519",
@@ -98,8 +101,29 @@ class FixtureProvider:
                 market_cap=1_900_000_000_000,
                 net_flow=80_000_000,
                 sector="白酒",
+                exchange="SH",
+                price_limit_pct=10,
             )
         ]
+
+    async def fetch_market_groups(self, kind: str):
+        if kind == "concept":
+            return [SectorSnapshot(code="BK100", name="酿酒概念", change_pct=1.8, net_flow=80_000_000)]
+        return [SectorSnapshot(code="BK200", name="食品饮料", change_pct=1.4, net_flow=100_000_000)]
+
+    async def fetch_raw_kline(self, symbol: str, limit: int = 30):
+        return [
+            Bar(
+                date=date(2026, 8, 20) + timedelta(days=i),
+                open=100 * (1.1**i),
+                high=100 * (1.1**i),
+                low=100 * (1.1**i),
+                close=100 * (1.1**i),
+                volume=1000,
+                amount=100_000,
+            )
+            for i in range(2)
+        ][:limit]
 
     async def fetch_market_events(self, limit: int = 50):
         now = datetime.now(UTC)
@@ -1269,6 +1293,53 @@ def test_market_and_stock_routes(tmp_path) -> None:
     assert stock_payload["financial_health"]["periods"][0]["report_label"] == "2026中报"
     assert stock_payload["news_sentiment"]["available"] is True
     assert stock_payload["news_sentiment"]["items"][0]["media"] == "测试媒体"
+
+
+def test_market_structure_routes_share_snapshot_and_return_drilldown_models(tmp_path) -> None:
+    api = client(tmp_path)
+
+    dashboard = api.get("/api/v1/market-structure/dashboard")
+    strategies = api.get("/api/v1/market-structure/strategies")
+    ladder = api.get("/api/v1/market-structure/limit-ladder", params={"mode": "up"})
+    concepts = api.get("/api/v1/market-structure/groups", params={"kind": "concept"})
+    industries = api.get("/api/v1/market-structure/groups", params={"kind": "industry"})
+
+    assert dashboard.status_code == 200
+    assert strategies.status_code == 200
+    assert ladder.status_code == 200
+    assert concepts.status_code == 200
+    assert industries.status_code == 200
+    assert dashboard.json()["meta"]["observed_at"] == strategies.json()["meta"]["observed_at"]
+    assert strategies.json()["cards"][0]["id"] == "trend"
+    assert concepts.json()["groups"][0]["kind"] == "concept"
+    assert industries.json()["groups"][0]["kind"] == "industry"
+
+
+@pytest.mark.asyncio
+async def test_market_groups_keep_last_good_result_when_catalog_refresh_fails(tmp_path) -> None:
+    class FlakyGroupProvider(FixtureProvider):
+        fail_groups = False
+
+        async def fetch_market_groups(self, kind: str):
+            if self.fail_groups:
+                raise ProviderUnavailable("catalog timeout")
+            return await super().fetch_market_groups(kind)
+
+    provider = FlakyGroupProvider()
+    service = MarketService(provider=provider, store=Store(tmp_path / "groups-last-good.db"))
+
+    first = await service.market_groups("concept")
+    provider.fail_groups = True
+    service._market_structure_cache.clear()
+    degraded = await service.market_groups("concept")
+
+    assert first.available is True
+    assert degraded.available is True
+    assert degraded.degraded is True
+    assert degraded.meta.freshness == Freshness.STALE
+    assert degraded.groups == first.groups
+    assert degraded.unavailable_reason is not None
+    assert "catalog timeout" in degraded.unavailable_reason
 
 
 def test_stock_financial_and_news_failures_degrade_independently(tmp_path) -> None:

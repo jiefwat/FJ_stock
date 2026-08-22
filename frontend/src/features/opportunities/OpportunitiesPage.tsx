@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
-import { api, fmt, pct, percent, type Candidate, type OpportunityDimension } from "../../lib/api";
+import { api, fmt, pct, percent, type Candidate, type OpportunityDimension, type StrategyBoardCard } from "../../lib/api";
 import { opportunityDecision, type OpportunityDecision } from "../../lib/decision";
 import { monitoringText } from "../../lib/monitoring";
 import { plainLanguage } from "../../lib/plainLanguage";
@@ -199,6 +199,10 @@ export function OpportunitiesPage() {
     refetchInterval: 600_000,
     refetchIntervalInBackground: true,
   });
+  const strategyBoard = useQuery({
+    queryKey: ["market-structure", "strategies"],
+    queryFn: () => api<{ cards: StrategyBoardCard[] }>("/api/v1/market-structure/strategies"),
+  });
   const presetLabel = presets.find((item) => item[0] === preset)?.[1];
   const candidateRows = useMemo(() => (query.data?.candidates ?? []).map((item) => ({ item, badge: opportunityDecision(item) })), [query.data?.candidates]);
   const layerCounts = useMemo(() => candidateRows.reduce<Record<LeadLayer, number>>((counts, row) => {
@@ -212,13 +216,14 @@ export function OpportunitiesPage() {
 
   return <>
     <header className="page-head opportunity-page-head"><div><h1>候选</h1></div><nav className="opportunity-head-actions" aria-label="候选页面操作"><Link className="button secondary" to="/history"><History size={16} />历史复盘</Link><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></nav></header>
-    <div className="preset-bar" aria-label="策略预设"><span className="preset-recommendation">推荐：趋势延续</span>{presets.map(([key, label]) => <button
-      key={key}
-      className={preset === key ? "active" : ""}
-      onPointerEnter={() => queryClient.prefetchQuery({ queryKey: ["opportunities", key], queryFn: () => api<Result>(opportunitiesPath(key)), staleTime: 90_000 })}
-      onFocus={() => queryClient.prefetchQuery({ queryKey: ["opportunities", key], queryFn: () => api<Result>(opportunitiesPath(key)), staleTime: 90_000 })}
-      onClick={() => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}
-    >{label}</button>)}</div>
+    <StrategyLibrary
+      cards={Array.isArray(strategyBoard.data?.cards) ? strategyBoard.data.cards : []}
+      active={preset}
+      loading={strategyBoard.isLoading}
+      failed={strategyBoard.isError}
+      onPreview={(key) => queryClient.prefetchQuery({ queryKey: ["opportunities", key], queryFn: () => api<Result>(opportunitiesPath(key)), staleTime: 90_000 })}
+      onSelect={(key) => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}
+    />
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       {query.data.available && <OpportunityQueueDesk preset={preset} presetLabel={presetLabel} candidateRows={candidateRows} layerCounts={layerCounts} />}
       {!query.data.available ? <section className="strategy-unavailable">
@@ -245,4 +250,22 @@ export function OpportunitiesPage() {
       </>}
     </>}</AsyncState>
   </>;
+}
+
+function StrategyLibrary({ cards, active, loading, failed, onPreview, onSelect }: { cards: StrategyBoardCard[]; active: string; loading: boolean; failed: boolean; onPreview: (key: string) => void; onSelect: (key: string) => void }) {
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  return <section className="strategy-library" aria-label="策略预设">
+    <header><div><span>STRATEGY REGISTRY</span><strong>候选策略库</strong><small>筛选、复盘与监控共用稳定策略 ID</small></div><Link to="/history">查看策略历史表现 →</Link></header>
+    {failed && <p className="capability-warning">策略摘要暂不可用，仍可逐个运行现有策略。</p>}
+    <div className="strategy-card-grid">{presets.map(([key, label]) => {
+      const card = byId.get(key);
+      return <button key={key} type="button" className={active === key ? "active" : ""} aria-pressed={active === key} onPointerEnter={() => onPreview(key)} onFocus={() => onPreview(key)} onClick={() => onSelect(key)}>
+        <span><em>{card?.category ?? "策略"}</em><b>{card ? `${card.hit_count} 命中` : loading ? "计算中" : "可运行"}</b></span>
+        <strong>{label}</strong>
+        <p>{card?.entry_signal ?? "点击运行并查看当前触发条件"}</p>
+        <small>退出：{card?.exit_signal ?? "以候选失效条件为准"}</small>
+        <footer><i>置信 {card ? percent(card.confidence * 100) : "待计算"}</i><b>{card?.top_candidate?.name ?? "暂无首选"}</b></footer>
+      </button>;
+    })}</div>
+  </section>;
 }
