@@ -184,3 +184,11 @@ The final review resolved four correctness issues before release: delayed raw ba
 ### Decision
 
 Approved for commit, push, and public deployment after the fresh `make verify`: 235 backend tests, 91 frontend tests, production build, and the live-data gate passed.
+
+### Production Confirmation
+
+Release `20260822-230633-7a76d5a` is active at `https://stock.jiewat-kaka-fj.com`. Authenticated desktop and 390px acceptance covered Market, Opportunities, Limit Ladder, Concept Analysis, and Industry Analysis. All expected structure workflows rendered, the up/down ladder switch returned distinct live results, and every checked page avoided document overflow.
+
+The first browser read used a StockTS tab that had remained open before deployment and therefore still ran the old in-memory SPA bundle. The server index and lazy market chunk already contained the new release; a normal reload loaded the new dashboard while preserving authentication. No StockTS-origin console error or warning remained. The only logged error came from an unrelated browser translation extension with an expired extension token.
+
+The production release link, service, morning-email timer, health endpoint, and persistent database location were independently verified. No release-blocking finding remains.

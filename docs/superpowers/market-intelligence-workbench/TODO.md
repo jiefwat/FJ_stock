@@ -174,4 +174,4 @@
 - [x] Keep sealed-order amount and unsupported rotation history explicitly unavailable instead of estimating them.
 - [x] Retain the last valid group cross-section on catalog failure and label stale or partial evidence as degraded.
 - [x] Preserve N/A semantics, red-up/green-down presentation, desktop density, and narrow-screen usability.
-- [ ] Commit, push, deploy, and independently verify the public market-structure release.
+- [x] Commit, push, deploy, and independently verify the public market-structure release.

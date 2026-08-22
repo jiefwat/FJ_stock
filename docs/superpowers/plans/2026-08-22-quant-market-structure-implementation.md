@@ -8,4 +8,4 @@
 - [x] Add lazy routes for limit ladder, concept analysis, and industry analysis.
 - [x] Add responsive styling and frontend interaction tests.
 - [x] Update active requirement evidence and run `make verify`.
-- [ ] Commit, push, deploy, and independently verify the public release.
+- [x] Commit, push, deploy, and independently verify the public release `20260822-230633-7a76d5a`.

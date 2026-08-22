@@ -1771,6 +1771,21 @@ Result:
 | Production build | Passed, 1,659 modules transformed |
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
 
+### Public release acceptance
+
+Commit `7a76d5a` was pushed to `origin/codex/project-adjustments` and deployed as release `20260822-230633-7a76d5a` at `https://stock.jiewat-kaka-fj.com`.
+
+Independent production checks confirmed:
+
+- `/healthz` returned `status=ok`; `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active; the persistent SQLite database remains under `/opt/aster-market/data`.
+- The public index loads `index-QjsMrusz.js`, whose market chunk contains the new dashboard and structure routes. Refreshing an authenticated pre-release SPA tab loaded the new release without losing the session.
+- At the desktop viewport, Market, Opportunities, Limit Ladder, Concept Analysis, and Industry Analysis rendered their expected workflow and had document width equal to client width.
+- The Opportunities strategy library showed stable cards with hit count, entry conditions, exit conditions, confidence, and a linked candidate queue.
+- The Limit Ladder switched from 80 limit-up stocks to 25 limit-down stocks and exposed 40% evidence confidence plus `封单数据 / 不可用 / 无盘口证据，不作估算`.
+- Concept and industry pages exposed search, ranking controls, focus/membership evidence, and stock-analysis handoffs.
+- At 390 x 844, all five pages measured `innerWidth=clientWidth=scrollWidth=390`; no document-level horizontal overflow occurred.
+- The application emitted no origin-owned console error or warning. One observed error came from the user's Immersive Translate extension and was unrelated to StockTS.
+
 ## 2026-08-22 System Interaction Continuity Verification
 
 Focused regressions cover three decision-continuity paths:
