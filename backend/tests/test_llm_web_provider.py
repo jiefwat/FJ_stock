@@ -186,7 +186,8 @@ async def test_llm_web_provider_calls_responses_api_with_web_search_context() ->
 
     assert result.kind == "llm_answer"
     assert result.intent == "catalyst"
-    assert result.source == "智能分析"
+    assert result.source == "金融分析 Skill + 本地证据"
+    assert result.confidence is not None
     assert result.evidence == ["核对到近期公告线索。"]
     assert seen["url"] == "https://llm.example/v1/responses"
     assert seen["auth"] == "Bearer test-key"
@@ -196,6 +197,7 @@ async def test_llm_web_provider_calls_responses_api_with_web_search_context() ->
     assert body["tools"] == [{"type": "web_search_preview"}]
     assert "最近对话" in body["input"][1]["content"]
     assert "贵州茅台" in body["input"][1]["content"]
+    assert "不得把观察股票写成用户持仓" in body["input"][1]["content"]
 
 
 @pytest.mark.asyncio

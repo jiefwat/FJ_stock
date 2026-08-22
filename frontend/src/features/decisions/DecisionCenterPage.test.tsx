@@ -19,6 +19,7 @@ const actionable: DecisionEvent = {
   severity: "critical",
   user_required: true,
   reason_code: "holding_exit_watch",
+  confidence: 0.82,
   href: "/holdings?symbol=SZ.002517",
   observed_at: "2026-08-16T01:10:00Z",
   created_at: "2026-08-16T01:10:01Z",
@@ -80,14 +81,15 @@ afterEach(() => {
 it("leads with direct actions and keeps monitoring changes separate", async () => {
   const { fetchMock } = renderPage();
 
-  expect(await screen.findByRole("heading", { name: "决策变更" })).toBeInTheDocument();
-  const required = within(await screen.findByLabelText("待处理"));
+  expect(await screen.findByRole("heading", { name: "变化提醒" })).toBeInTheDocument();
+  const required = within(await screen.findByLabelText("需要处理"));
   expect(required.getByText("优先减仓或止损")).toBeInTheDocument();
   expect(required.getByText("之前：继续持有")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "观察记录" })).toBeInTheDocument();
+  expect(required.getByText("证据较充分 · 82%")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "自动记录" })).toBeInTheDocument();
   expect(screen.getByText("暂不买入")).toBeInTheDocument();
 
-  fireEvent.click(required.getByRole("link", { name: "查看恺英网络决定" }));
+  fireEvent.click(required.getByRole("link", { name: "查看恺英网络原因：优先减仓或止损" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/decision-events/12/read",
     expect.objectContaining({ method: "POST" }),
@@ -97,6 +99,18 @@ it("leads with direct actions and keeps monitoring changes separate", async () =
 it("shows a no-work empty state when the system has nothing actionable", async () => {
   renderPage({ unread_count: 0, requires_action: [], monitoring: [], monitored_at: null });
 
-  expect(await screen.findByText("暂无待处理变更")).toBeInTheDocument();
+  expect(await screen.findByText("没有需要你处理的变化")).toBeInTheDocument();
   expect(screen.queryByText(/请检查|请复核|请刷新/)).not.toBeInTheDocument();
+});
+
+it("filters reminders by category and read state", async () => {
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: "候选变化 1" }));
+  expect(screen.queryByText("优先减仓或止损")).not.toBeInTheDocument();
+  expect(screen.getByText("暂不买入")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "已读" }));
+  expect(screen.getByText("当前筛选下没有提醒")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+  expect(screen.getByText("优先减仓或止损")).toBeInTheDocument();
 });

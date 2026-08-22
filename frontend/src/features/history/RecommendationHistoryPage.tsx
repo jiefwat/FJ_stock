@@ -32,6 +32,37 @@ function returnTone(value: number | null) {
   return value > 0 ? "positive" : "negative";
 }
 
+const strategyFocus: Record<string, string> = {
+  trend: "价格是否持续走强",
+  volume_breakout: "成交突然放大并突破",
+  capital_confirmed: "大额买入资金是否持续",
+  sector_momentum: "个股和所属板块是否同时走强",
+  pullback_support: "强势股回落后是否稳住",
+};
+
+function strategyAssessment(preset: string, summary: RecommendationHistoryResult["summary"]) {
+  const focus = strategyFocus[preset] ?? "筛选条件是否持续有效";
+  if (summary.evaluated_count < 12) {
+    return {
+      action: "继续观察",
+      reason: `仅 ${summary.evaluated_count} 条走满 20 个交易日，当前收益只是过程记录，不据此提高仓位`,
+      focus,
+      tone: "neutral",
+    };
+  }
+  if (
+    (summary.average_20d_return ?? 0) > 0
+    && (summary.average_20d_excess ?? 0) > 0
+    && (summary.hit_rate_20d ?? 0) >= 0.55
+  ) {
+    return { action: "保留策略", reason: "成熟样本的收益、胜率和相对指数表现同时为正", focus, tone: "positive" };
+  }
+  if ((summary.average_20d_return ?? 0) <= 0 || (summary.average_20d_excess ?? 0) < 0) {
+    return { action: "建议降级", reason: "成熟样本的收益或相对指数表现不达标，暂不把它作为主要依据", focus, tone: "negative" };
+  }
+  return { action: "继续观察", reason: "已有正向表现，但稳定性还不足以提高使用优先级", focus, tone: "neutral" };
+}
+
 function shortDate(value: string) {
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime())
@@ -91,6 +122,23 @@ export function RecommendationHistoryPage() {
   const evaluatedRatio = data?.summary.pick_count
     ? Math.min(100, (data.summary.evaluated_count / data.summary.pick_count) * 100)
     : 0;
+  const assessment = data ? strategyAssessment(preset, data.summary) : null;
+  const performanceDistribution = data ? data.days.flatMap((day) => day.picks).reduce(
+    (result, pick) => {
+      if (pick.status !== "evaluated") result.immature += 1;
+      else if ((pick.return_20d ?? 0) > 0) result.positive += 1;
+      else if ((pick.return_20d ?? 0) < 0) result.negative += 1;
+      else result.flat += 1;
+      return result;
+    },
+    { positive: 0, negative: 0, flat: 0, immature: 0 },
+  ) : null;
+  const allEvaluatedNegative = Boolean(
+    performanceDistribution
+    && performanceDistribution.negative > 0
+    && performanceDistribution.positive === 0
+    && performanceDistribution.flat === 0,
+  );
 
   return <>
     <header className="page-head history-page-head">
@@ -109,10 +157,10 @@ export function RecommendationHistoryPage() {
       >{label}</button>)}
     </nav>
 
-    <AsyncState loading={query.isLoading} error={query.error as Error | null}>
+    <AsyncState loading={query.isLoading} error={query.error as Error | null} onRetry={() => void query.refetch()}>
       {data ? <>
         <section className="history-scoreboard" aria-label="历史推荐总览">
-          <div className="history-score-intro"><span>{selectedLabel}</span><strong>{data.summary.evaluated_count ? rate(data.summary.hit_rate_20d) : "等待验收"}</strong><p>{data.summary.evaluated_count ? "20 日正收益命中率" : "首批候选走满 20 个交易日后形成正式命中率"}</p></div>
+          <div className={`history-score-intro ${assessment?.tone ?? "neutral"}`}><span>{selectedLabel}</span><strong>{assessment?.action}</strong><small>{data.summary.evaluated_count ? `正式命中率 ${rate(data.summary.hit_rate_20d)}` : "正式结果等待验收"}</small><b>重点：{assessment?.focus}</b><p>{assessment?.reason}</p></div>
           <div className="history-score-metrics">
             <article><CalendarClock size={17} /><span>已存档</span><strong>{data.summary.run_count} 天</strong><small>{data.summary.pick_count} 条候选记录</small></article>
             <article><Gauge size={17} /><span>20日平均</span><strong className={returnTone(data.summary.average_20d_return)}>{pct(data.summary.average_20d_return)}</strong><small>{data.summary.evaluated_count} 条已验收</small></article>
@@ -120,6 +168,7 @@ export function RecommendationHistoryPage() {
             <article><CheckCircle2 size={17} /><span>截至目前</span><strong className={returnTone(data.summary.average_current_return)}>{pct(data.summary.average_current_return)}</strong><small>正收益占比 {rate(data.summary.current_positive_rate)}</small></article>
           </div>
           <div className="history-maturity"><div><span>样本成熟度</span><strong>{data.summary.evaluated_count} / {data.summary.pick_count}</strong></div><i><em style={{ width: `${evaluatedRatio}%` }} /></i><small>未走满 T+20 的候选只展示过程收益，不混入正式命中率。</small></div>
+          <div className={`history-distribution ${allEvaluatedNegative ? "negative" : ""}`} aria-label="复盘收益分布"><div><span>成熟样本分布</span><strong>正、负与未成熟样本全部展示</strong></div><b className="positive">正收益 {performanceDistribution?.positive ?? 0}</b><b className="negative">负收益 {performanceDistribution?.negative ?? 0}</b><b>持平 {performanceDistribution?.flat ?? 0}</b><b>未成熟 {performanceDistribution?.immature ?? 0}</b>{allEvaluatedNegative ? <p>当前成熟样本全部为负收益：建议暂停把该策略作为主要依据；继续记录，不回写历史结果。</p> : null}</div>
         </section>
 
         <section className="history-ledger" aria-label="每日推荐账本">

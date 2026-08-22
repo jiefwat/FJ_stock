@@ -34,6 +34,7 @@ class DecisionPresentation(StrictModel):
     user_required: bool
     reason_code: str = Field(min_length=1, max_length=80)
     layer: Literal["priority", "review", "watch_only", "high_risk"] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class DatasetMeta(StrictModel):
@@ -789,6 +790,7 @@ class AskStockResponse(StrictModel):
     factors: list[AskStockFactor] = Field(default_factory=list, max_length=12)
     holding_context: AskStockHoldingContext | None = None
     observed_at: datetime | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
     source: str
     disclaimer: str
     columns: list[str] = Field(default_factory=list, max_length=12)
@@ -885,6 +887,7 @@ class DecisionEvent(StrictModel):
     severity: DecisionSeverity
     user_required: bool
     reason_code: str
+    confidence: float | None = Field(default=None, ge=0, le=1)
     href: str
     observed_at: datetime
     created_at: datetime

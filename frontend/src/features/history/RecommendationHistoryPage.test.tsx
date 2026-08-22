@@ -75,8 +75,10 @@ it("shows immutable daily picks with fixed-window and benchmark performance", as
 
   expect(screen.getByRole("heading", { name: "推荐复盘" })).toBeInTheDocument();
   const overview = within(await screen.findByLabelText("历史推荐总览"));
-  expect(overview.getByText("67%")).toBeInTheDocument();
+  expect(overview.getByText("继续观察")).toBeInTheDocument();
+  expect(overview.getByText("正式命中率 67%")).toBeInTheDocument();
   expect(overview.getByText("+6.40%")).toBeInTheDocument();
+  expect(within(screen.getByLabelText("复盘收益分布")).getByText("正收益 1")).toBeInTheDocument();
   expect(screen.getByText("20日已验收")).toBeInTheDocument();
   expect(screen.getByLabelText("宁德时代 固定周期表现")).toHaveTextContent("T+1+1.20%T+5+4.60%T+20+8.33%至今+8.33%");
   expect(screen.getByText("+6.23%")).toBeInTheDocument();

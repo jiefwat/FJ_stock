@@ -161,7 +161,8 @@ class LLMWebAskProvider:
                 ),
             ],
             observed_at=context.observed_at,
-            source="智能分析",
+            confidence=self._context_confidence(context),
+            source="金融分析 Skill + 本地证据",
             disclaimer="研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
@@ -252,7 +253,8 @@ class LLMWebAskProvider:
                 ),
             ],
             observed_at=context.observed_at,
-            source="智能分析",
+            confidence=self._context_confidence(context),
+            source="金融分析 Skill + 本地证据",
             disclaimer="研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
@@ -311,6 +313,11 @@ class LLMWebAskProvider:
             blocks.append("确定性分析上下文：" + "；".join(context.analysis_notes[:12]))
         if context.holdings:
             blocks.append("当前账号持仓上下文：" + "；".join(context.holdings[:8]))
+        else:
+            blocks.append(
+                "当前账号持仓上下文：空。不得把观察股票写成用户持仓，"
+                "也不得给减仓、卖出或继续持有指令。"
+            )
         if context.conversation:
             history = [
                 f"{message.role}: {message.content}" for message in context.conversation[-8:]
@@ -321,6 +328,19 @@ class LLMWebAskProvider:
             "再分别给出主要担心与可执行的下一步；evidence/risks/next_actions 每项不超过 5 条。"
         )
         return "\n\n".join(blocks)
+
+    @staticmethod
+    def _context_confidence(context: LLMWebAskContext) -> float:
+        score = 0.35
+        if context.stock is not None:
+            score += 0.1
+        if context.market_notes:
+            score += 0.08
+        if context.analysis_notes:
+            score += 0.22
+        if context.holdings:
+            score += 0.1
+        return round(min(score, 0.85), 2)
 
     def _output_text(self, data: dict[str, Any]) -> str:
         direct = data.get("output_text")

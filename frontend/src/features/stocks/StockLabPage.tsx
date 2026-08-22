@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { stockDecisionAction } from "../../lib/decision";
-import { rememberRecentResearch } from "../../lib/recentResearch";
+import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../../lib/recentResearch";
 import { api, fmt, pct, percent, type EvidenceDocument, type FinancialHealth, type InstrumentEvidenceResult, type Quote, type StockNewsSentiment } from "../../lib/api";
 import { monitoringItem, monitoringText } from "../../lib/monitoring";
 import { plainLanguage } from "../../lib/plainLanguage";
@@ -98,6 +98,8 @@ type Dossier = {
   bars: { date: string; open: number; high: number; low: number; close: number; volume: number; amount: number }[];
 };
 
+type SearchNotice = { tone: "neutral" | "error"; message: string };
+
 const stanceLabel: Record<string, string> = {
   strong_watch: "重点观察",
   watch: "观察",
@@ -120,6 +122,15 @@ function useDebouncedValue(value: string, delay = 220) {
     return () => window.clearTimeout(timer);
   }, [delay, value]);
   return debounced;
+}
+
+function directSymbol(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (/^(?:SH|SZ|BJ|HK|US)\.[A-Z0-9.]+$/.test(normalized)) return normalized;
+  if (/^6\d{5}$/.test(normalized)) return `SH.${normalized}`;
+  if (/^[03]\d{5}$/.test(normalized)) return `SZ.${normalized}`;
+  if (/^[48]\d{5}$/.test(normalized)) return `BJ.${normalized}`;
+  return null;
 }
 
 const conclusionLabels = ["投资建议", "技术面", "风险收益", "估值", "流动性", "基本面", "催化", "资金/行业", "横向对比", "纵向对比", "交易计划", "主要风险", "下一步"] as const;
@@ -265,7 +276,7 @@ function InvestmentAdvicePanel({ advice }: { advice: InvestmentAdvice }) {
     <article className="advice-verdict">
       <span>处理意见</span>
       <strong>{displayAdviceAction(advice.action)}</strong>
-      <em>置信度 {percent(advice.confidence * 100)}</em>
+      <em title="分析置信度反映证据与模型一致性，不代表上涨概率">分析置信度 {percent(advice.confidence * 100)}</em>
     </article>
     <div className="advice-plan">
       <p>{plainLanguage(advice.position_hint)}</p>
@@ -379,7 +390,7 @@ function TrendForecastPanel({ forecast }: { forecast: TrendForecast }) {
       <span>未来趋势</span>
       <strong>{forecast.direction}</strong>
       <em>{forecast.horizon}</em>
-      <b>置信度 {percent(forecast.confidence * 100)}</b>
+      <b title="趋势置信度不代表上涨概率">趋势置信度 {percent(forecast.confidence * 100)}</b>
     </article>
     <div className="trend-forecast-body">
       <p>{plainLanguage(forecast.summary)}</p>
@@ -502,10 +513,10 @@ function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evid
           {actionLabel !== displayAdviceAction(dossier.investment_advice.action) ? <small className="stock-action-full">{displayAdviceAction(dossier.investment_advice.action)}</small> : null}
           <div className="stock-brief-metrics">
             <small><span>趋势</span><b>{dossier.trend_forecast.direction}</b></small>
-            <small><span>置信</span><b>{percent(dossier.investment_advice.confidence * 100)}</b></small>
-            <small><span>信息</span><b>{percent(dossier.evidence_coverage * 100)}</b></small>
+            <small><span>分析置信度</span><b>{percent(dossier.investment_advice.confidence * 100)}</b></small>
+            <small><span>证据完整度</span><b>{percent(dossier.evidence_coverage * 100)}</b></small>
           </div>
-          <small className="stock-brief-coverage">信息完整度 {percent(dossier.evidence_coverage * 100)}</small>
+          <small className="stock-brief-coverage">两项指标只衡量证据质量，不代表上涨概率</small>
         </article>
         <section className="stock-action-sheet" id="stock-investment-advice" aria-label="当前处理意见">
           <div>
@@ -513,9 +524,9 @@ function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evid
             <p>{plainLanguage(dossier.investment_advice.position_hint)}</p>
           </div>
           <dl>
-            <div><dt>参与</dt><dd>{plainLanguage(dossier.investment_advice.entry_plan)}</dd></div>
-            <div><dt>退出</dt><dd>{plainLanguage(dossier.investment_advice.stop_loss)}</dd></div>
-            <div><dt>落袋</dt><dd>{plainLanguage(dossier.investment_advice.take_profit)}</dd></div>
+            <div><dt>触发参与</dt><dd>{plainLanguage(dossier.investment_advice.entry_plan)}</dd></div>
+            <div><dt>停止跟踪</dt><dd>{plainLanguage(dossier.investment_advice.stop_loss)}</dd></div>
+            <div><dt>复核兑现</dt><dd>{plainLanguage(dossier.investment_advice.take_profit)}</dd></div>
           </dl>
         </section>
         <nav className="stock-mobile-decision-actions" aria-label="移动端快捷动作">
@@ -562,7 +573,7 @@ function StockDecisionDeck({ dossier, evidence }: { dossier: Dossier; evidence?:
       <span>结论</span>
       <strong>{dossier.investment_advice.action}</strong>
       <p>{plainLanguage(dossier.investment_advice.position_hint)}</p>
-      <small>把握度 {percent(dossier.investment_advice.confidence * 100)} · 信息完整度 {percent(dossier.evidence_coverage * 100)}</small>
+      <small>分析置信度 {percent(dossier.investment_advice.confidence * 100)}（非上涨概率） · 证据完整度 {percent(dossier.evidence_coverage * 100)}</small>
     </article>
     <div className="decision-cards">
       <article>
@@ -721,6 +732,7 @@ function StockDeepDossier({
   evidenceLoading,
   evidenceFailed,
   open,
+  onOpenChange,
   onOpenEvidence,
 }: {
   dossier: Dossier;
@@ -728,14 +740,21 @@ function StockDeepDossier({
   evidenceLoading: boolean;
   evidenceFailed: boolean;
   open: boolean;
+  onOpenChange: (open: boolean) => void;
   onOpenEvidence: () => void;
 }) {
-  return <details className="stock-deep-dossier" open={open} onToggle={(event) => { if (event.currentTarget.open) onOpenEvidence(); }}>
-    <summary>
+  return <details className="stock-deep-dossier" open={open}>
+    <summary onClick={(event) => {
+      event.preventDefault();
+      const nextOpen = !open;
+      onOpenChange(nextOpen);
+      if (nextOpen) onOpenEvidence();
+    }}>
       <span>查看专业数据</span>
-      <strong>指标与来源明细</strong>
+      <strong>专业数据与来源</strong>
+      <small>财报 · 新闻 · 历史样本 · 评分明细</small>
     </summary>
-    <div className="stock-deep-stack">
+    {open ? <div className="stock-deep-stack">
       <StockIntelligenceDetails dossier={dossier} />
       <SignalValidationPanel validation={dossier.signal_validation} />
       <ComparisonSection horizontal={dossier.horizontal_comparison} vertical={dossier.vertical_comparison} />
@@ -763,17 +782,22 @@ function StockDeepDossier({
       </section>
       {dossier.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究</span></div>{dossier.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
       <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{dossier.technical ? Object.entries(dossier.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{dossier.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{dossier.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{dossier.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{dossier.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
-    </div>
+    </div> : null}
   </details>;
 }
 
 export function StockLabPage() {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const [term, setTerm] = useState(params.get("symbol") ?? "600519");
-  const [symbol, setSymbol] = useState(params.get("symbol") ?? "SH.600519");
+  const requestedSymbol = params.get("symbol")?.trim().toUpperCase() ?? "";
+  const [term, setTerm] = useState(requestedSymbol);
+  const [symbol, setSymbol] = useState(requestedSymbol);
   const [loadEvidence, setLoadEvidence] = useState(false);
+  const deepDossierOpen = ["#stock-company-evidence", "#stock-risk-controls", "#stock-score-ledger"].includes(location.hash);
+  const [detailsOpen, setDetailsOpen] = useState(deepDossierOpen);
   const [matches, setMatches] = useState<Quote[]>([]);
+  const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
+  const [recent, setRecent] = useState<RecentResearch[]>(() => loadRecentResearch());
   const debouncedTerm = useDebouncedValue(term);
   const fromOpportunity = params.get("from") === "opportunities";
   const fromMarketBoard = params.get("from") === "market";
@@ -790,7 +814,6 @@ export function StockLabPage() {
     refetchInterval: 600_000,
     refetchIntervalInBackground: true,
   });
-  const deepDossierOpen = ["#stock-company-evidence", "#stock-risk-controls", "#stock-score-ledger"].includes(location.hash);
   const evidenceQuery = useQuery({
     queryKey: ["instrument-evidence", symbol],
     queryFn: () => api<InstrumentEvidenceResult>(`/api/v1/instruments/${symbol}/evidence?limit=20`),
@@ -799,34 +822,55 @@ export function StockLabPage() {
   });
 
   useEffect(() => {
+    if (requestedSymbol === symbol) return;
+    setSymbol(requestedSymbol);
+    setTerm(requestedSymbol);
+    setMatches([]);
+    setSearchNotice(null);
+    setLoadEvidence(false);
+  }, [requestedSymbol, symbol]);
+
+  useEffect(() => {
     setLoadEvidence(deepDossierOpen);
+    setDetailsOpen(deepDossierOpen);
   }, [deepDossierOpen, symbol]);
 
   useEffect(() => {
     const normalizedTerm = debouncedTerm.trim();
     if (normalizedTerm.length < 2 || /^(?:SH|SZ|BJ|HK|US)\.[A-Z0-9.]+$/i.test(normalizedTerm)) {
       setMatches([]);
+      setSearchNotice(null);
       return undefined;
     }
     const currentQuote = query.data?.quote;
     if (currentQuote && [currentQuote.symbol, currentQuote.code, currentQuote.name].some((value) => value.toUpperCase() === normalizedTerm.toUpperCase())) {
       setMatches([]);
+      setSearchNotice(null);
       return undefined;
     }
     let ignore = false;
+    setSearchNotice({ tone: "neutral", message: "正在查找股票…" });
     api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(normalizedTerm)}`)
       .then((items) => {
-        if (!ignore) setMatches(items);
+        if (ignore) return;
+        setMatches(items);
+        setSearchNotice(items.length
+          ? { tone: "neutral", message: `找到 ${items.length} 只股票，请选择后开始分析。` }
+          : { tone: "error", message: "没有找到匹配股票，请检查名称或代码。" });
       })
       .catch(() => {
-        if (!ignore) setMatches([]);
+        if (!ignore) {
+          setMatches([]);
+          setSearchNotice({ tone: "error", message: "股票搜索暂时不可用，请稍后重试。" });
+        }
       });
     return () => { ignore = true; };
   }, [debouncedTerm, query.data?.quote]);
 
   useEffect(() => {
     if (!query.data) return;
-    rememberRecentResearch(query.data.quote);
+    setTerm(query.data.quote.name);
+    setRecent(rememberRecentResearch(query.data.quote));
   }, [query.data]);
 
   useEffect(() => {
@@ -845,22 +889,75 @@ export function StockLabPage() {
     setSymbol(quote.symbol);
     setTerm(quote.name);
     setMatches([]);
+    setSearchNotice(null);
     setLoadEvidence(false);
     setParams({ symbol: quote.symbol });
+  };
+
+  const chooseSymbol = (nextSymbol: string, label = nextSymbol) => {
+    setSymbol(nextSymbol);
+    setTerm(label);
+    setMatches([]);
+    setSearchNotice(null);
+    setLoadEvidence(false);
+    setParams({ symbol: nextSymbol });
+  };
+
+  const submitSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = term.trim();
+    if (!value) {
+      setSearchNotice({ tone: "error", message: "请输入股票名称或代码。" });
+      return;
+    }
+    const normalized = directSymbol(value);
+    if (normalized) {
+      chooseSymbol(normalized);
+      return;
+    }
+    const exact = matches.find((item) => [item.symbol, item.code, item.name].some((candidate) => candidate.toUpperCase() === value.toUpperCase()));
+    if (exact) {
+      choose(exact);
+      return;
+    }
+    try {
+      setSearchNotice({ tone: "neutral", message: "正在查找股票…" });
+      const items = await api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(value)}`);
+      setMatches(items);
+      if (items.length === 1) choose(items[0]);
+      else setSearchNotice(items.length
+        ? { tone: "neutral", message: `找到 ${items.length} 只股票，请选择后开始分析。` }
+        : { tone: "error", message: "没有找到匹配股票，请检查名称或代码。" });
+    } catch {
+      setMatches([]);
+      setSearchNotice({ tone: "error", message: "股票搜索暂时不可用，请稍后重试。" });
+    }
   };
 
   return <>
     <header className="page-head compact stock-page-head"><div><h1>个股</h1></div></header>
     <div className="stock-control-row">
-      <div className="stock-search"><Search size={18} /><input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="输入股票代码或名称，如 600519 / HK.00700 / US.AAPL" aria-label="搜索股票" />{matches.length > 0 && <div className="search-results">{matches.map((item) => <button key={item.symbol} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}</div>
+      <form className="stock-search" role="search" aria-label="选择股票进行分析" onSubmit={submitSearch}>
+        <Search size={18} aria-hidden="true" />
+        <input role="combobox" value={term} onChange={(event) => { setTerm(event.target.value); setSearchNotice(null); }} onKeyDown={(event) => { if (event.key === "Escape") { setMatches([]); setSearchNotice(null); } }} placeholder="输入股票代码或名称，如 600519 / HK.00700 / US.AAPL" aria-label="搜索股票" aria-autocomplete="list" aria-controls="stock-search-results" aria-describedby={searchNotice ? "stock-search-feedback" : undefined} aria-expanded={matches.length > 0} />
+        <button type="submit" className="stock-search-submit">分析</button>
+        {matches.length > 0 && <div className="search-results" id="stock-search-results" aria-label="股票搜索结果">{matches.map((item) => <button type="button" key={item.symbol} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}
+      </form>
       {fromOpportunity && <section className="stock-source-note compact" aria-label="线索来源"><strong>候选</strong>{sourcePresetLabel && <small>{sourcePresetLabel}</small>}</section>}
       {fromMarketBoard && <section className="stock-source-note compact" aria-label="板块来源"><strong>{sourceBoardName || "板块"}</strong><small>{sourceBoardType}</small></section>}
     </div>
-    <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
+    {searchNotice ? <p className={`stock-search-notice ${searchNotice.tone}`} id="stock-search-feedback" role={searchNotice.tone === "error" ? "alert" : "status"}>{searchNotice.message}</p> : null}
+    {!symbol ? <section className="stock-start-state" aria-label="开始股票分析">
+      <span>STOCK ANALYSIS</span>
+      <h2>先选股票，再生成结论</h2>
+      <p>系统不会默认把任何股票当成你的关注或持仓。输入名称、代码或从最近查看中选择。</p>
+      {recent.length > 0 ? <div><strong>最近查看</strong><nav>{recent.map((item) => <button type="button" key={item.symbol} onClick={() => chooseSymbol(item.symbol, item.name)}><b>{item.name}</b><small>{item.symbol}{item.sector ? ` · ${item.sector}` : ""}</small></button>)}</nav></div> : null}
+    </section> : null}
+    <AsyncState loading={query.isLoading} loadingText={`正在核对 ${term || symbol} 的行情、财务与风险…`} error={query.error as Error | null} onRetry={() => void query.refetch()}>{query.data && <>
     <StockFocusBoard dossier={query.data} evidence={evidenceQuery.data} params={params} />
       <StockDecisionDrivers dossier={query.data} />
       <StockAskRouter dossier={query.data} params={params} />
-      <StockDeepDossier dossier={query.data} evidence={evidenceQuery.data} evidenceLoading={evidenceQuery.isLoading} evidenceFailed={evidenceQuery.isError} open={deepDossierOpen} onOpenEvidence={() => setLoadEvidence(true)} />
+      <StockDeepDossier dossier={query.data} evidence={evidenceQuery.data} evidenceLoading={evidenceQuery.isLoading} evidenceFailed={evidenceQuery.isError} open={detailsOpen} onOpenChange={setDetailsOpen} onOpenEvidence={() => setLoadEvidence(true)} />
     </>}</AsyncState>
   </>;
 }

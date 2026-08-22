@@ -6,12 +6,14 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
     history_risk = bool(history and history.risk_flags) or bool(
         history and history.score is not None and history.score < 45
     )
-    history_confirmed = history is None or (
+    history_confirmed = history is not None and (
         history.available
         and history.score is not None
         and history.score >= 65
         and not history.risk_flags
     )
+    history_usable = bool(history and history.available and history.score is not None)
+    confidence = round(candidate.evidence_coverage * (1.0 if history_usable else 0.8), 2)
     if history_risk:
         return DecisionPresentation(
             action="暂不参与",
@@ -20,6 +22,7 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
             user_required=False,
             reason_code="candidate_history_risk",
             layer="high_risk",
+            confidence=confidence,
         )
     if (
         candidate.evidence_coverage < 0.65
@@ -33,6 +36,7 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
             user_required=False,
             reason_code="candidate_evidence_or_market_risk",
             layer="high_risk",
+            confidence=confidence,
         )
     if (
         candidate.upside_score >= 75
@@ -47,6 +51,7 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
             user_required=True,
             reason_code="candidate_trial_ready",
             layer="priority",
+            confidence=confidence,
         )
     if candidate.upside_score < 60 or candidate.context_penalty > 0:
         return DecisionPresentation(
@@ -56,6 +61,7 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
             user_required=False,
             reason_code="candidate_wait",
             layer="watch_only",
+            confidence=confidence,
         )
     return DecisionPresentation(
         action="仅观察",
@@ -64,10 +70,11 @@ def candidate_decision(candidate: RankedCandidate) -> DecisionPresentation:
         user_required=False,
         reason_code="candidate_watch",
         layer="review",
+        confidence=confidence,
     )
 
 
-def holding_decision(action: str) -> DecisionPresentation:
+def holding_decision(action: str, *, confidence: float | None = None) -> DecisionPresentation:
     decisions = {
         "hold": DecisionPresentation(
             action="继续持有",
@@ -75,6 +82,7 @@ def holding_decision(action: str) -> DecisionPresentation:
             severity="info",
             user_required=False,
             reason_code="holding_hold",
+            confidence=confidence,
         ),
         "add_watch": DecisionPresentation(
             action="仅小幅加仓",
@@ -82,6 +90,7 @@ def holding_decision(action: str) -> DecisionPresentation:
             severity="action",
             user_required=True,
             reason_code="holding_add_watch",
+            confidence=confidence,
         ),
         "trim": DecisionPresentation(
             action="建议分批减仓",
@@ -89,6 +98,7 @@ def holding_decision(action: str) -> DecisionPresentation:
             severity="high",
             user_required=True,
             reason_code="holding_trim",
+            confidence=confidence,
         ),
         "exit_watch": DecisionPresentation(
             action="优先减仓或止损",
@@ -96,6 +106,7 @@ def holding_decision(action: str) -> DecisionPresentation:
             severity="critical",
             user_required=True,
             reason_code="holding_exit_watch",
+            confidence=confidence,
         ),
         "review": DecisionPresentation(
             action="暂不操作",
@@ -103,6 +114,7 @@ def holding_decision(action: str) -> DecisionPresentation:
             severity="info",
             user_required=False,
             reason_code="holding_review",
+            confidence=confidence,
         ),
     }
     return decisions.get(action, decisions["review"])

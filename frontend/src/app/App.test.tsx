@@ -172,8 +172,8 @@ it("registers a user and sends the auth token with personal requests", async () 
 
   expect(await screen.findByText("Alpha")).toBeInTheDocument();
   const navigation = within(screen.getByRole("navigation", { name: "主导航" }));
-  expect(navigation.getByRole("link", { name: /决定/ })).toHaveAttribute("href", "#/decisions");
-  expect(await navigation.findByLabelText("2 条未读决定")).toBeInTheDocument();
+  expect(navigation.getByRole("link", { name: /提醒/ })).toHaveAttribute("href", "#/decisions");
+  expect(await navigation.findByLabelText("2 条未读提醒")).toBeInTheDocument();
   expect(navigation.queryByRole("link", { name: "今日" })).not.toBeInTheDocument();
   expect(navigation.getByRole("link", { name: "持仓" })).toBeInTheDocument();
   expect(navigation.getByRole("link", { name: "复盘" })).toHaveAttribute("href", "#/history");
@@ -199,8 +199,8 @@ it("opens the authenticated decision center without mounting it outside the sess
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "决策变更" })).toBeInTheDocument();
-  expect(screen.getByText("暂无待处理变更")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "变化提醒" })).toBeInTheDocument();
+  expect(await screen.findByText("没有需要你处理的变化")).toBeInTheDocument();
   expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
 });
 

@@ -1,6 +1,7 @@
-from datetime import UTC, datetime
+import sqlite3
+from datetime import UTC, datetime, timedelta
 
-from marketdesk.models import EquityViewFilters
+from marketdesk.models import DecisionPresentation, DecisionSnapshot, EquityViewFilters
 from marketdesk.services import MarketService
 from marketdesk.store import Store
 
@@ -51,3 +52,41 @@ def test_saved_equity_view_round_trip_and_user_scope(tmp_path) -> None:
     assert store.list_equity_views(alpha.id) == [created]
     store.delete_equity_view(created.id, alpha.id)
     assert store.list_equity_views(alpha.id) == []
+
+
+def test_decision_events_ignore_columns_from_a_newer_database_schema(tmp_path) -> None:
+    database = tmp_path / "forward-compatible.db"
+    store = Store(database)
+    user = store.create_user("forward@example.com", "Forward", "hash")
+    observed_at = datetime.now(UTC)
+
+    def snapshot(action: str, when: datetime) -> DecisionSnapshot:
+        return DecisionSnapshot(
+            source="holding",
+            subject_key="holding-1",
+            symbol="SH.600519",
+            name="贵州茅台",
+            decision=DecisionPresentation(
+                action=action,
+                summary=f"决定变为{action}",
+                severity="high" if action == "建议分批减仓" else "info",
+                user_required=action == "建议分批减仓",
+                reason_code="holding_trim",
+            ),
+            href="/holdings",
+            observed_at=when,
+        )
+
+    store.record_decision_snapshot(user.id, snapshot("继续持有", observed_at))
+    store.record_decision_snapshot(
+        user.id,
+        snapshot("建议分批减仓", observed_at + timedelta(minutes=10)),
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute("ALTER TABLE decision_events ADD COLUMN future_score REAL")
+        connection.execute("UPDATE decision_events SET future_score=0.56")
+
+    events = store.list_decision_events(user.id)
+
+    assert len(events) == 1
+    assert events[0].action == "建议分批减仓"

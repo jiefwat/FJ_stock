@@ -237,8 +237,11 @@ it("deletes a holding from the visible row actions", async () => {
 
   const row = within(await screen.findByRole("list", { name: "持仓清单" })).getByRole("listitem", { name: /贵州茅台/ });
   fireEvent.click(within(row).getByRole("button", { name: "删除持仓 贵州茅台" }));
+  expect(deletes).toEqual([]);
+  fireEvent.click(within(row).getByRole("button", { name: "确认删除" }));
 
   await waitFor(() => expect(deletes).toEqual(["/api/v1/holdings/1"]));
+  expect(await screen.findByText("已删除 贵州茅台，之后不会再生成这只股票的持仓减仓提醒。")).toBeInTheDocument();
 });
 
 it("sends edited stock code and name from the holding row", async () => {

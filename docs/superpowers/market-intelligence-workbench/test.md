@@ -1676,3 +1676,42 @@ Public acceptance at `https://stock.jiewat-kaka-fj.com/#/opportunities`:
 - The removed `降级条件` and `后续核对` task blocks were absent before and after professional-data expansion.
 - Desktop and 390-pixel layouts had no document overflow; the browser console reported no errors or warnings.
 - The dedicated acceptance account created for the production browser test was removed after verification.
+
+## 2026-08-22 Reminder Confidence And Interaction Verification
+
+This release fixes the persistent-database rollback failure in Decision Change, adds filterable reminder categories and evidence confidence, prevents stale holding actions, clarifies recommendation maturity, removes Stock Lab's default Moutai assumption, and exposes Ask Stock through a backend financial-analysis Skill contract.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 31 source files |
+| Backend tests | Passed, 226 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 86 tests across 11 files |
+| Production build | Passed, 1,657 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Persistent-data acceptance:
+
+- Restarted the local service against the existing `data/marketdesk.db` without deleting or rewriting account data.
+- Authenticated a temporary session for an account containing older decision rows with the retained `confidence` column.
+- `GET /api/v1/decision-events` returned HTTP 200 with 17 events and a populated confidence sample; the temporary session was removed immediately afterward.
+- Focused backend tests cover unknown future SQLite columns, confidence persistence, missing-history candidate gating, and hiding holding events after deletion.
+- Frontend tests cover reminder filters, confidence semantics, recommendation maturity/distribution, deletion confirmation, explicit stock selection, and Ask Stock confidence.
+
+Local production-build browser acceptance:
+
+- Decision Change rendered 17 existing persisted events without HTTP 500, with candidate/holding and read-state filters plus per-event confidence.
+- Combining `候选变化` and `未读` kept the filters visibly pressed and progressively rendered 10 of 16 matching events.
+- Recommendation Review showed `0 / 6` mature samples, `未成熟 6`, and labelled `-4.85%` as a process return rather than a formal negative verdict.
+- Stock Lab opened with no selected stock and the explicit `先选股票，再生成结论` state; entering `600519` loaded the dossier, while professional data remained unmounted until expansion.
+- Desktop and 390-pixel checks had equal document/client widths, and the browser console reported no errors or warnings.

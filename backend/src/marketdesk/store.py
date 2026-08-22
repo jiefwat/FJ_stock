@@ -81,6 +81,7 @@ class Store:
                     user_required INTEGER NOT NULL,
                     reason_code TEXT NOT NULL,
                     summary TEXT NOT NULL,
+                    confidence REAL,
                     href TEXT NOT NULL,
                     observed_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -101,6 +102,7 @@ class Store:
                     severity TEXT NOT NULL,
                     user_required INTEGER NOT NULL,
                     reason_code TEXT NOT NULL,
+                    confidence REAL,
                     href TEXT NOT NULL,
                     observed_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -114,6 +116,7 @@ class Store:
                 );
             """)
             self._ensure_recommendation_versioning(connection)
+            self._ensure_decision_confidence(connection)
             owner_id = self._ensure_default_user(connection)
             self._ensure_personal_table(
                 connection,
@@ -205,6 +208,16 @@ class Store:
             ALTER TABLE recommendation_observations_new
                 RENAME TO recommendation_observations;
         """)
+
+    @staticmethod
+    def _ensure_decision_confidence(connection: sqlite3.Connection) -> None:
+        for table in ("decision_snapshots", "decision_events"):
+            columns = {
+                str(row["name"])
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "confidence" not in columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN confidence REAL")
 
     def _ensure_default_user(self, connection: sqlite3.Connection) -> int:
         now = datetime.now(UTC).isoformat()
@@ -751,14 +764,21 @@ class Store:
             connection.execute(
                 "DELETE FROM holdings WHERE id=? AND user_id=?", (item_id, resolved_user_id)
             )
+            connection.execute(
+                """
+                DELETE FROM decision_snapshots
+                WHERE user_id=? AND source='holding' AND subject_key=?
+                """,
+                (resolved_user_id, str(item_id)),
+            )
 
     @staticmethod
     def _decision_event_from_row(row: sqlite3.Row) -> DecisionEvent:
-        values = dict(row)
-        values.pop("user_id", None)
-        values.pop("dedup_key", None)
-        for key in [key for key in values if key.startswith("account_")]:
-            values.pop(key)
+        values = {
+            key: value
+            for key, value in dict(row).items()
+            if key in DecisionEvent.model_fields
+        }
         values["user_required"] = bool(values["user_required"])
         return DecisionEvent.model_validate(values)
 
@@ -784,6 +804,7 @@ class Store:
                 int(decision.user_required),
                 decision.reason_code,
                 decision.summary,
+                decision.confidence,
                 snapshot.href,
                 snapshot.observed_at.isoformat(),
                 now,
@@ -793,8 +814,8 @@ class Store:
                     """
                     INSERT INTO decision_snapshots(
                         user_id,source,subject_key,symbol,name,strategy,action,severity,
-                        user_required,reason_code,summary,href,observed_at,updated_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        user_required,reason_code,summary,confidence,href,observed_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (user_id, snapshot.source, snapshot.subject_key, *values),
                 )
@@ -804,7 +825,7 @@ class Store:
                     """
                     UPDATE decision_snapshots SET
                         symbol=?,name=?,strategy=?,action=?,severity=?,user_required=?,
-                        reason_code=?,summary=?,href=?,observed_at=?,updated_at=?
+                        reason_code=?,summary=?,confidence=?,href=?,observed_at=?,updated_at=?
                     WHERE id=?
                     """,
                     (*values, current["id"]),
@@ -830,10 +851,10 @@ class Store:
                 """
                 INSERT OR IGNORE INTO decision_events(
                     user_id,source,subject_key,symbol,name,strategy,previous_action,
-                    action,summary,severity,user_required,reason_code,href,observed_at,
+                    action,summary,severity,user_required,reason_code,confidence,href,observed_at,
                     created_at,read_at,email_status,email_attempts,email_error,
                     email_sent_at,dedup_key
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     user_id,
@@ -848,6 +869,7 @@ class Store:
                     decision.severity,
                     int(decision.user_required),
                     decision.reason_code,
+                    decision.confidence,
                     snapshot.href,
                     snapshot.observed_at.isoformat(),
                     now,
@@ -863,7 +885,7 @@ class Store:
                 """
                 UPDATE decision_snapshots SET
                     symbol=?,name=?,strategy=?,action=?,severity=?,user_required=?,
-                    reason_code=?,summary=?,href=?,observed_at=?,updated_at=?
+                    reason_code=?,summary=?,confidence=?,href=?,observed_at=?,updated_at=?
                 WHERE id=?
                 """,
                 (*values, current["id"]),

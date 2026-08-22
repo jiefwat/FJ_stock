@@ -52,6 +52,7 @@ def analyse_holding(
     recent_daily_changes = _recent_daily_changes(bars or [], 10)
     risk_flags = _risk_flags(item, quote, pnl_pct, drift, portfolio_weight, recent_daily_changes)
     action = _action(pnl_pct, portfolio_weight, quote, recent_daily_changes)
+    confidence = _holding_confidence(item, quote, total_market_value, bars or [])
     next_actions = _next_actions(action, item, quote)
     rounded_rebalance_quantity = (
         round(rebalance_quantity, 2) if rebalance_quantity is not None else None
@@ -96,7 +97,7 @@ def analyse_holding(
             price_gap_to_cost_pct=price_gap_to_cost_pct,
         ),
         action=action,
-        decision=holding_decision(action),
+        decision=holding_decision(action, confidence=confidence),
         conclusion=_conclusion(
             item,
             quote,
@@ -109,6 +110,22 @@ def analyse_holding(
         risk_flags=risk_flags,
         next_actions=next_actions,
     )
+
+
+def _holding_confidence(
+    item: HoldingItem,
+    quote: EquityQuote,
+    total_market_value: float | None,
+    bars: list[Bar],
+) -> float:
+    checks = (
+        quote.price is not None,
+        quote.change_pct is not None,
+        len(bars) >= 6,
+        item.quantity > 0 and item.cost_price > 0,
+        total_market_value is not None and total_market_value > 0,
+    )
+    return round(sum(checks) / len(checks), 2)
 
 
 def _period_pnl_from_change(

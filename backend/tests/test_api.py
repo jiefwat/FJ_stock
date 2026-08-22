@@ -2330,6 +2330,16 @@ def test_decision_feed_groups_events_and_enforces_read_ownership(tmp_path) -> No
     first = service.store.get_user_by_email("first-feed@example.com")
     assert first is not None
     observed = datetime.now(UTC)
+    holding = service.store.create_holding(
+        symbol="SH.600519",
+        name="贵州茅台",
+        quantity=10,
+        cost_price=1500,
+        target_weight=0.2,
+        thesis="测试",
+        invalidation="跌破失效线",
+        user_id=first.account.id,
+    )
 
     def record(previous: str, current: str, *, required: bool, severity: str, key: str):
         def value(action: str, when: datetime) -> DecisionSnapshot:
@@ -2357,7 +2367,7 @@ def test_decision_feed_groups_events_and_enforces_read_ownership(tmp_path) -> No
         )
 
     actionable = record(
-        "继续持有", "建议分批减仓", required=True, severity="high", key="holding-1"
+        "继续持有", "建议分批减仓", required=True, severity="high", key=str(holding.id)
     )
     record("仅观察", "暂不买入", required=False, severity="info", key="trend")
     assert actionable is not None
@@ -2375,6 +2385,59 @@ def test_decision_feed_groups_events_and_enforces_read_ownership(tmp_path) -> No
     assert first_api.post(f"/api/v1/decision-events/{actionable.id}/read").status_code == 200
     assert first_api.post("/api/v1/decision-events/read-all").json() == {"read": 1}
     assert first_api.get("/api/v1/decision-events").json()["unread_count"] == 0
+
+
+def test_decision_feed_hides_events_after_the_holding_is_deleted(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "deleted-holding-feed.db")
+    )
+    api = authenticated_client(service, "deleted-holding@example.com")
+    account = service.store.get_user_by_email("deleted-holding@example.com")
+    assert account is not None
+    holding = service.store.create_holding(
+        symbol="SH.600519",
+        name="贵州茅台",
+        quantity=10,
+        cost_price=1500,
+        target_weight=0.2,
+        thesis="测试",
+        invalidation="跌破失效线",
+        user_id=account.account.id,
+    )
+    observed = datetime.now(UTC)
+
+    def value(action: str, severity: str, when: datetime) -> DecisionSnapshot:
+        return DecisionSnapshot(
+            source="holding",
+            subject_key=str(holding.id),
+            symbol=holding.symbol,
+            name=holding.name,
+            decision=DecisionPresentation(
+                action=action,
+                summary=f"决定变为{action}",
+                severity=severity,
+                user_required=severity in {"high", "critical"},
+                reason_code=f"holding_{severity}",
+                confidence=0.8,
+            ),
+            href=f"/holdings?symbol={holding.symbol}",
+            observed_at=when,
+        )
+
+    service.store.record_decision_snapshot(
+        account.account.id, value("继续持有", "info", observed)
+    )
+    service.store.record_decision_snapshot(
+        account.account.id,
+        value("建议分批减仓", "high", observed + timedelta(minutes=10)),
+    )
+    assert api.get("/api/v1/decision-events").json()["unread_count"] == 1
+
+    service.store.delete_holding(holding.id, account.account.id)
+
+    feed = api.get("/api/v1/decision-events").json()
+    assert feed["unread_count"] == 0
+    assert feed["requires_action"] == []
 
 
 @pytest.mark.asyncio

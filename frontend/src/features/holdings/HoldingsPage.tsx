@@ -73,6 +73,10 @@ function createErrorText(error: unknown) {
   return error instanceof ApiError ? error.detail : "保存失败，请检查代码或名称是否已存在。";
 }
 
+function updateErrorText(error: unknown) {
+  return error instanceof ApiError ? error.detail : "保存失败，原持仓数据未更改，请稍后重试。";
+}
+
 function signedMoney(value: number | null | undefined, digits = 0) {
   if (value == null) return "—";
   const prefix = value > 0 ? "+" : "";
@@ -406,13 +410,14 @@ function sortHoldings(items: HoldingDossier[], sort: HoldingSort) {
   return [...items].sort((left, right) => score(right) - score(left));
 }
 
-function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete: (id: number) => void }) {
+function PositionRow({ dossier, onDelete, deletePending }: { dossier: HoldingDossier; onDelete: (id: number, name: string) => void; deletePending: boolean }) {
   const client = useQueryClient();
   const [symbol, setSymbol] = useState(dossier.item.symbol);
   const [name, setName] = useState(dossier.item.name);
   const [quantity, setQuantity] = useState(String(dossier.item.quantity));
   const [costPrice, setCostPrice] = useState(String(dossier.item.cost_price));
   const [expanded, setExpanded] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setSymbol(dossier.item.symbol);
@@ -465,7 +470,11 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
       </div>
       <div className="holding-name-actions">
         <button className="holding-toggle-button" type="button" aria-label={`${expanded ? "收起详情" : "展开详情"} ${dossier.item.name}`} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}><ChevronDown size={14} />{expanded ? "收起" : "展开"}</button>
-        <button className="holding-delete-button" type="button" aria-label={`删除持仓 ${dossier.item.name}`} onClick={() => onDelete(dossier.item.id)}><Trash2 size={14} />删除</button>
+        {!confirmDelete ? <button className="holding-delete-button" type="button" aria-label={`删除持仓 ${dossier.item.name}`} onClick={() => setConfirmDelete(true)}><Trash2 size={14} />删除</button> : <div className="holding-delete-confirm" role="group" aria-label={`确认删除持仓 ${dossier.item.name}`}>
+          <span>确定移除？</span>
+          <button type="button" onClick={() => setConfirmDelete(false)} disabled={deletePending}>取消</button>
+          <button className="danger" type="button" onClick={() => onDelete(dossier.item.id, dossier.item.name)} disabled={deletePending}>{deletePending ? "删除中…" : "确认删除"}</button>
+        </div>}
       </div>
     </div>
     <div className="holding-conclusion-cell">
@@ -502,8 +511,8 @@ function PositionRow({ dossier, onDelete }: { dossier: HoldingDossier; onDelete:
     </div>
     <div className="holding-actions-cell">
       {update.isSuccess && <em role="status">已保存</em>}
-      {update.isError && <em className="negative" role="alert">保存失败</em>}
-      <button className="button secondary" type="button" aria-label={`保存 ${dossier.item.name}`} onClick={() => update.mutate()} disabled={update.isPending}><Save size={13} />保存</button>
+      {update.isError && <em className="negative" role="alert">{updateErrorText(update.error)}</em>}
+      <button className="button secondary" type="button" aria-label={`保存 ${dossier.item.name}`} onClick={() => update.mutate()} disabled={update.isPending}><Save size={13} />{update.isPending ? "保存中…" : "保存"}</button>
       <Link className="text-link" to={`/stocks?symbol=${encodeURIComponent(dossier.item.symbol)}#stock-final-gate`}>查看个股依据 →</Link>
       <Link className="text-link ask-link" to={holdingAskHref(dossier)}>追问这个决定 →</Link>
     </div>
@@ -515,6 +524,7 @@ export function HoldingsPage() {
   const client = useQueryClient();
   const [draft, setDraft] = useState<HoldingDraft>(emptyDraft);
   const [createNotice, setCreateNotice] = useState("");
+  const [deleteNotice, setDeleteNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [sort, setSort] = useState<HoldingSort>("priority");
   const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
   const query = useQuery({
@@ -537,15 +547,18 @@ export function HoldingsPage() {
     },
   });
   const remove = useMutation({
-    mutationFn: (id: number) => api(`/api/v1/holdings/${id}`, { method: "DELETE" }),
-    onMutate: async (id) => {
+    mutationFn: ({ id }: { id: number; name: string }) => api(`/api/v1/holdings/${id}`, { method: "DELETE" }),
+    onMutate: async ({ id }) => {
+      setDeleteNotice(null);
       await client.cancelQueries({ queryKey: ["holdings", "page", authScope] });
       const previous = client.getQueryData<HoldingDossier[]>(["holdings", "page", authScope]);
       client.setQueryData<HoldingDossier[]>(["holdings", "page", authScope], (current) => current?.filter((item) => item.item.id !== id) ?? []);
       return { previous };
     },
-    onError: (_error, _id, context) => {
+    onSuccess: (_data, { name }) => setDeleteNotice({ tone: "success", message: `已删除 ${name}，之后不会再生成这只股票的持仓减仓提醒。` }),
+    onError: (_error, _variables, context) => {
       if (context?.previous) client.setQueryData(["holdings", "page", authScope], context.previous);
+      setDeleteNotice({ tone: "error", message: "删除失败，持仓已恢复，请稍后重试。" });
     },
     onSettled: () => client.invalidateQueries({ queryKey: ["holdings"] }),
   });
@@ -605,8 +618,9 @@ export function HoldingsPage() {
           onClick={() => setSort(value)}
         >{label}</button>)}
       </div>
+      {deleteNotice ? <p className={`holding-delete-notice ${deleteNotice.tone}`} role={deleteNotice.tone === "error" ? "alert" : "status"}>{deleteNotice.message}</p> : null}
       {holdings.length ? <div className="holdings-list" role="list" aria-label="持仓清单">
-        {orderedHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id) => remove.mutate(id)} />)}
+        {orderedHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id, name) => remove.mutate({ id, name })} deletePending={remove.isPending && remove.variables?.id === item.item.id} />)}
       </div> : <div className="empty">暂无持仓</div>}
     </section>
 

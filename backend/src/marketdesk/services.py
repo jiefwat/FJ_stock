@@ -1237,6 +1237,7 @@ class MarketService:
                     ),
                 ],
                 observed_at=snapshot.meta.observed_at,
+                confidence=snapshot.meta.coverage,
                 source="东方财富全市场行情",
                 disclaimer="历史涨幅仅用于研究排序，不代表未来收益或买入建议。",
                 columns=result.columns,
@@ -1259,6 +1260,7 @@ class MarketService:
                 AskStockMetric(label="增强来源", value="条件选股", tone="neutral"),
             ],
             observed_at=snapshot.meta.observed_at,
+            confidence=round(snapshot.meta.coverage * 0.8, 2),
             source="条件选股增强（可选）",
             disclaimer="研究辅助信息，不构成投资建议。",
             columns=result.columns,
@@ -1405,7 +1407,8 @@ class MarketService:
                 "检查 MARKETDESK_FINANCIAL_LLM_API_KEY / MARKETDESK_FINANCIAL_LLM_MODEL 配置。"
             ],
             observed_at=snapshot.meta.observed_at,
-            source="智能分析",
+            confidence=0,
+            source="金融分析 Skill + 本地证据",
             disclaimer="研究辅助信息，不构成投资建议；交易前请复核公告、行情和账户风险。",
         )
 
@@ -1531,6 +1534,12 @@ class MarketService:
 
     def decision_events(self, user_id: int, limit: int = 100) -> DecisionEventFeed:
         events = self.store.list_decision_events(user_id, limit)
+        active_holding_keys = {str(item.id) for item in self.store.list_holdings(user_id)}
+        events = [
+            event
+            for event in events
+            if event.source != "holding" or event.subject_key in active_holding_keys
+        ]
         return DecisionEventFeed(
             unread_count=sum(event.read_at is None for event in events),
             requires_action=[event for event in events if event.user_required][:50],

@@ -31,6 +31,7 @@ const stockAnswer = {
   ],
   holding_context: null,
   observed_at: "2026-07-25T01:00:00Z",
+  confidence: 0.74,
   source: "本地行情快照 + 确定性分析",
   disclaimer: "研究辅助信息，不构成投资建议。",
   columns: [],
@@ -810,6 +811,7 @@ it("renders a concise web LLM answer without deterministic review rails", async 
 
   expect(await screen.findByText("结论：白酒板块今天先看公告、消费数据和资金回流。")).toBeInTheDocument();
   expect(screen.getByText("智能分析")).toBeInTheDocument();
+  expect(screen.getByText(/分析置信度 74%/)).toBeInTheDocument();
   expect(screen.queryByText("联网大模型问答")).not.toBeInTheDocument();
   expect(screen.queryByText(/联网/)).not.toBeInTheDocument();
   expect(screen.getByText("已核对最新公开信息。")).toBeInTheDocument();

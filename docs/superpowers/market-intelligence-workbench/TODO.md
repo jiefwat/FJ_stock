@@ -151,3 +151,12 @@
 - [x] Merge company, news, price, and invalidation into one first-screen decision view.
 - [x] Load company evidence only when professional details are opened and keep the stock result fresh for the ten-minute server window.
 - [x] Warm default, holding, and watchlist stocks before the heavier strategy refresh so service restarts do not leave the main stock page cold.
+
+## Reminder Confidence And Human Factors
+
+- [x] Keep decision-event reads compatible with persistent databases created by newer application versions.
+- [x] Add reminder category and read-state filters, progressive disclosure, evidence confidence, and inline retry.
+- [x] Suppress holding actions after the account no longer owns the referenced holding and remove its active snapshot on deletion.
+- [x] Separate immature process returns from formal T+20 results and show positive, negative, flat, and immature distributions.
+- [x] Start Stock Lab from an explicit stock choice, remove the default Moutai assumption, and explain that confidence is not upside probability.
+- [x] Expose Ask Stock as a backend-only financial-analysis Skill contract with local evidence, confidence, and no-holding language safeguards.

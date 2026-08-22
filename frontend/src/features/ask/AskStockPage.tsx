@@ -795,6 +795,10 @@ function displayAskSource(source: string) {
   return displayAskText(source) || "智能分析";
 }
 
+function confidenceLabel(value: number | null | undefined) {
+  return value == null ? "分析置信度待补" : `分析置信度 ${Math.round(value * 100)}%（非上涨概率）`;
+}
+
 function AskResult({ result }: { result: AskStockResponse }) {
   const stockAnalysis = result.kind === "stock_analysis";
   const [supportOpen, setSupportOpen] = useState(false);
@@ -814,7 +818,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
         </div>
       </details>
       <footer className="ask-answer-foot">
-        <span>{sourceLabel}</span>
+        <span><i>{sourceLabel}</i><b> · {confidenceLabel(result.confidence)}</b></span>
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
       </footer>
     </section>;
@@ -828,6 +832,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
       </div>
       <div className="ask-provenance">
         <span>{sourceLabel}</span>
+        <b>{confidenceLabel(result.confidence)}</b>
         <small>行情时间 {observedTime(result.observed_at)}</small>
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
       </div>

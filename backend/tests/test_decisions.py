@@ -23,7 +23,9 @@ def candidate(**overrides: object) -> RankedCandidate:
 
 
 def test_candidate_decision_uses_direct_participation_vocabulary() -> None:
-    assert candidate_decision(candidate()).action == "可小仓试探"
+    ready = candidate_decision(candidate())
+    assert ready.action == "可小仓试探"
+    assert ready.confidence == 0.82
     assert candidate_decision(candidate(context_penalty=8, upside_score=64)).action == "暂不买入"
     assert candidate_decision(candidate(evidence_coverage=0.5)).action == "暂不参与"
 
@@ -44,14 +46,23 @@ def test_candidate_history_risk_blocks_participation() -> None:
     assert decision.layer == "high_risk"
 
 
+def test_candidate_without_usable_history_is_not_actionable_and_lowers_confidence() -> None:
+    decision = candidate_decision(candidate(history_check=None))
+
+    assert decision.action == "仅观察"
+    assert decision.user_required is False
+    assert decision.confidence == 0.66
+
+
 def test_holding_decision_marks_only_trade_changes_as_actionable() -> None:
-    assert holding_decision("hold").model_dump() == {
+    assert holding_decision("hold", confidence=0.76).model_dump() == {
         "action": "继续持有",
         "summary": "当前未触发调仓条件。",
         "severity": "info",
         "user_required": False,
         "reason_code": "holding_hold",
         "layer": None,
+        "confidence": 0.76,
     }
     assert holding_decision("exit_watch").severity == "critical"
     assert holding_decision("exit_watch").user_required is True

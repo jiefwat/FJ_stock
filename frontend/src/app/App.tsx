@@ -40,7 +40,7 @@ const TABLET_MODE_QUERY = "(min-width: 768px) and (max-width: 1023px)";
 type DeviceMode = "mobile" | "tablet" | "web";
 
 const nav = [
-  ["/decisions", "决定", BellRing],
+  ["/decisions", "提醒", BellRing],
   ["/market", "大盘", Binoculars],
   ["/opportunities", "候选", Search],
   ["/history", "复盘", History],
@@ -422,7 +422,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
               <Icon size={18} />
               <span>{label}</span>
               {path === "/decisions" && (decisions.data?.unread_count ?? 0) > 0
-                ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读决定`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
+                ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读提醒`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
                 : null}
             </NavLink>
           ))}
