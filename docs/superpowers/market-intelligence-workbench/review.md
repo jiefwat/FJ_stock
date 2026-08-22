@@ -192,3 +192,30 @@ Release `20260822-230633-7a76d5a` is active at `https://stock.jiewat-kaka-fj.com
 The first browser read used a StockTS tab that had remained open before deployment and therefore still ran the old in-memory SPA bundle. The server index and lazy market chunk already contained the new release; a normal reload loaded the new dashboard while preserving authentication. No StockTS-origin console error or warning remained. The only logged error came from an unrelated browser translation extension with an expired extension token.
 
 The production release link, service, morning-email timer, health endpoint, and persistent database location were independently verified. No release-blocking finding remains.
+
+## 2026-08-23 System Interface Redesign Review
+
+### Scope
+
+Reviewed the pending frontend-only redesign of the authenticated shell, navigation hierarchy, route context, loading/error states, responsive terminal theme, metadata, and collapse-state regression coverage.
+
+### Findings
+
+One interaction defect was resolved before release: the compact-rail CSS hid the same control required to expand the sidebar, which could leave desktop users trapped in compact mode. The expand control now remains visible in an intentionally taller compact brand area, while the automatically compact tablet rail continues to hide the manual toggle.
+
+No unresolved P0, P1, or P2 finding remains. Navigation still reuses the existing routes and stock-context handoff, browser requests remain under `/api/v1/*`, and no provider, analysis, persistence, authentication, or financial-model boundary changed.
+
+### Assumptions And Boundaries
+
+- The sidebar's connection indicator is intentionally scoped to the Decision Change request and is labelled `提醒服务`; it does not claim that every market provider is healthy.
+- Market-structure pages remain secondary entries on narrow screens and are reached from the Market shortcuts, preserving the seven-item mobile navigation limit.
+- The visual redesign preserves red-up/green-down semantics and uses blue only for focus, selection, and primary interaction.
+
+### Residual Risks And Testing Gaps
+
+- Automated access to the local loopback page was blocked by the browser-control URL policy, so authenticated visual acceptance relies on the user's completed local test plus component/application regressions.
+- CSS visibility itself is not computed by jsdom; the compact-rail regression verifies state, accessible naming, and persistence, while the resolved selector was reviewed directly.
+
+### Decision
+
+Approved for commit, push, and deployment from `codex/project-adjustments`. The user accepted the local version, the repository gate passed, and `main` remains unchanged for this release.

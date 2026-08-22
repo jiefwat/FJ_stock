@@ -1821,3 +1821,37 @@ Result:
 | Frontend tests | Passed, 88 tests across 11 files |
 | Production build | Passed, 1,657 modules transformed |
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+## 2026-08-23 System Interface Redesign Verification
+
+The frontend redesign adds a grouped decision/research/market-structure/verification shell, explicit workspace context, a persistent collapsible desktop rail, truthful reminder-service status, skeleton loading, local error isolation, terminal-style visual tokens, and a seven-entry mobile navigation.
+
+Focused regression:
+
+```text
+pnpm --dir frontend typecheck
+pnpm --dir frontend test --run src/app/App.test.tsx
+```
+
+Result: typecheck passed and all 14 application-shell tests passed. The new regression verifies navigation groups, route context, accessible collapse state, and `stockts:rail` persistence.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 92 tests across 12 files |
+| Production build | Passed, 1,659 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Local production-build health returned `{"status":"ok"}` on `127.0.0.1:8765`. Automated loopback navigation was blocked by the browser-control URL policy; the user completed local acceptance and approved deployment from the new branch.

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Binoculars, Briefcase, Flame, History, Layers3, MessageSquareText, Network, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
+import { BellRing, Binoculars, Briefcase, Flame, History, Layers3, MessageSquareText, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
 import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
-import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { loadRecentResearch, recentResearchUpdatedEvent, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
 import {
   api,
@@ -57,6 +57,26 @@ const nav = [
   ["/concepts", "概念", Network],
   ["/industries", "行业", Layers3],
 ] as const;
+
+const navGroups = [
+  { label: "决策台", paths: ["/decisions", "/market", "/opportunities"] },
+  { label: "研究", paths: ["/stocks", "/ask", "/holdings"] },
+  { label: "市场结构", paths: ["/limit-ladder", "/concepts", "/industries"] },
+  { label: "验证", paths: ["/history"] },
+] as const;
+
+const routeMeta: Record<string, { section: string; title: string; description: string }> = {
+  "/decisions": { section: "决策台", title: "变化提醒", description: "只处理真正改变动作的信息" },
+  "/market": { section: "决策台", title: "市场总览", description: "先判断环境，再选择研究方向" },
+  "/opportunities": { section: "决策台", title: "候选策略", description: "用稳定策略筛选研究对象" },
+  "/stocks": { section: "研究", title: "个股分析", description: "结论、证据、失效条件在同一页面" },
+  "/ask": { section: "研究", title: "问股", description: "基于本地证据继续追问" },
+  "/holdings": { section: "研究", title: "持仓", description: "只对当前账号的真实持仓给动作" },
+  "/limit-ladder": { section: "市场结构", title: "连板梯队", description: "用原始价格验证涨跌停结构" },
+  "/concepts": { section: "市场结构", title: "概念分析", description: "从主题热度下钻到股票证据" },
+  "/industries": { section: "市场结构", title: "行业分析", description: "比较行业强弱与资金覆盖" },
+  "/history": { section: "验证", title: "推荐复盘", description: "不回写历史，只用成熟样本验账" },
+};
 
 const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unknown>>> = {
   "/decisions": loadDecisionCenterPage,
@@ -387,7 +407,9 @@ function RouteFallback() {
 
 function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
   const client = useQueryClient();
+  const location = useLocation();
   const deviceMode = useDeviceMode();
+  const [railCollapsed, setRailCollapsed] = useState(() => window.localStorage.getItem("stockts:rail") === "compact");
   const [currentStock, setCurrentStock] = useState<RecentResearch | null>(() => loadRecentResearch()[0] ?? null);
   const [refreshNotice, setRefreshNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const decisions = useQuery({
@@ -422,45 +444,61 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     return () => window.removeEventListener(recentResearchUpdatedEvent, updateCurrentStock);
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem("stockts:rail", railCollapsed ? "compact" : "full");
+  }, [railCollapsed]);
+
+  const currentRoute = routeMeta[location.pathname] ?? routeMeta["/market"];
+
   return (
-    <div className={`app-shell ${deviceMode}-shell`} data-device-mode={deviceMode}>
+    <div className={`app-shell ${deviceMode}-shell ${railCollapsed ? "rail-collapsed" : ""}`} data-device-mode={deviceMode}>
       <a className="skip-link" href="#main">跳到主要内容</a>
       <aside className="sidebar">
         <div className="brand">
-          <span>MD</span>
+          <span aria-hidden="true"><i />MD</span>
           <div>
             <strong>StockTS</strong>
-            <small>A股投研</small>
+            <small>QUANT · WORKBENCH</small>
           </div>
+          <button type="button" className="rail-toggle" onClick={() => setRailCollapsed((value) => !value)} aria-controls="primary-navigation" aria-expanded={!railCollapsed} aria-label={railCollapsed ? "展开侧边栏" : "收起侧边栏"} title={railCollapsed ? "展开侧边栏" : "收起侧边栏"}>{railCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
         </div>
-        <nav aria-label="主导航">
-          {nav.map(([path, label, Icon]) => (
-            <NavLink
-              key={path}
-              to={path === "/stocks" && currentStock
-                ? `/stocks?symbol=${encodeURIComponent(currentStock.symbol)}`
-                : path}
-              end={path === "/market"}
-              title={path === "/stocks" && currentStock ? `打开 ${currentStock.name} 个股分析` : undefined}
-              onFocus={() => preloadRoute(path)}
-              onPointerEnter={() => preloadRoute(path)}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-              {path === "/decisions" && (decisions.data?.unread_count ?? 0) > 0
-                ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读提醒`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
-                : null}
-            </NavLink>
-          ))}
+        <nav id="primary-navigation" aria-label="主导航">
+          {navGroups.map((group) => <section className="nav-group" key={group.label} aria-label={group.label}>
+            <span className="nav-group-label">{group.label}</span>
+            {group.paths.map((path) => {
+              const item = nav.find(([itemPath]) => itemPath === path)!;
+              const [, label, Icon] = item;
+              return <NavLink
+                key={path}
+                to={path === "/stocks" && currentStock
+                  ? `/stocks?symbol=${encodeURIComponent(currentStock.symbol)}`
+                  : path}
+                end={path === "/market"}
+                title={path === "/stocks" && currentStock ? `打开 ${currentStock.name} 个股分析` : label}
+                onFocus={() => preloadRoute(path)}
+                onPointerEnter={() => preloadRoute(path)}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {path === "/decisions" && (decisions.data?.unread_count ?? 0) > 0
+                  ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读提醒`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
+                  : null}
+              </NavLink>;
+            })}
+          </section>)}
         </nav>
         <div className="sidebar-foot">
-          <p>研究辅助工具</p>
-          <span>不构成投资建议</span>
+          <div><i className={decisions.isError ? "error" : decisions.isPending ? "" : "online"} /><span>提醒服务</span><strong>{decisions.isError ? "待恢复" : decisions.isPending ? "连接中" : "已连接"}</strong></div>
+          <div><i /><span>决策监控</span><strong>10 分钟</strong></div>
+          <p>研究辅助 · 不构成投资建议</p>
         </div>
       </aside>
       <main id="main">
         <div className="topbar">
-          <div className="topbar-left"><div className="session"><i />A 股 · 最近交易快照</div><CommandDock /></div>
+          <div className="topbar-left">
+            <div className="workspace-context"><span>{currentRoute.section}</span><strong>{currentRoute.title}</strong><small>{currentRoute.description}</small></div>
+            <CommandDock />
+          </div>
           <div className="topbar-actions">
             {refreshNotice ? <div className={`refresh-notice ${refreshNotice.kind}`} role={refreshNotice.kind === "error" ? "alert" : "status"} aria-live={refreshNotice.kind === "error" ? "assertive" : "polite"}><i />{refreshNotice.message}</div> : null}
             <AccountPanel user={user} onLogout={onLogout} />
@@ -471,8 +509,9 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
           </div>
         </div>
         <div className="page-wrap">
-          <Suspense fallback={<RouteFallback />}>
-            <Routes>
+          <div className="route-stage" key={location.pathname}>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
               <Route path="/" element={<Navigate to="/market" replace />} />
               <Route path="/market" element={<MarketPage />} />
               <Route path="/decisions" element={<DecisionCenterPage />} />
@@ -485,8 +524,9 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
               <Route path="/concepts" element={<ConceptPage />} />
               <Route path="/industries" element={<IndustryPage />} />
               <Route path="*" element={<Navigate to="/market" replace />} />
-            </Routes>
-          </Suspense>
+              </Routes>
+            </Suspense>
+          </div>
         </div>
       </main>
     </div>

@@ -323,6 +323,37 @@ it("uses the tablet rail without falling back to the phone shell", async () => {
   expect(document.querySelector(".app-shell")).not.toHaveClass("mobile-shell");
 });
 
+it("groups the workspace navigation and persists the collapsed desktop rail", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-rail");
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 15, email: "rail@example.com", display_name: "Rail User", created_at: "2026-08-22T01:00:00Z", updated_at: "2026-08-22T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => preferences };
+    }
+    return { ok: true, status: 200, json: async () => fixtureFor(url) };
+  }));
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: "市场" })).toBeInTheDocument();
+  const navigation = screen.getByRole("navigation", { name: "主导航" });
+  expect(within(navigation).getByRole("region", { name: "决策台" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("region", { name: "研究" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("region", { name: "市场结构" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("region", { name: "验证" })).toBeInTheDocument();
+  expect(screen.getByText("先判断环境，再选择研究方向")).toBeInTheDocument();
+
+  const railToggle = screen.getByRole("button", { name: "收起侧边栏" });
+  expect(railToggle).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(railToggle);
+  expect(document.querySelector(".app-shell")).toHaveClass("rail-collapsed");
+  expect(screen.getByRole("button", { name: "展开侧边栏" })).toHaveAttribute("aria-expanded", "false");
+  expect(localStorage.getItem("stockts:rail")).toBe("compact");
+});
+
 it("shows market observation time separately from the latest refresh time", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-refresh");
   let refreshed = false;
