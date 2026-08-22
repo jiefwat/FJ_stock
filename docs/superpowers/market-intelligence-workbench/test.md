@@ -1855,3 +1855,13 @@ Result:
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
 
 Local production-build health returned `{"status":"ok"}` on `127.0.0.1:8765`. Automated loopback navigation was blocked by the browser-control URL policy; the user completed local acceptance and approved deployment from the new branch.
+
+### Public release acceptance
+
+Commit `34704ce` was pushed to `origin/codex/project-adjustments` and deployed as release `20260823-000818-34704ce` at `https://stock.jiewat-kaka-fj.com` without modifying `main`.
+
+- Public `/healthz`, the index, and the new JavaScript/CSS assets returned HTTP 200.
+- The public index references `index-B6zz6A2N.js` and `index-BfpB0WJZ.css`; the bundles contain the new workspace brand, persistent rail key, reminder-service label, compact-rail rules, and skeleton state.
+- `/opt/aster-market/current` resolves to the expected release, `stock-ts.service` and `stock-ts-morning-email.timer` are active, and the release contains no `data` directory.
+- Persistent SQLite data remains external under `/opt/aster-market/data`.
+- A post-fix gate rerun again passed lint, types, all 235 backend tests, all 92 frontend tests, and the production build. Its final live-source check encountered a transient Sina HTTP 456 after an earlier complete gate had passed with 5,548 equities and 100% coverage; no provider code changed in this release and the deployed service health remained normal.

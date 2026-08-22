@@ -219,3 +219,7 @@ No unresolved P0, P1, or P2 finding remains. Navigation still reuses the existin
 ### Decision
 
 Approved for commit, push, and deployment from `codex/project-adjustments`. The user accepted the local version, the repository gate passed, and `main` remains unchanged for this release.
+
+### Production Confirmation
+
+Release `20260823-000818-34704ce` is active at `https://stock.jiewat-kaka-fj.com`. The public bundle fingerprints and redesign markers match the committed build, both systemd units are active, the health endpoint is normal, and persistent data remains outside the release. `main` was not modified.
