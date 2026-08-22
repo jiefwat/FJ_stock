@@ -1715,3 +1715,26 @@ Local production-build browser acceptance:
 - Recommendation Review showed `0 / 6` mature samples, `未成熟 6`, and labelled `-4.85%` as a process return rather than a formal negative verdict.
 - Stock Lab opened with no selected stock and the explicit `先选股票，再生成结论` state; entering `600519` loaded the dossier, while professional data remained unmounted until expansion.
 - Desktop and 390-pixel checks had equal document/client widths, and the browser console reported no errors or warnings.
+
+## 2026-08-22 Ask Stock To Stock Lab Context Verification
+
+The navigation regression fixture starts with stale recent research for `SH.600519 贵州茅台`, returns a financial-Skill `llm_answer` for `SZ.300750 宁德时代`, then activates the main `个股` navigation item. The resulting route is `#/stocks?symbol=SZ.300750`; the stale Moutai symbol is absent.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 31 source files |
+| Backend tests | Passed, 226 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 87 tests across 11 files |
+| Production build | Passed, 1,657 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |

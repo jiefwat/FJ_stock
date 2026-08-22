@@ -115,3 +115,27 @@ No unresolved P0 or P1 finding blocks submission. Provider access remains isolat
 ### Decision
 
 Approved for commit and push. Full repository verification and public deployment acceptance passed, and no high-priority finding remains open.
+
+## 2026-08-22 Ask Stock To Stock Lab Context Review
+
+### Scope
+
+Reviewed the pending Ask Stock and main-navigation changes in `frontend/src/features/ask/AskStockPage.tsx`, `frontend/src/app/App.tsx`, and `frontend/src/lib/recentResearch.ts`, plus the application-level regression fixture.
+
+### Findings
+
+No unresolved P0, P1, or P2 finding blocks release. The latest exact `symbol` and `name` returned by Ask Stock now replace stale recent research for navigation, including `llm_answer` responses from the financial-Skill path. The update remains account-scoped through the existing token-derived storage key, preserves known sector metadata, and removes its window event listener when the authenticated shell unmounts.
+
+### Open Questions And Assumptions
+
+- Only Ask Stock responses containing both a normalized symbol and name become the current stock. Portfolio and screening answers without one exact stock intentionally leave the previous stock unchanged.
+- Direct navigation to `/stocks` remains an explicit empty-selection route; the main `个股` navigation item carries the latest exact research symbol when one exists.
+
+### Residual Risks And Testing Gaps
+
+- The local in-app browser session was logged out, so the authenticated click path was not replayed there without creating or using an account. The application-level test exercises the complete shell, Ask Stock response, stale-Moutai state, navigation click, and resulting hash route.
+- Cross-tab synchronization still relies on the existing page-local research model; this fix guarantees same-tab page switching, which is the reported workflow.
+
+### Decision
+
+Approved for commit, push, and deployment after the final repository gate. No high-priority finding remains open.

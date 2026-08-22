@@ -6,6 +6,7 @@ import { ApiError, getAuthToken, type AskStockConversationMessage, type AskStock
 import { holdingDecision } from "../../lib/decision";
 import { monitoringItem } from "../../lib/monitoring";
 import { plainLanguage } from "../../lib/plainLanguage";
+import { rememberRecentResearch } from "../../lib/recentResearch";
 
 type AskPlaybookScene = {
   intent: AskStockResponse["intent"];
@@ -333,7 +334,7 @@ function askSourceContext(params: URLSearchParams): AskSourceContext | null {
 function latestStock(messages: AskMessage[]): StockAnchor | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === "assistant" && message.result.kind === "stock_analysis" && message.result.symbol && message.result.name) {
+    if (message.role === "assistant" && message.result.symbol && message.result.name) {
       return { name: message.result.name, symbol: message.result.symbol };
     }
   }
@@ -884,6 +885,11 @@ export function AskStockPage() {
   );
 
   useEffect(() => {
+    if (!focusStock) return;
+    rememberRecentResearch({ ...focusStock, sector: null });
+  }, [focusStock?.name, focusStock?.symbol]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       if (typeof threadEndRef.current?.scrollIntoView === "function") {
         threadEndRef.current.scrollIntoView({ block: "end" });
@@ -959,6 +965,9 @@ export function AskStockPage() {
         )));
         return askStock(payload);
       });
+      if (result.symbol && result.name) {
+        rememberRecentResearch({ symbol: result.symbol, name: result.name, sector: null });
+      }
       setThreadState((current) => updateThreadMessages(current, threadId, (currentMessages) => [
         ...currentMessages.filter((message) => !(message.role === "assistant_stream" && message.id === streamId)),
         { id: messageId(), role: "assistant", result },

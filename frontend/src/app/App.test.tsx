@@ -478,3 +478,55 @@ it("keeps the Ask Stock route behind the authenticated shell", async () => {
   expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
 });
+
+it("opens the stock from the latest Ask Stock answer instead of stale research", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-ask-handoff");
+  localStorage.setItem("marketdesk.recentResearch.v1.ask-handoff", JSON.stringify({
+    version: 1,
+    items: [{ symbol: "SH.600519", name: "贵州茅台", sector: "白酒", updatedAt: 1 }],
+  }));
+  window.location.hash = "#/ask";
+  const answer = {
+    kind: "llm_answer",
+    question: "宁德时代现在主要风险是什么",
+    intent: "risk",
+    symbol: "SZ.300750",
+    name: "宁德时代",
+    answer: "宁德时代当前主要风险需要结合价格与行业景气核对。",
+    evidence: [],
+    risks: [],
+    next_actions: [],
+    metrics: [],
+    factors: [],
+    holding_context: null,
+    observed_at: "2026-08-22T01:00:00Z",
+    confidence: 0.72,
+    source: "金融分析 Skill + 本地证据",
+    disclaimer: "研究辅助信息，不构成投资建议。",
+    columns: [],
+    rows: [],
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 12, email: "handoff@example.com", display_name: "Handoff User", created_at: "2026-08-22T01:00:00Z", updated_at: "2026-08-22T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) {
+      return { ok: true, status: 200, json: async () => preferences };
+    }
+    if (url.includes("/api/v1/ask-stock")) {
+      return { ok: true, status: 200, json: async () => answer };
+    }
+    return { ok: true, status: 200, json: async () => fixtureFor(url) };
+  }));
+
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "宁德时代现在主要风险是什么" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("宁德时代当前主要风险需要结合价格与行业景气核对。")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("link", { name: "个股" }));
+  expect(window.location.hash).toContain("/stocks?symbol=SZ.300750");
+  expect(window.location.hash).not.toContain("SH.600519");
+});

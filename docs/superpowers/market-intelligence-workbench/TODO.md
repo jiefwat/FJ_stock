@@ -160,3 +160,4 @@
 - [x] Separate immature process returns from formal T+20 results and show positive, negative, flat, and immature distributions.
 - [x] Start Stock Lab from an explicit stock choice, remove the default Moutai assumption, and explain that confidence is not upside probability.
 - [x] Expose Ask Stock as a backend-only financial-analysis Skill contract with local evidence, confidence, and no-holding language safeguards.
+- [x] Carry the latest Ask Stock symbol into Stock Lab navigation, including financial-Skill answers, without letting stale Moutai history override it.

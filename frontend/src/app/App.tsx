@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 import { BellRing, Binoculars, Briefcase, History, MessageSquareText, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
 import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
 import { HashRouter, Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
-import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
+import { loadRecentResearch, recentResearchUpdatedEvent, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
 import {
   api,
   clearAuthToken,
@@ -376,6 +376,7 @@ function RouteFallback() {
 function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) {
   const client = useQueryClient();
   const deviceMode = useDeviceMode();
+  const [currentStock, setCurrentStock] = useState<RecentResearch | null>(() => loadRecentResearch()[0] ?? null);
   const [refreshNotice, setRefreshNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const decisions = useQuery({
     queryKey: ["decision-events"],
@@ -399,6 +400,15 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     return () => window.clearTimeout(timer);
   }, [refreshNotice]);
 
+  useEffect(() => {
+    const updateCurrentStock = (event: Event) => {
+      const stock = (event as CustomEvent<RecentResearch>).detail;
+      setCurrentStock(stock ?? loadRecentResearch()[0] ?? null);
+    };
+    window.addEventListener(recentResearchUpdatedEvent, updateCurrentStock);
+    return () => window.removeEventListener(recentResearchUpdatedEvent, updateCurrentStock);
+  }, []);
+
   return (
     <div className={`app-shell ${deviceMode}-shell`} data-device-mode={deviceMode}>
       <a className="skip-link" href="#main">跳到主要内容</a>
@@ -414,8 +424,11 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
           {nav.map(([path, label, Icon]) => (
             <NavLink
               key={path}
-              to={path}
+              to={path === "/stocks" && currentStock
+                ? `/stocks?symbol=${encodeURIComponent(currentStock.symbol)}`
+                : path}
               end={path === "/market"}
+              title={path === "/stocks" && currentStock ? `打开 ${currentStock.name} 个股分析` : undefined}
               onFocus={() => preloadRoute(path)}
               onPointerEnter={() => preloadRoute(path)}
             >

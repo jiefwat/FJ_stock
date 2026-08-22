@@ -9,6 +9,7 @@ export type RecentResearch = {
 
 const version = 1;
 const maxItems = 6;
+export const recentResearchUpdatedEvent = "marketdesk:recent-research-updated";
 
 function storageKey() {
   const token = getAuthToken();
@@ -46,13 +47,18 @@ export function loadRecentResearch(): RecentResearch[] {
 
 export function rememberRecentResearch(stock: Pick<Quote, "symbol" | "name" | "sector">): RecentResearch[] {
   if (!canUseLocalStorage() || typeof localStorage.setItem !== "function") return [];
+  const previous = loadRecentResearch();
+  const priorItem = previous.find((recent) => recent.symbol === stock.symbol);
   const item: RecentResearch = {
     symbol: stock.symbol,
     name: stock.name,
-    sector: stock.sector ?? null,
+    sector: stock.sector ?? priorItem?.sector ?? null,
     updatedAt: Date.now(),
   };
-  const items = [item, ...loadRecentResearch().filter((recent) => recent.symbol !== stock.symbol)].slice(0, maxItems);
+  const items = [item, ...previous.filter((recent) => recent.symbol !== stock.symbol)].slice(0, maxItems);
   localStorage.setItem(storageKey(), JSON.stringify({ version, items }));
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent<RecentResearch>(recentResearchUpdatedEvent, { detail: item }));
+  }
   return items;
 }
