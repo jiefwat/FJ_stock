@@ -83,6 +83,9 @@ it("leads with direct actions and keeps monitoring changes separate", async () =
 
   expect(await screen.findByRole("heading", { name: "变化提醒" })).toBeInTheDocument();
   const required = within(await screen.findByLabelText("需要处理"));
+  const actionableSection = screen.getByLabelText("需要处理");
+  const filters = screen.getByLabelText("提醒筛选");
+  expect(actionableSection.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(required.getByText("优先减仓或止损")).toBeInTheDocument();
   expect(required.getByText("之前：继续持有")).toBeInTheDocument();
   expect(required.getByText("证据较充分 · 82%")).toBeInTheDocument();

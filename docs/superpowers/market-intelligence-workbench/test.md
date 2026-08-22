@@ -1738,3 +1738,39 @@ Result:
 | Frontend tests | Passed, 87 tests across 11 files |
 | Production build | Passed, 1,657 modules transformed |
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+## 2026-08-22 System Interaction Continuity Verification
+
+Focused regressions cover three decision-continuity paths:
+
+- A named financial-Skill answer for `SZ.300750 宁德时代` keeps its stock, intent, observation time, source, confidence, Stock Lab deep link, and stock-specific follow-up prompts.
+- Decision Change renders `需要处理` before `提醒筛选`, while automatic monitoring remains the final information layer.
+- A successful global refresh reads `meta.fetched_at` from the refresh response and confirms `全站数据已同步 · 更新于 <time>` without changing failure retention behavior.
+
+Focused gate:
+
+```text
+pnpm --dir frontend test --run src/features/ask/AskStockPage.test.tsx src/features/decisions/DecisionCenterPage.test.tsx src/app/App.test.tsx
+pnpm --dir frontend typecheck
+```
+
+Result: 39 focused tests passed across three files, and frontend typecheck passed.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 31 source files |
+| Backend tests | Passed, 226 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 88 tests across 11 files |
+| Production build | Passed, 1,657 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |

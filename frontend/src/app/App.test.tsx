@@ -358,8 +358,7 @@ it("shows market observation time separately from the latest refresh time", asyn
   expect(screen.getByText(/更新/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "刷新" }));
 
-  await waitFor(() => expect(screen.getByText(/2030/)).toBeInTheDocument());
-  expect(screen.getByText("数据已同步")).toBeInTheDocument();
+  expect(await screen.findByText(/全站数据已同步 · 更新于 .*2030/)).toBeInTheDocument();
   expect(screen.getByText(/行情时间/)).toBeInTheDocument();
 });
 

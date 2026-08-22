@@ -800,13 +800,31 @@ function confidenceLabel(value: number | null | undefined) {
   return value == null ? "分析置信度待补" : `分析置信度 ${Math.round(value * 100)}%（非上涨概率）`;
 }
 
+function AskResultHeader({ result, fallbackTitle }: { result: AskStockResponse; fallbackTitle: string }) {
+  return <header className="ask-result-head">
+    <div>
+      <span>{intentLabel[result.intent]}</span>
+      <h2>{result.name ?? fallbackTitle}</h2>
+      {result.symbol && <b>{result.symbol}</b>}
+    </div>
+    <div className="ask-provenance">
+      <span>{displayAskSource(result.source)}</span>
+      <b>{confidenceLabel(result.confidence)}</b>
+      <small>行情时间 {observedTime(result.observed_at)}</small>
+      {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
+    </div>
+  </header>;
+}
+
 function AskResult({ result }: { result: AskStockResponse }) {
   const stockAnalysis = result.kind === "stock_analysis";
+  const namedSkillAnswer = result.kind === "llm_answer" && Boolean(result.symbol && result.name);
   const [supportOpen, setSupportOpen] = useState(false);
   const fallbackTitle = result.kind === "portfolio_analysis" ? "账户组合" : result.kind === "llm_answer" ? "智能分析" : "自然语言选股";
   const sourceLabel = displayAskSource(result.source);
   if (result.kind === "llm_answer") {
     return <section className="ask-result ask-result-chat" aria-live="polite">
+      {namedSkillAnswer ? <AskResultHeader result={result} fallbackTitle={fallbackTitle} /> : null}
       <article className="ask-answer">
         <p>{displayAskText(result.answer)}</p>
       </article>
@@ -818,26 +836,14 @@ function AskResult({ result }: { result: AskStockResponse }) {
           <EvidenceList title="后续跟踪" items={displayMonitoringList(result.next_actions)} tone="action" />
         </div>
       </details>
-      <footer className="ask-answer-foot">
+      {!namedSkillAnswer ? <footer className="ask-answer-foot">
         <span><i>{sourceLabel}</i><b> · {confidenceLabel(result.confidence)}</b></span>
         {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
-      </footer>
+      </footer> : null}
     </section>;
   }
   return <section className="ask-result" aria-live="polite">
-    <header className="ask-result-head">
-      <div>
-        <span>{intentLabel[result.intent]}</span>
-        <h2>{result.name ?? fallbackTitle}</h2>
-        {result.symbol && <b>{result.symbol}</b>}
-      </div>
-      <div className="ask-provenance">
-        <span>{sourceLabel}</span>
-        <b>{confidenceLabel(result.confidence)}</b>
-        <small>行情时间 {observedTime(result.observed_at)}</small>
-        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
-      </div>
-    </header>
+    <AskResultHeader result={result} fallbackTitle={fallbackTitle} />
     <article className="ask-answer">
       <span>结论</span>
       <p>{displayAskText(result.answer)}</p>
@@ -1134,7 +1140,7 @@ export function AskStockPage() {
             return <article className="ask-message assistant" key={message.id}>
               <span>问股</span>
               <AskResult result={message.result} />
-              {message.result.kind === "stock_analysis" ? <div className="ask-followups" aria-label="追问建议">
+              {message.result.kind === "stock_analysis" || (message.result.kind === "llm_answer" && message.result.symbol && message.result.name) ? <div className="ask-followups" aria-label="追问建议">
                 {followUpPrompts.map((prompt) => <button type="button" key={prompt.label} onClick={() => void submitQuestion(prompt.question)} disabled={streaming}>{prompt.label}</button>)}
               </div> : null}
             </article>;

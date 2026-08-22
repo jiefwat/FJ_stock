@@ -820,6 +820,40 @@ it("renders a concise web LLM answer without deterministic review rails", async 
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
 });
 
+it("keeps stock identity and follow-up routes on a named financial Skill answer", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ...stockAnswer,
+      kind: "llm_answer",
+      symbol: "SZ.300750",
+      name: "宁德时代",
+      intent: "risk",
+      observed_at: "2026-08-22T01:00:00Z",
+      confidence: 0.72,
+      source: "金融分析 Skill + 本地证据",
+      answer: "宁德时代当前需要优先核对盈利波动与估值压力。",
+    }),
+  })));
+
+  renderPage();
+  submitAsk("宁德时代现在主要风险是什么");
+
+  const result = (await screen.findByRole("heading", { name: "宁德时代" })).closest(".ask-result") as HTMLElement;
+  expect(within(result).getByText("SZ.300750")).toBeInTheDocument();
+  expect(within(result).getByText("风险核对")).toBeInTheDocument();
+  expect(within(result).getByText(/行情时间/)).toBeInTheDocument();
+  expect(within(result).getByText("金融分析 Skill + 本地证据")).toBeInTheDocument();
+  expect(within(result).getByText(/分析置信度 72%/)).toBeInTheDocument();
+  expect(within(result).getByRole("link", { name: "查看完整依据（可选）" })).toHaveAttribute(
+    "href",
+    "#/stocks?symbol=SZ.300750&from=ask&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3#stock-final-gate",
+  );
+  expect(screen.getByLabelText("追问建议")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "现在能不能买" })).toBeInTheDocument();
+});
+
 it("keeps the question and shows the backend unavailable detail", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: false,

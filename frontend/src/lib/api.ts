@@ -1,4 +1,5 @@
 export type Meta = { source: string; observed_at: string; fetched_at: string; freshness: string; coverage: number; errors: string[] };
+export type RefreshResult = { status: string; meta: Meta };
 export type Quote = { symbol: string; code: string; name: string; price: number | null; change_pct: number | null; amount: number | null; turnover_rate: number | null; volume_ratio: number | null; pe: number | null; pb: number | null; market_cap: number | null; net_flow: number | null; sector: string | null };
 export type IndexQuote = { symbol: string; name: string; price: number | null; change_pct: number | null; amount: number | null };
 export type Sector = { code: string; name: string; change_pct: number | null; net_flow: number | null };

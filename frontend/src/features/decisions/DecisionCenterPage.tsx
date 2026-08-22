@@ -156,6 +156,10 @@ export function DecisionCenterPage() {
     <AsyncState loading={query.isLoading} error={query.error as Error | null} onRetry={() => void query.refetch()}>
       {feed ? <div className="decision-center">
         {empty ? <section className="decision-empty"><ShieldCheck size={28} /><strong>没有需要你处理的变化</strong><p>系统每 10 分钟自动检查</p></section> : <>
+          {requiredEvents.length ? <section className="decision-event-section actionable" aria-label="需要处理">
+            <header><div><span>YOUR MOVE</span><h2>需要处理</h2><strong>{requiredEvents.length} 项 · 仅真实持仓或可执行候选</strong></div></header>
+            <div className="decision-event-grid">{requiredEvents.map((event) => <DecisionCard key={event.id} event={event} onRead={(id) => read.mutate(id)} />)}</div>
+          </section> : null}
           <section className="decision-filter-panel" aria-label="提醒筛选">
             <div className="decision-filter-summary"><strong>{feed.unread_count}</strong><span>条未读</span><p>持仓提醒只来自当前账号仍在持有的股票。</p></div>
             <div className="decision-filter-groups"><div role="group" aria-label="提醒类别">{categoryOptions.map(([key, label, count]) => <button type="button" className={category === key ? "active" : ""} aria-pressed={category === key} key={key} onClick={() => setCategory(key)}>{label} <b>{count}</b></button>)}</div><div role="group" aria-label="阅读状态"><button type="button" className={readFilter === "all" ? "active" : ""} aria-pressed={readFilter === "all"} onClick={() => setReadFilter("all")}>全部状态</button><button type="button" className={readFilter === "unread" ? "active" : ""} aria-pressed={readFilter === "unread"} onClick={() => setReadFilter("unread")}>未读 {feed.unread_count}</button><button type="button" className={readFilter === "read" ? "active" : ""} aria-pressed={readFilter === "read"} onClick={() => setReadFilter("read")}>已读</button></div></div>
@@ -164,10 +168,6 @@ export function DecisionCenterPage() {
           <span className="sr-only" role="status" aria-live="polite">当前筛选显示 {visibleCount} 条提醒</span>
           {readNotice ? <div className={`decision-read-notice ${readNotice.tone}`} role={readNotice.tone === "error" ? "alert" : "status"} aria-live={readNotice.tone === "error" ? "assertive" : "polite"}>{readNotice.message}</div> : null}
           {visibleCount === 0 ? <section className="decision-filter-empty"><ShieldCheck size={20} /><span>当前筛选下没有提醒</span><button type="button" onClick={() => { setCategory("all"); setReadFilter("all"); }}>清除筛选</button></section> : null}
-          {requiredEvents.length ? <section className="decision-event-section actionable" aria-label="需要处理">
-            <header><div><span>YOUR MOVE</span><h2>需要处理</h2><strong>{requiredEvents.length} 项 · 仅真实持仓或可执行候选</strong></div></header>
-            <div className="decision-event-grid">{requiredEvents.map((event) => <DecisionCard key={event.id} event={event} onRead={(id) => read.mutate(id)} />)}</div>
-          </section> : null}
           {monitoringEvents.length ? <section className="decision-event-section monitoring" aria-label="自动记录">
             <header><div><span>SYSTEM LOG</span><h2>自动记录</h2><strong>{monitoringEvents.length} 项 · 无需操作</strong></div></header>
             <div className="decision-event-grid">{visibleMonitoringEvents.map((event) => <DecisionCard key={event.id} event={event} onRead={(id) => read.mutate(id)} />)}</div>

@@ -10,6 +10,7 @@ import {
   setAuthToken,
   type AuthResult,
   type DecisionEventFeed,
+  type RefreshResult,
   type UserAccount,
   type UserPreferences,
   type Quote,
@@ -385,11 +386,12 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     refetchOnWindowFocus: true,
   });
   const refresh = useMutation({
-    mutationFn: () => api("/api/v1/refresh", { method: "POST" }),
+    mutationFn: () => api<RefreshResult>("/api/v1/refresh", { method: "POST" }),
     onMutate: () => setRefreshNotice(null),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await client.invalidateQueries();
-      setRefreshNotice({ kind: "success", message: "数据已同步" });
+      const refreshedAt = new Date(result.meta.fetched_at).toLocaleString("zh-CN", { hour12: false });
+      setRefreshNotice({ kind: "success", message: `全站数据已同步 · 更新于 ${refreshedAt}` });
     },
     onError: () => setRefreshNotice({ kind: "error", message: "刷新失败，请稍后重试" }),
   });

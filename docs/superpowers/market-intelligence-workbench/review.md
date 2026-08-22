@@ -139,3 +139,24 @@ No unresolved P0, P1, or P2 finding blocks release. The latest exact `symbol` an
 ### Decision
 
 Approved for commit, push, and deployment after the final repository gate. No high-priority finding remains open.
+
+## 2026-08-22 System Interaction Continuity Review
+
+### Findings
+
+No unresolved P0, P1, or P2 finding blocks release. Named financial-Skill answers now reuse the existing stock identity header and stock follow-ups instead of falling into the stockless compact presentation. The Decision Center's actionable section precedes controls in DOM and visual order. Global refresh success uses the already-returned snapshot metadata to communicate scope, completion, and data time.
+
+### Assumptions And Boundaries
+
+- Stockless `llm_answer` results intentionally keep the compact chat presentation and do not invent a stock route.
+- Decision filters still control which actionable and monitoring events are visible; the change affects hierarchy, not filtering semantics.
+- Refresh failure wording and the current workspace remain unchanged.
+
+### Residual Risks And Testing Gaps
+
+- The authenticated local browser is currently at the login gate, so component and application regressions are the acceptance path until an authorized user session is available.
+- Refresh time is formatted in the browser's Chinese local time, matching the rest of the interface.
+
+### Decision
+
+Approved for the full repository gate and deployment. The changes remain frontend-only and preserve provider, deterministic-analysis, API, and account boundaries.
