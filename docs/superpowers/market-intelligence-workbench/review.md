@@ -270,3 +270,7 @@ Expansion controls expose their current state with `aria-expanded`, retain visib
 ### Decision
 
 Approved for commit, push to `main`, and public deployment. The final repository gate passed with 235 backend tests, 95 frontend tests, the production build, and live-data quality checks. Authenticated browser acceptance found no origin-owned console errors or document-level horizontal overflow at 1440px or 390px.
+
+### Production Confirmation
+
+Release `20260823-155528-ec90856` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, the deployed CSS contains the long-page containment rules, both systemd units are active, and persistent data remains outside the release. Authenticated public-browser acceptance reproduced the desktop three-column and mobile two-column ladder layouts without horizontal overflow or console errors.

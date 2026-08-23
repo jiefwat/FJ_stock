@@ -1937,3 +1937,14 @@ Authenticated browser acceptance used the production bundle served at `http://12
 - Concept Analysis kept its catalog inside a viewport-bounded scroll region and the selected-group workbench beside it on desktop.
 - Recommendation Review initially rendered at most six days; Holdings kept the ten-day stock plan closed until requested.
 - The checked routes emitted no browser console errors or warnings.
+
+### Public release acceptance
+
+Commit `ec90856` was pushed to `origin/main` and deployed as release `20260823-155528-ec90856` at `https://stock.jiewat-kaka-fj.com`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index-BA3EVQ3e.js` plus `index-DTop07XG.css`.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The release contains no runtime `data` directory, while `/opt/aster-market/data/marketdesk.db` remains present.
+- At 1440 x 1000, the public ladder rendered 12 of 80 stocks in three columns with `scrollWidth=1440` and a reversible `再显示 68 只` control.
+- At 390 x 844, the public ladder rendered two stock columns and a 2 x 2 summary with `scrollWidth=390`.
+- The authenticated public session emitted no browser console errors or warnings.
