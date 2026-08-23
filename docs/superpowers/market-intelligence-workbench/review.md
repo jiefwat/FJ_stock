@@ -353,3 +353,9 @@ The focus panel now names the loading operation, keeps board-level metrics visib
 ### Decision
 
 Approved for commit, push to `main`, and public deployment. Provider access remains inside the backend provider/service boundary, deterministic ranking remains under `analysis/`, and browser code uses only `/api/v1/*`.
+
+### Production Confirmation
+
+Release `20260823-190749-41ff7ec` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, and the deployed lazy group chunk contains both the selected-detail API path and the compact `成分股证据暂未取得` state. The new detail path returns the authenticated JSON boundary instead of falling through to the SPA.
+
+The public health endpoint is normal, `stock-ts.service` and `stock-ts-morning-email.timer` are active, release-local runtime data is absent, and the persistent database remains outside the release. Browser visual acceptance could not be completed because the local browser tab became trapped on a browser-managed blocked error URL; component tests cover desktop/mobile markup and the public delivery contract is independently verified.
