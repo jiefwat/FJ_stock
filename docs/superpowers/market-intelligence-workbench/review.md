@@ -356,6 +356,6 @@ Approved for commit, push to `main`, and public deployment. Provider access rema
 
 ### Production Confirmation
 
-Release `20260823-190749-41ff7ec` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, and the deployed lazy group chunk contains both the selected-detail API path and the compact `成分股证据暂未取得` state. The new detail path returns the authenticated JSON boundary instead of falling through to the SPA.
+Release `20260823-191134-e22c82b` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, and the deployed lazy group chunk contains the selected-detail API path, compact `成分股证据暂未取得` state, and synchronized `只成分` catalog status. The new detail path returns the authenticated JSON boundary instead of falling through to the SPA.
 
 The public health endpoint is normal, `stock-ts.service` and `stock-ts-morning-email.timer` are active, release-local runtime data is absent, and the persistent database remains outside the release. Browser visual acceptance could not be completed because the local browser tab became trapped on a browser-managed blocked error URL; component tests cover desktop/mobile markup and the public delivery contract is independently verified.

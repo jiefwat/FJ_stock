@@ -2081,10 +2081,10 @@ The production build is running locally and `/healthz` returns HTTP 200. Automat
 
 ### Public release acceptance
 
-Commit `41ff7ec` was pushed to `origin/main` and deployed as release `20260823-190749-41ff7ec` at `https://stock.jiewat-kaka-fj.com`.
+Commits `41ff7ec` and `e22c82b` were pushed to `origin/main` and deployed as release `20260823-191134-e22c82b` at `https://stock.jiewat-kaka-fj.com`.
 
-- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index-BeGee9da.js` plus `index-BqR3pf3e.css`.
-- The deployed `MarketGroupPage-BqAP57SX.js` contains `/api/v1/market-structure/groups/` and `成分股证据暂未取得`, confirming the new detail request and retry state are active.
+- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index-CGgOFk67.js` plus `index-BqR3pf3e.css`.
+- The deployed `MarketGroupPage-CRn5SGNT.js` contains `/api/v1/market-structure/groups/`, `成分股证据暂未取得`, and `只成分`, confirming the detail request, retry state, and synchronized catalog status are active.
 - An unauthenticated request to `/api/v1/market-structure/groups/concept/BK0714` returned HTTP 401 JSON, confirming the route exists behind the application session boundary rather than falling through to the SPA.
 - `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release-local data is absent, and the persistent database remains under `/opt/aster-market/data`.
 - The in-app browser remained on a browser-managed blocked error document after the loopback failure, so visual public acceptance could not be completed in that session. Regression tests cover the hydrated and retry states, and live provider verification confirms `BK0714` has 80 constituents.
