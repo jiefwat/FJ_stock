@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { stockDecisionAction } from "../../lib/decision";
 import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from "../../lib/recentResearch";
 import { api, fmt, pct, percent, type EvidenceDocument, type FinancialHealth, type InstrumentEvidenceResult, type Quote, type StockNewsSentiment } from "../../lib/api";
@@ -623,7 +624,7 @@ function StockAskRouter({ dossier, params }: { dossier: Dossier; params: URLSear
     },
   ];
 
-  return <section className="stock-ask-router" aria-label="个股问股快捷入口">
+  return <section id="stock-questions" className="stock-ask-router" aria-label="个股问股快捷入口">
     <div>
       <span>决策追问</span>
       <strong>只问会影响操作的问题</strong>
@@ -743,7 +744,7 @@ function StockDeepDossier({
   onOpenChange: (open: boolean) => void;
   onOpenEvidence: () => void;
 }) {
-  return <details className="stock-deep-dossier" open={open}>
+  return <details id="stock-deep-evidence" className="stock-deep-dossier" open={open}>
     <summary onClick={(event) => {
       event.preventDefault();
       const nextOpen = !open;
@@ -935,8 +936,22 @@ export function StockLabPage() {
   };
 
   return <>
-    <header className="page-head compact stock-page-head"><div><h1>个股</h1></div></header>
-    <div className="stock-control-row">
+    <WorkbenchPageHeader
+      eyebrow="STOCK LAB"
+      title="个股"
+      description="股票身份始终由你选择；先看操作结论，再核对改变决定的条件与专业证据。"
+      status={symbol ? <div className="stock-header-state"><span>当前标的</span><strong>已选择 · {(query.data?.quote.name ?? term) || symbol}</strong><small>{symbol}</small></div> : <div className="stock-header-state neutral"><span>当前标的</span><strong>尚未选择</strong><small>不会默认分析茅台</small></div>}
+    />
+    <PageTaskRail label="个股" steps={symbol ? [
+      { id: "stock-select", label: "确认股票", detail: "核对名称与代码" },
+      { id: "stock-final-gate", label: "操作结论", detail: "动作、风险与条件" },
+      { id: "stock-questions", label: "继续追问", detail: "只问影响决策的问题" },
+      { id: "stock-deep-evidence", label: "专业证据", detail: "按需展开来源与明细" },
+    ] : [
+      { id: "stock-select", label: "选择股票", detail: "名称或代码均可" },
+      { id: "stock-start", label: "选择来源", detail: "最近查看或市场线索" },
+    ]} />
+    <div id="stock-select" className="stock-control-row">
       <form className="stock-search" role="search" aria-label="选择股票进行分析" onSubmit={submitSearch}>
         <Search size={18} aria-hidden="true" />
         <input role="combobox" value={term} onChange={(event) => { setTerm(event.target.value); setSearchNotice(null); }} onKeyDown={(event) => { if (event.key === "Escape") { setMatches([]); setSearchNotice(null); } }} placeholder="输入股票代码或名称，如 600519 / HK.00700 / US.AAPL" aria-label="搜索股票" aria-autocomplete="list" aria-controls="stock-search-results" aria-describedby={searchNotice ? "stock-search-feedback" : undefined} aria-expanded={matches.length > 0} />
@@ -947,7 +962,7 @@ export function StockLabPage() {
       {fromMarketBoard && <section className="stock-source-note compact" aria-label="板块来源"><strong>{sourceBoardName || "板块"}</strong><small>{sourceBoardType}</small></section>}
     </div>
     {searchNotice ? <p className={`stock-search-notice ${searchNotice.tone}`} id="stock-search-feedback" role={searchNotice.tone === "error" ? "alert" : "status"}>{searchNotice.message}</p> : null}
-    {!symbol ? <section className="stock-start-state" aria-label="开始股票分析">
+    {!symbol ? <section id="stock-start" className="stock-start-state" aria-label="开始股票分析">
       <span>STOCK ANALYSIS</span>
       <h2>先选股票，再生成结论</h2>
       <p>系统不会默认把任何股票当成你的关注或持仓。输入名称、代码或从最近查看中选择。</p>

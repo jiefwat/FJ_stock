@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { api, fmt, pct, percent, type MarketGroupAnalysis, type MarketGroupStat } from "../../lib/api";
 
 type GroupKind = "concept" | "industry";
@@ -43,14 +44,26 @@ export function MarketGroupPage({ kind }: { kind: GroupKind }) {
     setParams(next, { replace: true });
   };
 
+  useEffect(() => {
+    if (!groups.length || groups.some((item) => item.code === selectedCode)) return;
+    const next = new URLSearchParams(params);
+    next.set("group", groups[0].code);
+    setParams(next, { replace: true });
+  }, [groups, params, selectedCode, setParams]);
+
   return <>
-    <header className="page-head structure-page-head"><div><span className="eyebrow">MARKET STRUCTURE</span><h1>{label}分析</h1><p>从板块强弱、扩散、资金与龙头逐层钻取到个股证据。</p></div>{query.data && <DataStamp meta={query.data.meta} />}</header>
+    <WorkbenchPageHeader eyebrow="MARKET STRUCTURE" title={`${label}分析`} description={`先判断${label}整体强弱，再筛选一个${label}，最后核对龙头与成分股证据。`} status={query.data ? <DataStamp meta={query.data.meta} /> : undefined} />
+    <PageTaskRail label={`${label}分析`} steps={[
+      { id: "group-summary", label: "判断全局", detail: `最强、最弱与${label}广度` },
+      { id: "group-catalog", label: `筛选${label}`, detail: "搜索并切换排序口径" },
+      { id: "group-focus", label: "核对证据", detail: "资金、龙头与成分股" },
+    ]} />
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       {!query.data.available && <section className="structure-unavailable"><strong>{label}数据暂不可用</strong><p>不能据空结果判断市场没有主线。请稍后重试，其他大盘数据仍可使用。</p></section>}
       {query.data.degraded && <section className="structure-unavailable degraded"><strong>{label}数据正在降级显示</strong><p>{query.data.unavailable_reason ?? query.data.summary}；可用部分继续展示，缺失项保持 N/A。</p></section>}
       <GroupHero groups={query.data.groups} label={label} />
       <section className="group-workbench">
-        <aside className="group-catalog">
+        <aside id="group-catalog" className="group-catalog">
           <header><div><strong>{label}矩阵</strong><small>{groups.length} / {query.data.groups.length}</small></div><label><Search size={15} /><input aria-label={`搜索${label}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`搜索${label}名称`} /></label><select aria-label={`${label}排序`} value={sort} onChange={(event) => setSort(event.target.value as GroupSort)}><option value="heat">热度优先</option><option value="change">涨幅优先</option><option value="capital">资金优先</option><option value="risk">风险优先</option></select></header>
           {groups.length ? <div className="group-matrix">{groups.map((item, index) => <button key={item.code} type="button" className={selected?.code === item.code ? "active" : ""} onClick={() => selectGroup(item)}><em>{String(index + 1).padStart(2, "0")}</em><span><strong>{item.name}</strong><small>{item.constituent_count ? `${item.constituent_count} 只成分` : "成分待补"}</small></span><b>{fmt(item.heat_score, 0)}</b><i className={changeTone(item.change_pct)}>{pct(item.change_pct)}</i><u style={{ width: `${item.evidence_coverage * 100}%` }} /></button>)}</div> : <div className="empty">当前搜索没有匹配的{label}。</div>}
         </aside>
@@ -67,7 +80,7 @@ function GroupHero({ groups, label }: { groups: MarketGroupStat[]; label: string
   const priced = groups.filter((item) => item.change_pct != null);
   const rising = priced.filter((item) => (item.change_pct ?? 0) > 0).length;
   const active = [...groups].sort((left, right) => (right.total_amount ?? 0) - (left.total_amount ?? 0))[0];
-  return <section className="group-hero" aria-label={`${label}市场摘要`}>
+  return <section id="group-summary" className="group-hero" aria-label={`${label}市场摘要`}>
     <article className="primary"><span>最强{label}</span><strong>{strongest?.name ?? "待数据"}</strong><p>{strongest ? `热度 ${fmt(strongest.heat_score, 0)} · ${pct(strongest.change_pct)}` : "暂不能判断"}</p></article>
     <article><span>最弱{label}</span><strong>{weakest?.name ?? "待数据"}</strong><p>{weakest ? `风险 ${fmt(weakest.risk_score, 0)} · ${pct(weakest.change_pct)}` : "暂不能判断"}</p></article>
     <article><span>{label}广度</span><strong>{priced.length ? `${rising} / ${priced.length}` : "N/A"}</strong><p>{priced.length ? `${percent(rising / priced.length * 100)} 上涨` : "涨跌样本不足"}</p></article>
@@ -80,11 +93,11 @@ function GroupFocus({ group, label }: { group: MarketGroupStat | null; label: st
 
   useEffect(() => setShowAllMembers(false), [group?.code]);
 
-  if (!group) return <section className="group-focus empty">选择一个{label}查看成员与龙头证据。</section>;
+  if (!group) return <section id="group-focus" className="group-focus empty">选择一个{label}查看成员与龙头证据。</section>;
   const total = group.advancing + group.declining;
   const visibleMembers = showAllMembers ? group.constituents : group.constituents.slice(0, INITIAL_GROUP_MEMBERS);
   const hiddenMemberCount = group.constituents.length - visibleMembers.length;
-  return <section className="group-focus" aria-label={`${group.name}${label}焦点`}>
+  return <section id="group-focus" className="group-focus" aria-label={`${group.name}${label}焦点`}>
     <header><div><span>{label}焦点</span><h2>{group.name}</h2><p>置信度 {percent(group.evidence_coverage * 100)} · 信息覆盖，不是上涨概率</p></div><strong className={changeTone(group.change_pct)}>{pct(group.change_pct)}</strong></header>
     <div className="group-focus-metrics"><article><span>综合热度</span><strong>{fmt(group.heat_score, 0)}</strong></article><article><span>上涨扩散</span><strong>{total ? percent(group.advancing / total * 100) : "N/A"}</strong></article><article><span>资金净流</span><strong>{group.net_flow == null ? "N/A" : `${fmt(group.net_flow / 100_000_000)} 亿`}</strong></article><article><span>平均换手</span><strong>{group.average_turnover_rate == null ? "N/A" : percent(group.average_turnover_rate)}</strong></article></div>
     {group.leader && <Link className="group-leader" to={`/stocks?symbol=${encodeURIComponent(group.leader.quote.symbol)}&from=${group.kind}&board=${encodeURIComponent(group.code)}&boardName=${encodeURIComponent(group.name)}`}><span>龙头候选</span><strong>{group.leader.quote.name}</strong><b>{fmt(group.leader.score, 0)} 分</b><small>{pct(group.leader.quote.change_pct)} · 进入 Stock Lab 复核 →</small></Link>}

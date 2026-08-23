@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
 import { DataStamp } from "../../components/DataStamp";
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { api, fmt, pct, percent, type Analysis, type IndexQuote, type MarketDashboard, type MarketEvent, type MarketEventResult, type MarketIntelligenceResult, type Meta, type Quote, type Sector, type SectorDossier } from "../../lib/api";
 import { plainLanguage } from "../../lib/plainLanguage";
 
@@ -89,8 +90,14 @@ export function MarketPage() {
   }, [activeDossierKey, activeDossierReady]);
 
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
-    <header className="page-head"><div><h1>市场</h1></div><DataStamp meta={query.data.snapshot.meta} /></header>
-    <MarketDecisionBanner market={query.data} />
+    <WorkbenchPageHeader eyebrow="MARKET DESK" title="市场" description="先确认今天能不能做，再看结构、主线和全市场明细。" status={<DataStamp meta={query.data.snapshot.meta} />} />
+    <PageTaskRail label="市场" steps={[
+      { id: "market-decision", label: "今日结论", detail: "先定风险与动作" },
+      { id: "market-structure", label: "市场结构", detail: "广度、成交与强弱" },
+      { id: "market-board-workbench", label: "板块主线", detail: "行业、题材与成分" },
+      { id: "market-browser", label: "深度浏览", detail: "按条件扫描全市场" },
+    ]} />
+    <div id="market-decision" className="page-task-target"><MarketDecisionBanner market={query.data} /></div>
     <MarketPulseStrip market={query.data} />
     <MarketStructureDashboard data={dashboardQuery.data} loading={dashboardQuery.isLoading} failed={dashboardQuery.isError} />
     <section id="market-board-workbench" className="market-board-zone" aria-label="板块和题材工作区">
@@ -108,16 +115,16 @@ export function MarketPage() {
 }
 
 function MarketStructureDashboard({ data, loading, failed }: { data?: MarketDashboard; loading: boolean; failed: boolean }) {
-  if (loading) return <section className="panel quant-dashboard-shell" aria-label="市场量化看板" aria-busy="true"><div className="market-events-placeholder">正在汇总同一交易快照…</div></section>;
+  if (loading) return <section id="market-structure" className="panel quant-dashboard-shell" aria-label="市场量化看板" aria-busy="true"><div className="market-events-placeholder">正在汇总同一交易快照…</div></section>;
   const hasDashboardShape = data
     && Array.isArray(data.distribution)
     && Array.isArray(data.strongest_sectors)
     && Array.isArray(data.weakest_sectors)
     && Array.isArray(data.activity_leaders)
     && Array.isArray(data.missing_evidence);
-  if (failed || !hasDashboardShape) return <section className="panel quant-dashboard-shell" aria-label="市场量化看板"><div className="capability-warning">量化看板暂不可用，原有大盘结论仍可继续使用。</div></section>;
+  if (failed || !hasDashboardShape) return <section id="market-structure" className="panel quant-dashboard-shell" aria-label="市场量化看板"><div className="capability-warning">量化看板暂不可用，原有大盘结论仍可继续使用。</div></section>;
   const maxBand = Math.max(1, ...data.distribution.map((item) => item.count));
-  return <section className="quant-dashboard-shell" aria-label="市场量化看板">
+  return <section id="market-structure" className="quant-dashboard-shell" aria-label="市场量化看板">
     <header className="quant-dashboard-head">
       <div><span>MARKET OVERVIEW</span><strong>市场量化看板</strong><small>所有指标使用同一交易快照</small></div>
       <nav aria-label="市场结构模块"><Link to="/limit-ladder">连板梯队</Link><Link to="/concepts">概念分析</Link><Link to="/industries">行业分析</Link></nav>

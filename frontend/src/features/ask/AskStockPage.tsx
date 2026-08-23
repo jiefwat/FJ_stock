@@ -2,6 +2,7 @@ import { History, MessageSquareText, Plus, RotateCcw, Send, ShieldAlert } from "
 import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { ApiError, getAuthToken, type AskStockConversationMessage, type AskStockResponse, type AskStockSourceContext as AskStockSourcePayload } from "../../lib/api";
 import { holdingDecision } from "../../lib/decision";
 import { monitoringItem } from "../../lib/monitoring";
@@ -1037,11 +1038,23 @@ export function AskStockPage() {
   };
 
   return <>
+    <WorkbenchPageHeader
+      eyebrow="FINANCIAL SKILL"
+      title="问股"
+      description="一句话提出问题，系统会保留股票上下文，并把结论、置信度、证据时间和下一步放在同一回答里。"
+      status={<div className={`ask-header-state ${focusStock ? "active" : ""}`}><span>对话对象</span><strong>{focusStock ? stockLabel(focusStock) : "尚未指定股票"}</strong><small>{focusStock ? "追问会沿用当前股票" : "可问股票、板块或组合"}</small></div>}
+    />
+    <PageTaskRail label="问股" steps={[
+      { id: "ask-session", label: "确认对象", detail: "避免追问串股" },
+      { id: "ask-quick", label: "选择问题", detail: "从高频决策场景开始" },
+      { id: "ask-thread", label: "核对回答", detail: "结论、置信度与证据" },
+      { id: "ask-composer", label: "继续追问", detail: "沿用当前上下文" },
+    ]} />
     <section className="ask-chat-layout">
       <div className="ask-chat-main">
-        <header className="ask-chat-top">
+        <header id="ask-session" className="ask-chat-top">
           <div>
-            <h1>问股</h1>
+            <strong>当前对话</strong>
             <p>{focusStock ? `正在围绕 ${stockLabel(focusStock)} 追问` : "直接问股票、板块、组合或最新消息。"}</p>
           </div>
           <nav aria-label="问股对话操作">
@@ -1092,7 +1105,7 @@ export function AskStockPage() {
             >{prompt}</button>)}
           </div>
         </section> : null}
-        <section className="ask-playbook compact ask-main-playbook" aria-label="问股场景路由">
+        <section id="ask-quick" className="ask-playbook compact ask-main-playbook" aria-label="问股场景路由">
           <header>
             <span>快捷</span>
             <strong>常用问题</strong>
@@ -1114,7 +1127,7 @@ export function AskStockPage() {
             })}
           </div>
         </section>
-        <section className="ask-thread panel" aria-label="问股对话记录">
+        <section id="ask-thread" className="ask-thread panel" aria-label="问股对话记录">
           {messages.length === 0 ? <div className="ask-thread-empty">
             <MessageSquareText size={28} />
             <strong>直接问股票、板块或持仓</strong>
@@ -1151,7 +1164,7 @@ export function AskStockPage() {
           </article> : null}
           <div ref={threadEndRef} />
         </section>
-        <form className="ask-chat-composer panel" onSubmit={submit}>
+        <form id="ask-composer" className="ask-chat-composer panel" onSubmit={submit}>
           <label htmlFor="ask-question">继续追问</label>
           <div>
             <textarea

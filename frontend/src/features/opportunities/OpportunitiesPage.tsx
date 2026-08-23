@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { api, fmt, pct, percent, type Candidate, type OpportunityDimension, type StrategyBoardCard } from "../../lib/api";
 import { opportunityDecision, type OpportunityDecision } from "../../lib/decision";
 import { monitoringText } from "../../lib/monitoring";
@@ -93,7 +94,7 @@ function OpportunityQueueDesk({
   const riskTotal = layerCounts.watch_only + layerCounts.high_risk;
   const topLabel = topRow?.badge.layer === "priority" ? "首选" : "最接近条件";
 
-  return <section className={`panel opportunity-queue ${plan.tone}`} aria-label="候选自动监控台">
+  return <section id="opportunity-decision" className={`panel opportunity-queue ${plan.tone}`} aria-label="候选自动监控台">
     <div className="opportunity-monitoring-banner">
       <Activity size={20} aria-hidden="true" />
       <div><strong>自动更新 · 10 分钟</strong></div>
@@ -218,11 +219,21 @@ export function OpportunitiesPage() {
     : `当前展示${presetLabel ?? preset}策略`;
 
   return <>
-    <header className="page-head opportunity-page-head"><div><h1>候选</h1></div><nav className="opportunity-head-actions" aria-label="候选页面操作"><Link className="button secondary" to="/history"><History size={16} />历史复盘</Link><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></nav></header>
+    <WorkbenchPageHeader
+      eyebrow="STRATEGY QUEUE"
+      title="候选"
+      description="先看当前策略给出的参与门槛，再切换策略、筛选线索并进入个股复核。"
+      actions={<nav className="opportunity-head-actions" aria-label="候选页面操作"><Link className="button secondary" to="/history"><History size={16} />历史复盘</Link><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></nav>}
+    />
+    <PageTaskRail label="候选" steps={[
+      { id: "opportunity-decision", label: "当前判断", detail: "先看能否参与" },
+      { id: "opportunity-strategies", label: "切换策略", detail: "理解进入与退出条件" },
+      { id: "opportunity-candidates", label: "筛选候选", detail: "分层后逐只复核" },
+    ]} />
     <p className={`strategy-switch-status ${query.isFetching && !query.isLoading ? "updating" : ""}`} role="status" aria-live="polite">{strategyStatus}</p>
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       {query.data.available && <OpportunityQueueDesk preset={preset} presetLabel={presetLabel} candidateRows={candidateRows} layerCounts={layerCounts} />}
-      {!query.data.available ? <section className="strategy-unavailable">
+      {!query.data.available ? <section id="opportunity-decision" className="strategy-unavailable">
         <AlertTriangle size={22} />
         <div><span>暂时没有结果</span><p>{plainLanguage(query.data.unavailable_reason ?? "当前信息不足")}</p>{query.data.next_actions.map((action) => <p key={action}>· {monitoringText(action)}</p>)}<button className="text-button" onClick={() => setPreset("trend")}>看趋势延续 →</button></div>
       </section> : null}
@@ -235,7 +246,7 @@ export function OpportunitiesPage() {
         onSelect={(key) => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}
       />
       {query.data.available ? <>
-        <section className="lead-layer-bar" aria-label="线索分层筛选">{leadLayers.map(([key, label]) => <button key={key} className={leadLayer === key ? "active" : ""} onClick={() => { setLeadLayer(key); setExpandedSymbols([]); }}><span>{label}</span><strong>{layerCounts[key]}</strong></button>)}</section>
+        <section id="opportunity-candidates" className="lead-layer-bar" aria-label="线索分层筛选">{leadLayers.map(([key, label]) => <button key={key} className={leadLayer === key ? "active" : ""} onClick={() => { setLeadLayer(key); setExpandedSymbols([]); }}><span>{label}</span><strong>{layerCounts[key]}</strong></button>)}</section>
         <section className="panel opportunity-list-panel"><div className="panel-title"><span>{selectedLayerLabel}</span><small>{visibleCandidates.length} 只</small></div>{visibleCandidates.length === 0 ? <div className="empty">当前分层没有线索。</div> : <div className="candidate-table opportunity-table compact-opportunity-list">{visibleCandidates.map(({ item, badge }, index) => {
           const expanded = expandedSymbols.includes(item.quote.symbol);
           return <article key={item.quote.symbol} className={expanded ? "expanded" : ""}>
@@ -262,7 +273,7 @@ function StrategyLibrary({ cards, active, loading, failed, onPreview, onSelect }
   const byId = new Map(cards.map((card) => [card.id, card]));
   const activeLabel = presets.find(([key]) => key === active)?.[1] ?? active;
   const activeCard = byId.get(active);
-  return <section className="strategy-library" aria-label="策略预设">
+  return <section id="opportunity-strategies" className="strategy-library" aria-label="策略预设">
     <header><div><span>STRATEGY SWITCHER</span><strong>切换筛选策略</strong><small>先看当前决定，需要时再换一种筛选视角</small></div><Link to="/history">查看策略历史表现 →</Link></header>
     {failed && <p className="capability-warning">策略摘要暂不可用，仍可逐个运行现有策略。</p>}
     <div className="strategy-switcher" role="group" aria-label="选择候选策略">{presets.map(([key, label]) => {

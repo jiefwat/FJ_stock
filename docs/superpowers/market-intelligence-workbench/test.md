@@ -1997,3 +1997,36 @@ Commit `c394042` was pushed to `origin/main` and deployed as release `20260823-1
 - Empty Decision Change exposed all three next-task links; Stock Lab kept its local search and omitted the global duplicate.
 - The authenticated public session emitted zero console errors or warnings.
 - `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release data is absent, and the persistent database is present outside the release.
+
+## 2026-08-23 Full-site Task-path Verification
+
+Focused regressions cover the shared page frame, route heading semantics, task-path selection feedback, reduced-motion behavior, existing stock identity behavior, and all prior feature contracts.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 97 tests across 13 files |
+| Production build | Passed, 1,660 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Authenticated local production-build acceptance covered all ten routes at 1440 x 1000 and 390 x 844:
+
+- Every route rendered one workbench heading and between two and four domain-specific task steps.
+- Clicking the final task step on every route updated `aria-current` and moved focus to the intended section.
+- All twenty desktop/mobile route checks reported zero document-level horizontal overflow.
+- Stock Lab without a selected stock remained neutral and offered candidate/ladder starting points; its selected-stock path expands to identity, decision, questions, and evidence.
+- Ask Stock exposed the active conversation object before the thread; Holdings kept the real-position boundary visible in its empty state.
+- Concept and Industry kept the master-detail catalog readable and synchronized URL selection after filtering.
+- Mobile navigation exposed all ten routes; entering Industry centered the active `行业` destination inside the 390px viewport.

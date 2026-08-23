@@ -448,6 +448,20 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     window.localStorage.setItem("stockts:rail", railCollapsed ? "compact" : "full");
   }, [railCollapsed]);
 
+  useEffect(() => {
+    if (deviceMode !== "mobile") return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const activeRoute = document.querySelector<HTMLElement>("#primary-navigation a.active");
+      if (typeof activeRoute?.scrollIntoView !== "function") return;
+      activeRoute.scrollIntoView({
+        behavior: "auto",
+        block: "nearest",
+        inline: "center",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [deviceMode, location.pathname]);
+
   const currentRoute = routeMeta[location.pathname] ?? routeMeta["/market"];
   const hasLocalResearchInput = location.pathname === "/stocks" || location.pathname === "/ask";
 

@@ -3,6 +3,7 @@ import { ChevronDown, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Link } from "react-router-dom";
 
+import { PageTaskRail, WorkbenchPageHeader, type WorkbenchStep } from "../../components/WorkbenchPageHeader";
 import { ApiError, api, fmt, getAuthToken, pct, type HoldingDossier } from "../../lib/api";
 import { holdingDecision } from "../../lib/decision";
 import { plainLanguage } from "../../lib/plainLanguage";
@@ -588,11 +589,21 @@ export function HoldingsPage() {
     create.reset();
   }
 
+  const pageHeader = (steps: WorkbenchStep[]) => <>
+    <WorkbenchPageHeader
+      eyebrow="PORTFOLIO DESK"
+      title="持仓"
+      description="这里只分析当前账号真实录入的仓位；删除持仓后，相关减仓提醒会同步停止。"
+      status={<div className="holdings-header-state"><span>真实持仓</span><strong>{query.data ? `${holdings.length} 只` : "读取中"}</strong><small>候选不会混入调仓建议</small></div>}
+    />
+    <PageTaskRail label="持仓" steps={steps} />
+  </>;
+
   if (query.isError) {
     const hasToken = Boolean(getAuthToken());
     return <>
-      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
-      <section className="panel personal-auth-gate" role="alert">
+      {pageHeader([{ id: "holdings-access", label: "恢复访问", detail: "重新登录后读取组合" }])}
+      <section id="holdings-access" className="panel personal-auth-gate" role="alert">
         <span>{hasToken ? "登录状态已失效" : "请先登录后查看个人持仓"}</span>
         <p>{hasToken ? "请重新登录。个人数据不会跨账号展示。" : "登录后仅显示当前账号的组合。"}</p>
       </section>
@@ -601,12 +612,12 @@ export function HoldingsPage() {
 
   if (query.isLoading) {
     return <>
-      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
-      <section className="panel holdings-loading" role="status">正在读取当前账号的真实持仓…</section>
+      {pageHeader([{ id: "holdings-access", label: "读取组合", detail: "只加载当前账号" }])}
+      <section id="holdings-access" className="panel holdings-loading" role="status">正在读取当前账号的真实持仓…</section>
     </>;
   }
 
-  const createForm = <form aria-label="登记持仓" autoComplete="off" className="panel holding-create compact-create" onSubmit={(event) => { event.preventDefault(); setCreateNotice(""); create.mutate(); }}>
+  const createForm = <form id="holdings-create" aria-label="登记持仓" autoComplete="off" className="panel holding-create compact-create" onSubmit={(event) => { event.preventDefault(); setCreateNotice(""); create.mutate(); }}>
     <div className="panel-title"><span>登记持仓</span><button className="button secondary" type="button" onClick={resetCreateDraft}>清空表单</button></div>
     <p className="holding-create-help">代码和名称任选其一即可识别股票；数量、成本用于计算真实盈亏和调仓优先级。</p>
     <label>代码<input autoComplete="off" placeholder="如 SZ.000001 / HK.00700 / US.AAPL" value={draft.symbol} onChange={(event) => { setDraft({ ...draft, symbol: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
@@ -622,8 +633,11 @@ export function HoldingsPage() {
 
   if (holdings.length === 0) {
     return <>
-      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
-      <section className="holding-onboarding" aria-label="开始管理真实持仓">
+      {pageHeader([
+        { id: "holdings-start", label: "确认边界", detail: "没有持仓就不生成减仓" },
+        { id: "holdings-create", label: "录入持仓", detail: "数量、成本与退出条件" },
+      ])}
+      <section id="holdings-start" className="holding-onboarding" aria-label="开始管理真实持仓">
         <header><span>START HERE</span><h2>先录入真实持仓，系统才会生成调仓判断</h2><p>没有持仓时，系统不会推荐你减仓任何股票。</p></header>
         <ol><li><strong>录入数量与成本</strong><span>用于计算真实盈亏和组合占比</span></li><li><strong>只分析真实持仓</strong><span>候选股票不会混入调仓建议</span></li><li><strong>删除即停止提醒</strong><span>退出持仓后不再产生减仓通知</span></li></ol>
         {createForm}
@@ -632,8 +646,12 @@ export function HoldingsPage() {
   }
 
   return <>
-    <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
-    <section className="portfolio-overview panel" aria-label="组合总览">
+    {pageHeader([
+      { id: "holdings-overview", label: "组合结论", detail: "先看风险和今日动作" },
+      { id: "holdings-positions", label: "逐只处理", detail: "按优先级查看持仓" },
+      { id: "holdings-add", label: "维护组合", detail: "补录新的真实持仓" },
+    ])}
+    <section id="holdings-overview" className="portfolio-overview panel" aria-label="组合总览">
       <div className="panel-title"><span>组合</span></div>
       <div className="portfolio-hero-line">
         <article><span>组合市值</span><strong>{fmt(summary.totalValue, 0)}</strong></article>
@@ -651,7 +669,7 @@ export function HoldingsPage() {
       {orderedHoldings.length > 0 && <details className="portfolio-detail-drawer"><summary><span>全持仓近 10 日走势</span><small>{orderedHoldings.length} 只股票 · 按需展开，减少页面长度</small></summary><PortfolioStockPlan items={orderedHoldings} /></details>}
     </section>
 
-    <section className="panel holdings-table-panel">
+    <section id="holdings-positions" className="panel holdings-table-panel">
       <div className="panel-title"><span>持仓列表</span><small>{holdings.length} 笔</small></div>
       <div className="holding-sort-bar" aria-label="持仓排序">
         {holdingSortOptions.map(([value, label]) => <button
@@ -668,7 +686,7 @@ export function HoldingsPage() {
       {holdings.length > HOLDING_PAGE_SIZE && <div className="holdings-list-controls"><span>已显示 {visibleHoldings.length} / {holdings.length} 笔持仓</span><div>{visibleHoldingCount > HOLDING_PAGE_SIZE && <button type="button" onClick={() => setVisibleHoldingCount(HOLDING_PAGE_SIZE)}>收起</button>}{hiddenHoldingCount > 0 && <button className="primary" type="button" onClick={() => setVisibleHoldingCount((current) => current + HOLDING_PAGE_SIZE)}>再显示 {Math.min(HOLDING_PAGE_SIZE, hiddenHoldingCount)} 笔</button>}</div></div>}
     </section>
 
-    <details className="holding-create-drawer" onToggle={(event) => { if (event.currentTarget.open) resetCreateDraft(); }}>
+    <details id="holdings-add" className="holding-create-drawer" onToggle={(event) => { if (event.currentTarget.open) resetCreateDraft(); }}>
       <summary>新增持仓</summary>
       {createForm}
     </details>

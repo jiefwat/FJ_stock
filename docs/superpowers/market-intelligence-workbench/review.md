@@ -304,3 +304,21 @@ Approved for push to `main` and public deployment. The change is frontend-only, 
 Release `20260823-161624-c394042` is active at `https://stock.jiewat-kaka-fj.com`. The deployed index references `index-Ccp3p6Mr.js` and `index-Dbr3osb9.css`; authenticated production acceptance confirmed the decision-first candidate order, strategy switch state, empty-holding onboarding, empty-reminder routes, and single-input Stock Lab behavior at desktop and 390px. No StockTS-origin console error, warning, or horizontal document overflow remained.
 
 The health endpoint is normal, `stock-ts.service` and `stock-ts-morning-email.timer` are active, the release contains no runtime data directory, and the persistent database remains under `/opt/aster-market/data`.
+
+## 2026-08-23 Full-site Task-path Review
+
+### Scope
+
+Reviewed all ten authenticated routes as one interaction system: Decision Change, Market, Opportunities, Recommendation Review, Stock Lab, Ask Stock, Holdings, Limit Ladder, Concept Analysis, and Industry Analysis. The review covered route identity, first-screen intent, long-page orientation, filter-to-result feedback, mobile route reachability, and responsive overflow.
+
+### Findings
+
+The earlier optimization improved several core workflows but left route-level composition inconsistent. The full-site pass now gives every route one compact workbench header and an explicit, keyboard-operable task path. Each path reflects the domain rather than repeating generic tabs: Market moves from today's decision to structure and deep scan; Review moves from strategy to performance and ledger; Stock Lab moves from stock identity to conclusion, questions, and evidence; the structure routes move from scope to strength and constituents.
+
+Ask Stock now exposes its current conversation object before the thread so follow-ups are less likely to drift to a stale stock. Holdings exposes the real-position boundary in every loading, error, empty, and populated state. Concept and Industry repair the selected URL state when filtering removes the current group. The narrow group catalog no longer compresses its title vertically.
+
+The mobile shell no longer hides the three market-structure routes. All ten destinations share one horizontally scrollable bottom navigation, and route changes center the active destination automatically. Red-up/green-down meaning, confidence wording, account boundaries, provider isolation, deterministic analysis, and `/api/v1/*` browser access remain unchanged.
+
+### Decision
+
+Approved for commit, push to `main`, and public deployment. No unresolved P0, P1, or P2 finding remains. The complete repository gate and authenticated desktop/mobile route matrix passed before release.

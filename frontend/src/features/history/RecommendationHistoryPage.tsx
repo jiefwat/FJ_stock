@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
+import { PageTaskRail, WorkbenchPageHeader } from "../../components/WorkbenchPageHeader";
 import { api, fmt, pct, type RecommendationHistoryResult, type RecommendationPerformancePick } from "../../lib/api";
 import { plainLanguage } from "../../lib/plainLanguage";
 
@@ -147,12 +148,19 @@ export function RecommendationHistoryPage() {
   useEffect(() => setVisibleDayCount(HISTORY_DAY_PAGE_SIZE), [preset]);
 
   return <>
-    <header className="page-head history-page-head">
-      <div><p className="eyebrow">RECOMMENDATION LEDGER</p><h1>推荐复盘</h1><span>候选会变，入选时点不改写。按固定交易日窗口验账。</span></div>
-      <div className="history-observed"><History size={16} /><span>最新观察</span><strong>{observedTime(data?.last_observed_at ?? null)}</strong></div>
-    </header>
+    <WorkbenchPageHeader
+      eyebrow="RECOMMENDATION LEDGER"
+      title="推荐复盘"
+      description="候选会变化，但入选时点和价格不回写；正式收益与未成熟过程收益分开验账。"
+      status={<div className="history-observed"><History size={16} /><span>最新观察</span><strong>{observedTime(data?.last_observed_at ?? null)}</strong></div>}
+    />
+    <PageTaskRail label="推荐复盘" steps={[
+      { id: "history-strategies", label: "选择策略", detail: "切换同口径账本" },
+      { id: "history-result", label: "判断表现", detail: "收益、命中与成熟度" },
+      { id: "history-ledger", label: "核对记录", detail: "逐日查看原始候选" },
+    ]} />
 
-    <nav className="history-preset-bar" aria-label="复盘策略">
+    <nav id="history-strategies" className="history-preset-bar" aria-label="复盘策略">
       {presets.map(([key, label]) => <button
         type="button"
         key={key}
@@ -165,7 +173,7 @@ export function RecommendationHistoryPage() {
 
     <AsyncState loading={query.isLoading} error={query.error as Error | null} onRetry={() => void query.refetch()}>
       {data ? <>
-        <section className="history-scoreboard" aria-label="历史推荐总览">
+        <section id="history-result" className="history-scoreboard" aria-label="历史推荐总览">
           <div className={`history-score-intro ${assessment?.tone ?? "neutral"}`}><span>{selectedLabel}</span><strong>{assessment?.action}</strong><small>{data.summary.evaluated_count ? `正式命中率 ${rate(data.summary.hit_rate_20d)}` : "正式结果等待验收"}</small><b>重点：{assessment?.focus}</b><p>{assessment?.reason}</p></div>
           <div className="history-score-metrics">
             <article><CalendarClock size={17} /><span>已存档</span><strong>{data.summary.run_count} 天</strong><small>{data.summary.pick_count} 条候选记录</small></article>
@@ -177,7 +185,7 @@ export function RecommendationHistoryPage() {
           <div className={`history-distribution ${allEvaluatedNegative ? "negative" : ""}`} aria-label="复盘收益分布"><div><span>成熟样本分布</span><strong>正、负与未成熟样本全部展示</strong></div><b className="positive">正收益 {performanceDistribution?.positive ?? 0}</b><b className="negative">负收益 {performanceDistribution?.negative ?? 0}</b><b>持平 {performanceDistribution?.flat ?? 0}</b><b>未成熟 {performanceDistribution?.immature ?? 0}</b>{allEvaluatedNegative ? <p>当前成熟样本全部为负收益：建议暂停把该策略作为主要依据；继续记录，不回写历史结果。</p> : null}</div>
         </section>
 
-        <section className="history-ledger" aria-label="每日推荐账本">
+        <section id="history-ledger" className="history-ledger" aria-label="每日推荐账本">
           <header><div><span>逐日账本</span><strong>当时选了谁，后来走得怎样</strong></div><small>基准：上证指数 · 收益未计交易成本</small></header>
           {data.days.length === 0 ? <div className="history-empty"><strong>从今天开始建档</strong><p>首个交易日开始记录，不回填历史数据。</p></div> : <div className="history-day-list">
             {visibleDays.map((day) => <section className="history-day" key={`${day.preset}-${day.trading_date}`}>
