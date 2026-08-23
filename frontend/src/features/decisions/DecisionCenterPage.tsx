@@ -155,7 +155,7 @@ export function DecisionCenterPage() {
 
     <AsyncState loading={query.isLoading} error={query.error as Error | null} onRetry={() => void query.refetch()}>
       {feed ? <div className="decision-center">
-        {empty ? <section className="decision-empty"><ShieldCheck size={28} /><strong>没有需要你处理的变化</strong><p>系统每 10 分钟自动检查</p></section> : <>
+        {empty ? <section className="decision-empty"><ShieldCheck size={28} /><strong>没有需要你处理的变化</strong><p>系统每 10 分钟自动检查。你可以继续完成今天的研究任务。</p><nav aria-label="提醒为空时的下一步"><Link to="/opportunities">查看今日候选</Link><Link to="/holdings">维护真实持仓</Link><Link to="/market">回到市场概览</Link></nav></section> : <>
           {requiredEvents.length ? <section className="decision-event-section actionable" aria-label="需要处理">
             <header><div><span>YOUR MOVE</span><h2>需要处理</h2><strong>{requiredEvents.length} 项 · 仅真实持仓或可执行候选</strong></div></header>
             <div className="decision-event-grid">{requiredEvents.map((event) => <DecisionCard key={event.id} event={event} onRead={(id) => read.mutate(id)} />)}</div>

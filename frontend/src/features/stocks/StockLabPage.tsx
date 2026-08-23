@@ -952,6 +952,7 @@ export function StockLabPage() {
       <h2>先选股票，再生成结论</h2>
       <p>系统不会默认把任何股票当成你的关注或持仓。输入名称、代码或从最近查看中选择。</p>
       {recent.length > 0 ? <div><strong>最近查看</strong><nav>{recent.map((item) => <button type="button" key={item.symbol} onClick={() => chooseSymbol(item.symbol, item.name)}><b>{item.name}</b><small>{item.symbol}{item.sector ? ` · ${item.sector}` : ""}</small></button>)}</nav></div> : null}
+      <div className="stock-start-routes"><strong>还没有研究记录？</strong><nav><Link to="/opportunities"><b>从今日候选开始</b><small>先看经过策略筛选的研究线索</small></Link><Link to="/limit-ladder"><b>从连板结构开始</b><small>查看活跃股票与梯队位置</small></Link></nav></div>
     </section> : null}
     <AsyncState loading={query.isLoading} loadingText={`正在核对 ${term || symbol} 的行情、财务与风险…`} error={query.error as Error | null} onRetry={() => void query.refetch()}>{query.data && <>
     <StockFocusBoard dossier={query.data} evidence={evidenceQuery.data} params={params} />

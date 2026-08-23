@@ -449,6 +449,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
   }, [railCollapsed]);
 
   const currentRoute = routeMeta[location.pathname] ?? routeMeta["/market"];
+  const hasLocalResearchInput = location.pathname === "/stocks" || location.pathname === "/ask";
 
   return (
     <div className={`app-shell ${deviceMode}-shell ${railCollapsed ? "rail-collapsed" : ""}`} data-device-mode={deviceMode}>
@@ -497,7 +498,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
         <div className="topbar">
           <div className="topbar-left">
             <div className="workspace-context"><span>{currentRoute.section}</span><strong>{currentRoute.title}</strong><small>{currentRoute.description}</small></div>
-            <CommandDock />
+            {!hasLocalResearchInput ? <CommandDock /> : null}
           </div>
           <div className="topbar-actions">
             {refreshNotice ? <div className={`refresh-notice ${refreshNotice.kind}`} role={refreshNotice.kind === "error" ? "alert" : "status"} aria-live={refreshNotice.kind === "error" ? "assertive" : "polite"}><i />{refreshNotice.message}</div> : null}

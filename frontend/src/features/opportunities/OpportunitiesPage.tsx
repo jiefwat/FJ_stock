@@ -213,23 +213,28 @@ export function OpportunitiesPage() {
   const visibleCandidates = leadLayer === "all" ? candidateRows : candidateRows.filter((row) => row.badge.layer === leadLayer);
   const selectedLayerLabel = leadLayers.find(([key]) => key === leadLayer)?.[1] ?? "全部线索";
   const toggleExpanded = (symbol: string) => setExpandedSymbols((symbols) => symbols.includes(symbol) ? symbols.filter((item) => item !== symbol) : [...symbols, symbol]);
+  const strategyStatus = query.isFetching && !query.isLoading
+    ? `正在更新${presetLabel ?? preset}候选`
+    : `当前展示${presetLabel ?? preset}策略`;
 
   return <>
     <header className="page-head opportunity-page-head"><div><h1>候选</h1></div><nav className="opportunity-head-actions" aria-label="候选页面操作"><Link className="button secondary" to="/history"><History size={16} />历史复盘</Link><a className="button secondary" href={`/api/v1/opportunities/export.csv?preset=${preset}`}><Download size={16} />导出</a></nav></header>
-    <StrategyLibrary
-      cards={Array.isArray(strategyBoard.data?.cards) ? strategyBoard.data.cards : []}
-      active={preset}
-      loading={strategyBoard.isLoading}
-      failed={strategyBoard.isError}
-      onPreview={(key) => queryClient.prefetchQuery({ queryKey: ["opportunities", key], queryFn: () => api<Result>(opportunitiesPath(key)), staleTime: 90_000 })}
-      onSelect={(key) => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}
-    />
+    <p className={`strategy-switch-status ${query.isFetching && !query.isLoading ? "updating" : ""}`} role="status" aria-live="polite">{strategyStatus}</p>
     <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
       {query.data.available && <OpportunityQueueDesk preset={preset} presetLabel={presetLabel} candidateRows={candidateRows} layerCounts={layerCounts} />}
       {!query.data.available ? <section className="strategy-unavailable">
         <AlertTriangle size={22} />
         <div><span>暂时没有结果</span><p>{plainLanguage(query.data.unavailable_reason ?? "当前信息不足")}</p>{query.data.next_actions.map((action) => <p key={action}>· {monitoringText(action)}</p>)}<button className="text-button" onClick={() => setPreset("trend")}>看趋势延续 →</button></div>
-      </section> : <>
+      </section> : null}
+      <StrategyLibrary
+        cards={Array.isArray(strategyBoard.data?.cards) ? strategyBoard.data.cards : []}
+        active={preset}
+        loading={strategyBoard.isLoading}
+        failed={strategyBoard.isError}
+        onPreview={(key) => queryClient.prefetchQuery({ queryKey: ["opportunities", key], queryFn: () => api<Result>(opportunitiesPath(key)), staleTime: 90_000 })}
+        onSelect={(key) => { setPreset(key); setLeadLayer("all"); setExpandedSymbols([]); }}
+      />
+      {query.data.available ? <>
         <section className="lead-layer-bar" aria-label="线索分层筛选">{leadLayers.map(([key, label]) => <button key={key} className={leadLayer === key ? "active" : ""} onClick={() => { setLeadLayer(key); setExpandedSymbols([]); }}><span>{label}</span><strong>{layerCounts[key]}</strong></button>)}</section>
         <section className="panel opportunity-list-panel"><div className="panel-title"><span>{selectedLayerLabel}</span><small>{visibleCandidates.length} 只</small></div>{visibleCandidates.length === 0 ? <div className="empty">当前分层没有线索。</div> : <div className="candidate-table opportunity-table compact-opportunity-list">{visibleCandidates.map(({ item, badge }, index) => {
           const expanded = expandedSymbols.includes(item.quote.symbol);
@@ -242,30 +247,33 @@ export function OpportunitiesPage() {
               <span><small>涨跌</small><b className={(item.quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(item.quote.change_pct)}</b></span>
               <div className="score-context"><span>{upsideLabel(item)}</span><em>当前 {fmt(item.base_score, 0)}</em>{item.context_penalty > 0 && <b>市场影响 -{fmt(item.context_penalty, 0)}</b>}<em>信息 {percent(item.evidence_coverage * 100)}</em></div>
               <div className={`lead-badge ${badge.tone}`}><strong>{badge.action}</strong></div>
+              <span className="candidate-expand-label">{expanded ? "收起判断" : "查看判断"}</span>
               <ChevronDown className="candidate-toggle" size={18} aria-hidden="true" />
             </button>
             {expanded && <CandidateDetail item={item} preset={preset} />}
           </article>;
         })}</div>}</section>
-      </>}
+        </> : null}
     </>}</AsyncState>
   </>;
 }
 
 function StrategyLibrary({ cards, active, loading, failed, onPreview, onSelect }: { cards: StrategyBoardCard[]; active: string; loading: boolean; failed: boolean; onPreview: (key: string) => void; onSelect: (key: string) => void }) {
   const byId = new Map(cards.map((card) => [card.id, card]));
+  const activeLabel = presets.find(([key]) => key === active)?.[1] ?? active;
+  const activeCard = byId.get(active);
   return <section className="strategy-library" aria-label="策略预设">
-    <header><div><span>STRATEGY REGISTRY</span><strong>候选策略库</strong><small>筛选、复盘与监控共用稳定策略 ID</small></div><Link to="/history">查看策略历史表现 →</Link></header>
+    <header><div><span>STRATEGY SWITCHER</span><strong>切换筛选策略</strong><small>先看当前决定，需要时再换一种筛选视角</small></div><Link to="/history">查看策略历史表现 →</Link></header>
     {failed && <p className="capability-warning">策略摘要暂不可用，仍可逐个运行现有策略。</p>}
-    <div className="strategy-card-grid">{presets.map(([key, label]) => {
+    <div className="strategy-switcher" role="group" aria-label="选择候选策略">{presets.map(([key, label]) => {
       const card = byId.get(key);
       return <button key={key} type="button" className={active === key ? "active" : ""} aria-pressed={active === key} onPointerEnter={() => onPreview(key)} onFocus={() => onPreview(key)} onClick={() => onSelect(key)}>
-        <span><em>{card?.category ?? "策略"}</em><b>{card ? `${card.hit_count} 命中` : loading ? "计算中" : "可运行"}</b></span>
-        <strong>{label}</strong>
-        <p>{card?.entry_signal ?? "点击运行并查看当前触发条件"}</p>
-        <small>退出：{card?.exit_signal ?? "以候选失效条件为准"}</small>
-        <footer><i>置信 {card ? percent(card.confidence * 100) : "待计算"}</i><b>{card?.top_candidate?.name ?? "暂无首选"}</b></footer>
+        <strong>{label}</strong><span>{card ? `${card.hit_count} 只` : loading ? "更新中" : "可运行"}</span>
       </button>;
     })}</div>
+    <article className="strategy-active-summary" aria-label={`${activeLabel}策略说明`}>
+      <div><span>当前策略</span><strong>{activeLabel}</strong><small>{activeCard?.category ?? "量化筛选"}</small></div>
+      <dl><div><dt>进入条件</dt><dd>{activeCard?.entry_signal ?? "点击运行并核对当前触发条件"}</dd></div><div><dt>退出条件</dt><dd>{activeCard?.exit_signal ?? "以候选失效条件为准"}</dd></div><div><dt>分析置信度</dt><dd>{activeCard ? percent(activeCard.confidence * 100) : "待计算"}</dd></div><div><dt>当前首选</dt><dd>{activeCard?.top_candidate?.name ?? "暂无首选"}</dd></div></dl>
+    </article>
   </section>;
 }

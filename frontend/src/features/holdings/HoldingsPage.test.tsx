@@ -280,7 +280,9 @@ it("starts the create form empty so name-only additions do not reuse a default s
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><HoldingsPage /></MemoryRouter></QueryClientProvider>);
 
-  await screen.findByText("暂无持仓");
+  await screen.findByRole("heading", { name: "先录入真实持仓，系统才会生成调仓判断" });
+  expect(screen.queryByLabelText("组合总览")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("持仓排序")).not.toBeInTheDocument();
   const form = within(screen.getByRole("form", { name: "登记持仓" }));
   expect(form.getByLabelText("代码")).toHaveValue("");
   expect(form.getByLabelText("名称")).toHaveValue("");

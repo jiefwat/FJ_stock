@@ -152,6 +152,8 @@ it("starts without assuming Moutai is selected or held", async () => {
 
   expect(screen.getByLabelText("开始股票分析")).toHaveTextContent("先选股票，再生成结论");
   expect(screen.getByText(/不会默认把任何股票当成你的关注或持仓/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /从今日候选开始/ })).toHaveAttribute("href", "/opportunities");
+  expect(screen.getByRole("link", { name: /从连板结构开始/ })).toHaveAttribute("href", "/limit-ladder");
   expect(fetchMock).not.toHaveBeenCalled();
 
   fireEvent.change(screen.getByLabelText("搜索股票"), { target: { value: "600519" } });

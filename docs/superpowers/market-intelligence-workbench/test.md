@@ -1948,3 +1948,39 @@ Commit `ec90856` was pushed to `origin/main` and deployed as release `20260823-1
 - At 1440 x 1000, the public ladder rendered 12 of 80 stocks in three columns with `scrollWidth=1440` and a reversible `再显示 68 只` control.
 - At 390 x 844, the public ladder rendered two stock columns and a 2 x 2 summary with `scrollWidth=390`.
 - The authenticated public session emitted no browser console errors or warnings.
+
+## 2026-08-23 Core Task-flow Interaction Verification
+
+Focused regressions cover the new interaction contracts:
+
+- The opportunity decision desk precedes strategy selection, the compact switcher updates the active strategy summary, and candidate rows expose reversible judgement labels.
+- Empty Holdings omits the portfolio overview and sort controls while rendering the registration form immediately.
+- Empty Decision Change exposes three next-task links.
+- Stock Lab exposes neutral candidate/ladder entry routes, and Ask Stock/Stock Lab suppress the duplicate global search input.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 95 tests across 12 files |
+| Production build | Passed, 1,659 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Authenticated local production-build acceptance at 1440 x 1000 and 390 x 844 verified:
+
+- Opportunities reduced document height from approximately 2,025px to 1,692px on desktop; its decision desk begins at 178px and strategy switching updates the desk without changing scroll position.
+- On mobile, the candidate list begins at approximately 852px instead of 1,247px, the strategy switcher remains horizontally operable, `查看判断` stays visible, and document `scrollWidth` equals 390px.
+- Empty Holdings removes the zero-value overview and moves its form to the first screen; mobile inputs are 162px/336px wide with no document overflow.
+- Stock Lab and Ask Stock each retain their local research input while the duplicate global search is absent.
+- The only browser console error came from intentionally testing an expired token before registering the isolated local acceptance account; subsequent authenticated route requests were successful.

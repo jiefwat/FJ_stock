@@ -113,6 +113,7 @@ it("shows plain-language strategy diagnostics and keeps professional data on dem
   expect(screen.getByRole("link", { name: "历史复盘" })).toHaveAttribute("href", "/history");
   expect(screen.queryByText("策略诊断")).not.toBeInTheDocument();
   expect(within(await screen.findByLabelText("候选自动监控台")).getByText("首选可小仓试探")).toBeInTheDocument();
+  expect(screen.getByLabelText("候选自动监控台").compareDocumentPosition(screen.getByLabelText("策略预设")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText("自动更新 · 10 分钟")).toBeInTheDocument();
   expect(screen.getByText("价格与成交")).toBeInTheDocument();
   expect(screen.getByText("板块与资金")).toBeInTheDocument();
@@ -132,10 +133,12 @@ it("shows plain-language strategy diagnostics and keeps professional data on dem
   expect(screen.queryByText("筛选压力")).not.toBeInTheDocument();
   expect(screen.getAllByText("全部").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByRole("button", { name: /星网锐捷/ })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getAllByText("查看判断").length).toBeGreaterThan(0);
   expect(screen.queryByText("历史K线")).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /星网锐捷/ }));
   expect(screen.getByRole("button", { name: /星网锐捷/ })).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("收起判断")).toBeInTheDocument();
   const decisionBrief = within(screen.getByLabelText("星网锐捷 决策摘要"));
   expect(decisionBrief.getByText("当前决定")).toBeInTheDocument();
   expect(decisionBrief.getByText("暂不买入")).toBeInTheDocument();
@@ -243,10 +246,15 @@ it("offers only effective primary strategies instead of data-blocked presets", a
   expect(screen.getByRole("button", { name: /蓝筹稳健/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /超跌修复/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "板块改善" })).not.toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: /突破 7 命中 放量突破 量比放大；涨幅确认/ })).toBeInTheDocument();
-  expect(screen.getByText("宁德时代")).toBeInTheDocument();
+  const volumeStrategy = await screen.findByRole("button", { name: /放量突破 7 只/ });
+  expect(volumeStrategy).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: /突破 7 命中 放量突破/ }));
+  fireEvent.click(volumeStrategy);
+  expect(await screen.findByText("当前展示放量突破策略")).toBeInTheDocument();
+  const activeSummary = within(screen.getByLabelText("放量突破策略说明"));
+  expect(activeSummary.getByText("量比放大；涨幅确认")).toBeInTheDocument();
+  expect(activeSummary.getByText("宁德时代")).toBeInTheDocument();
+  expect(activeSummary.getByText("86%")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/opportunities?preset=volume_breakout&limit=10",
     expect.any(Object),

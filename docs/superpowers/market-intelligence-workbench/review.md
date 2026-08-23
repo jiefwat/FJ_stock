@@ -274,3 +274,27 @@ Approved for commit, push to `main`, and public deployment. The final repository
 ### Production Confirmation
 
 Release `20260823-155528-ec90856` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, the deployed CSS contains the long-page containment rules, both systemd units are active, and persistent data remains outside the release. Authenticated public-browser acceptance reproduced the desktop three-column and mobile two-column ladder layouts without horizontal overflow or console errors.
+
+## 2026-08-23 Core Task-flow Interaction Review
+
+### Scope
+
+Reviewed the authenticated workflow through direct desktop and 390px browser operation, concentrating on the first useful action, page dead ends, duplicate inputs, state feedback, and narrow-screen control sizing across Opportunities, Holdings, Decision Change, Stock Lab, and Ask Stock.
+
+### Findings
+
+No unresolved P0, P1, or P2 finding blocks release. Opportunities now presents the current decision before strategy explanation, reduces nine oversized strategy cards to one horizontal switcher plus a single active summary, announces strategy updates, and labels each candidate row with a reversible `查看判断` / `收起判断` action. The mobile strategy treatment progressively removes its decorative header while retaining entry, exit, confidence, and current-best evidence.
+
+Empty Holdings now starts with a directly visible registration workflow and explicitly states that only real positions produce rebalance reminders; zero-value portfolio charts and meaningless sorting controls no longer appear. Empty Decision Change provides routes into today's candidates, real holdings, and the market overview. Stock Lab and Ask Stock no longer compete with a second global research input, while a new Stock Lab user receives neutral workflow routes without defaulting to Moutai or any other stock.
+
+### Human-factors Notes
+
+- Decision and next action precede explanation on the highest-frequency candidate route.
+- Empty states preserve user agency instead of ending the workflow.
+- Strategy choice uses persistent pressed state and a polite live-region update without moving scroll position.
+- Narrow-screen holding fields now measure 162px for paired inputs and 336px for narrative inputs instead of the previous 55px compressed controls.
+- Reduced-motion preferences disable the only new status animation.
+
+### Decision
+
+Approved for push to `main` and public deployment. The change is frontend-only, preserves all provider, deterministic-analysis, authenticated API, and account boundaries, and passed the complete repository gate.

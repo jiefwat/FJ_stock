@@ -104,6 +104,9 @@ it("shows a no-work empty state when the system has nothing actionable", async (
 
   expect(await screen.findByText("没有需要你处理的变化")).toBeInTheDocument();
   expect(screen.queryByText(/请检查|请复核|请刷新/)).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看今日候选" })).toHaveAttribute("href", "/opportunities");
+  expect(screen.getByRole("link", { name: "维护真实持仓" })).toHaveAttribute("href", "/holdings");
+  expect(screen.getByRole("link", { name: "回到市场概览" })).toHaveAttribute("href", "/market");
 });
 
 it("filters reminders by category and read state", async () => {

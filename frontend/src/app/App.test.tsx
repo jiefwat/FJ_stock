@@ -507,6 +507,7 @@ it("keeps the Ask Stock route behind the authenticated shell", async () => {
 
   expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
+  expect(screen.queryByLabelText("搜索股票或输入问题")).not.toBeInTheDocument();
 });
 
 it("opens the stock from the latest Ask Stock answer instead of stale research", async () => {

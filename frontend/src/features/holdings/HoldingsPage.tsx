@@ -599,6 +599,38 @@ export function HoldingsPage() {
     </>;
   }
 
+  if (query.isLoading) {
+    return <>
+      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
+      <section className="panel holdings-loading" role="status">正在读取当前账号的真实持仓…</section>
+    </>;
+  }
+
+  const createForm = <form aria-label="登记持仓" autoComplete="off" className="panel holding-create compact-create" onSubmit={(event) => { event.preventDefault(); setCreateNotice(""); create.mutate(); }}>
+    <div className="panel-title"><span>登记持仓</span><button className="button secondary" type="button" onClick={resetCreateDraft}>清空表单</button></div>
+    <p className="holding-create-help">代码和名称任选其一即可识别股票；数量、成本用于计算真实盈亏和调仓优先级。</p>
+    <label>代码<input autoComplete="off" placeholder="如 SZ.000001 / HK.00700 / US.AAPL" value={draft.symbol} onChange={(event) => { setDraft({ ...draft, symbol: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
+    <label>名称<input autoComplete="off" placeholder="如 平安银行 / 腾讯控股 / 苹果" value={draft.name} onChange={(event) => updateCreateName(event.target.value)} /></label>
+    <label>数量<input autoComplete="off" placeholder="如 1000" value={draft.quantity} onChange={(event) => { setDraft({ ...draft, quantity: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
+    <label>成本<input autoComplete="off" placeholder="如 11.20" value={draft.cost_price} onChange={(event) => { setDraft({ ...draft, cost_price: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
+    <label>持仓逻辑<input autoComplete="off" placeholder="写下这笔持仓为什么值得留在组合里" value={draft.thesis} onChange={(event) => { setDraft({ ...draft, thesis: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
+    <label>什么情况下减仓或退出<input autoComplete="off" placeholder="写下什么情况下必须降仓或退出" value={draft.invalidation} onChange={(event) => { setDraft({ ...draft, invalidation: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
+    <button className="button" disabled={create.isPending}>{create.isPending ? "保存中…" : "加入持仓"}</button>
+    {createNotice && <p className="form-success" role="status">{createNotice}</p>}
+    {create.isError && <p className="form-error" role="alert">{createErrorText(create.error)}</p>}
+  </form>;
+
+  if (holdings.length === 0) {
+    return <>
+      <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
+      <section className="holding-onboarding" aria-label="开始管理真实持仓">
+        <header><span>START HERE</span><h2>先录入真实持仓，系统才会生成调仓判断</h2><p>没有持仓时，系统不会推荐你减仓任何股票。</p></header>
+        <ol><li><strong>录入数量与成本</strong><span>用于计算真实盈亏和组合占比</span></li><li><strong>只分析真实持仓</strong><span>候选股票不会混入调仓建议</span></li><li><strong>删除即停止提醒</strong><span>退出持仓后不再产生减仓通知</span></li></ol>
+        {createForm}
+      </section>
+    </>;
+  }
+
   return <>
     <header className="page-head holdings-page-head"><div><h1>持仓</h1></div></header>
     <section className="portfolio-overview panel" aria-label="组合总览">
@@ -630,27 +662,15 @@ export function HoldingsPage() {
         >{label}</button>)}
       </div>
       {deleteNotice ? <p className={`holding-delete-notice ${deleteNotice.tone}`} role={deleteNotice.tone === "error" ? "alert" : "status"}>{deleteNotice.message}</p> : null}
-      {holdings.length ? <div className="holdings-list" role="list" aria-label="持仓清单">
+      <div className="holdings-list" role="list" aria-label="持仓清单">
         {visibleHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id, name) => remove.mutate({ id, name })} deletePending={remove.isPending && remove.variables?.id === item.item.id} />)}
-      </div> : <div className="empty">暂无持仓</div>}
+      </div>
       {holdings.length > HOLDING_PAGE_SIZE && <div className="holdings-list-controls"><span>已显示 {visibleHoldings.length} / {holdings.length} 笔持仓</span><div>{visibleHoldingCount > HOLDING_PAGE_SIZE && <button type="button" onClick={() => setVisibleHoldingCount(HOLDING_PAGE_SIZE)}>收起</button>}{hiddenHoldingCount > 0 && <button className="primary" type="button" onClick={() => setVisibleHoldingCount((current) => current + HOLDING_PAGE_SIZE)}>再显示 {Math.min(HOLDING_PAGE_SIZE, hiddenHoldingCount)} 笔</button>}</div></div>}
     </section>
 
     <details className="holding-create-drawer" onToggle={(event) => { if (event.currentTarget.open) resetCreateDraft(); }}>
       <summary>新增持仓</summary>
-      <form aria-label="登记持仓" autoComplete="off" className="panel holding-create compact-create" onSubmit={(event) => { event.preventDefault(); setCreateNotice(""); create.mutate(); }}>
-        <div className="panel-title"><span>登记持仓</span><button className="button secondary" type="button" onClick={resetCreateDraft}>清空表单</button></div>
-        <p className="holding-create-help">新增第二只时可以只填名称，例如“平安银行”；不要沿用上一只的代码。</p>
-        <label>代码<input autoComplete="off" placeholder="如 SZ.000001 / HK.00700 / US.AAPL" value={draft.symbol} onChange={(event) => { setDraft({ ...draft, symbol: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
-        <label>名称<input autoComplete="off" placeholder="如 平安银行 / 腾讯控股 / 苹果" value={draft.name} onChange={(event) => updateCreateName(event.target.value)} /></label>
-        <label>数量<input autoComplete="off" placeholder="如 1000" value={draft.quantity} onChange={(event) => { setDraft({ ...draft, quantity: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
-        <label>成本<input autoComplete="off" placeholder="如 11.20" value={draft.cost_price} onChange={(event) => { setDraft({ ...draft, cost_price: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
-        <label>持仓逻辑<input autoComplete="off" placeholder="写下这笔持仓为什么值得留在组合里" value={draft.thesis} onChange={(event) => { setDraft({ ...draft, thesis: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
-        <label>什么情况下减仓或退出<input autoComplete="off" placeholder="写下什么情况下必须降仓或退出" value={draft.invalidation} onChange={(event) => { setDraft({ ...draft, invalidation: event.target.value }); setCreateNotice(""); create.reset(); }} /></label>
-        <button className="button" disabled={create.isPending}>{create.isPending ? "保存中…" : "加入持仓"}</button>
-        {createNotice && <p className="form-success" role="status">{createNotice}</p>}
-        {create.isError && <p className="form-error" role="alert">{createErrorText(create.error)}</p>}
-      </form>
+      {createForm}
     </details>
   </>;
 }
