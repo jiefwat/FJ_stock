@@ -2118,3 +2118,13 @@ make verify
 | Frontend tests | Passed, 100 tests across 13 files |
 | Production build | Passed, 1,660 modules transformed |
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+### Public release acceptance
+
+Commit `87dca4a` was pushed to `origin/main` and deployed as release `20260823-192111-87dca4a` at `https://stock.jiewat-kaka-fj.com`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the index references `index-CiR3AC7u.js` plus `index-BqR3pf3e.css`.
+- The deployed `MarketGroupPage-Dfqeb88s.js` contains `240`, `正在读取成分股证据`, and `成分股证据暂未取得`, confirming both the perception threshold and truthful slow/failure states.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The unit enables immediate refresh every 600 seconds, and the latest persisted market `fetched_at` advanced to `2026-08-23T11:23:14.122029Z` after the new service process started at `11:23:02Z`.
+- The release contains no runtime data directory, while `/opt/aster-market/data/marketdesk.db` remains present.

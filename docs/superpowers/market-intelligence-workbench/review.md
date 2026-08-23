@@ -377,3 +377,9 @@ The group focus keeps board-level evidence visible and waits 240 milliseconds be
 ### Decision
 
 Approved for commit, push to `main`, and public deployment. Provider access remains behind the service/provider boundary, deterministic analysis remains under `analysis/`, and the browser continues to use only `/api/v1/*`.
+
+### Production Confirmation
+
+Release `20260823-192111-87dca4a` is active at `https://stock.jiewat-kaka-fj.com`. The public group chunk contains the 240-millisecond loading threshold and both meaningful loading and unavailable-state labels. The service and morning-email timer are active, the public health endpoint is normal, release-local runtime data is absent, and persistent data remains outside the release.
+
+The systemd unit enables immediate startup refresh and a 600-second interval. The persisted market fetch time advanced to `2026-08-23T11:23:14.122029Z` after the new process started at `11:23:02Z`, confirming that the startup refresh chain actually ran on the deployed release.
