@@ -1899,3 +1899,41 @@ Commit `0cdff06` was pushed to `origin/main` and deployed as release `20260823-1
 - The public CSS contains `--font-display`, `--surface-selected`, and the new opportunity decision-desk grid rule, confirming the consistency bundle is active.
 - `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
 - The release contains no runtime data directory, while persistent data remains present under `/opt/aster-market/data`.
+
+## 2026-08-23 Long-page Containment Verification
+
+The containment pass keeps the existing React/CSS system and applies one interaction rule across long routes: use available horizontal space first, show the highest-value subset initially, and let the user explicitly reveal or collapse the remainder.
+
+Focused regressions verify:
+
+- A 14-stock ladder level renders only the first 12 stocks, reveals the remaining two, and collapses back to 12.
+- A 13-stock concept group renders only the first 12 constituents, reveals the remainder, and resets after changing groups.
+- Seven recommendation days render as the latest six, load the seventh on request, and collapse back to six.
+- Existing holdings behavior, stock handoffs, confidence copy, ladder direction changes, and market-group filtering remain intact.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 95 tests across 12 files |
+| Production build | Passed, 1,659 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Authenticated browser acceptance used the production bundle served at `http://127.0.0.1:8765`:
+
+- At 1440 x 1000, Limit Ladder rendered 12 of 80 first-board stocks in three equal columns, had `scrollWidth=1440`, and reduced the document to 1,229px before expansion.
+- At 390 x 844, the same page rendered a two-column stock grid and a 2 x 2 summary, had `scrollWidth=390`, and reduced document height from 2,861px to 2,037px.
+- Concept Analysis kept its catalog inside a viewport-bounded scroll region and the selected-group workbench beside it on desktop.
+- Recommendation Review initially rendered at most six days; Holdings kept the ten-day stock plan closed until requested.
+- The checked routes emitted no browser console errors or warnings.

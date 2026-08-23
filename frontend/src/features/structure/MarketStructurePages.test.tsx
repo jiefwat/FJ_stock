@@ -148,3 +148,125 @@ it("switches ladder direction and keeps confidence and raw-price disclosure visi
   const stockLink = screen.getByRole("link", { name: /跌停样本/ });
   expect(stockLink).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=limit-ladder");
 });
+
+it("bounds long ladder levels and lets the user reveal or collapse the rest", async () => {
+  const stocks = Array.from({ length: 14 }, (_, index) => ({
+    quote: {
+      ...quote,
+      symbol: `SH.${String(600000 + index).padStart(6, "0")}`,
+      code: String(600000 + index).padStart(6, "0"),
+      name: `涨停样本${index + 1}`,
+    },
+    streak: 1,
+    limit_pct: 10,
+    one_word: false,
+    confidence: 0.9,
+    evidence: ["未复权日线验证"],
+  }));
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      meta,
+      mode: "up",
+      available: true,
+      unavailable_reason: null,
+      total: stocks.length,
+      max_streak: 1,
+      confidence: 0.9,
+      levels: [{ streak: 1, label: "首板", stocks }],
+      industry_distribution: { 白酒: stocks.length },
+      methodology: ["连续板数只使用未复权原始日线验证。"],
+    }),
+  })));
+
+  renderWithClient(<LimitLadderPage />, "/limit-ladder");
+
+  expect(await screen.findByText("涨停样本12")).toBeInTheDocument();
+  expect(screen.queryByText("涨停样本13")).not.toBeInTheDocument();
+  const expand = screen.getByRole("button", { name: /再显示 2 只/ });
+  expect(expand).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(expand);
+  expect(screen.getByText("涨停样本14")).toBeInTheDocument();
+  const collapse = screen.getByRole("button", { name: /收起至前 12 只/ });
+  expect(collapse).toHaveAttribute("aria-expanded", "true");
+
+  fireEvent.click(collapse);
+  expect(screen.queryByText("涨停样本13")).not.toBeInTheDocument();
+});
+
+it("bounds a long constituent list and resets it when the selected group changes", async () => {
+  const constituents = Array.from({ length: 13 }, (_, index) => ({
+    ...quote,
+    symbol: `SH.${String(600100 + index).padStart(6, "0")}`,
+    code: String(600100 + index).padStart(6, "0"),
+    name: `概念成分${index + 1}`,
+  }));
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      meta,
+      kind: "concept",
+      available: true,
+      degraded: false,
+      unavailable_reason: null,
+      summary: "当前覆盖 2 个概念。",
+      methodology: ["当前只比较最新横截面。"],
+      groups: [
+        {
+          code: "BK100",
+          name: "长名单概念",
+          kind: "concept",
+          change_pct: 2.1,
+          net_flow: 100_000_000,
+          constituent_count: constituents.length,
+          advancing: constituents.length,
+          declining: 0,
+          average_change_pct: 2.1,
+          average_turnover_rate: 0.8,
+          total_amount: 2_000_000_000,
+          heat_score: 82,
+          risk_score: 18,
+          evidence_coverage: 1,
+          leader: { quote: constituents[0], score: 88 },
+          constituents,
+          missing_evidence: [],
+        },
+        {
+          code: "BK200",
+          name: "短名单概念",
+          kind: "concept",
+          change_pct: 0.5,
+          net_flow: 10_000_000,
+          constituent_count: 1,
+          advancing: 1,
+          declining: 0,
+          average_change_pct: 0.5,
+          average_turnover_rate: 0.5,
+          total_amount: 100_000_000,
+          heat_score: 50,
+          risk_score: 30,
+          evidence_coverage: 0.8,
+          leader: null,
+          constituents: [quote],
+          missing_evidence: [],
+        },
+      ],
+    }),
+  })));
+
+  renderWithClient(<MarketGroupPage kind="concept" />, "/concepts");
+
+  expect(await screen.findByText("概念成分12")).toBeInTheDocument();
+  expect(screen.queryByText("概念成分13")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /再显示 1 只成分股/ }));
+  expect(screen.getByText("概念成分13")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /短名单概念/ }));
+  expect(await screen.findByRole("region", { name: "短名单概念概念焦点" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /长名单概念/ }));
+  expect(await screen.findByRole("region", { name: "长名单概念概念焦点" })).toBeInTheDocument();
+  expect(screen.queryByText("概念成分13")).not.toBeInTheDocument();
+});

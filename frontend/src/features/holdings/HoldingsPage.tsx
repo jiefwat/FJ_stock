@@ -56,6 +56,8 @@ const holdingSortOptions: Array<[HoldingSort, string]> = [
   ["add", "可小幅加仓"],
   ["risk", "风控优先"],
 ];
+const HOLDING_PAGE_SIZE = 8;
+const TODAY_FOCUS_LIMIT = 5;
 
 function toPayload(draft: HoldingDraft) {
   const name = draft.name.trim();
@@ -332,8 +334,11 @@ function PortfolioMovementDeck({ summary }: { summary: PortfolioSummary }) {
 }
 
 function PortfolioTodayFocus({ items }: { items: HoldingDossier[] }) {
+  const [showAll, setShowAll] = useState(false);
   const queue = executionQueue(items);
   if (!queue.length) return null;
+  const visibleQueue = showAll ? queue : queue.slice(0, TODAY_FOCUS_LIMIT);
+  const hiddenCount = queue.length - visibleQueue.length;
   return <section className="portfolio-today-focus" aria-label="今天的操作决定">
     <header>
       <div>
@@ -342,7 +347,7 @@ function PortfolioTodayFocus({ items }: { items: HoldingDossier[] }) {
       </div>
     </header>
     <div className="today-focus-list">
-      {queue.map((item, index) => <article key={item.item.id} className={riskTone(riskScore(item))}>
+      {visibleQueue.map((item, index) => <article key={item.item.id} className={riskTone(riskScore(item))}>
         <b>{index + 1}</b>
         <div>
           <strong>{item.item.name}</strong>
@@ -354,6 +359,7 @@ function PortfolioTodayFocus({ items }: { items: HoldingDossier[] }) {
         <Link to={holdingAskHref(item)}>查看依据（可选）</Link>
       </article>)}
     </div>
+    {queue.length > TODAY_FOCUS_LIMIT && <button className="portfolio-list-more" type="button" aria-expanded={showAll} onClick={() => setShowAll((current) => !current)}>{showAll ? `收起至前 ${TODAY_FOCUS_LIMIT} 项` : `再显示 ${hiddenCount} 项较低优先级决定`}</button>}
   </section>;
 }
 
@@ -526,6 +532,7 @@ export function HoldingsPage() {
   const [createNotice, setCreateNotice] = useState("");
   const [deleteNotice, setDeleteNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [sort, setSort] = useState<HoldingSort>("priority");
+  const [visibleHoldingCount, setVisibleHoldingCount] = useState(HOLDING_PAGE_SIZE);
   const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
   const query = useQuery({
     queryKey: ["holdings", "page", authScope],
@@ -536,6 +543,8 @@ export function HoldingsPage() {
   });
   const holdings = query.data ?? [];
   const orderedHoldings = useMemo(() => sortHoldings(holdings, sort), [holdings, sort]);
+  const visibleHoldings = orderedHoldings.slice(0, visibleHoldingCount);
+  const hiddenHoldingCount = Math.max(0, orderedHoldings.length - visibleHoldings.length);
   const summary = useMemo(() => portfolioSummary(holdings), [holdings]);
   const create = useMutation({
     mutationFn: () => api<HoldingDossier>("/api/v1/holdings", { method: "POST", body: JSON.stringify(toPayload(draft)) }),
@@ -562,6 +571,8 @@ export function HoldingsPage() {
     },
     onSettled: () => client.invalidateQueries({ queryKey: ["holdings"] }),
   });
+
+  useEffect(() => setVisibleHoldingCount(HOLDING_PAGE_SIZE), [sort]);
 
   function resetCreateDraft() {
     setDraft(emptyDraft);
@@ -605,7 +616,7 @@ export function HoldingsPage() {
       </div>
       <PortfolioMovementDeck summary={summary} />
       <PortfolioTodayFocus items={orderedHoldings} />
-      <PortfolioStockPlan items={orderedHoldings} />
+      {orderedHoldings.length > 0 && <details className="portfolio-detail-drawer"><summary><span>全持仓近 10 日走势</span><small>{orderedHoldings.length} 只股票 · 按需展开，减少页面长度</small></summary><PortfolioStockPlan items={orderedHoldings} /></details>}
     </section>
 
     <section className="panel holdings-table-panel">
@@ -620,8 +631,9 @@ export function HoldingsPage() {
       </div>
       {deleteNotice ? <p className={`holding-delete-notice ${deleteNotice.tone}`} role={deleteNotice.tone === "error" ? "alert" : "status"}>{deleteNotice.message}</p> : null}
       {holdings.length ? <div className="holdings-list" role="list" aria-label="持仓清单">
-        {orderedHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id, name) => remove.mutate({ id, name })} deletePending={remove.isPending && remove.variables?.id === item.item.id} />)}
+        {visibleHoldings.map((item) => <PositionRow key={item.item.id} dossier={item} onDelete={(id, name) => remove.mutate({ id, name })} deletePending={remove.isPending && remove.variables?.id === item.item.id} />)}
       </div> : <div className="empty">暂无持仓</div>}
+      {holdings.length > HOLDING_PAGE_SIZE && <div className="holdings-list-controls"><span>已显示 {visibleHoldings.length} / {holdings.length} 笔持仓</span><div>{visibleHoldingCount > HOLDING_PAGE_SIZE && <button type="button" onClick={() => setVisibleHoldingCount(HOLDING_PAGE_SIZE)}>收起</button>}{hiddenHoldingCount > 0 && <button className="primary" type="button" onClick={() => setVisibleHoldingCount((current) => current + HOLDING_PAGE_SIZE)}>再显示 {Math.min(HOLDING_PAGE_SIZE, hiddenHoldingCount)} 笔</button>}</div></div>}
     </section>
 
     <details className="holding-create-drawer" onToggle={(event) => { if (event.currentTarget.open) resetCreateDraft(); }}>

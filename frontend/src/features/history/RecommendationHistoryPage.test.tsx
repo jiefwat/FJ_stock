@@ -93,3 +93,32 @@ it("shows immutable daily picks with fixed-window and benchmark performance", as
   fireEvent.click(screen.getByRole("button", { name: "资金确认" }));
   expect(await screen.findByText("价格、资金与历史趋势同时确认。")).toBeInTheDocument();
 });
+
+it("shows recommendation days progressively instead of rendering the full history", async () => {
+  const days = Array.from({ length: 7 }, (_, index) => ({
+    ...fixture.days[0],
+    trading_date: `2026-07-${String(21 - index).padStart(2, "0")}`,
+    picks: fixture.days[0].picks.map((pick) => ({
+      ...pick,
+      symbol: `SZ.${String(300750 + index).padStart(6, "0")}`,
+      name: `复盘样本${index + 1}`,
+    })),
+  }));
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ...fixture, days }),
+  })));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(<QueryClientProvider client={client}><MemoryRouter><RecommendationHistoryPage /></MemoryRouter></QueryClientProvider>);
+
+  expect(await screen.findByText("复盘样本6")).toBeInTheDocument();
+  expect(screen.queryByText("复盘样本7")).not.toBeInTheDocument();
+  expect(screen.getByText("已显示最近 6 / 7 个交易日")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "再显示 1 天" }));
+  expect(screen.getByText("复盘样本7")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "收起到最近 6 天" }));
+  expect(screen.queryByText("复盘样本7")).not.toBeInTheDocument();
+});

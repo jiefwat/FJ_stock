@@ -248,3 +248,25 @@ Approved for commit, push to `main`, and public deployment. The change is fronte
 ### Production Confirmation
 
 Release `20260823-152204-0cdff06` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected new JavaScript and CSS fingerprints, and the CSS contains the new typography, semantic-surface, selection, and opportunity-layout tokens. The public health endpoint is normal, both systemd units are active, and persistent data remains outside the release directory.
+
+## 2026-08-23 Long-page Containment Review
+
+### Scope
+
+Reviewed the pending frontend-only containment pass for Limit Ladder, Concept Analysis, Industry Analysis, Recommendation Review, and Holdings, with emphasis on viewport use, progressive disclosure, responsive density, keyboard state, and preservation of existing analysis semantics.
+
+### Findings
+
+No unresolved P0, P1, or P2 finding blocks release. The Limit Ladder no longer constrains a large first-board result to one narrow column: each streak now spans the workbench, uses three stock columns on wide desktop, and initially renders twelve stocks. Concept and industry constituents, recommendation days, holdings, today's action queue, and the full ten-day holding plan now reveal additional detail only on request.
+
+Expansion controls expose their current state with `aria-expanded`, retain visible focus treatment, reset after the relevant filter or selection changes, and always provide a reversible collapse action. Mobile uses two stock columns at common phone widths and falls back to one column below 360px. Existing confidence, unavailable-data, red-up/green-down, Stock Lab handoff, and `/api/v1/*` boundaries remain unchanged.
+
+### Residual Risks And Testing Gaps
+
+- The current account has only two recommendation-history days and no holdings, so live-browser pagination states for those two routes were validated through component fixtures containing seven days and larger holding sets.
+- Very large expanded result sets intentionally restore document scrolling; expansion is an explicit user action and can be reversed without changing filters.
+- The stylesheet still includes historical layers. This pass adds a final containment layer instead of restructuring unrelated feature CSS.
+
+### Decision
+
+Approved for commit, push to `main`, and public deployment. The final repository gate passed with 235 backend tests, 95 frontend tests, the production build, and live-data quality checks. Authenticated browser acceptance found no origin-owned console errors or document-level horizontal overflow at 1440px or 390px.

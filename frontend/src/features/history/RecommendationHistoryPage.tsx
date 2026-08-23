@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, CheckCircle2, Gauge, History, Scale } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AsyncState } from "../../components/AsyncState";
@@ -14,6 +14,7 @@ const presets = [
   ["sector_momentum", "板块共振"],
   ["pullback_support", "回踩企稳"],
 ] as const;
+const HISTORY_DAY_PAGE_SIZE = 6;
 
 function historyQueryOptions(preset: string) {
   return {
@@ -114,6 +115,7 @@ function PerformanceRow({ item }: { item: RecommendationPerformancePick }) {
 
 export function RecommendationHistoryPage() {
   const [preset, setPreset] = useState("trend");
+  const [visibleDayCount, setVisibleDayCount] = useState(HISTORY_DAY_PAGE_SIZE);
   const queryClient = useQueryClient();
   const query = useQuery(historyQueryOptions(preset));
   const data = query.data;
@@ -139,6 +141,10 @@ export function RecommendationHistoryPage() {
     && performanceDistribution.positive === 0
     && performanceDistribution.flat === 0,
   );
+  const visibleDays = data?.days.slice(0, visibleDayCount) ?? [];
+  const hiddenDayCount = Math.max(0, (data?.days.length ?? 0) - visibleDays.length);
+
+  useEffect(() => setVisibleDayCount(HISTORY_DAY_PAGE_SIZE), [preset]);
 
   return <>
     <header className="page-head history-page-head">
@@ -174,11 +180,12 @@ export function RecommendationHistoryPage() {
         <section className="history-ledger" aria-label="每日推荐账本">
           <header><div><span>逐日账本</span><strong>当时选了谁，后来走得怎样</strong></div><small>基准：上证指数 · 收益未计交易成本</small></header>
           {data.days.length === 0 ? <div className="history-empty"><strong>从今天开始建档</strong><p>首个交易日开始记录，不回填历史数据。</p></div> : <div className="history-day-list">
-            {data.days.map((day) => <section className="history-day" key={`${day.preset}-${day.trading_date}`}>
+            {visibleDays.map((day) => <section className="history-day" key={`${day.preset}-${day.trading_date}`}>
               <header><time dateTime={day.trading_date}>{shortDate(day.trading_date)}</time><div><strong>{day.available ? `${day.picks.length} 只入选` : "策略不可用"}</strong><small>{plainLanguage(day.picks.length ? day.summary : day.unavailable_reason ?? "当日没有通过筛选的候选")}</small></div></header>
               {day.picks.length ? <div className="history-pick-list">{day.picks.map((item) => <PerformanceRow key={item.symbol} item={item} />)}</div> : <div className="history-no-picks">当日没有候选也会保留记录，不用结果倒推推荐。</div>}
             </section>)}
           </div>}
+          {data.days.length > HISTORY_DAY_PAGE_SIZE && <div className="history-ledger-controls"><span>已显示最近 {visibleDays.length} / {data.days.length} 个交易日</span><div>{visibleDayCount > HISTORY_DAY_PAGE_SIZE && <button type="button" onClick={() => setVisibleDayCount(HISTORY_DAY_PAGE_SIZE)}>收起到最近 {HISTORY_DAY_PAGE_SIZE} 天</button>}{hiddenDayCount > 0 && <button className="primary" type="button" onClick={() => setVisibleDayCount((current) => current + HISTORY_DAY_PAGE_SIZE)}>再显示 {Math.min(HISTORY_DAY_PAGE_SIZE, hiddenDayCount)} 天</button>}</div></div>}
         </section>
 
         <details className="history-methodology"><summary>计算方法说明</summary><ol>{data.methodology.map((item) => <li key={item}>{plainLanguage(item)}</li>)}</ol></details>
