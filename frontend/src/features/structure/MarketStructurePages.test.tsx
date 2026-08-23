@@ -189,6 +189,7 @@ it("loads the selected group detail on demand when the catalog has no constituen
   const focus = await screen.findByRole("region", { name: "测试概念概念焦点" });
   expect((await within(focus).findAllByText("贵州茅台")).length).toBeGreaterThan(0);
   expect(within(focus).getByText("上涨扩散").nextSibling).toHaveTextContent("100%");
+  expect(screen.getByRole("button", { name: /测试概念 1 只成分/ })).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/v1/market-structure/groups/concept/BK025",
     expect.anything(),

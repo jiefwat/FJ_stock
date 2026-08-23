@@ -80,7 +80,10 @@ export function MarketGroupPage({ kind }: { kind: GroupKind }) {
       <section className="group-workbench">
         <aside id="group-catalog" className="group-catalog">
           <header><div><strong>{label}矩阵</strong><small>{groups.length} / {query.data.groups.length}</small></div><label><Search size={15} /><input aria-label={`搜索${label}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`搜索${label}名称`} /></label><select aria-label={`${label}排序`} value={sort} onChange={(event) => setSort(event.target.value as GroupSort)}><option value="heat">热度优先</option><option value="change">涨幅优先</option><option value="capital">资金优先</option><option value="risk">风险优先</option></select></header>
-          {groups.length ? <div className="group-matrix">{groups.map((item, index) => <button key={item.code} type="button" className={selected?.code === item.code ? "active" : ""} onClick={() => selectGroup(item)}><em>{String(index + 1).padStart(2, "0")}</em><span><strong>{item.name}</strong><small>{item.constituent_count ? `${item.constituent_count} 只成分` : "成分待补"}</small></span><b>{fmt(item.heat_score, 0)}</b><i className={changeTone(item.change_pct)}>{pct(item.change_pct)}</i><u style={{ width: `${item.evidence_coverage * 100}%` }} /></button>)}</div> : <div className="empty">当前搜索没有匹配的{label}。</div>}
+          {groups.length ? <div className="group-matrix">{groups.map((item, index) => {
+            const displayItem = detailGroup?.code === item.code ? detailGroup : item;
+            return <button key={item.code} type="button" className={selected?.code === item.code ? "active" : ""} onClick={() => selectGroup(item)}><em>{String(index + 1).padStart(2, "0")}</em><span><strong>{item.name}</strong><small>{displayItem.constituent_count ? `${displayItem.constituent_count} 只成分` : "成分待补"}</small></span><b>{fmt(displayItem.heat_score, 0)}</b><i className={changeTone(displayItem.change_pct)}>{pct(displayItem.change_pct)}</i><u style={{ width: `${displayItem.evidence_coverage * 100}%` }} /></button>;
+          })}</div> : <div className="empty">当前搜索没有匹配的{label}。</div>}
         </aside>
         <GroupFocus
           group={focusedGroup}
