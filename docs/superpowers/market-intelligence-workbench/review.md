@@ -298,3 +298,9 @@ Empty Holdings now starts with a directly visible registration workflow and expl
 ### Decision
 
 Approved for push to `main` and public deployment. The change is frontend-only, preserves all provider, deterministic-analysis, authenticated API, and account boundaries, and passed the complete repository gate.
+
+### Production Confirmation
+
+Release `20260823-161624-c394042` is active at `https://stock.jiewat-kaka-fj.com`. The deployed index references `index-Ccp3p6Mr.js` and `index-Dbr3osb9.css`; authenticated production acceptance confirmed the decision-first candidate order, strategy switch state, empty-holding onboarding, empty-reminder routes, and single-input Stock Lab behavior at desktop and 390px. No StockTS-origin console error, warning, or horizontal document overflow remained.
+
+The health endpoint is normal, `stock-ts.service` and `stock-ts-morning-email.timer` are active, the release contains no runtime data directory, and the persistent database remains under `/opt/aster-market/data`.

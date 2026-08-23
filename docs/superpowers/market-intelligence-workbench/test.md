@@ -1984,3 +1984,16 @@ Authenticated local production-build acceptance at 1440 x 1000 and 390 x 844 ver
 - Empty Holdings removes the zero-value overview and moves its form to the first screen; mobile inputs are 162px/336px wide with no document overflow.
 - Stock Lab and Ask Stock each retain their local research input while the duplicate global search is absent.
 - The only browser console error came from intentionally testing an expired token before registering the isolated local acceptance account; subsequent authenticated route requests were successful.
+
+### Public release acceptance
+
+Commit `c394042` was pushed to `origin/main` and deployed as release `20260823-161624-c394042` at `https://stock.jiewat-kaka-fj.com`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index-Ccp3p6Mr.js` plus `index-Dbr3osb9.css`.
+- At 1440 x 1000, the candidate decision desk began at 178px, the compact strategy switcher followed at 468px, the list began at 805px, and document height was 1,692px with no overflow.
+- Switching to `放量突破` updated both the live status and decision desk while preserving `scrollY=0`.
+- At 390 x 844, the candidate list began at 852px, judgement labels remained visible, and document `scrollWidth` equalled 390px.
+- Empty Holdings rendered onboarding and a directly usable form, omitted overview/sort controls, and used 162px/336px mobile input widths.
+- Empty Decision Change exposed all three next-task links; Stock Lab kept its local search and omitted the global duplicate.
+- The authenticated public session emitted zero console errors or warnings.
+- `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release data is absent, and the persistent database is present outside the release.
