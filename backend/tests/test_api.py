@@ -1393,6 +1393,46 @@ def test_market_group_detail_retries_empty_constituent_responses(tmp_path) -> No
 
 
 @pytest.mark.asyncio
+async def test_market_group_monitor_prewarms_top_missing_groups(tmp_path) -> None:
+    class WarmGroupProvider(FixtureProvider):
+        target_calls = 0
+
+        async def fetch_market_groups(self, kind: str):
+            prefix = "BK" if kind == "concept" else "BI"
+            return [
+                SectorSnapshot(
+                    code=f"{prefix}{index:03d}",
+                    name=f"测试{kind}{index}",
+                    change_pct=10 if index == 25 else 0,
+                    net_flow=3_000_000_000 if index == 25 else 0,
+                )
+                for index in range(1, 26)
+            ]
+
+        async def fetch_sector_constituents(self, sector_code: str):
+            if sector_code.endswith("025"):
+                self.target_calls += 1
+            return await FixtureProvider.fetch_sector_constituents(self, "BK100")
+
+    provider = WarmGroupProvider()
+    service = MarketService(
+        provider=provider,
+        store=Store(tmp_path / "group-monitor.db"),
+    )
+
+    result = await service.refresh_market_group_monitor(limit=1)
+    calls_after_warm = provider.target_calls
+    concept = await service.market_group_detail("concept", "BK025")
+    industry = await service.market_group_detail("industry", "BI025")
+
+    assert result == {"groups": 2, "ready": 2}
+    assert concept is not None and concept.groups[0].constituent_count == 1
+    assert industry is not None and industry.groups[0].constituent_count == 1
+    assert calls_after_warm == 2
+    assert provider.target_calls == calls_after_warm
+
+
+@pytest.mark.asyncio
 async def test_market_groups_keep_last_good_result_when_catalog_refresh_fails(tmp_path) -> None:
     class FlakyGroupProvider(FixtureProvider):
         fail_groups = False
@@ -2695,6 +2735,10 @@ async def test_scheduled_refresh_warms_user_stocks_before_strategy_work() -> Non
             self.calls.append("stocks")
             return {"symbols": 1, "ready": 1}
 
+        async def refresh_market_group_monitor(self):
+            self.calls.append("groups")
+            return {"groups": 2, "ready": 2}
+
         async def refresh_opportunity_monitor(self, preset: str):
             self.calls.append(f"opportunity:{preset}")
 
@@ -2709,7 +2753,7 @@ async def test_scheduled_refresh_warms_user_stocks_before_strategy_work() -> Non
 
     await _safe_auto_refresh(service)  # type: ignore[arg-type]
 
-    assert service.calls[:2] == ["market", "stocks"]
+    assert service.calls[:3] == ["market", "groups", "stocks"]
     assert service.calls.index("stocks") < next(
         index for index, call in enumerate(service.calls) if call.startswith("opportunity:")
     )

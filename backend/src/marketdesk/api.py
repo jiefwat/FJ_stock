@@ -159,6 +159,11 @@ async def _safe_auto_refresh(service: MarketService) -> None:
         logger.exception("scheduled market data refresh failed")
         return
     try:
+        group_summary = await service.refresh_market_group_monitor()
+        logger.info("scheduled market group monitor refreshed: %s", group_summary)
+    except Exception:
+        logger.exception("scheduled market group monitor failed")
+    try:
         stock_summary = await service.refresh_stock_monitor()
         logger.info("scheduled stock monitor refreshed: %s", stock_summary)
     except Exception:

@@ -175,3 +175,4 @@
 - [x] Retain the last valid group cross-section on catalog failure and label stale or partial evidence as degraded.
 - [x] Preserve N/A semantics, red-up/green-down presentation, desktop density, and narrow-screen usability.
 - [x] Commit, push, deploy, and independently verify the public market-structure release.
+- [x] Prewarm popular concept and industry evidence during scheduled refresh and suppress imperceptibly short loading flashes.

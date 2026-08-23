@@ -359,3 +359,21 @@ Approved for commit, push to `main`, and public deployment. Provider access rema
 Release `20260823-191134-e22c82b` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected JavaScript and CSS fingerprints, and the deployed lazy group chunk contains the selected-detail API path, compact `成分股证据暂未取得` state, and synchronized `只成分` catalog status. The new detail path returns the authenticated JSON boundary instead of falling through to the SPA.
 
 The public health endpoint is normal, `stock-ts.service` and `stock-ts-morning-email.timer` are active, release-local runtime data is absent, and the persistent database remains outside the release. Browser visual acceptance could not be completed because the local browser tab became trapped on a browser-managed blocked error URL; component tests cover desktop/mobile markup and the public delivery contract is independently verified.
+
+## 2026-08-23 Market-group Prewarm Review
+
+### Scope
+
+Reviewed the visible loading spinner when opening Concept Analysis or Industry Analysis, including the real provider latency, scheduled refresh order, service cache behavior, and selected-detail transition.
+
+### Confirmed Cause And Fix
+
+Live measurement showed that a cold market refresh took 4.657 seconds in the background, while concept and industry catalog requests took about 0.11–0.16 seconds and a selected detail request took about 0.016 seconds. The most noticeable defect was therefore perceptual: React exposed the loading panel immediately, making even a fast cacheable request flash as a spinner. The scheduled ten-minute refresh also warmed market, stock, and strategy data but did not explicitly warm the group-detail cache.
+
+The scheduled refresh now loads both catalogs and the twelve highest-ranked groups from each kind before stock and strategy monitoring. Detail hydration is bounded to six concurrent requests, reuses the existing ten-minute cache, counts only non-empty constituent evidence as ready, and isolates provider failures so the rest of the refresh continues. Empty results remain uncached and retryable.
+
+The group focus keeps board-level evidence visible and waits 240 milliseconds before exposing the detailed loading state. Fast cached responses therefore settle without a loading flash; genuinely slow requests still name the work in progress, and failed or empty detail responses still expose the existing truthful retry state.
+
+### Decision
+
+Approved for commit, push to `main`, and public deployment. Provider access remains behind the service/provider boundary, deterministic analysis remains under `analysis/`, and the browser continues to use only `/api/v1/*`.

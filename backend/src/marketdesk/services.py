@@ -489,6 +489,34 @@ class MarketService:
             self._market_structure_cache[cache_key] = (now, result)
         return result
 
+    async def refresh_market_group_monitor(self, limit: int = 12) -> dict[str, int]:
+        catalogs = await asyncio.gather(
+            self.market_groups("concept"),
+            self.market_groups("industry"),
+        )
+        selected = [
+            (catalog.kind, group.code)
+            for catalog in catalogs
+            for group in catalog.groups[: max(0, limit)]
+        ]
+        semaphore = asyncio.Semaphore(6)
+
+        async def warm_detail(
+            kind: Literal["concept", "industry"], group_code: str
+        ) -> bool:
+            async with semaphore:
+                try:
+                    detail = await self.market_group_detail(kind, group_code)
+                except Exception as error:
+                    self._provider_errors[f"{kind}_group_monitor"] = str(error)
+                    return False
+                return bool(detail and detail.groups and detail.groups[0].constituents)
+
+        ready = await asyncio.gather(
+            *(warm_detail(kind, group_code) for kind, group_code in selected)
+        )
+        return {"groups": len(selected), "ready": sum(ready)}
+
     async def equities_page(
         self,
         *,

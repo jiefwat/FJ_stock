@@ -2088,3 +2088,33 @@ Commits `41ff7ec` and `e22c82b` were pushed to `origin/main` and deployed as rel
 - An unauthenticated request to `/api/v1/market-structure/groups/concept/BK0714` returned HTTP 401 JSON, confirming the route exists behind the application session boundary rather than falling through to the SPA.
 - `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release-local data is absent, and the persistent database remains under `/opt/aster-market/data`.
 - The in-app browser remained on a browser-managed blocked error document after the loopback failure, so visual public acceptance could not be completed in that session. Regression tests cover the hydrated and retry states, and live provider verification confirms `BK0714` has 80 constituents.
+
+## 2026-08-23 Market-group Prewarm Verification
+
+Regression-first coverage verifies that the refresh monitor hydrates a top-ranked 25th group that was outside the catalog's original 24-group constituent window, caches both concept and industry details, and runs before the stock and strategy monitors. React coverage verifies that the selected detail shows no loading panel during the first 240 milliseconds, shows meaningful progress for a longer request, and preserves the compact unavailable/retry state after an empty response.
+
+Measured provider/cache path:
+
+| Measurement | Result |
+| --- | --- |
+| Full market refresh | 4.657 seconds |
+| Concept + industry prewarm | 0.223 seconds |
+| Popular group details ready | 24 / 24 |
+| Cached catalog + two details follow-up | 0.000009 seconds |
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 238 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 100 tests across 13 files |
+| Production build | Passed, 1,660 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |

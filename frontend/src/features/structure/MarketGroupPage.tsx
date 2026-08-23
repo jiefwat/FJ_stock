@@ -47,6 +47,7 @@ export function MarketGroupPage({ kind }: { kind: GroupKind }) {
   const detailGroup = detailQuery.data?.groups.find((item) => item.code === selected?.code) ?? null;
   const focusedGroup = detailGroup ?? selected;
   const detailLoading = Boolean(selected && !selected.constituents.length && detailQuery.isLoading);
+  const [showDetailLoading, setShowDetailLoading] = useState(false);
   const detailUnavailable = Boolean(
     focusedGroup
     && !focusedGroup.constituents.length
@@ -58,6 +59,15 @@ export function MarketGroupPage({ kind }: { kind: GroupKind }) {
     next.set("group", group.code);
     setParams(next, { replace: true });
   };
+
+  useEffect(() => {
+    if (!detailLoading) {
+      setShowDetailLoading(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowDetailLoading(true), 240);
+    return () => window.clearTimeout(timer);
+  }, [detailLoading, selected?.code]);
 
   useEffect(() => {
     if (!groups.length || groups.some((item) => item.code === selectedCode)) return;
@@ -88,7 +98,7 @@ export function MarketGroupPage({ kind }: { kind: GroupKind }) {
         <GroupFocus
           group={focusedGroup}
           label={label}
-          detailLoading={detailLoading}
+          detailLoading={detailLoading && showDetailLoading}
           detailUnavailable={detailUnavailable}
           onRetry={() => { void detailQuery.refetch(); }}
         />

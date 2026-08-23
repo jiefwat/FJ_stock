@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
@@ -238,6 +238,61 @@ it("offers an inline retry when selected group evidence remains unavailable", as
   expect(await screen.findByText("成分股证据暂未取得")).toBeInTheDocument();
   expect(screen.getByText("板块涨跌和资金仍可参考，扩散、换手与龙头暂不能确认。")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重试成分股证据" })).toBeInTheDocument();
+});
+
+it("avoids flashing a spinner when selected detail returns within the perception threshold", async () => {
+  const catalogPayload = {
+    meta,
+    kind: "concept",
+    available: true,
+    degraded: false,
+    unavailable_reason: null,
+    summary: "当前覆盖 1 个概念。",
+    methodology: [],
+    groups: [{
+      code: "BK025",
+      name: "测试概念",
+      kind: "concept",
+      change_pct: 1.2,
+      net_flow: 120_000_000,
+      constituent_count: 0,
+      advancing: 0,
+      declining: 0,
+      average_change_pct: null,
+      average_turnover_rate: null,
+      total_amount: null,
+      heat_score: 60,
+      risk_score: 40,
+      evidence_coverage: 0.67,
+      leader: null,
+      constituents: [],
+      missing_evidence: ["成分股"],
+    }],
+  };
+  let resolveDetail!: (response: { ok: boolean; status: number; json: () => Promise<typeof catalogPayload> }) => void;
+  const detailResponse = new Promise<{ ok: boolean; status: number; json: () => Promise<typeof catalogPayload> }>((resolve) => {
+    resolveDetail = resolve;
+  });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/groups/concept/BK025")) return detailResponse;
+    return { ok: true, status: 200, json: async () => catalogPayload };
+  }));
+
+  renderWithClient(<MarketGroupPage kind="concept" />, "/concepts?group=BK025");
+
+  expect(await screen.findByRole("region", { name: "测试概念概念焦点" })).toBeInTheDocument();
+  expect(screen.queryByText("正在读取成分股证据")).not.toBeInTheDocument();
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 260)); });
+  expect(screen.getByText("正在读取成分股证据")).toBeInTheDocument();
+
+  await act(async () => {
+    resolveDetail({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...catalogPayload, degraded: true }),
+    });
+  });
+  expect(await screen.findByText("成分股证据暂未取得")).toBeInTheDocument();
 });
 
 it("switches ladder direction and keeps confidence and raw-price disclosure visible", async () => {
