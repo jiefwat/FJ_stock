@@ -2040,3 +2040,41 @@ Commit `c466036` was pushed to `origin/main` and deployed as release `20260823-1
 - At 390 x 844, all ten routes exposed all ten mobile navigation links, automatically kept the active route visible, and reported zero document overflow.
 - Both public route matrices emitted zero browser console errors or warnings.
 - `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release-local data is absent, and the persistent database remains under `/opt/aster-market/data`.
+
+## 2026-08-23 Market-group Detail Evidence Verification
+
+Regression-first reproduction confirmed that a concept outside the catalog's first 24 prefetch positions remained selectable with `constituent_count=0`, no leader, and `成分股` in `missing_evidence`. The new detail contract is covered at both service/API and React interaction layers.
+
+Focused verification:
+
+```text
+uv run pytest -q \
+  tests/test_api.py::test_market_group_detail_hydrates_a_group_outside_catalog_prefetch \
+  tests/test_api.py::test_market_group_detail_retries_empty_constituent_responses
+pnpm test --run src/features/structure/MarketStructurePages.test.tsx
+```
+
+- A 25-group fixture proves the catalog stays bounded while the 25th group hydrates on demand.
+- Unknown group codes return HTTP 404 instead of falling through to the SPA.
+- An empty first constituent response is not cached; the next request reaches the provider and hydrates the group.
+- The page requests the selected detail URL, replaces `N/A` breadth with hydrated evidence, renders the leader and constituent, and exposes a compact inline retry when evidence remains unavailable.
+- Direct live-provider verification returned 80 constituents for `BK0714`, headed by 星网锐捷、通鼎互联、瑞斯康达 at the observation time.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 237 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 99 tests across 13 files |
+| Production build | Passed, 1,660 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+The production build is running locally and `/healthz` returns HTTP 200. Automated loopback page navigation was blocked by the browser-control URL policy, so authenticated visual and responsive acceptance is deferred to the deployed same-origin URL.

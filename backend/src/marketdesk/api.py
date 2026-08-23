@@ -367,6 +367,18 @@ def create_app(
     ) -> MarketGroupAnalysis:
         return await market_service.market_groups(kind)
 
+    @app.get(
+        "/api/v1/market-structure/groups/{kind}/{group_code}",
+        response_model=MarketGroupAnalysis,
+    )
+    async def market_group_detail(
+        kind: Literal["concept", "industry"], group_code: str
+    ) -> MarketGroupAnalysis:
+        result = await market_service.market_group_detail(kind, group_code)
+        if result is None:
+            raise HTTPException(status_code=404, detail="market group not found")
+        return result
+
     @app.get("/api/v1/equities", response_model=EquityPage)
     async def equities(
         q: str | None = Query(default=None, max_length=40),

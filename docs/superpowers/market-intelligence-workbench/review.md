@@ -328,3 +328,28 @@ Approved for commit, push to `main`, and public deployment. No unresolved P0, P1
 Release `20260823-163858-c466036` is active at `https://stock.jiewat-kaka-fj.com`. Authenticated public acceptance covered all ten routes at desktop and mobile sizes. Every task path responded, every mobile destination remained reachable and centered when active, all checked pages had zero document overflow, and the browser reported no StockTS-origin error or warning.
 
 The public index references the expected `index-BsqmYdgM.js` and `index-Bptze3q3.css` assets. `/healthz`, `stock-ts.service`, and `stock-ts-morning-email.timer` are normal; release-local runtime data is absent and the persistent database remains outside the release.
+
+## 2026-08-23 Market-group Detail Evidence Review
+
+### Scope
+
+Reviewed the Concept Analysis screenshot where `5G概念` had valid board-level change and capital flow but showed `N/A` for breadth and turnover, no leader or constituents, and a large uninformative remainder in the focus panel.
+
+### Confirmed Cause And Fix
+
+The catalog intentionally prefetches constituents for only the first 24 provider-ranked groups, while deterministic heat sorting can move any of the full 100 groups into the visible selection. A group outside the prefetch window therefore looked like a complete result even though only its board quote was present.
+
+The catalog remains bounded, but the selected concept or industry now uses a dedicated authenticated `/api/v1/market-structure/groups/{kind}/{group_code}` detail route. The service validates the code against the current catalog, reuses already-hydrated evidence, otherwise fetches the selected constituents, reruns the deterministic group analysis, and caches only successful non-empty detail results for ten minutes. Empty or failed requests remain retryable instead of being preserved as a false complete state.
+
+The focus panel now names the loading operation, keeps board-level metrics visible, and replaces the empty constituent area with a compact explanation and inline retry when member evidence remains unavailable. Missing breadth, turnover, and leader values remain `N/A`; confidence remains evidence coverage rather than an upside probability.
+
+### Verification And Residual Risk
+
+- Focused regressions cover a 25th catalog group, invalid codes, an initially empty provider response followed by a successful retry, hydrated leader/constituent rendering, and the compact failure action.
+- The live provider returned 80 constituents for `BK0714` (`5G概念`), confirming the production defect was hydration scope rather than an absent upstream catalog.
+- The complete repository gate passed with 237 backend tests, 99 frontend tests, production build, and the live-data quality check.
+- Automated local loopback navigation was blocked by the browser-control URL policy; public authenticated desktop and 390px acceptance remains required after deployment.
+
+### Decision
+
+Approved for commit, push to `main`, and public deployment. Provider access remains inside the backend provider/service boundary, deterministic ranking remains under `analysis/`, and browser code uses only `/api/v1/*`.

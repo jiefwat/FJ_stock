@@ -413,6 +413,82 @@ class MarketService:
             self._market_structure_last_good[kind] = result
         return result
 
+    async def market_group_detail(
+        self, kind: Literal["concept", "industry"], group_code: str
+    ) -> MarketGroupAnalysis | None:
+        catalog = await self.market_groups(kind)
+        catalog_group = next(
+            (item for item in catalog.groups if item.code == group_code), None
+        )
+        if catalog_group is None:
+            return None
+
+        cache_key = (
+            f"group-detail:{kind}:{group_code}:{catalog.meta.fetched_at.isoformat()}"
+        )
+        now = time.monotonic()
+        cached = self._market_structure_cache.get(cache_key)
+        if cached is not None and now - cached[0] < 10 * 60:
+            return cast(MarketGroupAnalysis, cached[1])
+
+        group = SectorSnapshot(
+            code=catalog_group.code,
+            name=catalog_group.name,
+            change_pct=catalog_group.change_pct,
+            net_flow=catalog_group.net_flow,
+        )
+        constituents = catalog_group.constituents
+        unavailable_reason: str | None = None
+        if not constituents:
+            constituent_fetcher = getattr(
+                self.provider, "fetch_sector_constituents", None
+            )
+            if callable(constituent_fetcher):
+                try:
+                    rows = await asyncio.wait_for(
+                        constituent_fetcher(group_code), timeout=5.0
+                    )
+                    constituents = [
+                        item
+                        if isinstance(item, EquityQuote)
+                        else EquityQuote.model_validate(item)
+                        for item in rows
+                    ]
+                    if not constituents:
+                        unavailable_reason = (
+                            f"{kind} constituent request returned no constituents"
+                        )
+                except Exception as error:
+                    self._provider_errors[f"{kind}_group_detail"] = str(error)
+                    unavailable_reason = f"{kind} constituents unavailable: {error}"
+            else:
+                unavailable_reason = f"{kind} constituent provider unavailable"
+
+        stale_catalog = catalog.meta.freshness == Freshness.STALE
+        if stale_catalog and unavailable_reason is None:
+            unavailable_reason = catalog.unavailable_reason or f"{kind} catalog is stale"
+        result = analyse_market_groups(
+            catalog.meta,
+            [group],
+            {group_code: constituents},
+            kind,
+            unavailable_reason=unavailable_reason,
+            degraded=unavailable_reason is not None,
+        )
+        label = "概念" if kind == "concept" else "行业"
+        result = result.model_copy(
+            update={
+                "summary": (
+                    f"已补齐{catalog_group.name}的成分股、扩散、换手与龙头证据。"
+                    if constituents
+                    else f"{catalog_group.name}的板块行情可用，{label}成分证据暂未取得。"
+                )
+            }
+        )
+        if constituents:
+            self._market_structure_cache[cache_key] = (now, result)
+        return result
+
     async def equities_page(
         self,
         *,

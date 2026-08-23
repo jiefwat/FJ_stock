@@ -112,6 +112,133 @@ it("filters concept groups, selects a group, and hands the leader to Stock Lab",
   expect(screen.queryByRole("button", { name: /酿酒概念/ })).not.toBeInTheDocument();
 });
 
+it("loads the selected group detail on demand when the catalog has no constituents", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/groups/concept/BK025")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          meta,
+          kind: "concept",
+          available: true,
+          degraded: false,
+          unavailable_reason: null,
+          summary: "已补齐测试概念详情。",
+          methodology: [],
+          groups: [{
+            code: "BK025",
+            name: "测试概念",
+            kind: "concept",
+            change_pct: 1.2,
+            net_flow: 120_000_000,
+            constituent_count: 1,
+            advancing: 1,
+            declining: 0,
+            average_change_pct: 10,
+            average_turnover_rate: 0.8,
+            total_amount: 2_000_000_000,
+            heat_score: 80,
+            risk_score: 20,
+            evidence_coverage: 1,
+            leader: { quote, score: 88 },
+            constituents: [quote],
+            missing_evidence: [],
+          }],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        meta,
+        kind: "concept",
+        available: true,
+        degraded: false,
+        unavailable_reason: null,
+        summary: "当前覆盖 1 个概念。",
+        methodology: [],
+        groups: [{
+          code: "BK025",
+          name: "测试概念",
+          kind: "concept",
+          change_pct: 1.2,
+          net_flow: 120_000_000,
+          constituent_count: 0,
+          advancing: 0,
+          declining: 0,
+          average_change_pct: null,
+          average_turnover_rate: null,
+          total_amount: null,
+          heat_score: 60,
+          risk_score: 40,
+          evidence_coverage: 0.67,
+          leader: null,
+          constituents: [],
+          missing_evidence: ["成分股"],
+        }],
+      }),
+    };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  renderWithClient(<MarketGroupPage kind="concept" />, "/concepts?group=BK025");
+
+  const focus = await screen.findByRole("region", { name: "测试概念概念焦点" });
+  expect((await within(focus).findAllByText("贵州茅台")).length).toBeGreaterThan(0);
+  expect(within(focus).getByText("上涨扩散").nextSibling).toHaveTextContent("100%");
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/market-structure/groups/concept/BK025",
+    expect.anything(),
+  );
+});
+
+it("offers an inline retry when selected group evidence remains unavailable", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const isDetail = String(input).includes("/groups/concept/BK025");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        meta,
+        kind: "concept",
+        available: true,
+        degraded: isDetail,
+        unavailable_reason: isDetail ? "constituent request unavailable" : null,
+        summary: "板块行情可用。",
+        methodology: [],
+        groups: [{
+          code: "BK025",
+          name: "测试概念",
+          kind: "concept",
+          change_pct: 1.2,
+          net_flow: 120_000_000,
+          constituent_count: 0,
+          advancing: 0,
+          declining: 0,
+          average_change_pct: null,
+          average_turnover_rate: null,
+          total_amount: null,
+          heat_score: 60,
+          risk_score: 40,
+          evidence_coverage: 0.67,
+          leader: null,
+          constituents: [],
+          missing_evidence: ["成分股"],
+        }],
+      }),
+    };
+  }));
+
+  renderWithClient(<MarketGroupPage kind="concept" />, "/concepts?group=BK025");
+
+  expect(await screen.findByText("成分股证据暂未取得")).toBeInTheDocument();
+  expect(screen.getByText("板块涨跌和资金仍可参考，扩散、换手与龙头暂不能确认。")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "重试成分股证据" })).toBeInTheDocument();
+});
+
 it("switches ladder direction and keeps confidence and raw-price disclosure visible", async () => {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const down = String(input).includes("mode=down");

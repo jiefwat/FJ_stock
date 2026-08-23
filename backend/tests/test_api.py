@@ -1315,6 +1315,83 @@ def test_market_structure_routes_share_snapshot_and_return_drilldown_models(tmp_
     assert industries.json()["groups"][0]["kind"] == "industry"
 
 
+def test_market_group_detail_hydrates_a_group_outside_catalog_prefetch(tmp_path) -> None:
+    class ManyGroupProvider(FixtureProvider):
+        async def fetch_market_groups(self, kind: str):
+            return [
+                SectorSnapshot(
+                    code=f"BK{index:03d}",
+                    name=f"测试{kind}{index}",
+                    change_pct=index / 10,
+                    net_flow=index * 1_000_000,
+                )
+                for index in range(1, 26)
+            ]
+
+        async def fetch_sector_constituents(self, sector_code: str):
+            return await FixtureProvider.fetch_sector_constituents(self, "BK100")
+
+    service = MarketService(
+        provider=ManyGroupProvider(),
+        store=Store(tmp_path / "group-detail.db"),
+    )
+    api = authenticated_client(service)
+
+    catalog = api.get("/api/v1/market-structure/groups", params={"kind": "concept"})
+    catalog_group = next(
+        item for item in catalog.json()["groups"] if item["code"] == "BK025"
+    )
+    detail = api.get("/api/v1/market-structure/groups/concept/BK025")
+
+    assert catalog.status_code == 200
+    assert catalog_group["constituent_count"] == 0
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert detail_payload["degraded"] is False
+    assert detail_payload["groups"][0]["code"] == "BK025"
+    assert detail_payload["groups"][0]["constituent_count"] == 1
+    assert detail_payload["groups"][0]["leader"]["quote"]["name"] == "贵州茅台"
+    assert detail_payload["groups"][0]["advancing"] == 1
+    assert detail_payload["groups"][0]["missing_evidence"] == []
+    assert api.get("/api/v1/market-structure/groups/concept/BK999").status_code == 404
+
+
+def test_market_group_detail_retries_empty_constituent_responses(tmp_path) -> None:
+    class RetryGroupProvider(FixtureProvider):
+        target_attempts = 0
+
+        async def fetch_market_groups(self, kind: str):
+            return [
+                SectorSnapshot(code=f"BK{index:03d}", name=f"测试{index}")
+                for index in range(1, 26)
+            ]
+
+        async def fetch_sector_constituents(self, sector_code: str):
+            if sector_code == "BK025":
+                self.target_attempts += 1
+                if self.target_attempts == 1:
+                    return []
+            return await FixtureProvider.fetch_sector_constituents(self, "BK100")
+
+    provider = RetryGroupProvider()
+    service = MarketService(
+        provider=provider,
+        store=Store(tmp_path / "group-detail-retry.db"),
+    )
+    api = authenticated_client(service)
+
+    first = api.get("/api/v1/market-structure/groups/concept/BK025")
+    second = api.get("/api/v1/market-structure/groups/concept/BK025")
+
+    assert first.status_code == 200
+    assert first.json()["degraded"] is True
+    assert first.json()["groups"][0]["constituent_count"] == 0
+    assert second.status_code == 200
+    assert second.json()["degraded"] is False
+    assert second.json()["groups"][0]["constituent_count"] == 1
+    assert provider.target_attempts == 2
+
+
 @pytest.mark.asyncio
 async def test_market_groups_keep_last_good_result_when_catalog_refresh_fails(tmp_path) -> None:
     class FlakyGroupProvider(FixtureProvider):
