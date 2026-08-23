@@ -1890,3 +1890,12 @@ Result:
 | Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
 
 Local production health returned `{"status":"ok"}` at `http://127.0.0.1:8765`. The user accepted the local workflow and requested public deployment from `main`.
+
+### Public release acceptance
+
+Commit `0cdff06` was pushed to `origin/main` and deployed as release `20260823-152204-0cdff06` at `https://stock.jiewat-kaka-fj.com`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index--_ubtXNb.js` plus `index-BlN5DOAz.css`.
+- The public CSS contains `--font-display`, `--surface-selected`, and the new opportunity decision-desk grid rule, confirming the consistency bundle is active.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The release contains no runtime data directory, while persistent data remains present under `/opt/aster-market/data`.

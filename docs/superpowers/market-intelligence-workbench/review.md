@@ -244,3 +244,7 @@ The Opportunities decision desk was also rebalanced so its decision, metrics, to
 ### Decision
 
 Approved for commit, push to `main`, and public deployment. The change is frontend-only, preserves provider and analysis boundaries, and passed the complete repository verification gate.
+
+### Production Confirmation
+
+Release `20260823-152204-0cdff06` is active at `https://stock.jiewat-kaka-fj.com`. The public index references the expected new JavaScript and CSS fingerprints, and the CSS contains the new typography, semantic-surface, selection, and opportunity-layout tokens. The public health endpoint is normal, both systemd units are active, and persistent data remains outside the release directory.
