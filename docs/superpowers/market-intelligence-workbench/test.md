@@ -1865,3 +1865,28 @@ Commit `34704ce` was pushed to `origin/codex/project-adjustments` and deployed a
 - `/opt/aster-market/current` resolves to the expected release, `stock-ts.service` and `stock-ts-morning-email.timer` are active, and the release contains no `data` directory.
 - Persistent SQLite data remains external under `/opt/aster-market/data`.
 - A post-fix gate rerun again passed lint, types, all 235 backend tests, all 92 frontend tests, and the production build. Its final live-source check encountered a transient Sina HTTP 456 after an earlier complete gate had passed with 5,548 equities and 100% coverage; no provider code changed in this release and the deployed service health remained normal.
+
+## 2026-08-23 Interface Consistency Verification
+
+The consistency pass introduces shared semantic tokens for UI/display/data typography, surfaces, panel/control radii, selected states, and numeric formatting. It applies those roles across the strategy registry, opportunity queue, stock conclusion, Ask Stock conversation/evidence, holdings execution surfaces, recommendation history, and market-structure workbenches. Responsive rules keep the opportunity decision desk and monitoring scope readable on desktop, tablet, and mobile.
+
+Final repository gate:
+
+```text
+git diff --check
+make verify
+```
+
+Result:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 235 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 92 tests across 12 files |
+| Production build | Passed, 1,659 modules transformed |
+| Live data | Passed, 5,548 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+Local production health returned `{"status":"ok"}` at `http://127.0.0.1:8765`. The user accepted the local workflow and requested public deployment from `main`.

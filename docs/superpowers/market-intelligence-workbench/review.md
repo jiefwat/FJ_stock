@@ -223,3 +223,24 @@ Approved for commit, push, and deployment from `codex/project-adjustments`. The 
 ### Production Confirmation
 
 Release `20260823-000818-34704ce` is active at `https://stock.jiewat-kaka-fj.com`. The public bundle fingerprints and redesign markers match the committed build, both systemd units are active, the health endpoint is normal, and persistent data remains outside the release. `main` was not modified.
+
+## 2026-08-23 Interface Consistency Review
+
+### Scope
+
+Reviewed the authenticated routes as one product system, with emphasis on typography, surface hierarchy, control shape, status color, information density, and responsive continuity across Market, Opportunities, Stock Lab, Ask Stock, Holdings, Decision Change, Review, Limit Ladder, Concepts, and Industries.
+
+### Findings
+
+The review found a cross-generation visual conflict rather than a route-specific defect: the terminal shell used a cool gray/blue interaction language while several feature surfaces still used Songti display type, cream backgrounds, green editorial panels, pill-heavy controls, and unrelated radius/shadow scales. The consistency layer now centralizes UI/display/data typography, surface roles, control/panel radii, selection blue, tabular financial numbers, and shared dark decision headers. Warm colors remain only for caution; red-up/green-down semantics remain unchanged.
+
+The Opportunities decision desk was also rebalanced so its decision, metrics, top candidate, and monitoring ownership remain readable without narrow vertical text. Stock Lab, Ask Stock, Holdings, Review, and market-structure surfaces now reuse the same header, panel, filter, form, badge, and state language while preserving all existing routes and behavior.
+
+### Residual Risks And Testing Gaps
+
+- The stylesheet still contains historical feature rules below the component layer; the new convergence layer intentionally overrides them without changing feature markup. A future component-by-component extraction can reduce CSS size without affecting this release.
+- Authenticated visual acceptance remains user-led locally. Automated component coverage, production build validation, and public post-release checks cover behavior and delivery integrity.
+
+### Decision
+
+Approved for commit, push to `main`, and public deployment. The change is frontend-only, preserves provider and analysis boundaries, and passed the complete repository verification gate.

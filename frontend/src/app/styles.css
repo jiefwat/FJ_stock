@@ -2082,6 +2082,18 @@ body[data-device-mode="tablet"] {
   --terminal-3:#20242c;
   --terminal-line:#303641;
   --focus:rgba(52,120,246,.3);
+  --font-ui:"SF Pro Text","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-display:"SF Pro Display","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-data:"SFMono-Regular","Roboto Mono","DIN Alternate",monospace;
+  --surface:#fff;
+  --surface-subtle:#f7f8fa;
+  --surface-muted:#eef1f4;
+  --surface-selected:#eef4ff;
+  --surface-warning:#fff8e8;
+  --surface-danger:#fff3f0;
+  --radius-control:7px;
+  --radius-panel:10px;
+  --radius-inner:8px;
   font-family:"SF Pro Text","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
   color:var(--graphite);
   background:var(--paper);
@@ -2257,3 +2269,299 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 @media(prefers-reduced-motion:reduce){.route-stage,.state-skeleton i{animation:none!important}.app-shell>main{transition:none}}
+
+/* Feature convergence: every route uses the same terminal-workbench language. */
+.strategy-card-grid>button>strong,
+.queue-gate strong,
+.queue-metrics div:first-child strong,
+.queue-top-card strong,
+.candidate-list-row .identity strong,
+.stock-start-state h2,
+.stock-conclusion strong,
+.conclusion-verdict strong,
+.research-card header a,
+.ask-thread-empty strong,
+.ask-result-head h2,
+.ask-answer p,
+.ask-gate-brief strong,
+.portfolio-conclusion p,
+.portfolio-action-deck>div:first-child strong,
+.portfolio-movement-deck header strong,
+.portfolio-stock-plan-head strong,
+.portfolio-stock-plan-list article>div:first-child strong,
+.portfolio-pressure-deck>header strong,
+.portfolio-execution-queue>header strong,
+.portfolio-risk-radar>header strong,
+.portfolio-risk-notes>header strong,
+.portfolio-today-focus>header strong,
+.execution-queue-list strong,
+.risk-radar-head strong,
+.risk-note-list strong,
+.today-focus-list strong,
+.holding-name-cell strong,
+.trend-forecast-verdict strong,
+.group-hero strong,
+.group-focus>header h2,
+.group-leader>strong,
+.ladder-column>header span,
+.decision-event-title>div:first-child>strong {
+  font-family:var(--font-display)!important;
+  font-weight:730!important;
+  letter-spacing:-.025em!important;
+}
+
+.index-list strong,
+.market-table b,
+.candidate-row>strong,
+.queue-metrics strong,
+.candidate-list-row>span strong,
+.candidate-list-row>span b,
+.holding-pnl-cell b,
+.holding-pnl-cell small,
+.portfolio-hero-line strong,
+.portfolio-period-strip strong,
+.portfolio-daily-strip strong,
+.portfolio-contribution-rank strong,
+.pressure-scenario-grid strong,
+.pressure-scenario-grid b,
+.history-score-metrics strong,
+.ask-metric b,
+.ask-factor b,
+.group-focus-metrics strong,
+.ladder-summary strong {
+  font-family:var(--font-data)!important;
+  font-variant-numeric:tabular-nums;
+}
+
+.strategy-library,
+.opportunity-queue,
+.opportunity-list-panel,
+.stock-start-state,
+.stock-conclusion,
+.ask-thread,
+.ask-chat-composer,
+.ask-result,
+.ask-playbook,
+.holdings-list .holding-row,
+.portfolio-overview,
+.portfolio-action-deck,
+.portfolio-pressure-deck,
+.portfolio-execution-queue,
+.portfolio-risk-radar,
+.portfolio-risk-notes,
+.portfolio-today-focus,
+.portfolio-stock-plan,
+.portfolio-movement-deck,
+.trend-forecast-panel,
+.research-card,
+.watch-composer,
+.group-hero,
+.structure-unavailable,
+.structure-empty {
+  border-color:var(--line)!important;
+  border-radius:var(--radius-panel)!important;
+  box-shadow:0 8px 24px rgba(17,22,29,.05)!important;
+}
+
+.strategy-card-grid,
+.queue-metrics,
+.candidate-dimensions,
+.ask-gate-brief,
+.ask-evidence-grid,
+.ask-metrics,
+.ask-factors>div,
+.portfolio-hero-line,
+.portfolio-action-numbers,
+.portfolio-period-strip,
+.portfolio-daily-strip,
+.portfolio-contribution-rank,
+.pressure-scenario-grid,
+.risk-note-list,
+.today-focus-list,
+.group-focus-metrics,
+.group-member-list {
+  border-color:var(--line)!important;
+  background:var(--line)!important;
+}
+
+.strategy-card-grid>button,
+.queue-metrics div,
+.candidate-dimensions div,
+.ask-gate-brief article,
+.ask-list,
+.ask-metric,
+.ask-factor,
+.portfolio-hero-line article,
+.portfolio-action-numbers article,
+.portfolio-period-strip article,
+.portfolio-daily-strip article,
+.portfolio-contribution-rank article,
+.pressure-scenario-grid article,
+.risk-note-list article,
+.today-focus-list article,
+.group-focus-metrics article,
+.group-member-list a {
+  background:var(--surface)!important;
+}
+
+.strategy-library>header,
+.queue-gate,
+.ask-result-head,
+.ask-gate-brief>div,
+.portfolio-conclusion,
+.portfolio-action-deck>div:first-child,
+.portfolio-movement-deck header,
+.trend-forecast-verdict,
+.group-focus>header,
+.ladder-column>header {
+  background:linear-gradient(145deg,#14171c,#242a33)!important;
+}
+
+.strategy-library>header span,
+.queue-gate span,
+.ask-result-head span,
+.ask-gate-brief>div span,
+.portfolio-conclusion span,
+.portfolio-action-deck>div:first-child span,
+.portfolio-movement-deck header span,
+.trend-forecast-verdict span,
+.group-focus>header span,
+.ladder-column>header span {
+  color:#8fb5ff!important;
+}
+
+.strategy-card-grid>button:hover,
+.strategy-card-grid>button.active,
+.candidate-list-row:hover,
+.compact-opportunity-list article.expanded,
+.ask-playbook button:hover,
+.group-matrix button:hover,
+.group-matrix button.active {
+  background:var(--surface-selected)!important;
+}
+
+.strategy-card-grid>button.active { border-top-color:#3478f6!important; }
+.strategy-card-grid>button>span em,
+.lead-badge,
+.holding-action-pill,
+.holding-risk-pill,
+.execution-queue-list span,
+.execution-queue-list em,
+.risk-note-list span,
+.today-focus-list span {
+  border-radius:6px!important;
+}
+
+.strategy-card-grid>button>span em { background:#edf1f5!important;color:#4b596a!important; }
+.strategy-card-grid>button>footer i,
+.score-context b,
+.candidate-toggle { color:#286cd9!important; }
+
+.opportunity-queue {
+  grid-template-columns:minmax(220px,.75fr) minmax(420px,1.55fr) minmax(230px,.8fr)!important;
+  gap:1px!important;
+  padding:0!important;
+  overflow:hidden;
+  background:var(--line)!important;
+}
+.opportunity-queue::before { width:3px;z-index:2; }
+.opportunity-monitoring-banner {
+  grid-template-columns:auto minmax(240px,1fr) auto;
+  padding:13px 16px;
+  border-bottom:0;
+  background:var(--surface-subtle)!important;
+}
+.opportunity-monitoring-banner>svg { color:#3478f6;filter:none; }
+.opportunity-monitoring-banner li { border-color:#d8dde3;background:#fff;color:#52606f; }
+.queue-gate { min-height:168px;padding:17px 18px; }
+.queue-gate strong { margin:18px 0 0;font-size:23px!important;line-height:1.25; }
+.queue-metrics { gap:1px; }
+.queue-metrics div { padding:13px 14px; }
+.queue-metrics div:first-child strong { font-size:15px!important; }
+.queue-top-card { min-height:82px;border:0!important;background:#f7f9fc!important;padding:14px 16px; }
+.queue-top-card:hover { background:var(--surface-selected)!important;transform:none; }
+.queue-top-card strong { font-size:20px!important; }
+.queue-top-card span { color:#657181; }
+.queue-ask-bridge { border-left:1px solid var(--line)!important;background:#fff!important; }
+.queue-ask-bridge a { color:#286cd9;font-weight:750; }
+.lead-layer-bar { gap:6px; }
+.lead-layer-bar button { border-radius:var(--radius-control)!important;background:#fff;color:#39414c; }
+.lead-layer-bar button.active { background:#1a1e25!important;color:#fff; }
+.lead-layer-bar strong,.lead-layer-bar button.active strong { color:#6d9df7!important; }
+.compact-opportunity-list article { background:#fff; }
+.candidate-list-row { padding:14px 10px; }
+.candidate-list-row .identity strong { font-size:17px!important; }
+.lead-badge { border-color:#d8dde3!important;background:#f6f8fa!important; }
+.lead-badge.positive { border-left:3px solid var(--up)!important; }
+.lead-badge.caution { border-left:3px solid var(--brass)!important; }
+.lead-badge.negative { border-left:3px solid var(--up)!important;background:var(--surface-danger)!important; }
+.candidate-detail .candidate-thesis,
+.candidate-detail .candidate-history,
+.candidate-detail .candidate-dimensions div { border-color:var(--line)!important;background:var(--surface-subtle)!important; }
+
+.stock-start-state { border-radius:var(--radius-panel)!important;background:linear-gradient(145deg,#fff,#f4f7fb)!important; }
+.stock-start-state>span { color:#3478f6; }
+.stock-start-state h2 { font-size:clamp(32px,4.5vw,54px)!important; }
+.stock-start-state nav button { border-radius:var(--radius-control); }
+.stock-conclusion { border-left-color:#3478f6!important;background:#fff!important; }
+.conclusion-verdict { background:linear-gradient(145deg,#14171c,#242a33)!important; }
+.conclusion-verdict strong { color:#8fb5ff!important; }
+.conclusion-summary,.conclusion-grid article { border-color:var(--line)!important;background:var(--surface-subtle)!important; }
+.conclusion-actions .conclusion-grid article { border-left-color:#3478f6!important;background:#f5f8fd!important; }
+.research-card,.watch-composer { background:var(--surface-subtle)!important; }
+
+.ask-chat-layout { gap:14px; }
+.ask-thread { background:linear-gradient(180deg,#fafbfc,#f2f4f7)!important; }
+.ask-message.user>div { border-radius:10px 10px 2px 10px;background:#1b1f26;box-shadow:none; }
+.ask-message.pending p { border-radius:2px 10px 10px 10px; }
+.ask-result { overflow:hidden;background:#fff; }
+.ask-result-head h2 { font-size:24px; }
+.ask-answer p { font-size:16px;line-height:1.75; }
+.ask-list.risk { background:var(--surface-danger)!important; }
+.ask-list.action,.ask-holding-context { background:#f0f7f4!important; }
+.ask-followups button,.ask-history header button,.ask-support-package>summary,.ask-support-toggle { border-radius:var(--radius-control);background:#f5f7fa; }
+.ask-playbook { background:var(--surface-subtle)!important; }
+.ask-playbook button { border-radius:var(--radius-control); }
+.ask-chat-composer textarea,.watch-composer textarea,.journal-fields textarea,.holding-edit-cell input { border-radius:var(--radius-control);background:#fff; }
+.ask-chat-composer textarea:focus,.ask-composer textarea:focus { border-color:#3478f6;box-shadow:0 0 0 3px var(--focus); }
+
+.portfolio-overview { background:linear-gradient(145deg,#fff,#f4f7fb)!important; }
+.portfolio-overview::before { width:3px;background:#3478f6; }
+.portfolio-conclusion p { font-size:16px; }
+.portfolio-action-deck { border-left-width:3px;background:#fff!important; }
+.portfolio-action-deck nav a,.portfolio-movement-deck nav a,.portfolio-stock-plan-head a,.portfolio-execution-queue>header a,.portfolio-today-focus>header a { border-color:var(--line)!important;background:#fff!important;color:#286cd9!important; }
+.portfolio-pressure-deck>header,.portfolio-execution-queue>header,.portfolio-risk-radar>header,.portfolio-risk-notes>header,.portfolio-today-focus>header,.portfolio-stock-plan-head { background:var(--surface-subtle)!important; }
+.holding-sort-bar button { border-radius:var(--radius-control); }
+.holding-sort-bar button.active { background:#1a1e25;color:#fff; }
+.holdings-list .holding-row { border-left-width:3px;background:#fff; }
+.holdings-list .holding-actions-cell { background:var(--surface-subtle)!important; }
+.holdings-list .holding-actions-cell .text-link,.holdings-list .holding-actions-cell .ask-link { border-color:var(--line);background:#fff;color:#286cd9; }
+.holding-pnl-block,.holding-target-cell,.holdings-list .holding-edit-cell { background:var(--surface-subtle)!important; }
+
+.group-hero,.ladder-summary { border-radius:var(--radius-panel)!important; }
+.group-hero article.primary,.ladder-summary article:first-child { background:linear-gradient(145deg,#14171c,#242a33)!important; }
+.group-hero .primary strong,.ladder-summary article:first-child strong { color:#8fb5ff!important; }
+.group-leader { border-color:#cbd8ea;border-radius:var(--radius-inner);background:#f2f6fc; }
+.group-missing,.quant-missing { background:var(--surface-warning); }
+.ladder-industry button { border-radius:var(--radius-control); }
+.ladder-industry button.active { border-color:#1a1e25;background:#1a1e25; }
+
+@media(max-width:1199px){
+  .web-shell .opportunity-queue { grid-template-columns:minmax(190px,.7fr) minmax(340px,1.35fr) minmax(200px,.75fr)!important; }
+}
+
+@media(max-width:900px){
+  .opportunity-queue,.web-shell .opportunity-queue { grid-template-columns:minmax(0,1fr)!important; }
+  .opportunity-monitoring-banner { grid-template-columns:auto minmax(0,1fr); }
+  .opportunity-monitoring-banner ul { grid-column:1/-1;justify-content:flex-start; }
+  .queue-ask-bridge { border-left:0!important;border-top:1px solid var(--line)!important; }
+  .ask-answer p { font-size:15px; }
+}
+
+@media(max-width:520px){
+  .opportunity-monitoring-banner { padding:12px; }
+  .opportunity-monitoring-banner ul { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%; }
+  .opportunity-monitoring-banner li { text-align:center; }
+  .queue-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .candidate-list-row { padding-inline:8px!important; }
+}
