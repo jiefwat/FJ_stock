@@ -2030,3 +2030,13 @@ Authenticated local production-build acceptance covered all ten routes at 1440 x
 - Ask Stock exposed the active conversation object before the thread; Holdings kept the real-position boundary visible in its empty state.
 - Concept and Industry kept the master-detail catalog readable and synchronized URL selection after filtering.
 - Mobile navigation exposed all ten routes; entering Industry centered the active `行业` destination inside the 390px viewport.
+
+### Public release acceptance
+
+Commit `c466036` was pushed to `origin/main` and deployed as release `20260823-163858-c466036` at `https://stock.jiewat-kaka-fj.com`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the index referenced `index-BsqmYdgM.js` plus `index-Bptze3q3.css`.
+- At 1440 x 1000, all ten routes rendered their expected titles and task paths; clicking the final step set `aria-current="step"` on every route.
+- At 390 x 844, all ten routes exposed all ten mobile navigation links, automatically kept the active route visible, and reported zero document overflow.
+- Both public route matrices emitted zero browser console errors or warnings.
+- `/opt/aster-market/current` resolves to the expected release; both systemd units are active, release-local data is absent, and the persistent database remains under `/opt/aster-market/data`.

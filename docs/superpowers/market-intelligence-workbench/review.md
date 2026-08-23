@@ -322,3 +322,9 @@ The mobile shell no longer hides the three market-structure routes. All ten dest
 ### Decision
 
 Approved for commit, push to `main`, and public deployment. No unresolved P0, P1, or P2 finding remains. The complete repository gate and authenticated desktop/mobile route matrix passed before release.
+
+### Production Confirmation
+
+Release `20260823-163858-c466036` is active at `https://stock.jiewat-kaka-fj.com`. Authenticated public acceptance covered all ten routes at desktop and mobile sizes. Every task path responded, every mobile destination remained reachable and centered when active, all checked pages had zero document overflow, and the browser reported no StockTS-origin error or warning.
+
+The public index references the expected `index-BsqmYdgM.js` and `index-Bptze3q3.css` assets. `/healthz`, `stock-ts.service`, and `stock-ts-morning-email.timer` are normal; release-local runtime data is absent and the persistent database remains outside the release.
