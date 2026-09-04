@@ -42,6 +42,19 @@ POSITIVE_TERMS = (
     "扭亏",
     "订单",
 )
+MARKET_ROUNDUP_TITLE_TERMS = (
+    "a股",
+    "个股异动",
+    "主力资金",
+    "多家公司",
+    "多只股票",
+    "市场盘点",
+    "资金流向",
+    "板块",
+    "涨停复盘",
+    "跌停复盘",
+    "龙虎榜",
+)
 
 
 def _is_consistent_slowdown(values: list[float | None]) -> bool:
@@ -53,6 +66,21 @@ def _is_consistent_slowdown(values: list[float | None]) -> bool:
 
 def _news_event_key(item: StockNewsItem) -> str:
     return re.sub(r"[\W_]+", "", item.title, flags=re.UNICODE).casefold()
+
+
+def _is_stock_specific_news(item: StockNewsItem, reference_terms: set[str]) -> bool:
+    if not reference_terms:
+        return True
+
+    title = re.sub(r"\s+", "", item.title).casefold()
+    summary = re.sub(r"\s+", "", item.summary).casefold()
+    if any(term in title for term in reference_terms):
+        return True
+    if any(term in title for term in MARKET_ROUNDUP_TITLE_TERMS):
+        return False
+
+    # A single summary mention is commonly just one name in a market-wide stock list.
+    return sum(summary.count(term) for term in reference_terms) >= 2
 
 
 def analyse_financial_health(periods: list[FinancialPeriod]) -> FinancialHealth:
@@ -142,13 +170,24 @@ def analyse_stock_news(
     *,
     now: datetime | None = None,
     window_days: int = 30,
+    company_name: str | None = None,
+    stock_code: str | None = None,
 ) -> StockNewsSentiment:
     current = now or datetime.now(UTC)
     cutoff = current - timedelta(days=window_days)
+    normalized_name = re.sub(r"\s+", "", company_name or "")
+    plain_name = re.sub(r"^(?:\*?ST|N)", "", normalized_name, flags=re.IGNORECASE)
+    reference_terms = {
+        term.casefold()
+        for term in (normalized_name, plain_name, stock_code or "")
+        if len(term.strip()) >= 2
+    }
     recent: list[StockNewsItem] = []
     seen_events: set[str] = set()
     for item in sorted(items, key=lambda value: value.published_at, reverse=True):
         if not cutoff <= item.published_at <= current:
+            continue
+        if not _is_stock_specific_news(item, reference_terms):
             continue
         event_key = _news_event_key(item)
         if event_key in seen_events:

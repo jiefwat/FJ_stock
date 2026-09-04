@@ -79,7 +79,7 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   }));
 
   renderPage();
-  expect(screen.getByRole("heading", { name: "问股" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "研究问答" })).toBeInTheDocument();
   submitAsk("贵州茅台现在主要风险是什么");
 
   await waitFor(() => expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2));
@@ -101,15 +101,15 @@ it("submits a suggested question and renders a named-stock evidence answer", asy
   expect(gate).toHaveTextContent("结论进入处理纪律");
   expect(gate).toHaveTextContent("证据证据够用");
   expect(gate).toHaveTextContent("自动监控等待下一交易日数据，届时自动更新结论");
-  expect(screen.getByRole("link", { name: "查看价格与仓位（可选）→" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "查看价格与仓位 →" })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-investment-advice",
   );
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
-  expect(screen.getByText("收起依据")).toBeInTheDocument();
+  expect(screen.getByText("收起专业明细")).toBeInTheDocument();
   expect(screen.getByText("展开依据明细")).toBeInTheDocument();
   expect(screen.getByText("价格与 近20天平均价")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "查看完整依据（可选）" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "查看完整依据" })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SH.600519&from=ask&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0#stock-final-gate",
   );
@@ -273,8 +273,8 @@ it("prefers the source stock over stale history for short handoff questions", as
 
   renderPage("/ask?symbol=SZ.300750&name=宁德时代&from=opportunities&preset=trend");
 
-  expect(screen.getByText("正在围绕 宁德时代 SZ.300750 追问")).toBeInTheDocument();
-  expect(screen.getByText("围绕 宁德时代 SZ.300750 生成")).toBeInTheDocument();
+  expect(screen.getAllByText("宁德时代 SZ.300750").length).toBeGreaterThan(0);
+  expect(screen.queryByText("围绕 宁德时代 SZ.300750 生成")).not.toBeInTheDocument();
   expect(screen.getByText("宁德时代大跌后现在应该买、持有还是卖")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "为什么最近大跌" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -544,7 +544,7 @@ it("restores the current tab conversation for the same session", async () => {
   renderPage();
   expect(screen.getAllByText("贵州茅台现在主要风险是什么").length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("贵州茅台当前主要风险：短期价格起伏放大。")).toBeInTheDocument();
-  expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
+  expect(screen.getAllByText("贵州茅台 SH.600519").length).toBeGreaterThan(0);
 });
 
 it("keeps separate left-side history conversations and switches between them", async () => {
@@ -581,7 +581,7 @@ it("keeps separate left-side history conversations and switches between them", a
 
   expect(screen.getByText("贵州茅台风险来自当前价格水平和需求节奏。")).toBeInTheDocument();
   expect(screen.queryByText("平安银行当前价格不算贵，但要看息差风险。")).not.toBeInTheDocument();
-  expect(screen.getByText("正在围绕 贵州茅台 SH.600519 追问")).toBeInTheDocument();
+  expect(screen.getAllByText("贵州茅台 SH.600519").length).toBeGreaterThan(0);
 });
 
 it("sends with Enter, keeps Shift Enter as a newline, and retries failed turns", async () => {
@@ -815,7 +815,10 @@ it("renders a concise web LLM answer without deterministic review rails", async 
   expect(screen.queryByText("联网大模型问答")).not.toBeInTheDocument();
   expect(screen.queryByText(/联网/)).not.toBeInTheDocument();
   expect(screen.getByText("已核对最新公开信息。")).toBeInTheDocument();
-  expect(screen.getByText("依据 / 风险 / 后续跟踪")).toBeInTheDocument();
+  const answerSupport = screen.getByLabelText("回答依据与行动");
+  expect(answerSupport).toHaveTextContent("判断依据");
+  expect(answerSupport).toHaveTextContent("主要风险");
+  expect(answerSupport).toHaveTextContent("后续跟踪");
   expect(screen.queryByLabelText("回答关键指标")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("问股复核路线")).not.toBeInTheDocument();
 });
@@ -846,7 +849,7 @@ it("keeps stock identity and follow-up routes on a named financial Skill answer"
   expect(within(result).getByText(/行情时间/)).toBeInTheDocument();
   expect(within(result).getByText("金融分析 Skill + 本地证据")).toBeInTheDocument();
   expect(within(result).getByText(/分析置信度 72%/)).toBeInTheDocument();
-  expect(within(result).getByRole("link", { name: "查看完整依据（可选）" })).toHaveAttribute(
+  expect(within(result).getByRole("link", { name: "查看完整依据" })).toHaveAttribute(
     "href",
     "#/stocks?symbol=SZ.300750&from=ask&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3#stock-final-gate",
   );

@@ -103,6 +103,9 @@ it("filters concept groups, selects a group, and hands the leader to Stock Lab",
   renderWithClient(<MarketGroupPage kind="concept" />, "/concepts");
 
   expect(await screen.findByRole("heading", { name: "概念分析" })).toBeInTheDocument();
+  const summary = await screen.findByRole("region", { name: "概念市场摘要" });
+  expect(within(summary).getByText("当前主线")).toBeInTheDocument();
+  expect(within(summary).getByRole("button", { name: /查看主线证据/ })).toBeInTheDocument();
   const focus = await screen.findByRole("region", { name: "酿酒概念概念焦点" });
   expect(within(focus).getByText("置信度 100% · 信息覆盖，不是上涨概率")).toBeInTheDocument();
   expect(within(focus).getAllByRole("link", { name: /贵州茅台/ })[0]).toHaveAttribute("href", expect.stringContaining("/stocks?symbol=SH.600519"));
@@ -110,6 +113,49 @@ it("filters concept groups, selects a group, and hands the leader to Stock Lab",
   fireEvent.change(screen.getByLabelText("搜索概念"), { target: { value: "机器人" } });
   expect(screen.getByRole("button", { name: /机器人概念/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /酿酒概念/ })).not.toBeInTheDocument();
+});
+
+it("reveals long group catalogs in bounded batches", async () => {
+  const groups = Array.from({ length: 20 }, (_, index) => ({
+    code: `BK${String(index + 1).padStart(3, "0")}`,
+    name: `概念样本 ${index + 1}`,
+    kind: "concept",
+    change_pct: 2 - index / 10,
+    net_flow: 100_000_000 - index,
+    constituent_count: 1,
+    advancing: 1,
+    declining: 0,
+    average_change_pct: 1,
+    average_turnover_rate: 0.8,
+    total_amount: 2_000_000_000,
+    heat_score: 100 - index,
+    risk_score: index,
+    evidence_coverage: 1,
+    leader: { quote, score: 88 },
+    constituents: [quote],
+    missing_evidence: [],
+  }));
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      meta,
+      kind: "concept",
+      available: true,
+      degraded: false,
+      unavailable_reason: null,
+      summary: "当前覆盖 20 个概念。",
+      methodology: [],
+      groups,
+    }),
+  })));
+
+  renderWithClient(<MarketGroupPage kind="concept" />, "/concepts");
+
+  expect(await screen.findAllByRole("button", { name: /概念样本/ })).toHaveLength(16);
+  fireEvent.click(screen.getByRole("button", { name: /再显示 4 个概念/ }));
+  expect(screen.getAllByRole("button", { name: /概念样本/ })).toHaveLength(20);
+  expect(screen.queryByRole("button", { name: /再显示/ })).not.toBeInTheDocument();
 });
 
 it("loads the selected group detail on demand when the catalog has no constituents", async () => {
@@ -324,6 +370,11 @@ it("switches ladder direction and keeps confidence and raw-price disclosure visi
   renderWithClient(<LimitLadderPage />, "/limit-ladder");
 
   expect(await screen.findByText("涨停样本")).toBeInTheDocument();
+  const summary = screen.getByRole("region", { name: "梯队摘要" });
+  expect(within(summary).getByText("市场高度")).toBeInTheDocument();
+  expect(within(summary).getByRole("heading", { name: /梯队仍偏低/ })).toBeInTheDocument();
+  const filters = screen.getByRole("region", { name: "连板筛选" });
+  expect(summary.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText("证据覆盖，不是上涨概率")).toBeInTheDocument();
   expect(screen.getByText("无盘口证据，不作估算")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "跌停梯队" }));

@@ -329,7 +329,7 @@ function PortfolioMovementDeck({ summary }: { summary: PortfolioSummary }) {
       <article><span>最大拖累</span><strong>{summary.topNegativeContribution?.item.item.name ?? "—"}</strong><small>{signedMoney(summary.topNegativeContribution?.value, 0)}</small></article>
     </div>
     <nav>
-      <Link to={portfolioAskHref()}>查看整仓解释（可选）</Link>
+      <Link to={portfolioAskHref()}>解释整仓涨跌</Link>
     </nav>
   </section>;
 }
@@ -357,7 +357,7 @@ function PortfolioTodayFocus({ items }: { items: HoldingDossier[] }) {
         <span>{executionPriority(item)}</span>
         <p>{plainRiskReason(item)}</p>
         <em><strong>{actionQuantity(item)}</strong> · {plainRiskAction(item)}</em>
-        <Link to={holdingAskHref(item)}>查看依据（可选）</Link>
+        <Link to={holdingAskHref(item)}>查看判断依据</Link>
       </article>)}
     </div>
     {queue.length > TODAY_FOCUS_LIMIT && <button className="portfolio-list-more" type="button" aria-expanded={showAll} onClick={() => setShowAll((current) => !current)}>{showAll ? `收起至前 ${TODAY_FOCUS_LIMIT} 项` : `再显示 ${hiddenCount} 项较低优先级决定`}</button>}
@@ -378,7 +378,7 @@ function PortfolioStockPlan({ items }: { items: HoldingDossier[] }) {
         <span>全股票分析</span>
         <strong>每只持仓是否减仓 / 加仓 · 近10日每日涨跌幅</strong>
       </div>
-      <Link to={portfolioAskHref()}>查看整仓依据（可选）</Link>
+      <Link to={portfolioAskHref()}>查看整仓依据</Link>
     </div>
     <div className="portfolio-stock-plan-list">
       {items.map((item) => {
@@ -534,6 +534,7 @@ export function HoldingsPage() {
   const [deleteNotice, setDeleteNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [sort, setSort] = useState<HoldingSort>("priority");
   const [visibleHoldingCount, setVisibleHoldingCount] = useState(HOLDING_PAGE_SIZE);
+  const [showCreate, setShowCreate] = useState(false);
   const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
   const query = useQuery({
     queryKey: ["holdings", "page", authScope],
@@ -553,6 +554,7 @@ export function HoldingsPage() {
       const alreadyListed = holdings.some((item) => item.item.id === created.item.id || item.item.symbol === created.item.symbol);
       setDraft(emptyDraft);
       setCreateNotice(alreadyListed ? "这只股票已在持仓列表，未新增；已清空表单，可直接输入第二只。" : "已加入持仓，表单已清空。");
+      setShowCreate(false);
       client.invalidateQueries({ queryKey: ["holdings"] });
     },
   });
@@ -591,9 +593,7 @@ export function HoldingsPage() {
 
   const pageHeader = (steps: WorkbenchStep[]) => <>
     <WorkbenchPageHeader
-      eyebrow="PORTFOLIO DESK"
       title="持仓"
-      description="这里只分析当前账号真实录入的仓位；删除持仓后，相关减仓提醒会同步停止。"
       status={<div className="holdings-header-state"><span>真实持仓</span><strong>{query.data ? `${holdings.length} 只` : "读取中"}</strong><small>候选不会混入调仓建议</small></div>}
     />
     <PageTaskRail label="持仓" steps={steps} />
@@ -637,10 +637,9 @@ export function HoldingsPage() {
         { id: "holdings-start", label: "确认边界", detail: "没有持仓就不生成减仓" },
         { id: "holdings-create", label: "录入持仓", detail: "数量、成本与退出条件" },
       ])}
-      <section id="holdings-start" className="holding-onboarding" aria-label="开始管理真实持仓">
-        <header><span>START HERE</span><h2>先录入真实持仓，系统才会生成调仓判断</h2><p>没有持仓时，系统不会推荐你减仓任何股票。</p></header>
-        <ol><li><strong>录入数量与成本</strong><span>用于计算真实盈亏和组合占比</span></li><li><strong>只分析真实持仓</strong><span>候选股票不会混入调仓建议</span></li><li><strong>删除即停止提醒</strong><span>退出持仓后不再产生减仓通知</span></li></ol>
-        {createForm}
+      <section id="holdings-start" className="holding-onboarding holding-empty-start" aria-label="开始管理真实持仓">
+        <header><h2>添加持仓</h2></header>
+        {!showCreate ? <button className="button holding-first-action" type="button" onClick={() => setShowCreate(true)}>添加第一只持仓</button> : createForm}
       </section>
     </>;
   }

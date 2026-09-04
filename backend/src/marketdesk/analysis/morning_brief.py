@@ -225,10 +225,8 @@ def _candidate_review_lines(opportunities: OpportunityResult, base_url: str) -> 
 
 
 def _strict_review_lines(opportunities: OpportunityResult) -> list[str]:
-    candidate = opportunities.candidates[0] if opportunities.available and opportunities.candidates else None
-    name = candidate.quote.name if candidate else "候选股"
     return [
-        f"{name} 必须强于大盘和所属板块，不能只看个股涨幅。",
+        "候选股必须强于大盘和所属板块，不能只看个股涨幅。",
         "必须有量能承接，不能缩量冲高或开盘急拉后回落。",
         "不能跌破开盘价、关键均线或个股页给出的失效条件。",
         "历史K线、估值和公告/研报任一核心证据缺口未补齐，只能观察。",
@@ -388,15 +386,16 @@ def _action_console_html(
     base_url: str,
 ) -> str:
     decision, color, note = _decision_tone(market.analysis.score, holdings)
-    top_candidate = (
-        opportunities.candidates[0].quote.name
-        if opportunities.available and opportunities.candidates
-        else "暂无候选"
-    )
+    candidate_count = len(opportunities.candidates) if opportunities.available else 0
     cells = [
         ("今天先做", decision, note, color),
         ("市场闸门", f"{regime_label} {_fmt(market.analysis.score, 0)}/100", f"风险预算 {risk_budget}%，超过预算不新增仓位。", "#17332c"),
-        ("只复核", top_candidate, "最多 1-3 只，必须回到个股页看证据链。", "#b5522d"),
+        (
+            "全市场线索",
+            f"{candidate_count} 条（非持仓）",
+            "邮件不展开非持仓股票；需要时到候选页查看证据链。",
+            "#b5522d",
+        ),
     ]
     card_html = []
     for label, value, detail, tone in cells:
@@ -483,28 +482,46 @@ def _watchlist_lines(watchlist: list[WatchlistItem], base_url: str) -> list[str]
         return ["跟踪池为空；今天可以从候选页挑 1-3 个候选加入观察。"]
     url = _link(base_url, "watchlist")
     return [
-        f"{item.name} {item.symbol}: {item.status}，失效条件：{item.invalidation}。{url}"
-        for item in watchlist[:3]
+        f"自选观察池有 {len(watchlist)} 只；观察池不等于持仓，邮件不展开股票名称。{url}"
     ]
 
 
 def _opening_checklist_lines(
     *,
-    market: MarketPayload,
     intelligence: MarketIntelligenceResult,
-    opportunities: OpportunityResult,
 ) -> list[str]:
     top_sector = intelligence.sector_flows[0].name if intelligence.sector_flows else "资金主线"
-    top_candidate = (
-        opportunities.candidates[0].quote.name
-        if opportunities.available and opportunities.candidates
-        else "首个候选"
-    )
     return [
         f"09:25 集合竞价：确认 {top_sector} 是否仍在资金榜前列，若转弱则候选全部降级观察。",
-        f"09:45 第一轮检查：上涨家数需不弱于开盘前判断，{top_candidate} 不能弱于所属板块。",
+        "09:45 第一轮检查：上涨家数需不弱于开盘前判断，候选股不能弱于所属板块。",
         "10:30 第二轮检查：只保留放量承接且未跌破开盘价/关键均线的标的。",
     ]
+
+
+def _holding_scoped_opportunities(
+    opportunities: OpportunityResult, holdings: list[HoldingDossier]
+) -> OpportunityResult:
+    if not opportunities.available:
+        return opportunities
+    holding_symbols = {item.item.symbol for item in holdings}
+    matched = [
+        candidate
+        for candidate in opportunities.candidates
+        if candidate.quote.symbol in holding_symbols
+    ]
+    if matched:
+        return opportunities.model_copy(update={"candidates": matched})
+    count = len(opportunities.candidates)
+    return opportunities.model_copy(
+        update={
+            "available": False,
+            "candidates": [],
+            "unavailable_reason": (
+                f"全市场有 {count} 条候选线索（非持仓）；邮件不展开非持仓股票，"
+                "避免把市场研究误认成个人仓位提醒。"
+            ),
+        }
+    )
 
 
 def _forbidden_action_lines(regime: str, holdings: list[HoldingDossier]) -> list[str]:
@@ -538,12 +555,8 @@ def build_morning_email_brief(
     regime_label = REGIME_LABELS.get(regime, regime)
     risk_budget = RISK_BUDGETS.get(regime, 50)
     observation = market.snapshot.meta.observed_at.astimezone(CST).strftime("%Y-%m-%d %H:%M UTC+8")
-    top_sector = intelligence.sector_flows[0].name if intelligence.sector_flows else "暂无资金主线"
-    top_candidate = (
-        opportunities.candidates[0].quote.name
-        if opportunities.available and opportunities.candidates
-        else "暂无候选"
-    )
+    candidate_count = len(opportunities.candidates) if opportunities.available else 0
+    holding_opportunities = _holding_scoped_opportunities(opportunities, holdings)
     decision, _, decision_note = _decision_tone(market.analysis.score, holdings)
     subject = (
         f"StockTS 晨报行动台 · {decision} · "
@@ -551,7 +564,7 @@ def build_morning_email_brief(
     )
     preheader = (
         f"{_market_gate_line(market, regime_label, risk_budget).rstrip('。')}；"
-        f"资金主线 {top_sector}；优先复核 {top_candidate}。"
+        f"真实持仓 {len(holdings)} 笔；全市场候选 {candidate_count} 条（非持仓提醒）。"
     )
     action_desk_lines = [
         f"今天先做：{decision}。{decision_note}",
@@ -567,14 +580,12 @@ def build_morning_email_brief(
     sector_lines = _sector_lines(intelligence)
     anomaly_lines = _anomaly_lines(intelligence)
     event_lines = _event_lines(events)
-    candidate_lines = _candidate_review_lines(opportunities, base_url)
+    candidate_lines = _candidate_review_lines(holding_opportunities, base_url)
     strict_lines = _strict_review_lines(opportunities)
     holding_lines = _holding_lines(holdings, base_url)
     watchlist_lines = _watchlist_lines(watchlist, base_url)
     checklist_lines = _opening_checklist_lines(
-        market=market,
         intelligence=intelligence,
-        opportunities=opportunities,
     )
     forbidden_lines = _forbidden_action_lines(regime, holdings)
     action_lines = [
@@ -588,7 +599,7 @@ def build_morning_email_brief(
             "一、今日行动台\n" + _li(action_desk_lines),
             "二、市场闸门\n" + _li(market_gate_lines),
             "三、持仓优先\n" + _li(holding_lines),
-            "四、候选复核（必须过闸）\n" + _num_li(candidate_lines),
+            "四、全市场候选（非持仓提醒）\n" + _num_li(candidate_lines),
             "五、严格校验清单\n" + _li(strict_lines),
             "六、资金与事件证据\n" + _li([*sector_lines[:4], *factor_lines[:3], *event_lines[:2], *anomaly_lines[:2]]),
             "七、跟踪池\n" + _li(watchlist_lines),
@@ -610,13 +621,13 @@ def build_morning_email_brief(
     { _action_console_html(market=market, regime_label=regime_label, risk_budget=risk_budget, holdings=holdings, opportunities=opportunities, base_url=base_url) }
     { _market_breadth_html(market) }
     <section style="background:#ffffff;border:1px solid #dfe4dc;border-radius:22px;padding:20px 22px;margin:14px 0;">
-      <h2 style="margin:0 0 6px;font-size:20px;color:#17332c;">候选复核（必须过闸）</h2>
-      <p style="margin:0 0 10px;color:#6f7c76;font-size:13px;line-height:1.7;">候选仅供复核，不代表买入建议。</p>
-      {_candidate_cards_html(opportunities, base_url)}
+      <h2 style="margin:0 0 12px;font-size:20px;color:#b5522d;">真实持仓提醒</h2>
+      {_holding_cards_html(holdings, base_url)}
     </section>
     <section style="background:#ffffff;border:1px solid #dfe4dc;border-radius:22px;padding:20px 22px;margin:14px 0;">
-      <h2 style="margin:0 0 12px;font-size:20px;color:#b5522d;">持仓优先</h2>
-      {_holding_cards_html(holdings, base_url)}
+      <h2 style="margin:0 0 6px;font-size:20px;color:#17332c;">全市场候选（非持仓提醒）</h2>
+      <p style="margin:0 0 10px;color:#6f7c76;font-size:13px;line-height:1.7;">只展开与真实持仓重合的线索；其他候选请到页面查看。</p>
+      {_candidate_cards_html(holding_opportunities, base_url)}
     </section>
     <section style="background:#f8faf5;border:1px solid #dfe4dc;border-radius:22px;padding:20px 22px;margin:14px 0;">
       <h2 style="margin:0 0 12px;font-size:20px;color:#17332c;">资金与事件证据</h2>

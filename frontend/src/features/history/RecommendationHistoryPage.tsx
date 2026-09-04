@@ -149,9 +149,7 @@ export function RecommendationHistoryPage() {
 
   return <>
     <WorkbenchPageHeader
-      eyebrow="RECOMMENDATION LEDGER"
       title="推荐复盘"
-      description="候选会变化，但入选时点和价格不回写；正式收益与未成熟过程收益分开验账。"
       status={<div className="history-observed"><History size={16} /><span>最新观察</span><strong>{observedTime(data?.last_observed_at ?? null)}</strong></div>}
     />
     <PageTaskRail label="推荐复盘" steps={[

@@ -28,8 +28,15 @@ async def dispatch_decision_emails(
     failed = 0
     skipped = 0
     for account, event in store.list_pending_decision_emails():
-        receivers = _receiver_list(resolved.email_receivers) or [account.email]
-        receivers = [receiver for receiver in receivers if _looks_like_real_receiver(receiver)]
+        if event.source == "holding" and not store.is_active_holding(
+            account.id, event.subject_key, event.symbol
+        ):
+            store.abandon_decision_email(event.id, "holding no longer active")
+            skipped += 1
+            continue
+        # Decision events are account-scoped; a global receiver override must never
+        # redirect another user's personalized alert.
+        receivers = [account.email] if _looks_like_real_receiver(account.email) else []
         if not receivers:
             store.abandon_decision_email(event.id, "recipient unavailable")
             skipped += 1
@@ -132,13 +139,11 @@ def _resolve_smtp_settings(settings: Settings) -> tuple[str, int, str]:
     return defaults.get(domain, (f"smtp.{domain}", 465, "ssl"))
 
 
-def _receiver_list(value: str) -> list[str]:
-    return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
-
-
 def _looks_like_real_receiver(email: str) -> bool:
     normalized = email.strip().lower()
-    if normalized.endswith(("@marketdesk.local", "@example.com", ".test")):
+    if normalized.endswith(
+        ("@marketdesk.local", "@example.com", ".test", ".invalid", ".example", ".localhost")
+    ):
         return False
     if normalized.startswith(("codex-", "smoke-")):
         return False

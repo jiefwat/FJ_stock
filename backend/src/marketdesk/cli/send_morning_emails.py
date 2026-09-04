@@ -99,7 +99,9 @@ async def dispatch_morning_emails(
             user.id,
             (base_url or resolved_settings.morning_email_base_url).rstrip("/"),
         )
-        receivers = _receiver_list(resolved_settings.email_receivers) or [brief.recipient]
+        # A personalized brief contains account holdings and must stay account-scoped.
+        # The legacy global receiver setting must not redirect another user's brief.
+        receivers = [brief.recipient]
         if not configured:
             failed += 1
             attempts.append(EmailAttempt(user.id, ",".join(receivers), False, "邮箱 SMTP 未配置"))
@@ -185,10 +187,6 @@ def _resolve_smtp_settings(settings: Settings) -> tuple[str, int, str]:
     return SMTP_CONFIGS.get(domain, (f"smtp.{domain}", 465, "ssl"))
 
 
-def _receiver_list(value: str) -> list[str]:
-    return [item.strip() for chunk in value.replace(";", ",").split(",") for item in [chunk] if item.strip()]
-
-
 def _sendable_users(users: list[UserAccount]) -> list[UserAccount]:
     sendable: list[UserAccount] = []
     for user in users:
@@ -200,11 +198,14 @@ def _sendable_users(users: list[UserAccount]) -> list[UserAccount]:
 
 
 def _looks_like_real_receiver(email: str) -> bool:
-    if email.endswith("@marketdesk.local") or email.endswith("@example.com"):
+    normalized = email.strip().lower()
+    if normalized.endswith(
+        ("@marketdesk.local", "@example.com", ".test", ".invalid", ".example", ".localhost")
+    ):
         return False
-    if email.startswith(("codex-", "smoke-")):
+    if normalized.startswith(("codex-", "smoke-")):
         return False
-    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", email))
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", normalized))
 
 
 def _load_sent_state(path: Path) -> dict[str, list[int]]:

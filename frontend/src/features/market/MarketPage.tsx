@@ -90,8 +90,8 @@ export function MarketPage() {
   }, [activeDossierKey, activeDossierReady]);
 
   return <AsyncState loading={query.isLoading} error={query.error as Error | null}>{query.data && <>
-    <WorkbenchPageHeader eyebrow="MARKET DESK" title="市场" description="先确认今天能不能做，再看结构、主线和全市场明细。" status={<DataStamp meta={query.data.snapshot.meta} />} />
-    <PageTaskRail label="市场" steps={[
+    <WorkbenchPageHeader title="市场" status={<DataStamp meta={query.data.snapshot.meta} />} />
+    <PageTaskRail label="市场" className="market-page-task-rail" steps={[
       { id: "market-decision", label: "今日结论", detail: "先定风险与动作" },
       { id: "market-structure", label: "市场结构", detail: "广度、成交与强弱" },
       { id: "market-board-workbench", label: "板块主线", detail: "行业、题材与成分" },
@@ -124,31 +124,40 @@ function MarketStructureDashboard({ data, loading, failed }: { data?: MarketDash
     && Array.isArray(data.missing_evidence);
   if (failed || !hasDashboardShape) return <section id="market-structure" className="panel quant-dashboard-shell" aria-label="市场量化看板"><div className="capability-warning">量化看板暂不可用，原有大盘结论仍可继续使用。</div></section>;
   const maxBand = Math.max(1, ...data.distribution.map((item) => item.count));
+  const sampleCount = data.distribution.reduce((sum, item) => sum + item.count, 0);
   return <section id="market-structure" className="quant-dashboard-shell" aria-label="市场量化看板">
     <header className="quant-dashboard-head">
-      <div><span>MARKET OVERVIEW</span><strong>市场量化看板</strong><small>所有指标使用同一交易快照</small></div>
+      <div><span>MARKET OVERVIEW</span><h2>市场结构</h2><small>所有指标使用同一交易快照</small></div>
       <nav aria-label="市场结构模块"><Link to="/limit-ladder">连板梯队</Link><Link to="/concepts">概念分析</Link><Link to="/industries">行业分析</Link></nav>
     </header>
-    <div className="quant-kpi-grid">
-      <article><span>全市场成交</span><strong>{data.total_turnover == null ? "N/A" : `${fmt(data.total_turnover / 100_000_000, 0)} 亿`}</strong><small>{data.total_turnover == null ? "成交额证据缺失" : "当前快照合计"}</small></article>
-      <article><span>上涨广度</span><strong>{data.breadth_pct == null ? "N/A" : percent(data.breadth_pct)}</strong><small>不是上涨概率</small></article>
-      <article><span>资金净流入覆盖</span><strong>{data.capital_inflow_pct == null ? "N/A" : percent(data.capital_inflow_pct)}</strong><small>有资金字段的股票中</small></article>
-      <article><span>涨停 / 跌停</span><strong><b className="up">{data.limit_up_count}</b> / <b className="down">{data.limit_down_count}</b></strong><small>按标的明确涨跌停规则</small></article>
-      <article><span>分析置信度</span><strong>{percent(data.confidence * 100)}</strong><small>信息覆盖，不是上涨概率</small></article>
-    </div>
+    <section className="quant-snapshot" aria-label="核心市场指标">
+      <article className="quant-primary-kpi">
+        <span>全市场成交</span>
+        <strong>{data.total_turnover == null ? "N/A" : `${fmt(data.total_turnover / 100_000_000, 0)} 亿`}</strong>
+        <small>{data.total_turnover == null ? "成交额证据缺失" : `来自 ${sampleCount} 只有效样本`}</small>
+      </article>
+      <dl className="quant-kpi-ledger">
+        <div><dt>上涨广度</dt><dd><span>{data.breadth_pct == null ? "N/A" : percent(data.breadth_pct)}</span><small>市场参与度，不是上涨概率</small></dd></div>
+        <div><dt>资金净流入覆盖</dt><dd><span>{data.capital_inflow_pct == null ? "N/A" : percent(data.capital_inflow_pct)}</span><small>有资金字段的股票中</small></dd></div>
+        <div><dt>涨停 / 跌停</dt><dd><span><b className="up">{data.limit_up_count}</b><i>/</i><b className="down">{data.limit_down_count}</b></span><small>按各标的涨跌停规则</small></dd></div>
+        <div><dt>分析置信度</dt><dd><span>{percent(data.confidence * 100)}</span><small>信息覆盖，不是上涨概率</small></dd></div>
+      </dl>
+    </section>
     <div className="quant-dashboard-grid">
       <section className="distribution-card" aria-label="涨跌分布">
-        <header><strong>涨跌分布</strong><small>{data.distribution.reduce((sum, item) => sum + item.count, 0)} 只有效样本</small></header>
-        <div>{data.distribution.map((item) => <article key={item.key} className={item.tone}><b>{item.count}</b><i><em style={{ height: `${Math.max(5, item.count / maxBand * 100)}%` }} /></i><span>{item.label}</span></article>)}</div>
+        <header><div><span>市场广度</span><h3>涨跌分布</h3></div><small>{sampleCount} 只有效样本</small></header>
+        <div>{data.distribution.map((item) => <article key={item.key} className={item.tone} aria-label={`${item.label}：${item.count} 只`}><b>{item.count}</b><i aria-hidden="true"><em style={{ height: `${Math.max(5, item.count / maxBand * 100)}%` }} /></i><span>{item.label}</span></article>)}</div>
       </section>
-      <section className="sector-rank-card" aria-label="板块强弱排行">
-        <header><strong>板块强弱</strong><small>涨跌 + 资金</small></header>
-        <div className="sector-rank-columns"><div><span>领涨</span>{data.strongest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="up">{pct(item.change_pct)}</strong></Link>)}</div><div><span>领跌</span>{data.weakest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="down">{pct(item.change_pct)}</strong></Link>)}</div></div>
-      </section>
-      <section className="activity-rank-card" aria-label="成交活跃个股">
-        <header><strong>成交活跃</strong><small>点选进入个股证据账本</small></header>
-        <div>{data.activity_leaders.slice(0, 6).map((item, index) => <Link key={item.symbol} to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=market-dashboard`}><em>{String(index + 1).padStart(2, "0")}</em><span><b>{item.name}</b><small>{item.sector ?? "行业待补"}</small></span><strong className={item.change_pct == null ? "" : item.change_pct >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong><i>{item.amount == null ? "成交 N/A" : `${fmt(item.amount / 100_000_000)} 亿`}</i></Link>)}</div>
-      </section>
+      <aside className="quant-dashboard-aside" aria-label="市场结构线索">
+        <section className="sector-rank-card" aria-label="板块强弱排行">
+          <header><div><span>方向</span><h3>板块强弱</h3></div><small>选择板块查看成分证据</small></header>
+          <div className="sector-rank-columns"><div><span>领涨</span>{data.strongest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="up">{pct(item.change_pct)}</strong></Link>)}</div><div><span>领跌</span>{data.weakest_sectors.slice(0, 5).map((item, index) => <Link key={item.code} to={`/market?sector=${item.code}`}><em>{index + 1}</em><b>{item.name}</b><strong className="down">{pct(item.change_pct)}</strong></Link>)}</div></div>
+        </section>
+        <section className="activity-rank-card" aria-label="成交活跃个股">
+          <header><div><span>个股线索</span><h3>成交活跃</h3></div><small>选择股票进入证据账本</small></header>
+          <div>{data.activity_leaders.slice(0, 6).map((item, index) => <Link key={item.symbol} to={`/stocks?symbol=${encodeURIComponent(item.symbol)}&from=market-dashboard`}><em>{String(index + 1).padStart(2, "0")}</em><span><b>{item.name}</b><small>{item.sector ?? "行业待补"}</small></span><i>{item.amount == null ? "成交 N/A" : `${fmt(item.amount / 100_000_000)} 亿`}</i><strong className={item.change_pct == null ? "" : item.change_pct >= 0 ? "up" : "down"}>{pct(item.change_pct)}</strong></Link>)}</div>
+        </section>
+      </aside>
     </div>
     {data.missing_evidence.length > 0 && <p className="quant-missing">降级项：{data.missing_evidence.join("、")}。缺失值不按 0 参与统计。</p>}
   </section>;
@@ -215,7 +224,7 @@ function DeferredEquityBrowser({ params }: { params: URLSearchParams }) {
       <EquityBrowser />
     </Suspense> : <section className="panel market-browser-placeholder" aria-label="全市场行情">
       <span>全市场行情</span>
-      <button className="button secondary" type="button" onClick={() => setShouldLoad(true)}>查看全市场行情（可选）</button>
+      <button className="button secondary" type="button" onClick={() => setShouldLoad(true)}>加载全市场行情</button>
     </section>}
   </div>;
 }

@@ -288,7 +288,7 @@ export function EquityBrowser() {
       </div>
       <form className="equity-advanced compact always-open" onSubmit={applyAdvanced}>
         <div className="advanced-heading">
-          <div><strong>高级筛选</strong><span>常驻在顶部，先缩小池子再看结果；默认按成交额排序。</span></div>
+          <div><strong>高级筛选</strong></div>
           {advancedCount ? <small>已启用 {advancedCount} 项</small> : <small>未启用筛选</small>}
         </div>
         <div className="advanced-grid compact">
@@ -305,7 +305,7 @@ export function EquityBrowser() {
           <label className="complete-toggle compact"><input type="checkbox" checked={advancedDraft.completeOnly} onChange={(event) => setAdvancedDraft((draft) => ({ ...draft, completeOnly: event.target.checked }))} />核心数据完整</label>
         </div>
         <div className="advanced-actions">
-          {filterError ? <span role="alert">{filterError}</span> : <small>建议先按行业、成交额和换手率缩小池子，再进入个股研究。</small>}
+          {filterError ? <span role="alert">{filterError}</span> : null}
           <button type="button" className="button secondary" onClick={resetAll}>重置全部</button>
           <button type="submit" className="button">应用筛选</button>
         </div>

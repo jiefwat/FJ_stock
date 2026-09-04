@@ -1554,6 +1554,8 @@ async def test_stock_returns_safe_decision_when_kline_is_unavailable(tmp_path) -
 
     assert dossier.stance == "insufficient_data"
     assert dossier.investment_advice.action == "暂不参与"
+    assert dossier.investment_advice.participation_status == "blocked"
+    assert dossier.investment_advice.blockers
     assert dossier.bars == []
 
 
@@ -2328,6 +2330,7 @@ def test_user_preferences_are_personal(tmp_path) -> None:
     assert updated.json()["risk_profile"] == "defensive"
     assert updated.json()["morning_email_enabled"] is False
     assert api.get("/api/v1/preferences", headers=beta_auth).json()["start_page"] == "market"
+    assert api.get("/api/v1/preferences", headers=beta_auth).json()["default_symbol"] == ""
     assert (
         api.get("/api/v1/auth/me", headers=alpha_auth).json()["email"] == "prefs-alpha@example.com"
     )
@@ -2377,7 +2380,7 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "一、今日行动台" in payload["text"]
     assert "二、市场闸门" in payload["text"]
     assert "三、持仓优先" in payload["text"]
-    assert "四、候选复核（必须过闸）" in payload["text"]
+    assert "四、全市场候选（非持仓提醒）" in payload["text"]
     assert "五、严格校验清单" in payload["text"]
     assert "六、资金与事件证据" in payload["text"]
     assert "八、开盘检查清单" in payload["text"]
@@ -2394,17 +2397,48 @@ def test_morning_email_preview_summarizes_actionable_research(tmp_path) -> None:
     assert "市场广度仪表" in payload["html"]
     assert "上涨占比" in payload["html"]
     assert "市场闸门" in payload["html"]
-    assert "候选复核（必须过闸）" in payload["html"]
+    assert "全市场候选（非持仓提醒）" in payload["html"]
     assert "候选线索 #1" in payload["html"]
     assert "先给结论" in payload["html"]
     assert "资金与事件证据" in payload["html"]
-    assert "持仓优先" in payload["html"]
+    assert "真实持仓提醒" in payload["html"]
     assert "开盘检查清单" in payload["html"]
+
+
+def test_morning_email_does_not_present_non_holding_stock_as_personal_alert(
+    tmp_path,
+) -> None:
+    api = client(tmp_path)
+    assert (
+        api.post(
+            "/api/v1/watchlist",
+            json={
+                "symbol": "SH.600519",
+                "name": "贵州茅台",
+                "thesis": "历史观察项",
+                "invalidation": "不再跟踪",
+            },
+        ).status_code
+        == 201
+    )
+
+    response = api.get(
+        "/api/v1/morning-email/preview",
+        params={"base_url": "https://stock.example.com"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "贵州茅台" not in payload["preheader"]
+    assert "贵州茅台" not in payload["text"]
+    assert "贵州茅台" not in payload["html"]
+    assert "全市场候选（非持仓提醒）" in payload["text"]
+    assert "邮件不展开非持仓股票" in payload["text"]
 
 
 def test_morning_email_dispatch_sends_enabled_platform_users(tmp_path) -> None:
     service = MarketService(provider=FixtureProvider(), store=Store(tmp_path / "dispatch.db"))
-    service.store.create_user("dispatch@stock.test", "Dispatch User", "disabled")
+    service.store.create_user("dispatch@valid.cn", "Dispatch User", "disabled")
     settings = Settings(
         data_dir=tmp_path,
         email_sender="sender@qq.com",
@@ -2424,8 +2458,34 @@ def test_morning_email_dispatch_sends_enabled_platform_users(tmp_path) -> None:
 
     assert summary.sent == 1
     assert summary.failed == 0
-    assert summary.attempts[0].recipient == "ops@example.com"
+    assert summary.attempts[0].recipient == "dispatch@valid.cn"
     assert "dry-run" in summary.attempts[0].detail
+
+
+def test_morning_email_dispatch_skips_reserved_test_accounts(tmp_path) -> None:
+    service = MarketService(
+        provider=FixtureProvider(), store=Store(tmp_path / "test-account-dispatch.db")
+    )
+    service.store.create_user("overflow-check@stock.test", "Overflow Check", "disabled")
+    settings = Settings(
+        data_dir=tmp_path,
+        email_sender="sender@qq.com",
+        email_password="secret",
+        email_receivers="personal-owner@valid.cn",
+    )
+
+    summary = asyncio.run(
+        dispatch_morning_emails(
+            settings=settings,
+            service=service,
+            base_url="https://stock.example.com",
+            dry_run=True,
+            force=True,
+        )
+    )
+
+    assert summary.sent == 0
+    assert summary.attempts == []
 
 
 def test_equity_views_are_validated_and_isolated_by_account(tmp_path) -> None:
@@ -2776,6 +2836,7 @@ async def test_stock_monitor_prewarms_default_stock_intelligence(tmp_path) -> No
 
     provider = CountingProvider()
     service = MarketService(provider=provider, store=Store(tmp_path / "stock-monitor.db"))
+    service.store.update_preferences(default_symbol="SH.600519")
 
     result = await service.refresh_stock_monitor()
     await service.stock("SH.600519")

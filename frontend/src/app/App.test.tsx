@@ -115,7 +115,7 @@ it("keeps the application unmounted before login", () => {
   }));
 
   render(<App />);
-  expect(screen.getByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "StockTS" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(screen.queryByText("市场状态")).not.toBeInTheDocument();
@@ -185,6 +185,40 @@ it("registers a user and sends the auth token with personal requests", async () 
   });
 });
 
+it("prewarms the default data for every workspace route after authentication", async () => {
+  localStorage.setItem("marketdesk.accessToken", "token-prewarm");
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes("/api/v1/auth/me")) {
+      return { ok: true, status: 200, json: async () => ({ id: 27, email: "prewarm@example.com", display_name: "Prewarm", created_at: "2026-09-04T01:00:00Z", updated_at: "2026-09-04T01:00:00Z" }) };
+    }
+    if (url.includes("/api/v1/preferences")) return { ok: true, status: 200, json: async () => preferences };
+    if (url === "/api/v1/market-structure/groups?kind=concept") return { ok: true, status: 200, json: async () => ({ groups: [{ code: "BK-C1" }] }) };
+    if (url === "/api/v1/market-structure/groups?kind=industry") return { ok: true, status: 200, json: async () => ({ groups: [{ code: "BK-I1" }] }) };
+    return { ok: true, status: 200, json: async () => fixtureFor(url) };
+  }));
+
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "市场" })).toBeInTheDocument();
+
+  const expected = [
+    "/api/v1/opportunities?preset=trend&limit=10",
+    "/api/v1/market-structure/strategies",
+    "/api/v1/holdings",
+    "/api/v1/recommendation-history?preset=trend&limit=90",
+    "/api/v1/market-structure/limit-ladder?mode=up",
+    "/api/v1/market-structure/groups?kind=concept",
+    "/api/v1/market-structure/groups?kind=industry",
+    "/api/v1/market-structure/groups/concept/BK-C1",
+    "/api/v1/market-structure/groups/industry/BK-I1",
+  ];
+  await waitFor(() => {
+    expect(expected.filter((url) => !calls.includes(url))).toEqual([]);
+  });
+});
+
 it("opens the authenticated decision center without mounting it outside the session gate", async () => {
   localStorage.setItem("marketdesk.accessToken", "token-decisions");
   window.location.hash = "#/decisions";
@@ -215,7 +249,7 @@ it("rejects an expired session without mounting business routes", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "StockTS" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(calls).toEqual(["/api/v1/auth/me"]);
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
@@ -254,7 +288,7 @@ it("restores a valid session and removes the shell on logout", async () => {
   expect(document.querySelector(".account-menu")).not.toHaveAttribute("open");
   fireEvent.click(screen.getByText("Owner"));
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
-  expect(screen.getByRole("heading", { name: "登录 StockTS" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "StockTS" })).toBeInTheDocument();
   expect(screen.queryByRole("navigation", { name: "主导航" })).not.toBeInTheDocument();
   expect(localStorage.getItem("marketdesk.accessToken")).toBeNull();
 });
@@ -288,7 +322,15 @@ it("auto switches the shell to mobile layout for phone media", async () => {
   expect(document.body.dataset.deviceMode).toBe("mobile");
   expect(document.querySelector(".app-shell")).toHaveAttribute("data-device-mode", "mobile");
   expect(document.querySelector(".app-shell")).toHaveClass("mobile-shell");
-  expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+  const navigation = screen.getByRole("navigation", { name: "主导航" });
+  expect(within(navigation).getAllByRole("link")).toHaveLength(5);
+  expect(within(navigation).queryByRole("link", { name: "连板" })).not.toBeInTheDocument();
+  fireEvent.click(within(navigation).getByRole("button", { name: "更多功能" }));
+  expect(await within(navigation).findByRole("region", { name: "更多功能菜单" })).toBeInTheDocument();
+  expect(within(navigation).getByRole("link", { name: "连板" })).toHaveAttribute("href", "#/limit-ladder");
+
+  fireEvent.click(screen.getByRole("button", { name: "打开股票搜索" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "搜索股票或输入问题" })).toHaveFocus());
 });
 
 it("uses the tablet rail without falling back to the phone shell", async () => {
@@ -385,12 +427,13 @@ it("shows market observation time separately from the latest refresh time", asyn
 
   render(<App />);
 
-  expect(await screen.findByText(/行情时间/)).toBeInTheDocument();
-  expect(screen.getByText(/更新/)).toBeInTheDocument();
+  expect(await screen.findByText(/行情截至/)).toBeInTheDocument();
+  expect(screen.getByText(/刷新于/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "刷新" }));
 
   expect(await screen.findByText(/全站数据已同步 · 更新于 .*2030/)).toBeInTheDocument();
-  expect(screen.getByText(/行情时间/)).toBeInTheDocument();
+  expect(screen.getByText(/行情截至/)).toBeInTheDocument();
+  expect(screen.getByText(/刷新于 .*2030/)).toBeInTheDocument();
 });
 
 it("keeps refresh failures visible without clearing the current workspace", async () => {
@@ -505,8 +548,8 @@ it("keeps the Ask Stock route behind the authenticated shell", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "问股" })).toHaveClass("active");
+  expect(await screen.findByRole("heading", { name: "研究问答" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "问股" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("搜索股票或输入问题")).not.toBeInTheDocument();
 });
 
@@ -552,7 +595,7 @@ it("opens the stock from the latest Ask Stock answer instead of stale research",
   }));
 
   render(<App />);
-  expect(await screen.findByRole("heading", { name: "问股" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "研究问答" })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("继续追问"), { target: { value: "宁德时代现在主要风险是什么" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 

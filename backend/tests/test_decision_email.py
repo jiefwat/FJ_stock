@@ -11,6 +11,17 @@ from marketdesk.store import Store
 def pending_event(tmp_path, email: str = "holder@valid.cn"):
     store = Store(tmp_path / "email.db")
     user = store.create_user(email, "Holder", "hash")
+    holding = store.create_holding(
+        symbol="SH.600519",
+        name="贵州茅台",
+        quantity=10,
+        cost_price=1500,
+        target_weight=0.2,
+        thesis="现金流稳定",
+        invalidation="跌破长期均线",
+        user_id=user.id,
+    )
+    assert holding.id == 1
     base = datetime(2026, 8, 16, 1, 0, tzinfo=UTC)
 
     def decision(action: str, severity: str, observed_at: datetime) -> DecisionSnapshot:
@@ -53,14 +64,17 @@ def email_settings(tmp_path) -> Settings:
 @pytest.mark.asyncio
 async def test_dispatch_sends_each_pending_high_risk_event_once(tmp_path, monkeypatch) -> None:
     store, event = pending_event(tmp_path)
+    settings = email_settings(tmp_path).model_copy(
+        update={"email_receivers": "platform-owner@valid.cn"}
+    )
     sent: list[str] = []
     monkeypatch.setattr(
         "marketdesk.decision_email._send_message",
         lambda message, settings: sent.append(str(message["To"])),
     )
 
-    first = await dispatch_decision_emails(store, email_settings(tmp_path))
-    second = await dispatch_decision_emails(store, email_settings(tmp_path))
+    first = await dispatch_decision_emails(store, settings)
+    second = await dispatch_decision_emails(store, settings)
 
     assert first.sent == 1
     assert second.sent == 0
@@ -95,3 +109,47 @@ async def test_dispatch_skips_non_real_recipient_without_retry_loop(tmp_path) ->
     assert summary.skipped == 1
     assert stored.email_status == "failed"
     assert stored.email_error == "recipient unavailable"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_does_not_redirect_test_account_alerts_to_global_receiver(
+    tmp_path, monkeypatch
+) -> None:
+    store, event = pending_event(tmp_path, "overflow-check@example.com")
+    settings = email_settings(tmp_path).model_copy(
+        update={"email_receivers": "personal-owner@valid.cn"}
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "marketdesk.decision_email._send_message",
+        lambda message, _settings: sent.append(str(message["To"])),
+    )
+
+    summary = await dispatch_decision_emails(store, settings)
+
+    assert summary.sent == 0
+    assert summary.skipped == 1
+    assert sent == []
+    stored = store.get_decision_event(event.id, 2)
+    assert stored.email_status == "failed"
+    assert stored.email_error == "recipient unavailable"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_cancels_alert_when_stock_is_no_longer_held(tmp_path, monkeypatch) -> None:
+    store, event = pending_event(tmp_path)
+    store.delete_holding(1, 2)
+    sent: list[str] = []
+    monkeypatch.setattr(
+        "marketdesk.decision_email._send_message",
+        lambda message, settings: sent.append(str(message["To"])),
+    )
+
+    summary = await dispatch_decision_emails(store, email_settings(tmp_path))
+
+    assert summary.sent == 0
+    assert summary.skipped == 1
+    assert sent == []
+    stored = store.get_decision_event(event.id, 2)
+    assert stored.email_status == "failed"
+    assert stored.email_error == "holding no longer active"

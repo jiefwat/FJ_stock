@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Binoculars, Briefcase, Flame, History, Layers3, MessageSquareText, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
+import { BellRing, Binoculars, Briefcase, Flame, History, Layers3, MoreHorizontal, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Star, UserRound, X } from "lucide-react";
 import { lazy, Suspense, type FormEvent, useEffect, useRef, useState } from "react";
 import { HashRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { loadRecentResearch, recentResearchUpdatedEvent, rememberRecentResearch, type RecentResearch } from "../lib/recentResearch";
+import { formatMarketDateTime } from "../lib/marketTime";
 import {
   api,
   clearAuthToken,
@@ -51,7 +52,6 @@ const nav = [
   ["/opportunities", "候选", Search],
   ["/history", "复盘", History],
   ["/stocks", "个股", Star],
-  ["/ask", "问股", MessageSquareText],
   ["/holdings", "持仓", Briefcase],
   ["/limit-ladder", "连板", Flame],
   ["/concepts", "概念", Network],
@@ -60,17 +60,20 @@ const nav = [
 
 const navGroups = [
   { label: "决策台", paths: ["/decisions", "/market", "/opportunities"] },
-  { label: "研究", paths: ["/stocks", "/ask", "/holdings"] },
+  { label: "研究", paths: ["/stocks", "/holdings"] },
   { label: "市场结构", paths: ["/limit-ladder", "/concepts", "/industries"] },
   { label: "验证", paths: ["/history"] },
 ] as const;
+
+const mobilePrimaryPaths = ["/decisions", "/market", "/opportunities", "/stocks", "/holdings"] as const;
+const mobileMorePaths = ["/limit-ladder", "/concepts", "/industries", "/history"] as const;
 
 const routeMeta: Record<string, { section: string; title: string; description: string }> = {
   "/decisions": { section: "决策台", title: "变化提醒", description: "只处理真正改变动作的信息" },
   "/market": { section: "决策台", title: "市场总览", description: "先判断环境，再选择研究方向" },
   "/opportunities": { section: "决策台", title: "候选策略", description: "用稳定策略筛选研究对象" },
   "/stocks": { section: "研究", title: "个股分析", description: "结论、证据、失效条件在同一页面" },
-  "/ask": { section: "研究", title: "问股", description: "基于本地证据继续追问" },
+  "/ask": { section: "研究", title: "研究问答", description: "板块与组合问题的兼容入口" },
   "/holdings": { section: "研究", title: "持仓", description: "只对当前账号的真实持仓给动作" },
   "/limit-ladder": { section: "市场结构", title: "连板梯队", description: "用原始价格验证涨跌停结构" },
   "/concepts": { section: "市场结构", title: "概念分析", description: "从主题热度下钻到股票证据" },
@@ -84,7 +87,6 @@ const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unkno
   "/opportunities": loadOpportunitiesPage,
   "/history": loadRecommendationHistoryPage,
   "/stocks": loadStockLabPage,
-  "/ask": loadAskStockPage,
   "/holdings": loadHoldingsPage,
   "/limit-ladder": loadLimitLadderPage,
   "/concepts": loadMarketGroupPage,
@@ -93,6 +95,67 @@ const routePreloads: Partial<Record<(typeof nav)[number][0], () => Promise<unkno
 
 function preloadRoute(path: (typeof nav)[number][0]) {
   void routePreloads[path]?.();
+}
+
+type WarmQuery = { queryKey: readonly unknown[]; path: string; staleTime: number };
+type WarmGroupList = { groups?: Array<{ code: string }> };
+
+function routeWarmQueries(path: (typeof nav)[number][0], authScope: string, currentStock: RecentResearch | null): WarmQuery[] {
+  switch (path) {
+    case "/market":
+      return [
+        { queryKey: ["market"], path: "/api/v1/market", staleTime: 60_000 },
+        { queryKey: ["market-structure", "dashboard"], path: "/api/v1/market-structure/dashboard", staleTime: 60_000 },
+        { queryKey: ["cn-market-intelligence"], path: "/api/v1/markets/CN/intelligence?limit=20", staleTime: 60_000 },
+        { queryKey: ["market-events"], path: "/api/v1/market-events?limit=30", staleTime: 120_000 },
+      ];
+    case "/opportunities":
+      return [
+        { queryKey: ["opportunities", "trend"], path: "/api/v1/opportunities?preset=trend&limit=10", staleTime: 90_000 },
+        { queryKey: ["market-structure", "strategies"], path: "/api/v1/market-structure/strategies", staleTime: 60_000 },
+      ];
+    case "/history":
+      return [{ queryKey: ["recommendation-history", "trend"], path: "/api/v1/recommendation-history?preset=trend&limit=90", staleTime: 5 * 60_000 }];
+    case "/holdings":
+      return [{ queryKey: ["holdings", "page", authScope], path: "/api/v1/holdings", staleTime: 60_000 }];
+    case "/limit-ladder":
+      return [{ queryKey: ["market-structure", "limit-ladder", "up"], path: "/api/v1/market-structure/limit-ladder?mode=up", staleTime: 60_000 }];
+    case "/concepts":
+      return [{ queryKey: ["market-structure", "groups", "concept"], path: "/api/v1/market-structure/groups?kind=concept", staleTime: 10 * 60_000 }];
+    case "/industries":
+      return [{ queryKey: ["market-structure", "groups", "industry"], path: "/api/v1/market-structure/groups?kind=industry", staleTime: 10 * 60_000 }];
+    case "/stocks":
+      return currentStock
+        ? [{ queryKey: ["stock", currentStock.symbol], path: `/api/v1/stocks/${encodeURIComponent(currentStock.symbol)}`, staleTime: 10 * 60_000 }]
+        : [];
+    default:
+      return [];
+  }
+}
+
+function prewarmRoute(client: QueryClient, path: (typeof nav)[number][0], authScope: string, currentStock: RecentResearch | null) {
+  preloadRoute(path);
+  for (const query of routeWarmQueries(path, authScope, currentStock)) {
+    const prefetch = client.prefetchQuery({
+      queryKey: query.queryKey,
+      queryFn: () => api<unknown>(query.path),
+      staleTime: query.staleTime,
+      retry: false,
+    });
+    const kind = path === "/concepts" ? "concept" : path === "/industries" ? "industry" : null;
+    if (kind) {
+      void prefetch.then(() => {
+        const first = client.getQueryData<WarmGroupList>(query.queryKey)?.groups?.[0];
+        if (!first) return;
+        void client.prefetchQuery({
+          queryKey: ["market-structure", "group-detail", kind, first.code],
+          queryFn: () => api<unknown>(`/api/v1/market-structure/groups/${kind}/${encodeURIComponent(first.code)}`),
+          staleTime: 10 * 60_000,
+          retry: false,
+        });
+      });
+    }
+  }
 }
 
 function readDeviceMode(): DeviceMode {
@@ -157,12 +220,10 @@ function AuthenticationPage({ onAuthenticated }: { onAuthenticated: (result: Aut
     <main className="auth-screen" aria-label="账号登录">
       <section className="auth-intro">
         <div className="auth-brand"><span>MD</span><strong>StockTS</strong></div>
-        <h1>登录 <span>StockTS</span></h1>
-        <p>行情、个股分析、问股记录和持仓仅对当前账号开放。</p>
-        <div className="auth-boundary-note"><strong>一人一套研究空间</strong><span>你的持仓、偏好和观察记录不会与其他账号共享。</span></div>
+        <h1>StockTS</h1>
       </section>
       <form className="auth-form" onSubmit={(event) => { event.preventDefault(); authenticate.mutate(); }}>
-        <header><span>{mode === "register" ? "创建个人账号" : "欢迎回来"}</span><small>进入你的投研空间</small></header>
+        <header><span>{mode === "register" ? "创建账号" : "登录"}</span></header>
         <div className="auth-tabs">
           <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>登录</button>
           <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>注册新账号</button>
@@ -188,10 +249,11 @@ function useDebouncedValue(value: string, delay = 250) {
   return debounced;
 }
 
-function CommandDock() {
+function CommandDock({ mobile = false }: { mobile?: boolean }) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [recent, setRecent] = useState<RecentResearch[]>(() => loadRecentResearch());
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -210,9 +272,14 @@ function CommandDock() {
   useEffect(() => setActiveIndex(-1), [debouncedQuery]);
 
   useEffect(() => {
+    if (mobileOpen) inputRef.current?.focus();
+  }, [mobileOpen]);
+
+  useEffect(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        if (mobile) setMobileOpen(true);
         inputRef.current?.focus();
         setExpanded(true);
         setActiveIndex(-1);
@@ -220,7 +287,7 @@ function CommandDock() {
     };
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, []);
+  }, [mobile]);
 
   const openStock = (stock: Pick<Quote, "symbol" | "name" | "sector">) => {
     setRecent(rememberRecentResearch(stock));
@@ -232,6 +299,7 @@ function CommandDock() {
 
   const closePanel = () => {
     setExpanded(false);
+    setMobileOpen(false);
     setActiveIndex(-1);
     inputRef.current?.blur();
   };
@@ -267,13 +335,26 @@ function CommandDock() {
 
   return (
     <form
-      className="command-dock"
+      className={`command-dock ${mobile ? "mobile-command-dock" : ""} ${mobileOpen ? "mobile-open" : ""}`.trim()}
       role="search"
       aria-label="全局股票搜索"
       onSubmit={submit}
       onFocus={() => { setRecent(loadRecentResearch()); setExpanded(true); }}
-      onBlur={() => window.setTimeout(() => setExpanded(false), 120)}
+      onBlur={() => window.setTimeout(() => {
+        setExpanded(false);
+        if (mobile) setMobileOpen(false);
+      }, 120)}
     >
+      {mobile && !mobileOpen ? <button
+        type="button"
+        className="mobile-search-trigger"
+        aria-label="打开股票搜索"
+        aria-expanded="false"
+        onClick={() => {
+          setMobileOpen(true);
+          setExpanded(true);
+        }}
+      ><Search size={17} /><span>搜索</span></button> : null}
       <Search size={15} />
       <input
         ref={inputRef}
@@ -281,7 +362,7 @@ function CommandDock() {
         value={draft}
         onChange={(event) => { setDraft(event.target.value); setExpanded(true); }}
         onKeyDown={handleInputKeyDown}
-        placeholder="搜股票 / 直接问股"
+        placeholder="搜股票 / 问板块与组合"
         aria-label="搜索股票或输入问题"
         role="combobox"
         aria-autocomplete="list"
@@ -297,7 +378,7 @@ function CommandDock() {
         </div>
         {query.length >= 2 ? <div className="command-results" id="command-result-list" role="listbox" aria-label="股票搜索结果">
           {search.isLoading ? <p>正在搜索股票…</p> : null}
-          {!search.isLoading && results.length === 0 ? <p>没找到股票，可以把这句话交给问股。</p> : null}
+          {!search.isLoading && results.length === 0 ? <p>没找到股票，可以把这句话交给研究问答。</p> : null}
           {results.map((item, index) => (
             <button
               type="button"
@@ -412,6 +493,8 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
   const [railCollapsed, setRailCollapsed] = useState(() => window.localStorage.getItem("stockts:rail") === "compact");
   const [currentStock, setCurrentStock] = useState<RecentResearch | null>(() => loadRecentResearch()[0] ?? null);
   const [refreshNotice, setRefreshNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const authScope = getAuthToken()?.slice(-16) ?? "anonymous";
   const decisions = useQuery({
     queryKey: ["decision-events"],
     queryFn: () => api<DecisionEventFeed>("/api/v1/decision-events"),
@@ -423,7 +506,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     onMutate: () => setRefreshNotice(null),
     onSuccess: async (result) => {
       await client.invalidateQueries();
-      const refreshedAt = new Date(result.meta.fetched_at).toLocaleString("zh-CN", { hour12: false });
+      const refreshedAt = formatMarketDateTime(result.meta.fetched_at);
       setRefreshNotice({ kind: "success", message: `全站数据已同步 · 更新于 ${refreshedAt}` });
     },
     onError: () => setRefreshNotice({ kind: "error", message: "刷新失败，请稍后重试" }),
@@ -434,6 +517,18 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
     const timer = window.setTimeout(() => setRefreshNotice(null), 3_200);
     return () => window.clearTimeout(timer);
   }, [refreshNotice]);
+
+  useEffect(() => {
+    const batches = [
+      ["/market", "/opportunities", "/holdings"],
+      ["/history", "/limit-ladder"],
+      ["/concepts", "/industries", "/stocks"],
+    ] as const;
+    const timers = batches.map((paths, index) => window.setTimeout(() => {
+      paths.forEach((path) => prewarmRoute(client, path, authScope, currentStock));
+    }, 40 + index * 160));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [authScope, client, currentStock]);
 
   useEffect(() => {
     const updateCurrentStock = (event: Event) => {
@@ -447,6 +542,8 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
   useEffect(() => {
     window.localStorage.setItem("stockts:rail", railCollapsed ? "compact" : "full");
   }, [railCollapsed]);
+
+  useEffect(() => setMobileMoreOpen(false), [location.pathname]);
 
   useEffect(() => {
     if (deviceMode !== "mobile") return undefined;
@@ -478,7 +575,42 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
           <button type="button" className="rail-toggle" onClick={() => setRailCollapsed((value) => !value)} aria-controls="primary-navigation" aria-expanded={!railCollapsed} aria-label={railCollapsed ? "展开侧边栏" : "收起侧边栏"} title={railCollapsed ? "展开侧边栏" : "收起侧边栏"}>{railCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
         </div>
         <nav id="primary-navigation" aria-label="主导航">
-          {navGroups.map((group) => <section className="nav-group" key={group.label} aria-label={group.label}>
+          {deviceMode === "mobile" ? <>
+            <section className="mobile-primary-nav" aria-label="常用功能">
+              {mobilePrimaryPaths.map((path) => {
+                const item = nav.find(([itemPath]) => itemPath === path)!;
+                const [, label, Icon] = item;
+                return <NavLink
+                  key={path}
+                  to={path === "/stocks" && currentStock ? `/stocks?symbol=${encodeURIComponent(currentStock.symbol)}` : path}
+                  onFocus={() => prewarmRoute(client, path, authScope, currentStock)}
+                  onPointerEnter={() => prewarmRoute(client, path, authScope, currentStock)}
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                  {path === "/decisions" && (decisions.data?.unread_count ?? 0) > 0
+                    ? <b className="nav-unread" aria-label={`${decisions.data?.unread_count} 条未读提醒`}>{decisions.data!.unread_count > 99 ? "99+" : decisions.data!.unread_count}</b>
+                    : null}
+                </NavLink>;
+              })}
+            </section>
+            <button
+              type="button"
+              className={`mobile-more-trigger ${mobileMorePaths.includes(location.pathname as typeof mobileMorePaths[number]) ? "active" : ""}`.trim()}
+              aria-label="更多功能"
+              aria-expanded={mobileMoreOpen}
+              aria-controls="mobile-more-menu"
+              onClick={() => setMobileMoreOpen((current) => !current)}
+            ><MoreHorizontal size={18} /><span>更多</span></button>
+            {mobileMoreOpen ? <section id="mobile-more-menu" className="mobile-more-menu" aria-label="更多功能菜单">
+              <header><strong>更多功能</strong><button type="button" aria-label="关闭更多功能" onClick={() => setMobileMoreOpen(false)}><X size={17} /></button></header>
+              <div>{mobileMorePaths.map((path) => {
+                const item = nav.find(([itemPath]) => itemPath === path)!;
+                const [, label, Icon] = item;
+                return <NavLink key={path} to={path} onClick={() => setMobileMoreOpen(false)}><Icon size={18} /><span>{label}</span></NavLink>;
+              })}</div>
+            </section> : null}
+          </> : navGroups.map((group) => <section className="nav-group" key={group.label} aria-label={group.label}>
             <span className="nav-group-label">{group.label}</span>
             {group.paths.map((path) => {
               const item = nav.find(([itemPath]) => itemPath === path)!;
@@ -490,8 +622,8 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
                   : path}
                 end={path === "/market"}
                 title={path === "/stocks" && currentStock ? `打开 ${currentStock.name} 个股分析` : label}
-                onFocus={() => preloadRoute(path)}
-                onPointerEnter={() => preloadRoute(path)}
+                onFocus={() => prewarmRoute(client, path, authScope, currentStock)}
+                onPointerEnter={() => prewarmRoute(client, path, authScope, currentStock)}
               >
                 <Icon size={18} />
                 <span>{label}</span>
@@ -512,7 +644,7 @@ function Shell({ user, onLogout }: { user: UserAccount; onLogout: () => void }) 
         <div className="topbar">
           <div className="topbar-left">
             <div className="workspace-context"><span>{currentRoute.section}</span><strong>{currentRoute.title}</strong><small>{currentRoute.description}</small></div>
-            {!hasLocalResearchInput ? <CommandDock /> : null}
+            {!hasLocalResearchInput ? <CommandDock mobile={deviceMode === "mobile"} /> : null}
           </div>
           <div className="topbar-actions">
             {refreshNotice ? <div className={`refresh-notice ${refreshNotice.kind}`} role={refreshNotice.kind === "error" ? "alert" : "status"} aria-live={refreshNotice.kind === "error" ? "assertive" : "polite"}><i />{refreshNotice.message}</div> : null}

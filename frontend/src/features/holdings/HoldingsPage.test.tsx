@@ -124,7 +124,7 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(movementDeck.getByText("最大贡献")).toBeInTheDocument();
   expect(movementDeck.getByText("最大拖累")).toBeInTheDocument();
   expect(within(screen.getByLabelText("整仓近10日每日涨跌")).getByText("08-04")).toBeInTheDocument();
-  expect(movementDeck.getByRole("link", { name: "查看整仓解释（可选）" }).getAttribute("href")).toContain("question=");
+  expect(movementDeck.getByRole("link", { name: "解释整仓涨跌" }).getAttribute("href")).toContain("question=");
   expect(screen.queryByLabelText("下跌会亏多少")).not.toBeInTheDocument();
   const todayFocus = within(screen.getByLabelText("今天的操作决定"));
   expect(todayFocus.getByText("今天的决定")).toBeInTheDocument();
@@ -146,7 +146,7 @@ it("shows portfolio overview and a compact holdings list with stock-analysis jum
   expect(dailyChanges.getByText("+1.20%")).toBeInTheDocument();
   expect(stockPlan.queryByText("3日")).not.toBeInTheDocument();
   expect(stockPlan.queryByText("5日")).not.toBeInTheDocument();
-  expect(stockPlan.getByRole("link", { name: "查看整仓依据（可选）" }).getAttribute("href")).toContain("question=");
+  expect(stockPlan.getByRole("link", { name: "查看整仓依据" }).getAttribute("href")).toContain("question=");
 
   const row = within(list).getByRole("listitem", { name: /贵州茅台/ });
   expect(within(row).getByText("贵州茅台")).toBeInTheDocument();
@@ -280,9 +280,11 @@ it("starts the create form empty so name-only additions do not reuse a default s
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><HoldingsPage /></MemoryRouter></QueryClientProvider>);
 
-  await screen.findByRole("heading", { name: "先录入真实持仓，系统才会生成调仓判断" });
+  await screen.findByRole("heading", { name: "添加持仓" });
   expect(screen.queryByLabelText("组合总览")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("持仓排序")).not.toBeInTheDocument();
+  expect(screen.queryByRole("form", { name: "登记持仓" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "添加第一只持仓" }));
   const form = within(screen.getByRole("form", { name: "登记持仓" }));
   expect(form.getByLabelText("代码")).toHaveValue("");
   expect(form.getByLabelText("名称")).toHaveValue("");
@@ -304,7 +306,7 @@ it("starts the create form empty so name-only additions do not reuse a default s
       invalidation: "跌破支撑",
     },
   ]));
-  await waitFor(() => expect(form.getByLabelText("名称")).toHaveValue(""));
+  await waitFor(() => expect(screen.queryByRole("form", { name: "登记持仓" })).not.toBeInTheDocument());
 });
 
 it("clears stale default create values before adding another holding", async () => {
@@ -371,6 +373,7 @@ it("fills default research notes when optional create fields are left empty", as
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><MemoryRouter><HoldingsPage /></MemoryRouter></QueryClientProvider>);
 
+  fireEvent.click(await screen.findByRole("button", { name: "添加第一只持仓" }));
   const form = within(await screen.findByRole("form", { name: "登记持仓" }));
   fireEvent.change(form.getByLabelText("名称"), { target: { value: "大金重工" } });
   fireEvent.change(form.getByLabelText("数量"), { target: { value: "800" } });

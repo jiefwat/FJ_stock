@@ -383,3 +383,27 @@ Approved for commit, push to `main`, and public deployment. Provider access rema
 Release `20260823-192111-87dca4a` is active at `https://stock.jiewat-kaka-fj.com`. The public group chunk contains the 240-millisecond loading threshold and both meaningful loading and unavailable-state labels. The service and morning-email timer are active, the public health endpoint is normal, release-local runtime data is absent, and persistent data remains outside the release.
 
 The systemd unit enables immediate startup refresh and a 600-second interval. The persisted market fetch time advanced to `2026-08-23T11:23:14.122029Z` after the new process started at `11:23:02Z`, confirming that the startup refresh chain actually ran on the deployed release.
+
+## 2026-09-02 Plain Unified Workbench Review
+
+### Scope
+
+Reviewed all ten authenticated routes as one visual and interaction system after repeated feature-specific redesign passes had accumulated. The review covered surface hierarchy, card size, border radius, elevation, page titles, decision prominence, filters, empty states, responsive navigation, and horizontal overflow.
+
+### Findings And Resolution
+
+The inconsistency came from multiple late stylesheet layers assigning unrelated radius, shadow, color, and card rules to each feature. The final coherence layer now uses one visual grammar: the page is the canvas, each major section has a one-pixel square border, internal information is separated by rules rather than nested cards, controls use a restrained six-pixel radius, and shadows are removed from normal content.
+
+Tinted surfaces are limited to current conclusions, real risk, warnings, and degraded-data states. Red-up and green-down values, confidence wording, `N/A`, and data-source degradation remain semantically intact. The Market breadth metrics no longer use decorative color bars; Concept and Industry evidence bars are neutral unless selected; the Opportunities decision area is one continuous conclusion surface rather than four competing cards. Empty Holdings, Decision Change, and Stock Lab states now follow the same structure and scale.
+
+Desktop browser acceptance covered Decision Change, Market, Opportunities, Recommendation Review, Stock Lab, Ask Stock, Holdings, Limit Ladder, Concept Analysis, and Industry Analysis at 1440px. Mobile acceptance covered the primary task routes at 390px, including the five fixed primary destinations, the More menu, focused search entry, vertical Holdings onboarding, and document overflow. No route produced document-level horizontal overflow.
+
+### Decision
+
+The plain unified workbench passed the complete repository verification gate. This pass changes presentation only: authenticated routes, account boundaries, provider placement, deterministic analysis, confidence semantics, and `/api/v1/*` browser access remain unchanged. Deployment is intentionally deferred until explicitly requested.
+
+### Production Confirmation
+
+Release `20260904-125205-e868aff-dirty` is active at `https://stock.jiewat-kaka-fj.com`. Public authenticated acceptance covered all ten routes at 1440px and 390px with no document overflow, loading-placeholder residue, console error, or console warning. The public health endpoint, application service, and morning-email timer are normal; anonymous holdings access remains protected by HTTP 401; release-local data is absent; and the persistent database remains under `/opt/aster-market/data`.
+
+The first deployment attempt exposed a static-asset retention defect: copying historical chunks could overwrite a newly built file with an old timestamp before age-based cleanup. The deploy script now supplements missing historical chunks without replacing current-build files. The corrected release returned HTTP 200 for all referenced lazy chunks and passed the complete repository gate with 246 backend tests and 110 frontend tests.

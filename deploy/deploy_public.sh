@@ -95,7 +95,7 @@ fi
 "${SSH[@]}" "$REMOTE" "rm -rf '$RELEASE_DIR.tmp' && mkdir -p '$RELEASE_DIR.tmp'"
 "${SSH[@]}" "$REMOTE" "tar -xzf '/tmp/aster-market-deploy/$RELEASE_ID.tar.gz' -C '$RELEASE_DIR.tmp'"
 # Keep recent hashed chunks available so tabs opened before a release can still lazy-load routes.
-"${SSH[@]}" "$REMOTE" "for assets in /opt/aster-market/releases/*/frontend/dist/assets; do if [[ \"\$assets\" != '$RELEASE_DIR.tmp/frontend/dist/assets' && -d \"\$assets\" ]]; then cp -a \"\$assets/.\" '$RELEASE_DIR.tmp/frontend/dist/assets/'; fi; done; find '$RELEASE_DIR.tmp/frontend/dist/assets' -type f -mtime +14 -delete"
+"${SSH[@]}" "$REMOTE" "for assets in /opt/aster-market/releases/*/frontend/dist/assets; do if [[ \"\$assets\" != '$RELEASE_DIR.tmp/frontend/dist/assets' && -d \"\$assets\" ]]; then cp -a --update=none \"\$assets/.\" '$RELEASE_DIR.tmp/frontend/dist/assets/'; fi; done; find '$RELEASE_DIR.tmp/frontend/dist/assets' -type f -mtime +14 -delete"
 "${SSH[@]}" "$REMOTE" "python3 -m venv '$RELEASE_DIR.tmp/.venv'"
 "${SSH[@]}" "$REMOTE" "'$RELEASE_DIR.tmp/.venv/bin/python' -m pip install --upgrade pip"
 "${SSH[@]}" "$REMOTE" "'$RELEASE_DIR.tmp/.venv/bin/python' -m pip install 'fastapi>=0.115,<1' 'httpx>=0.27,<1' 'pydantic-settings>=2.6,<3' 'uvicorn[standard]>=0.32,<1'"

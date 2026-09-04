@@ -736,6 +736,8 @@ class StockAnalysisDimension(StrictModel):
 
 class StockInvestmentAdvice(StrictModel):
     action: str
+    participation_status: Literal["eligible", "conditional", "blocked"]
+    blockers: list[str] = Field(default_factory=list)
     position_hint: str
     entry_plan: str
     stop_loss: str
@@ -1060,7 +1062,7 @@ class AuthResult(StrictModel):
 
 
 class UserPreferences(StrictModel):
-    default_symbol: str = "SH.600519"
+    default_symbol: str = ""
     start_page: str = "market"
     risk_profile: str = "balanced"
     morning_email_enabled: bool = True

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export type WorkbenchStep = {
   id: string;
@@ -7,47 +7,73 @@ export type WorkbenchStep = {
 };
 
 type WorkbenchPageHeaderProps = {
-  eyebrow: string;
   title: string;
-  description: string;
   status?: ReactNode;
   actions?: ReactNode;
 };
 
-export function WorkbenchPageHeader({ eyebrow, title, description, status, actions }: WorkbenchPageHeaderProps) {
+export function WorkbenchPageHeader({ title, status, actions }: WorkbenchPageHeaderProps) {
   return <header className="workbench-page-head">
     <div className="workbench-page-title">
-      <span>{eyebrow}</span>
       <h1>{title}</h1>
-      <p>{description}</p>
     </div>
     {status || actions ? <div className="workbench-page-meta">{status}{actions}</div> : null}
   </header>;
 }
 
-export function PageTaskRail({ label, steps }: { label: string; steps: WorkbenchStep[] }) {
+export function PageTaskRail({ label, steps, className = "" }: { label: string; steps: WorkbenchStep[]; className?: string }) {
   const [activeId, setActiveId] = useState(steps[0]?.id ?? "");
+  const manualNavigationUntil = useRef(0);
+  const stepKey = steps.map((step) => step.id).join("\u001f");
+
+  useEffect(() => {
+    const stepIds = stepKey ? stepKey.split("\u001f") : [];
+    setActiveId((current) => stepIds.includes(current) ? current : (stepIds[0] ?? ""));
+  }, [stepKey]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return undefined;
+    const targets = (stepKey ? stepKey.split("\u001f") : [])
+      .map((id) => document.getElementById(id))
+      .filter((target): target is HTMLElement => Boolean(target));
+    const observer = new IntersectionObserver((entries) => {
+      if (Date.now() < manualNavigationUntil.current) return;
+      const nearest = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => Math.abs(left.boundingClientRect.top - 130) - Math.abs(right.boundingClientRect.top - 130))[0];
+      if (nearest?.target.id) setActiveId(nearest.target.id);
+    }, { rootMargin: "-120px 0px -62% 0px", threshold: [0, 0.25, 1] });
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
+  }, [stepKey]);
 
   const moveTo = (id: string) => {
     setActiveId(id);
+    manualNavigationUntil.current = Date.now() + 1_200;
     const target = document.getElementById(id);
     if (!target) return;
+    const openingDetails = target instanceof HTMLDetailsElement && !target.open;
+    if (openingDetails) {
+      const summary = target.querySelector(":scope > summary");
+      if (summary instanceof HTMLElement) summary.click();
+    }
     const reduceMotion = typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      if (openingDetails && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => target.scrollIntoView({ behavior: "auto", block: "start" }));
+      }
     }
     if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
     target.focus({ preventScroll: true });
   };
 
-  return <nav className="page-task-rail" aria-label={`${label}页面路径`}>
-    <strong>页面路径</strong>
+  return <nav className={`page-task-rail ${className}`.trim()} aria-label={`${label}页面路径`}>
     <ol>
-      {steps.map((step, index) => <li key={step.id}>
+      {steps.map((step) => <li key={step.id}>
         <button type="button" className={activeId === step.id ? "active" : ""} aria-current={activeId === step.id ? "step" : undefined} onClick={() => moveTo(step.id)}>
-          <em>{String(index + 1).padStart(2, "0")}</em>
-          <span><b>{step.label}</b><small>{step.detail}</small></span>
+          <b>{step.label}</b>
         </button>
       </li>)}
     </ol>

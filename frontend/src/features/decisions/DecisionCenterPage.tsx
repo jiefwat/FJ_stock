@@ -65,13 +65,24 @@ function DecisionCard({ event, onRead }: { event: DecisionEvent; onRead: (id: nu
         : { label: "证据较少", tone: "low" };
   return <article className={`decision-event-card ${event.severity} ${event.read_at ? "read" : "unread"}`}>
     <Link className="decision-event-link" to={event.href} aria-label={`查看${event.name}原因：${event.action}`} onClick={() => onRead(event.id)}>
+      <div className="decision-event-identity">
+        <span>{source}</span>
+        <h3>{event.name}<small>{event.symbol}</small></h3>
+      </div>
       <div className="decision-event-main">
-        <div className="decision-event-meta"><span>{source}</span><time dateTime={event.observed_at}>{observedTime(event.observed_at)}</time>{!event.read_at ? <i>未读</i> : null}</div>
-        <div className="decision-event-title"><div><h3>{event.name}<small>{event.symbol}</small></h3><strong>{event.action}</strong></div><div className={`decision-confidence ${confidence.tone}`} title="分析置信度衡量证据完整度，不代表上涨概率"><span>{percent == null ? confidence.label : `${confidence.label} · ${percent}%`}</span><i><em style={{ width: `${percent ?? 0}%` }} /></i></div></div>
+        <strong>{event.action}</strong>
         <p>{event.summary}</p>
         <div className="decision-transition"><span>之前：{event.previous_action}</span><b>现在：{event.action}</b></div>
       </div>
-      <span className="decision-card-cta">查看原因<ArrowUpRight size={15} /></span>
+      <div className={`decision-confidence ${confidence.tone}`} title="分析置信度衡量证据完整度，不代表上涨概率">
+        <span>{percent == null ? confidence.label : `${confidence.label} · ${percent}%`}</span>
+        <i><em style={{ width: `${percent ?? 0}%` }} /></i>
+      </div>
+      <div className="decision-event-meta">
+        <time dateTime={event.observed_at}>{observedTime(event.observed_at)}</time>
+        {!event.read_at ? <i>未读</i> : null}
+      </div>
+      <span className="decision-card-cta" aria-hidden="true"><ArrowUpRight size={17} /></span>
     </Link>
   </article>;
 }
@@ -150,9 +161,7 @@ export function DecisionCenterPage() {
 
   return <>
     <WorkbenchPageHeader
-      eyebrow="CHANGE MONITOR"
       title="变化提醒"
-      description="只处理动作真正变化的提醒；候选与真实持仓严格分开，置信度只表示证据完整度。"
       status={<div className="decision-monitor-stamp"><BellRing size={17} /><span>最近更新</span><strong>{observedTime(feed?.monitored_at ?? null)}</strong></div>}
     />
     <PageTaskRail label="变化提醒" steps={[
@@ -163,7 +172,7 @@ export function DecisionCenterPage() {
 
     <AsyncState loading={query.isLoading} error={query.error as Error | null} onRetry={() => void query.refetch()}>
       {feed ? <div id="decision-feed" className="decision-center">
-        {empty ? <section className="decision-empty"><ShieldCheck size={28} /><strong>没有需要你处理的变化</strong><p>系统每 10 分钟自动检查。你可以继续完成今天的研究任务。</p><nav aria-label="提醒为空时的下一步"><Link to="/opportunities">查看今日候选</Link><Link to="/holdings">维护真实持仓</Link><Link to="/market">回到市场概览</Link></nav></section> : <>
+        {empty ? <section className="decision-empty"><ShieldCheck size={28} /><strong>没有需要你处理的变化</strong><nav aria-label="提醒为空时的下一步"><Link className="primary" to="/opportunities">查看今日候选</Link><Link to="/holdings">维护持仓</Link><Link to="/market">查看市场</Link></nav></section> : <>
           {requiredEvents.length ? <section className="decision-event-section actionable" aria-label="需要处理">
             <header><div><span>YOUR MOVE</span><h2>需要处理</h2><strong>{requiredEvents.length} 项 · 仅真实持仓或可执行候选</strong></div></header>
             <div className="decision-event-grid">{requiredEvents.map((event) => <DecisionCard key={event.id} event={event} onRead={(id) => read.mutate(id)} />)}</div>

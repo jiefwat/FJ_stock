@@ -120,7 +120,7 @@ it("shows plain-language strategy diagnostics and keeps professional data on dem
   expect(screen.getByText("公告与研报")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /首选\s*宁德时代/ })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
   const queueActions = within(screen.getByLabelText("第一候选查看入口"));
-  expect(queueActions.getByRole("link", { name: "查看依据（可选）" })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
+  expect(queueActions.getByRole("link", { name: "查看判断依据" })).toHaveAttribute("href", "/stocks?symbol=SZ.300750&from=opportunities&preset=trend");
   expect(queueActions.queryByRole("link", { name: /问/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "队列筛选优先线索 1" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /全部\s*2/ })).toBeInTheDocument();
@@ -146,7 +146,7 @@ it("shows plain-language strategy diagnostics and keeps professional data on dem
   expect(decisionBrief.getByText("最大风险")).toBeInTheDocument();
   expect(decisionBrief.getByText("改变决定")).toBeInTheDocument();
   expect(decisionBrief.getByText("跌回策略涨幅区间外")).toBeInTheDocument();
-  expect(decisionBrief.getByText("系统每 10 分钟自动检查价格、资金、板块、公告、财报和放弃条件")).toBeInTheDocument();
+  expect(decisionBrief.queryByText("系统每 10 分钟自动检查价格、资金、板块、公告、财报和放弃条件")).not.toBeInTheDocument();
   expect(decisionBrief.getByText(/当前把握度较低：.*消息核验不足/)).toBeInTheDocument();
   expect(screen.queryByText("降级条件")).not.toBeInTheDocument();
   expect(screen.queryByText("后续核对")).not.toBeInTheDocument();

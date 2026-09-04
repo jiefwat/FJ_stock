@@ -130,6 +130,9 @@
 - [x] Use one plain-language action vocabulary across candidate and holding decisions while keeping evidence optional.
 - [x] Reuse background-monitored K-line history in Stock Lab and return a safe no-participation decision when the live K-line source is unavailable.
 - [x] Reduce expanded Opportunity details to decision, reason, risk, and change condition while keeping system monitoring visible and professional evidence collapsed.
+- [x] Unify the workbench around neutral surfaces, one blue interaction accent, compact route controls, and semantic-only market colors across desktop and mobile.
+- [x] Keep page-path observers stable across data rerenders and preserve the selected step while collapsed sections open and reflow.
+- [x] Browser-verify Decisions, Market, Opportunities, Stock Lab, Ask Stock, and Holdings at desktop and 390px with no application console errors or horizontal overflow.
 
 ## Decision Change Center
 
@@ -151,6 +154,57 @@
 - [x] Merge company, news, price, and invalidation into one first-screen decision view.
 - [x] Load company evidence only when professional details are opened and keep the stock result fresh for the ten-minute server window.
 - [x] Warm default, holding, and watchlist stocks before the heavier strategy refresh so service restarts do not leave the main stock page cold.
+- [x] Exclude broad-market news roundups when the selected stock is only mentioned incidentally in the article summary.
+- [x] Replace the empty historical-chart column with a compact, explicit risk-discipline state on desktop and mobile.
+- [x] Make Stock Lab task routes open their target, keep secondary panels mutually exclusive, and support keyboard stock selection.
+
+## Stock Participation Gate V4
+
+- [x] Normalize stock evidence weights to exactly 100% so missing research or news cannot be hidden by score clamping.
+- [x] Make recent explicit hard-risk news block new participation and return the concrete blocker through the stock advice contract.
+- [x] Render the server-owned blocker before position discipline and remove browser-side participation recomputation.
+- [x] Collapse secondary decision drivers and Ask Stock shortcuts behind explicit, responsive disclosures.
+- [x] Verify the blocker-first flow, disclosure interaction, contrast, and zero horizontal overflow at desktop and 390px.
+- [x] Pass the full `make verify` gate after the Stock Participation Gate V4 changes.
+
+## Stock Lab Information Architecture V5
+
+- [x] Replace the stock-page path with four short decision sections: conclusion, evidence, follow-up, and details.
+- [x] Reduce the first screen to stock identity, one primary action, blocker or position discipline, and one reason and risk.
+- [x] Move the price chart and participation, stop, and realization conditions behind explicit disclosures.
+- [x] Keep evidence, follow-up, and professional details mutually exclusive and group deep data into three secondary directories.
+- [x] Render the mobile stock directory as a complete two-by-two grid instead of a horizontally clipped rail.
+- [x] Pass the full `make verify` gate after the Stock Lab Information Architecture V5 changes.
+
+## Stock Lab Interaction Polish V6
+
+- [x] Remove the duplicate selected-stock status card and shorten the selected-state page description.
+- [x] Collapse stock search behind a compact switcher after selection while keeping the empty state search immediate.
+- [x] Focus and select the switcher input on open, and let Escape close it without changing the current stock.
+- [x] Fit all four stock sections on one mobile row at normal phone widths with a two-row fallback for very narrow screens.
+- [x] Add short, directional disclosure transitions while respecting reduced-motion preferences.
+- [x] Pass the full `make verify` gate after the Stock Lab Interaction Polish V6 changes.
+
+## Stock Lab Editorial UI V7
+
+- [x] Replace the boxed stock-page path with a quiet ruled navigation and typographic active state.
+- [x] Remove the main stock card, shadow, dark verdict block, metric pills, and large neutral fills.
+- [x] Preserve semantic red only for blocked participation and explicit risk evidence.
+- [x] Group the decision summary with shared edges, whitespace, and restrained hairlines instead of nested surfaces.
+- [x] Flatten the evidence directory, question routes, deep groups, score rows, and technical details into an editorial reading flow.
+- [x] Pass the full `make verify` gate after the Stock Lab Editorial UI V7 changes.
+- [x] Deploy the verified editorial Stock Lab release and confirm public assets, services, authentication, and persistent-data isolation.
+
+## Stock Lab Progressive Disclosure V8
+
+- [x] Reduce the loaded-stock first layer to identity, verdict, blocker, evidence quality, and position discipline.
+- [x] Remove the duplicated why/risk/trend strip and desktop/mobile Ask action groups.
+- [x] Keep the sector destination as quiet identity metadata and keep Ask entry in the dedicated question directory.
+- [x] Move price history into the evidence disclosure while preserving the unavailable-history fallback.
+- [x] Remove the second visible directory heading and keep `PageTaskRail` as the single page path.
+- [x] Preserve mutually exclusive evidence, question, and professional-detail disclosures with deep-link behavior.
+- [x] Pass focused Stock Lab/header tests, frontend types, `git diff --check`, and the full `make verify` gate.
+- [x] Deploy release `20260829-212240-e868aff-dirty` and verify public assets, authentication, services, timer, and persistent-data isolation.
 
 ## Reminder Confidence And Human Factors
 
@@ -164,6 +218,20 @@
 - [x] Keep stock identity, intent, evidence time, confidence, and follow-up routes visible on named financial-Skill answers.
 - [x] Put actionable decision changes before reminder filters while keeping system monitoring last.
 - [x] Make global refresh confirmation state its all-site scope and the resulting refresh time.
+- [x] Keep named morning-email stocks scoped to current holdings, label market candidates as non-holding research, and cancel queued alerts after a holding is removed.
+- [x] Keep personalized morning briefs and decision alerts bound to the owning account, ignoring global receiver overrides and reserved test accounts.
+
+## Plain Unified Workbench
+
+- [x] Replace route-specific card, radius, and shadow systems with one square, flat section treatment.
+- [x] Keep tinted backgrounds only for decisions, real risk, warnings, and degraded-data states.
+- [x] Flatten nested metric cards into ruled rows and cells while preserving financial number alignment.
+- [x] Unify page title scale, task-path navigation, controls, empty states, and disclosure treatment.
+- [x] Consolidate the Opportunities decision area into one continuous hierarchy.
+- [x] Remove decorative Market breadth bars and neutralize unselected Concept and Industry evidence bars.
+- [x] Verify all ten desktop routes and key 390px workflows without document-level horizontal overflow.
+- [x] Pass the complete `make verify` repository gate for the unified workbench.
+- [x] Deploy release `20260904-125205-e868aff-dirty` and verify public assets, all ten authenticated routes, services, account boundaries, and persistent-data isolation.
 
 ## Quant Market Structure
 

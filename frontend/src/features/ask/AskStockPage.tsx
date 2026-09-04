@@ -707,7 +707,7 @@ function gateReviewRoute(result: AskStockResponse) {
   return { anchor: "stock-evidence-audit", label: "查看判断依据", detail: "支持、主要担心和缺失信息已经整理好。" };
 }
 
-function AskGateBrief({ result }: { result: AskStockResponse }) {
+function AskGateBrief({ result, embedded = false }: { result: AskStockResponse; embedded?: boolean }) {
   if (result.kind !== "stock_analysis") return null;
   const finalGate = metricByLabel(result, "FINAL GATE");
   const ledgerGate = metricByLabel(result, "LEDGER GATE");
@@ -721,7 +721,7 @@ function AskGateBrief({ result }: { result: AskStockResponse }) {
     <div>
       <span>当前决定</span>
       <strong>现在怎么做</strong>
-      <a className="ask-gate-link" href={stockResearchHref(result, route.anchor)}>{route.label}（可选）→</a>
+      {!embedded ? <a className="ask-gate-link" href={stockResearchHref(result, route.anchor)}>{route.label} →</a> : null}
     </div>
     <article className={finalGate.tone}>
       <small>结论</small>
@@ -801,7 +801,7 @@ function confidenceLabel(value: number | null | undefined) {
   return value == null ? "分析置信度待补" : `分析置信度 ${Math.round(value * 100)}%（非上涨概率）`;
 }
 
-function AskResultHeader({ result, fallbackTitle }: { result: AskStockResponse; fallbackTitle: string }) {
+function AskResultHeader({ result, fallbackTitle, embedded = false }: { result: AskStockResponse; fallbackTitle: string; embedded?: boolean }) {
   return <header className="ask-result-head">
     <div>
       <span>{intentLabel[result.intent]}</span>
@@ -812,12 +812,12 @@ function AskResultHeader({ result, fallbackTitle }: { result: AskStockResponse; 
       <span>{displayAskSource(result.source)}</span>
       <b>{confidenceLabel(result.confidence)}</b>
       <small>行情时间 {observedTime(result.observed_at)}</small>
-      {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
+      {result.symbol && !embedded ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据</a> : null}
     </div>
   </header>;
 }
 
-function AskResult({ result }: { result: AskStockResponse }) {
+export function AskResult({ result, embedded = false }: { result: AskStockResponse; embedded?: boolean }) {
   const stockAnalysis = result.kind === "stock_analysis";
   const namedSkillAnswer = result.kind === "llm_answer" && Boolean(result.symbol && result.name);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -825,31 +825,28 @@ function AskResult({ result }: { result: AskStockResponse }) {
   const sourceLabel = displayAskSource(result.source);
   if (result.kind === "llm_answer") {
     return <section className="ask-result ask-result-chat" aria-live="polite">
-      {namedSkillAnswer ? <AskResultHeader result={result} fallbackTitle={fallbackTitle} /> : null}
+      {namedSkillAnswer ? <AskResultHeader result={result} fallbackTitle={fallbackTitle} embedded={embedded} /> : null}
       <article className="ask-answer">
         <p>{displayAskText(result.answer)}</p>
       </article>
-      <details className="ask-answer-more">
-        <summary>依据 / 风险 / 后续跟踪</summary>
-        <div>
-          <EvidenceList title="判断依据" items={displayAskList(result.evidence)} tone="evidence" />
-          <EvidenceList title="主要风险" items={displayAskList(result.risks)} tone="risk" />
-          <EvidenceList title="后续跟踪" items={displayMonitoringList(result.next_actions)} tone="action" />
-        </div>
-      </details>
+      <div className="ask-evidence-grid ask-answer-evidence" aria-label="回答依据与行动">
+        <EvidenceList title="判断依据" items={displayAskList(result.evidence)} tone="evidence" />
+        <EvidenceList title="主要风险" items={displayAskList(result.risks)} tone="risk" />
+        <EvidenceList title="后续跟踪" items={displayMonitoringList(result.next_actions)} tone="action" />
+      </div>
       {!namedSkillAnswer ? <footer className="ask-answer-foot">
         <span><i>{sourceLabel}</i><b> · {confidenceLabel(result.confidence)}</b></span>
-        {result.symbol ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据（可选）</a> : null}
+        {result.symbol && !embedded ? <a className="ask-stock-link" href={stockResearchHref(result)}>查看完整依据</a> : null}
       </footer> : null}
     </section>;
   }
   return <section className="ask-result" aria-live="polite">
-    <AskResultHeader result={result} fallbackTitle={fallbackTitle} />
+    <AskResultHeader result={result} fallbackTitle={fallbackTitle} embedded={embedded} />
     <article className="ask-answer">
       <span>结论</span>
       <p>{displayAskText(result.answer)}</p>
     </article>
-    {stockAnalysis ? <AskGateBrief result={result} /> : null}
+    {stockAnalysis ? <AskGateBrief result={result} embedded={embedded} /> : null}
     <HoldingContext result={result} />
     <AskRowsTable result={result} />
     <div className="ask-evidence-grid">
@@ -859,7 +856,7 @@ function AskResult({ result }: { result: AskStockResponse }) {
     </div>
     {stockAnalysis ? <section className="ask-support-package">
       <button className="ask-support-toggle" type="button" aria-expanded={supportOpen} onClick={() => setSupportOpen((open) => !open)}>
-        {supportOpen ? <><span>收起依据</span><span className="compat-copy">收起更多依据</span></> : <><span>更多依据</span><span className="compat-copy">展开更多依据</span></>}
+        {supportOpen ? <><span>收起专业明细</span><span className="compat-copy">收起更多依据</span></> : <><span>专业明细</span><span className="compat-copy">展开更多依据</span></>}
       </button>
       {supportOpen && <>
         <AskMetrics result={result} />
@@ -870,6 +867,108 @@ function AskResult({ result }: { result: AskStockResponse }) {
       <AskFactors result={result} />
     </>}
     <p className="ask-disclaimer"><ShieldAlert size={14} />{displayAskText(result.disclaimer)}</p>
+  </section>;
+}
+
+type StockQuestionTurn = {
+  id: string;
+  question: string;
+  result: AskStockResponse;
+};
+
+const stockQuickQuestions = [
+  { label: "现在能不能买", question: (name: string) => `${name}现在能不能买，直接给我结论` },
+  { label: "持仓怎么处理", question: (name: string) => `如果已经持有${name}，现在怎么处理` },
+  { label: "什么价格放弃", question: (name: string) => `${name}跌到什么价格应该放弃` },
+  { label: "什么会改变决定", question: (name: string) => `${name}出现什么变化会改变当前决定` },
+];
+
+export function StockAskPanel({ symbol, name }: StockAnchor) {
+  const [question, setQuestion] = useState("");
+  const [turns, setTurns] = useState<StockQuestionTurn[]>([]);
+  const [pendingQuestion, setPendingQuestion] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setQuestion("");
+    setTurns([]);
+    setPendingQuestion("");
+    setError("");
+  }, [symbol]);
+
+  const ask = async (value: string) => {
+    const normalized = value.trim();
+    if (normalized.length < 2 || pendingQuestion) return;
+    setQuestion("");
+    setError("");
+    setPendingQuestion(normalized);
+    try {
+      const result = await askStock({
+        question: normalized,
+        context: { symbol, name },
+        conversation: turns.flatMap<AskStockConversationMessage>((turn) => [
+          { role: "user", content: turn.question },
+          { role: "assistant", content: turn.result.answer },
+        ]).slice(-8),
+        sourceContext: null,
+      });
+      setTurns((current) => [...current, { id: messageId(), question: normalized, result }]);
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.detail : "暂时没有收到回答，请稍后重试。");
+      setQuestion(normalized);
+    } finally {
+      setPendingQuestion("");
+    }
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void ask(question);
+  };
+  const latest = turns.at(-1) ?? null;
+  const history = turns.slice(0, -1).reverse();
+
+  return <section id="stock-questions" className="stock-inline-ask" aria-label="继续问这只股票">
+    <header>
+      <div><span>继续研究</span><h3>继续问 {name}</h3></div>
+      <p>直接回答当前问题；结论、关键依据、风险和下一步会自动展开。</p>
+    </header>
+    <nav aria-label="个股常用问题">
+      {stockQuickQuestions.map((item) => <button type="button" key={item.label} onClick={() => void ask(item.question(name))} disabled={Boolean(pendingQuestion)}>{item.label}</button>)}
+    </nav>
+    {history.length > 0 ? <details className="stock-ask-history">
+      <summary>历史追问 <b>{history.length}</b></summary>
+      <div>{history.map((turn) => <details key={turn.id}>
+        <summary>{turn.question}</summary>
+        <AskResult result={turn.result} embedded />
+      </details>)}</div>
+    </details> : null}
+    {latest ? <article className="stock-ask-latest" aria-label="最新追问回答">
+      <header><span>你的问题</span><strong>{latest.question}</strong><small>最新回答 · 已展开</small></header>
+      <AskResult result={latest.result} embedded />
+    </article> : null}
+    {pendingQuestion ? <div className="stock-ask-pending" role="status"><i /><span>正在核对行情、证据与风险</span><strong>{pendingQuestion}</strong></div> : null}
+    {error ? <div className="stock-ask-error" role="alert"><span>{error}</span><button type="button" onClick={() => void ask(question)}>重试</button></div> : null}
+    <form className="stock-ask-composer" aria-label="个股追问输入" onSubmit={submit}>
+      <label htmlFor="stock-ask-question">继续问当前股票</label>
+      <div>
+        <textarea
+          id="stock-ask-question"
+          value={question}
+          maxLength={160}
+          rows={2}
+          placeholder={`例如：${name}现在最大的风险是什么？`}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            event.preventDefault();
+            void ask(question);
+          }}
+        />
+        <button type="submit" disabled={Boolean(pendingQuestion) || question.trim().length < 2}><Send size={16} />{pendingQuestion ? "分析中" : "发送"}</button>
+      </div>
+      <small>{symbol} · Enter 发送，Shift + Enter 换行</small>
+    </form>
   </section>;
 }
 
@@ -1039,12 +1138,10 @@ export function AskStockPage() {
 
   return <>
     <WorkbenchPageHeader
-      eyebrow="FINANCIAL SKILL"
-      title="问股"
-      description="一句话提出问题，系统会保留股票上下文，并把结论、置信度、证据时间和下一步放在同一回答里。"
+      title="研究问答"
       status={<div className={`ask-header-state ${focusStock ? "active" : ""}`}><span>对话对象</span><strong>{focusStock ? stockLabel(focusStock) : "尚未指定股票"}</strong><small>{focusStock ? "追问会沿用当前股票" : "可问股票、板块或组合"}</small></div>}
     />
-    <PageTaskRail label="问股" steps={[
+    <PageTaskRail label="研究问答" steps={[
       { id: "ask-session", label: "确认对象", detail: "避免追问串股" },
       { id: "ask-quick", label: "选择问题", detail: "从高频决策场景开始" },
       { id: "ask-thread", label: "核对回答", detail: "结论、置信度与证据" },
@@ -1055,7 +1152,6 @@ export function AskStockPage() {
         <header id="ask-session" className="ask-chat-top">
           <div>
             <strong>当前对话</strong>
-            <p>{focusStock ? `正在围绕 ${stockLabel(focusStock)} 追问` : "直接问股票、板块、组合或最新消息。"}</p>
           </div>
           <nav aria-label="问股对话操作">
             <button type="button" onClick={newThread} disabled={streaming} aria-label="新建问股对话"><Plus size={13} />新对话</button>
@@ -1109,7 +1205,6 @@ export function AskStockPage() {
           <header>
             <span>快捷</span>
             <strong>常用问题</strong>
-            <p>{focusStock ? `围绕 ${stockLabel(focusStock)} 生成` : "常用问题入口"}</p>
           </header>
           <div>
             {askPlaybookScenes.filter((scene) => compactPlaybookIntents.has(scene.intent)).map((scene) => {
@@ -1131,7 +1226,6 @@ export function AskStockPage() {
           {messages.length === 0 ? <div className="ask-thread-empty">
             <MessageSquareText size={28} />
             <strong>直接问股票、板块或持仓</strong>
-            <p>支持追问“风险呢”“仓位呢”。</p>
           </div> : messages.map((message) => {
             if (message.role === "user") {
               return <article className="ask-message user" key={message.id}>

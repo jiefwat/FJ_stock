@@ -1261,7 +1261,9 @@ class MarketService:
                     600,
                     lambda: fetcher(symbol, quote.name, 20),
                 )
-                return analyse_stock_news(list(items))
+                return analyse_stock_news(
+                    list(items), company_name=quote.name, stock_code=quote.code
+                )
             except Exception as error:
                 self._provider_errors["stock_news"] = str(error)
                 return StockNewsSentiment(

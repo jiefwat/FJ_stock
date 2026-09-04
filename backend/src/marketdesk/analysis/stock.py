@@ -1,4 +1,5 @@
 from math import sqrt
+from typing import Literal
 
 from marketdesk.analysis.indicators import (
     average_true_range,
@@ -103,6 +104,8 @@ def analyse_stock(
     if not bars:
         advice = StockInvestmentAdvice(
             action="暂不参与",
+            participation_status="blocked",
+            blockers=["历史行情缺失，无法验证趋势、波动与退出位置"],
             position_hint="0 仓位，先补齐历史行情",
             entry_plan="等历史行情、成交额、估值和资金证据齐全后再评估",
             stop_loss="无有效价格锚，不能设置可复核止损",
@@ -219,9 +222,10 @@ def analyse_stock(
         missing.append("结构化财报")
     if not news.available:
         missing.append("个股新闻舆情")
-    history_coverage = 0.55 if len(bars) >= 60 else 0.4 if len(bars) >= 20 else 0.2
+    # Weights sum to exactly 1.0 so missing evidence can never be masked by clamping.
+    history_coverage = 0.45 if len(bars) >= 60 else 0.30 if len(bars) >= 20 else 0.15
     evidence_coverage = history_coverage
-    evidence_coverage += 0.15 if quote.pe is not None else 0
+    evidence_coverage += 0.10 if quote.pe is not None else 0
     evidence_coverage += 0.10 if quote.sector is not None else 0
     evidence_coverage += 0.10 if quote.net_flow is not None else 0
     evidence_coverage += 0.10 if research else 0
@@ -242,6 +246,7 @@ def analyse_stock(
         horizontal=horizontal,
         vertical=vertical,
         next_actions=next_actions,
+        news=news,
     )
     forecast = _trend_forecast(quote, stance, score, technical, factors, vertical)
     conclusion = _build_conclusion(
@@ -789,11 +794,33 @@ def _investment_advice(
     horizontal: list[StockComparisonItem],
     vertical: list[StockComparisonItem],
     next_actions: list[str],
+    news: StockNewsSentiment,
 ) -> StockInvestmentAdvice:
     risk_reward = next((item for item in dimensions if item.key == "risk_reward"), None)
     overheat = technical.rsi14 is not None and technical.rsi14 > 75
     weak_rr = risk_reward is not None and risk_reward.score is not None and risk_reward.score < 45
-    if stance == "strong_watch" and coverage >= 0.7 and not overheat and not weak_rr:
+    hard_risk_blockers = [
+        f"近 {news.window_days} 天明确风险：{item.title}"
+        for item in news.items
+        if item.hard_risk
+    ][:2]
+    if news.hard_risk_count > 0 and not hard_risk_blockers:
+        hard_risk_blockers = [news.conclusion]
+
+    blockers = list(hard_risk_blockers)
+    if coverage < 0.6:
+        blockers.append(f"关键证据完整度仅 {coverage:.0%}，暂不支持新开仓")
+    if stance == "avoid":
+        blockers.append(f"综合评分 {score:.0f}/100，尚未达到观察门槛")
+    if overheat:
+        blockers.append(f"RSI {technical.rsi14:.1f}，短线过热")
+    if weak_rr:
+        blockers.append("当前风险收益比不足")
+
+    if hard_risk_blockers:
+        action = "暂不参与"
+        position = "新增仓位 0%；已有仓位先核验风险影响，再决定是否降低暴露"
+    elif stance == "strong_watch" and coverage >= 0.7 and not overheat and not weak_rr:
         action = "可小仓试错"
         position = "建议 10%-20% 试探仓，只有放量突破或回踩确认后再加"
     elif stance in {"strong_watch", "watch"}:
@@ -806,13 +833,13 @@ def _investment_advice(
         action = "暂不参与"
         position = "0-5% 观察仓即可，把资金留给证据更完整的候选"
 
-    if technical.atr_pct is not None and technical.atr_pct > 5:
+    if not hard_risk_blockers and technical.atr_pct is not None and technical.atr_pct > 5:
         position = (
             "ATR 波动偏高，新仓控制在 5% 以内；已有仓位优先降低波动暴露"
             if stance in {"strong_watch", "watch"}
             else position
         )
-    elif technical.atr_pct is not None and technical.atr_pct > 3:
+    elif not hard_risk_blockers and technical.atr_pct is not None and technical.atr_pct > 3:
         position = (
             "ATR 波动偏高，新仓控制在 10% 以内，确认趋势后再评估"
             if stance in {"strong_watch", "watch"}
@@ -840,7 +867,13 @@ def _investment_advice(
         take_profit = f"结构压力空间不足，接近 3 ATR 复核位 {atr_target:.2f} 时重新评估"
     else:
         take_profit = "压力位和 ATR 暂缺，先不做止盈判断"
-    entry = next_actions[0] if next_actions else "等待趋势、估值、资金和事件证据共振"
+    entry = (
+        "等待明确风险解除或影响可量化后，再重新计算参与条件"
+        if hard_risk_blockers
+        else next_actions[0]
+        if next_actions
+        else "等待趋势、估值、资金和事件证据共振"
+    )
     confidence = round(max(0.0, min(1.0, coverage * (0.55 + score / 200))), 2)
     rationale = [
         next((item.summary for item in dimensions if item.key == "trend"), "趋势证据不足"),
@@ -849,9 +882,21 @@ def _investment_advice(
     ]
     if quote.net_flow is not None:
         rationale.append(f"资金流 {_signed_money(quote.net_flow)}")
+    if hard_risk_blockers:
+        rationale.insert(0, hard_risk_blockers[0])
+
+    participation_status: Literal["eligible", "conditional", "blocked"] = (
+        "blocked"
+        if hard_risk_blockers or coverage < 0.6 or stance == "avoid"
+        else "eligible"
+        if action == "可小仓试错"
+        else "conditional"
+    )
 
     return StockInvestmentAdvice(
         action=action,
+        participation_status=participation_status,
+        blockers=blockers,
         position_hint=position,
         entry_plan=entry,
         stop_loss=stop_loss,

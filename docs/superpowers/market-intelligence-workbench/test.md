@@ -2079,6 +2079,31 @@ make verify
 
 The production build is running locally and `/healthz` returns HTTP 200. Automated loopback page navigation was blocked by the browser-control URL policy, so authenticated visual and responsive acceptance is deferred to the deployed same-origin URL.
 
+## 2026-09-02 Plain Unified Workbench Acceptance
+
+Visual acceptance used authenticated production data and DOM with the locally built stylesheet injected after each route load. This isolates the pending presentation layer while exercising realistic states and data density.
+
+| Check | Result |
+| --- | --- |
+| Desktop route matrix | Passed for all ten authenticated routes at 1440 x 1000 |
+| Desktop document overflow | 0 px overflow on every checked route |
+| Mobile primary navigation | Five destinations visible at 390px |
+| Mobile More menu | Opens and exposes Limit Ladder, Concept, Industry, and Review |
+| Mobile search | Opens the command dock and focuses its input |
+| Mobile Holdings onboarding | Stacks copy and full-width primary action vertically |
+| Mobile document overflow | `scrollWidth === clientWidth` on all checked primary routes |
+| Opportunities hierarchy | One continuous decision surface; strategy and candidate lists remain separate |
+| Semantic presentation | Red-up/green-down, risk, confidence, warning, degraded, and `N/A` meanings preserved |
+
+Build-time checks completed before the browser matrix:
+
+```text
+pnpm --dir frontend build
+git diff --check
+```
+
+Both passed. The final `make verify` gate also passed: backend lint and types, 246 backend tests, frontend types, 108 frontend tests, the 1,661-module production build, and live-data quality with 5,553 equities at 100% coverage, six indices, and 100 sectors.
+
 ### Public release acceptance
 
 Commits `41ff7ec` and `e22c82b` were pushed to `origin/main` and deployed as release `20260823-191134-e22c82b` at `https://stock.jiewat-kaka-fj.com`.
@@ -2128,3 +2153,125 @@ Commit `87dca4a` was pushed to `origin/main` and deployed as release `20260823-1
 - `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
 - The unit enables immediate refresh every 600 seconds, and the latest persisted market `fetched_at` advanced to `2026-08-23T11:23:14.122029Z` after the new service process started at `11:23:02Z`.
 - The release contains no runtime data directory, while `/opt/aster-market/data/marketdesk.db` remains present.
+
+## 2026-08-29 Stock Lab Editorial UI Deployment
+
+The release replaces Stock Lab's stacked-card presentation with an editorial decision flow, keeps professional evidence progressively disclosed, and preserves the existing backend analysis and account boundaries.
+
+Final repository gate immediately before deployment:
+
+```text
+make verify
+```
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 246 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 107 tests across 13 files |
+| Production build | Passed, 1,661 modules transformed |
+| Live data | Passed, 5,550 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+### Public release acceptance
+
+The verified dirty worktree was deployed as release `20260829-204729-e868aff-dirty` at `https://stock.jiewat-kaka-fj.com`; rollback remains available at `20260829-122133-e868aff-dirty`.
+
+- Public `/healthz` returned `{"status":"ok"}`.
+- The public index references `index-DuOlwhVY.js` and `index-CUQ5detg.css`; the deployed CSS contains the editorial `stock-page-task-rail` rules.
+- The deployed `StockLabPage-DCIuRX1q.js` contains the compact `切换股票` interaction.
+- An unauthenticated request to `/api/v1/holdings` returned HTTP 401, confirming the account boundary remains active.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The release contains no runtime `data` directory, while `/opt/aster-market/data/marketdesk.db` remains present.
+- Startup and public-request logs show successful application startup and HTTP 200 responses for the index, health endpoint, stylesheet, and Stock Lab chunk.
+
+## 2026-08-29 Stock Lab Progressive Disclosure V8
+
+The loaded Stock Lab page now presents one decision before one directory. The first layer keeps stock identity, verdict, blocker, evidence quality, position discipline, and collapsed operation conditions; duplicated why/risk/trend summaries and duplicated desktop/mobile Ask actions are removed. Price history now lives inside the evidence disclosure, and `PageTaskRail` is the only visible page directory.
+
+Focused verification:
+
+```text
+pnpm --dir frontend test --run src/features/stocks/StockLabPage.test.tsx src/components/WorkbenchPageHeader.test.tsx
+pnpm --dir frontend typecheck
+git diff --check
+```
+
+| Gate | Result |
+| --- | --- |
+| Focused frontend tests | Passed, 26 tests across 2 files |
+| Frontend types | Passed |
+| Diff integrity | Passed |
+
+Final repository gate:
+
+```text
+make verify
+```
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 246 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 107 tests across 13 files |
+| Production build | Passed, 1,661 modules transformed |
+| Live data | Passed, 5,550 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+The local loopback page could not be inspected through the in-app browser because its URL policy blocked the action. No visual-browser acceptance is claimed; component regressions, responsive CSS constraints, production build, and the complete repository gate provide the current verification evidence.
+
+### Public release acceptance
+
+The verified dirty worktree was deployed as release `20260829-212240-e868aff-dirty` at `https://stock.jiewat-kaka-fj.com`; rollback remains available at `20260829-204729-e868aff-dirty`.
+
+- Public `/healthz` returned `{"status":"ok"}` and the public index references `index-DrEUCVbg.js` plus `index-C_7YvKox.css`.
+- The main bundle references `StockLabPage-2ypkN3wu.js`; the deployed chunk contains `stock-sector-link`, `四维决策依据`, and `价格走势`, while the removed second-directory copy, mobile Ask label, and duplicate mobile action class are absent.
+- The deployed stylesheet contains the inline sector-link rule and the evidence-scoped price-disclosure rule.
+- An unauthenticated request to `/api/v1/holdings` returned HTTP 401, confirming the account boundary remains active.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The release contains no runtime `data` directory, while `/opt/aster-market/data/marketdesk.db` remains present.
+- Service logs show a clean shutdown/startup cycle and HTTP 200 responses for the internal and public health checks and public index.
+- Browser visual acceptance is not claimed because the loopback URL remained blocked by the browser policy; public static-resource and server-side acceptance completed independently.
+
+## 2026-08-29 Market Editorial Layout Deployment
+
+The Market page now uses an editorial hierarchy instead of equal card grids: one primary turnover measure, a quiet metric ledger, a dominant breadth view, and a secondary market-lead rail. Neutral surfaces and one blue interaction accent own the page; red and green remain limited to market-direction values. The mobile page directory renders as a complete two-by-two grid.
+
+Final repository verification passed with 246 backend tests, 107 frontend tests, a 1,661-module production build, and 5,550 live equities at 100% coverage. Authenticated local Chrome acceptance at 1,440px and 390px reported no document overflow or browser errors; the desktop dashboard used aligned asymmetric columns and every distribution bar shared the same neutral palette.
+
+The verified dirty worktree was deployed as release `20260829-215104-e868aff-dirty` at `https://stock.jiewat-kaka-fj.com`; rollback remains available at `20260829-212240-e868aff-dirty`.
+
+- The public index references `index-CPwMqjzo.js` and `index-D5TNToX9.css`; the main bundle references `MarketPage-BDqR3qk9.js`.
+- The deployed stylesheet contains `market-page-task-rail`, `quant-snapshot`, and `quant-dashboard-aside`, confirming the mobile directory and editorial dashboard rules are active.
+- Public `/healthz` returned `{"status":"ok"}`, while unauthenticated `/api/v1/holdings` returned HTTP 401.
+- `/opt/aster-market/current` resolves to the expected release; `stock-ts.service` and `stock-ts-morning-email.timer` are active.
+- The release contains no runtime `data` directory, while `/opt/aster-market/data/marketdesk.db` remains present.
+
+## 2026-09-04 Plain Unified Workbench Deployment
+
+The final box-reduction pass removes ordinary card fills, gradients, radii, and shadows in favor of whitespace, typography, and ruled rows. Inputs, primary actions, and semantic warning or risk states retain the boundaries needed for operation and meaning.
+
+Final repository gate:
+
+| Gate | Result |
+| --- | --- |
+| Backend lint | Passed |
+| Backend types | Passed, 32 source files |
+| Backend tests | Passed, 246 tests |
+| Frontend types | Passed |
+| Frontend tests | Passed, 110 tests across 14 files |
+| Production build | Passed, 1,662 modules transformed |
+| Live data | Passed, 5,555 equities, 100.0% coverage, 6 indices, 100 sectors |
+
+### Public release acceptance
+
+The verified worktree was deployed as release `20260904-125205-e868aff-dirty` at `https://stock.jiewat-kaka-fj.com`; the stable pre-release rollback remains `20260829-233854-e868aff-dirty`.
+
+- The public index references `index-0Tbe0ooa.js` and `index-B7MQ3JG2.css`.
+- Authenticated browser acceptance passed on all ten routes at 1440 x 1000 and 390 x 844 with zero document overflow and no console errors or warnings.
+- Public `/healthz` returned `{"status":"ok"}` and unauthenticated `/api/v1/holdings` returned HTTP 401.
+- `stock-ts.service` and `stock-ts-morning-email.timer` are active, release-local data is absent, and the persistent database remains under `/opt/aster-market/data`.
+- A temporary production acceptance account and its session were removed after testing.
+- Historical static assets are now copied only when absent, preventing old timestamps from causing current shared chunks to be deleted by retention cleanup.

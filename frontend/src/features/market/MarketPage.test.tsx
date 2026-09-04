@@ -182,7 +182,7 @@ function renderPage(initialPath = "/market") {
 }
 
 async function openMarketBrowser() {
-  fireEvent.click(await screen.findByRole("button", { name: "查看全市场行情（可选）" }));
+  fireEvent.click(await screen.findByRole("button", { name: "加载全市场行情" }));
   const browser = await screen.findByRole("region", { name: "全市场行情" });
   await within(browser).findByLabelText("搜索全市场");
   return browser;
@@ -244,8 +244,16 @@ it("shows one-snapshot market structure evidence and research shortcuts", async 
 
   const board = await screen.findByRole("region", { name: "市场量化看板" });
   expect(within(board).getByText("所有指标使用同一交易快照")).toBeInTheDocument();
+  const metrics = within(board).getByRole("region", { name: "核心市场指标" });
+  expect(within(metrics).getByText("来自 5100 只有效样本")).toBeInTheDocument();
   expect(within(board).getByText("61%")).toBeInTheDocument();
   expect(within(board).getByText("42")).toBeInTheDocument();
+  expect(within(board).getByRole("article", { name: "1% ~ 5%：2000 只" })).toBeInTheDocument();
+  const leads = within(board).getByRole("complementary", { name: "市场结构线索" });
+  const sectors = within(leads).getByRole("region", { name: "板块强弱排行" });
+  const activity = within(leads).getByRole("region", { name: "成交活跃个股" });
+  expect(within(sectors).getByRole("link", { name: /白酒/ })).toHaveAttribute("href", "/market?sector=BK1");
+  expect(within(activity).getByRole("link", { name: /贵州茅台/ })).toHaveAttribute("href", "/stocks?symbol=SH.600519&from=market-dashboard");
   expect(within(board).getByRole("link", { name: "连板梯队" })).toHaveAttribute("href", "/limit-ladder");
   expect(within(board).getByRole("link", { name: "概念分析" })).toHaveAttribute("href", "/concepts");
   expect(within(board).getByRole("link", { name: "行业分析" })).toHaveAttribute("href", "/industries");

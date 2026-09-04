@@ -10,6 +10,7 @@ import { loadRecentResearch, rememberRecentResearch, type RecentResearch } from 
 import { api, fmt, pct, percent, type EvidenceDocument, type FinancialHealth, type InstrumentEvidenceResult, type Quote, type StockNewsSentiment } from "../../lib/api";
 import { monitoringItem, monitoringText } from "../../lib/monitoring";
 import { plainLanguage } from "../../lib/plainLanguage";
+import { StockAskPanel } from "../ask/AskStockPage";
 
 const StockTrend = lazy(() => import("./StockTrend").then((module) => ({ default: module.StockTrend })));
 
@@ -34,6 +35,8 @@ type AnalysisDimension = {
 
 type InvestmentAdvice = {
   action: string;
+  participation_status: "eligible" | "conditional" | "blocked";
+  blockers: string[];
   position_hint: string;
   entry_plan: string;
   stop_loss: string;
@@ -100,6 +103,8 @@ type Dossier = {
 };
 
 type SearchNotice = { tone: "neutral" | "error"; message: string };
+type SecondaryPanel = "drivers" | "evidence";
+type DeepDossierSection = "company" | "history" | "scoring";
 
 const stanceLabel: Record<string, string> = {
   strong_watch: "重点观察",
@@ -170,20 +175,6 @@ function splitConclusion(conclusion: string) {
 function splitEvidence(content: string) {
   const parts = content.split(/[；;]/).map((item) => item.trim().replace(/[。；;]\s*$/, "")).filter(Boolean);
   return parts.length > 1 ? parts : [];
-}
-
-function askHref(dossier: Dossier, params: URLSearchParams, question?: string) {
-  const askParams = new URLSearchParams({
-    symbol: dossier.quote.symbol,
-    name: dossier.quote.name,
-    from: params.get("from") ?? "stock",
-  });
-  if (question) askParams.set("question", question);
-  ["preset", "board", "boardName", "boardType"].forEach((key) => {
-    const value = params.get(key);
-    if (value) askParams.set(key, value);
-  });
-  return `/ask?${askParams.toString()}`;
 }
 
 function ConclusionBrief({ dossier }: { dossier: Dossier }) {
@@ -324,22 +315,19 @@ function sourceGapCount(evidence?: InstrumentEvidenceResult) {
   return Object.values(evidence.capabilities).filter((item) => item.status === "unavailable" || item.status === "partial").length;
 }
 
-function evidenceRoute(dossier: Dossier, evidence?: InstrumentEvidenceResult) {
-  const riskCount = factorCount(dossier.score_factors, "negative") + dossier.bear_case.length;
-  const supportCount = factorCount(dossier.score_factors, "positive") + dossier.bull_case.length;
-  const gapCount = dossier.missing_evidence.length + sourceGapCount(evidence);
-
-  if (dossier.evidence_coverage < 0.6 || gapCount >= 2) {
-    return { tone: "caution", text: "补信息", detail: "公告、机构报告或所属板块的信息还不完整。" };
+function participationRoute(dossier: Dossier) {
+  const advice = dossier.investment_advice;
+  if (advice.participation_status === "blocked") {
+    return { tone: "negative", text: "先解除阻断", detail: advice.blockers[0] ?? "当前不满足新增仓位条件。" };
   }
-  if (riskCount > supportCount) {
-    return { tone: "negative", text: "先守住退出线", detail: "担心的方面比支持的方面更多。" };
+  if (advice.participation_status === "eligible") {
+    return { tone: "positive", text: "按计划试仓", detail: advice.position_hint };
   }
-  return { tone: "positive", text: "看处理办法", detail: "支持的方面更多，但仍要按条件执行。" };
+  return { tone: "caution", text: "等条件满足", detail: advice.entry_plan };
 }
 
 function EvidenceAuditDesk({ dossier, evidence }: { dossier: Dossier; evidence?: InstrumentEvidenceResult }) {
-  const route = evidenceRoute(dossier, evidence);
+  const route = participationRoute(dossier);
   const supportCount = factorCount(dossier.score_factors, "positive") + dossier.bull_case.length;
   const riskCount = factorCount(dossier.score_factors, "negative") + dossier.bear_case.length;
   const gapCount = dossier.missing_evidence.length + sourceGapCount(evidence);
@@ -465,98 +453,55 @@ function compactActionLabel(action: string) {
   return value.length > 10 ? `${value.slice(0, 10)}…` : value;
 }
 
-function compactItems(items: string[], fallback: string, max = 3) {
-  const values = items.map((item) => item.trim()).filter(Boolean);
-  return (values.length ? values : [fallback]).slice(0, max);
-}
-
 function dimensionSummary(dossier: Dossier, key: string, fallback: string) {
   return dossier.analysis_dimensions.find((item) => item.key === key)?.summary ?? fallback;
 }
 
-function StockFocusBoard({ dossier, evidence, params }: { dossier: Dossier; evidence?: InstrumentEvidenceResult; params: URLSearchParams }) {
+function StockFocusBoard({ dossier, evidence }: { dossier: Dossier; evidence?: InstrumentEvidenceResult }) {
   const quote = dossier.quote;
-  const tone = actionTone(dossier.investment_advice.action);
-  const route = evidenceRoute(dossier, evidence);
+  const tone = dossier.investment_advice.participation_status === "blocked" ? "negative" : actionTone(dossier.investment_advice.action);
   const firstTheme = evidence?.themes[0];
   const sectorName = quote.sector ?? firstTheme?.name ?? "板块待确认";
   const sectorLink = firstTheme ? themeHref(firstTheme) : quote.sector ? `/market?industry=${encodeURIComponent(quote.sector)}` : "/market";
   const actionLabel = compactActionLabel(displayAdviceAction(dossier.investment_advice.action));
-  const reasons = compactItems(
-    [...dossier.investment_advice.rationale, ...dossier.trend_forecast.drivers, ...dossier.bull_case],
-    "暂无足够优势证据，先观察。",
-    2,
-  );
-  const risks = compactItems(
-    [...dossier.bear_case, ...dossier.invalidation, ...dossier.missing_evidence],
-    "暂无明确反方，但仍按止损线执行。",
-    2,
-  );
 
   return <section className={`stock-focus-board stock-focus-redesign ${tone}`} id="stock-final-gate" aria-label="个股结论">
+    <header className="stock-focus-identity">
+      <div><span>{quote.symbol} · <Link className="stock-sector-link" aria-label={`查看${sectorName}板块`} to={sectorLink}>{sectorName}</Link></span><h2>{quote.name}</h2></div>
+      <p>{fmt(quote.price)} <b className={(quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(quote.change_pct)}</b></p>
+    </header>
     <div className="stock-chart-first">
-      <section className="stock-chart-area" aria-label="价格走势">
-        <header className="stock-chart-head">
-          <div>
-            <span>{quote.symbol} · {sectorName}</span>
-            <h2>{quote.name}</h2>
-          </div>
-          <p>{fmt(quote.price)} <b className={(quote.change_pct ?? 0) >= 0 ? "up" : "down"}>{pct(quote.change_pct)}</b></p>
-        </header>
-        <Suspense fallback={<section className="trend-panel compact trend-loading" role="status">正在绘制走势…</section>}>
-          <StockTrend bars={dossier.bars} compact />
-        </Suspense>
-      </section>
       <aside className="stock-quick-brief">
         <article className="stock-verdict-card">
           <span>结论</span>
           <strong>{actionLabel}</strong>
           {actionLabel !== displayAdviceAction(dossier.investment_advice.action) ? <small className="stock-action-full">{displayAdviceAction(dossier.investment_advice.action)}</small> : null}
           <div className="stock-brief-metrics">
-            <small><span>趋势</span><b>{dossier.trend_forecast.direction}</b></small>
-            <small><span>分析置信度</span><b>{percent(dossier.investment_advice.confidence * 100)}</b></small>
-            <small><span>证据完整度</span><b>{percent(dossier.evidence_coverage * 100)}</b></small>
+            <small><span>证据质量</span><b>{percent(dossier.investment_advice.confidence * 100)} / {percent(dossier.evidence_coverage * 100)}</b></small>
           </div>
-          <small className="stock-brief-coverage">两项指标只衡量证据质量，不代表上涨概率</small>
+          <small className="stock-brief-coverage">分析置信度 / 证据完整度，不代表上涨概率</small>
         </article>
         <section className="stock-action-sheet" id="stock-investment-advice" aria-label="当前处理意见">
+          {dossier.investment_advice.participation_status === "blocked" && dossier.investment_advice.blockers.length > 0 ? <section className="stock-current-blocker" aria-label="当前阻断条件">
+            <span>当前阻断条件</span>
+            <strong>先不新增仓位</strong>
+            <ul>{dossier.investment_advice.blockers.slice(0, 2).map((item) => <li key={item}>{plainLanguage(item)}</li>)}</ul>
+          </section> : null}
           <div>
             <span>处理纪律</span>
             <p>{plainLanguage(dossier.investment_advice.position_hint)}</p>
           </div>
-          <dl>
-            <div><dt>触发参与</dt><dd>{plainLanguage(dossier.investment_advice.entry_plan)}</dd></div>
-            <div><dt>停止跟踪</dt><dd>{plainLanguage(dossier.investment_advice.stop_loss)}</dd></div>
-            <div><dt>复核兑现</dt><dd>{plainLanguage(dossier.investment_advice.take_profit)}</dd></div>
-          </dl>
+          <details className="stock-condition-disclosure">
+            <summary><span>操作条件</span><strong>参与、停止与兑现</strong><small>展开</small></summary>
+            <dl>
+              <div><dt>触发参与</dt><dd>{plainLanguage(dossier.investment_advice.entry_plan)}</dd></div>
+              <div><dt>停止跟踪</dt><dd>{plainLanguage(dossier.investment_advice.stop_loss)}</dd></div>
+              <div><dt>复核兑现</dt><dd>{plainLanguage(dossier.investment_advice.take_profit)}</dd></div>
+            </dl>
+          </details>
         </section>
-        <nav className="stock-mobile-decision-actions" aria-label="移动端快捷动作">
-          <Link aria-label="移动端看板块" to={sectorLink}>板块背景（可选）</Link>
-          <Link aria-label="移动端问股" to={askHref(dossier, params)}>追问决定</Link>
-        </nav>
       </aside>
     </div>
-
-    <div className="stock-brief-strip">
-      <section className="focus-card" id="stock-evidence-audit" aria-label="依据">
-        <span>为什么</span>
-        <ul>{reasons.map((item) => <li key={item}>{plainLanguage(item)}</li>)}</ul>
-      </section>
-      <section className="focus-card">
-        <span>风险</span>
-        <ul>{risks.map((item) => <li key={item}>{plainLanguage(item)}</li>)}</ul>
-      </section>
-      <section className="focus-card" aria-label="未来趋势判断">
-        <span>趋势</span>
-        <strong>{dossier.trend_forecast.direction}</strong>
-        <p>{route.text}</p>
-      </section>
-    </div>
-
-    <footer className="stock-focus-actions">
-      <Link aria-label="看板块" to={sectorLink}>板块背景（可选）</Link>
-      <Link aria-label="问股" to={askHref(dossier, params)}>追问这个决定</Link>
-    </footer>
   </section>;
 }
 
@@ -595,50 +540,6 @@ function StockDecisionDeck({ dossier, evidence }: { dossier: Dossier; evidence?:
   </section>;
 }
 
-function StockAskRouter({ dossier, params }: { dossier: Dossier; params: URLSearchParams }) {
-  const name = dossier.quote.name;
-  const routes = [
-    {
-      label: "现在能不能买",
-      intent: "买入",
-      detail: "直接给是否参与、仓位和条件。",
-      question: `${name}现在能不能买，直接给我结论`,
-    },
-    {
-      label: "持仓怎么处理",
-      intent: "持仓",
-      detail: "继续持有、加仓、减仓还是退出。",
-      question: `如果已经持有${name}，现在怎么处理`,
-    },
-    {
-      label: "什么价格放弃",
-      intent: "退出",
-      detail: "给出不再看好的价格或条件。",
-      question: `${name}跌到什么价格应该放弃`,
-    },
-    {
-      label: "什么会改变决定",
-      intent: "变化",
-      detail: "哪些消息或行情变化会升级、降级。",
-      question: `${name}出现什么变化会改变当前决定`,
-    },
-  ];
-
-  return <section id="stock-questions" className="stock-ask-router" aria-label="个股问股快捷入口">
-    <div>
-      <span>决策追问</span>
-      <strong>只问会影响操作的问题</strong>
-    </div>
-    <nav>
-      {routes.map((route) => <Link key={route.intent} to={askHref(dossier, params, route.question)}>
-        <b>{route.intent}</b>
-        <strong>{route.label}</strong>
-        <small>{route.detail}</small>
-      </Link>)}
-    </nav>
-  </section>;
-}
-
 function EvidenceDocuments({ title, items, unavailable }: { title: string; items: EvidenceDocument[]; unavailable: boolean }) {
   return <div className="company-evidence-stream">
     <header><span>{title}</span><b>{items.length} 条</b></header>
@@ -672,15 +573,22 @@ function CompanyEvidencePanel({ data, loading, failed }: { data?: InstrumentEvid
   </section>;
 }
 
-function StockDecisionDrivers({ dossier }: { dossier: Dossier }) {
+function StockDecisionDrivers({ dossier, open, onOpenChange }: { dossier: Dossier; open: boolean; onOpenChange: (open: boolean) => void }) {
   const financial = dossier.financial_health;
   const news = dossier.news_sentiment;
+  const hasPriceHistory = dossier.bars.length >= 2;
   const latest = financial.periods[0];
   const latestNews = news.items[0];
   const invalidation = firstOrFallback(dossier.invalidation, dossier.investment_advice.stop_loss);
 
-  return <section className="stock-intelligence-grid decision-driver-grid" aria-label="四维决策依据">
-    <article className={`stock-intelligence-card ${financial.available ? "ready" : "unavailable"}`}>
+  return <details id="stock-decision-drivers" className="decision-driver-disclosure stock-secondary-disclosure" aria-label="四维决策依据" open={open}>
+    <summary onClick={(event) => { event.preventDefault(); onOpenChange(!open); }}>
+      <span>补充判断依据</span>
+      <strong>公司、消息、价格与失效条件</strong>
+      <small>按需展开</small>
+    </summary>
+    <section className="stock-intelligence-grid decision-driver-grid">
+      <article className={`stock-intelligence-card ${financial.available ? "ready" : "unavailable"}`}>
       <header><span>公司经营</span><b>{financial.score == null ? "未评分" : `${fmt(financial.score, 0)}/100`}</b></header>
       <strong>{financial.conclusion}</strong>
       {latest ? <p>{latest.report_label} · 利润同比 {pct(latest.net_profit_yoy)}</p> : <p>暂无可用报告期</p>}
@@ -696,12 +604,21 @@ function StockDecisionDrivers({ dossier }: { dossier: Dossier }) {
       <strong>{dossier.trend_forecast.direction}</strong>
       <p>{plainLanguage(dossier.trend_forecast.summary)}</p>
     </article>
-    <article className="stock-intelligence-card decision-change">
+      <article className="stock-intelligence-card decision-change">
       <header><span>改变决定</span><b>自动监控</b></header>
       <strong>{plainLanguage(invalidation)}</strong>
       <p>{monitoringText(firstOrFallback(dossier.next_actions, invalidation))}</p>
-    </article>
-  </section>;
+      </article>
+    </section>
+    <details className="stock-price-disclosure">
+      <summary><span>价格走势</span><strong>{hasPriceHistory ? "查看近期趋势图" : "历史行情暂缺"}</strong><small>按需展开</small></summary>
+      <section className="stock-chart-area" aria-label="价格走势">
+        {hasPriceHistory ? <Suspense fallback={<section className="trend-panel compact trend-loading" role="status">正在绘制走势…</section>}>
+          <StockTrend bars={dossier.bars} compact />
+        </Suspense> : <p className="stock-history-gap">历史行情暂缺，先按风险和处理纪律执行。</p>}
+      </section>
+    </details>
+  </details>;
 }
 
 function StockIntelligenceDetails({ dossier }: { dossier: Dossier }) {
@@ -733,7 +650,9 @@ function StockDeepDossier({
   evidenceLoading,
   evidenceFailed,
   open,
+  openSection,
   onOpenChange,
+  onOpenSectionChange,
   onOpenEvidence,
 }: {
   dossier: Dossier;
@@ -741,7 +660,9 @@ function StockDeepDossier({
   evidenceLoading: boolean;
   evidenceFailed: boolean;
   open: boolean;
+  openSection: DeepDossierSection | null;
   onOpenChange: (open: boolean) => void;
+  onOpenSectionChange: (section: DeepDossierSection | null) => void;
   onOpenEvidence: () => void;
 }) {
   return <details id="stock-deep-evidence" className="stock-deep-dossier" open={open}>
@@ -756,33 +677,55 @@ function StockDeepDossier({
       <small>财报 · 新闻 · 历史样本 · 评分明细</small>
     </summary>
     {open ? <div className="stock-deep-stack">
-      <StockIntelligenceDetails dossier={dossier} />
-      <SignalValidationPanel validation={dossier.signal_validation} />
-      <ComparisonSection horizontal={dossier.horizontal_comparison} vertical={dossier.vertical_comparison} />
-      <AnalystActionMap dossier={dossier} />
-      <ConclusionBrief dossier={dossier} />
-      <CompanyEvidencePanel data={evidence} loading={evidenceLoading} failed={evidenceFailed} />
-      {dossier.analysis_dimensions.length > 0 && <section className="panel analysis-breakdown">
-        <div className="panel-title"><span>分析拆解</span></div>
-        <div className="dimension-grid">{dossier.analysis_dimensions.map((item) => <article key={item.key} className={item.signal}>
-          <header><span>{item.label}</span><strong>{item.score == null ? "缺数据" : `${fmt(item.score, 0)}/100`}</strong></header>
-          <p>{item.summary}</p>
-          <ul>{item.evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
-        </article>)}</div>
-      </section>}
-      {dossier.next_actions.length > 0 && <section className="panel next-actions-panel">
-        <div className="panel-title"><span>后续跟踪</span></div>
-        <ol className="monitoring-action-list">{dossier.next_actions.map((item) => {
-          const monitor = monitoringItem(item);
-          return <li key={item} className={monitor.owner}><b>{monitor.label}</b><span>{monitor.text}</span></li>;
-        })}</ol>
-      </section>}
-      <section className="panel evidence-ledger" id="stock-score-ledger">
-        <div className="panel-title"><span>评分明细</span></div>
-        <div className="ledger-list">{dossier.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
-      </section>
-      {dossier.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究</span></div>{dossier.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
-      <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{dossier.technical ? Object.entries(dossier.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{dossier.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{dossier.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{dossier.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{dossier.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
+      <header className="stock-deep-directory-head"><span>明细目录</span><strong>选择一组查看，其他内容保持收起</strong></header>
+      <details className="stock-dossier-group" open={openSection === "company"}>
+        <summary onClick={(event) => { event.preventDefault(); onOpenSectionChange(openSection === "company" ? null : "company"); }}>
+          <em>01</em><span><strong>公司与消息</strong><small>财报、新闻、公告和研报</small></span>
+        </summary>
+        {openSection === "company" ? <div className="stock-dossier-group-content">
+          <StockIntelligenceDetails dossier={dossier} />
+          <CompanyEvidencePanel data={evidence} loading={evidenceLoading} failed={evidenceFailed} />
+        </div> : null}
+      </details>
+      <details className="stock-dossier-group" open={openSection === "history"}>
+        <summary onClick={(event) => { event.preventDefault(); onOpenSectionChange(openSection === "history" ? null : "history"); }}>
+          <em>02</em><span><strong>比较与历史</strong><small>历史样本、同行和自身对比</small></span>
+        </summary>
+        {openSection === "history" ? <div className="stock-dossier-group-content">
+          <SignalValidationPanel validation={dossier.signal_validation} />
+          <ComparisonSection horizontal={dossier.horizontal_comparison} vertical={dossier.vertical_comparison} />
+        </div> : null}
+      </details>
+      <details className="stock-dossier-group" open={openSection === "scoring"}>
+        <summary onClick={(event) => { event.preventDefault(); onOpenSectionChange(openSection === "scoring" ? null : "scoring"); }}>
+          <em>03</em><span><strong>模型与风控</strong><small>结论拆解、评分、技术和失效条件</small></span>
+        </summary>
+        {openSection === "scoring" ? <div className="stock-dossier-group-content">
+          <AnalystActionMap dossier={dossier} />
+          <ConclusionBrief dossier={dossier} />
+          {dossier.analysis_dimensions.length > 0 && <section className="panel analysis-breakdown">
+            <div className="panel-title"><span>分析拆解</span></div>
+            <div className="dimension-grid">{dossier.analysis_dimensions.map((item) => <article key={item.key} className={item.signal}>
+              <header><span>{item.label}</span><strong>{item.score == null ? "缺数据" : `${fmt(item.score, 0)}/100`}</strong></header>
+              <p>{item.summary}</p>
+              <ul>{item.evidence.map((itemEvidence) => <li key={itemEvidence}>{itemEvidence}</li>)}</ul>
+            </article>)}</div>
+          </section>}
+          {dossier.next_actions.length > 0 && <section className="panel next-actions-panel">
+            <div className="panel-title"><span>后续跟踪</span></div>
+            <ol className="monitoring-action-list">{dossier.next_actions.map((item) => {
+              const monitor = monitoringItem(item);
+              return <li key={item} className={monitor.owner}><b>{monitor.label}</b><span>{monitor.text}</span></li>;
+            })}</ol>
+          </section>}
+          <section className="panel evidence-ledger" id="stock-score-ledger">
+            <div className="panel-title"><span>评分明细</span></div>
+            <div className="ledger-list">{dossier.score_factors.map((factor) => <article key={factor.key} className={factor.signal}><span>{factor.label}</span><p>{factor.evidence}</p><strong>{factor.available ? `${factor.impact > 0 ? "+" : ""}${factor.impact}` : "未计入"}</strong></article>)}</div>
+          </section>
+          {dossier.research_evidence.length > 0 && <section className="panel research-evidence"><div className="panel-title"><span>语义研究</span></div>{dossier.research_evidence.map((item) => <p key={item}>＋ {item}</p>)}</section>}
+          <div className="evidence-grid"><section className="panel"><div className="panel-title"><span>技术结构</span></div><div className="metric-grid">{dossier.technical ? Object.entries(dossier.technical).map(([key, value]) => <div key={key}><span>{key.toUpperCase()}</span><strong>{fmt(value)}</strong></div>) : <div className="empty">历史行情不足，不能生成技术判断。</div>}</div></section><section className="panel thesis" id="stock-risk-controls"><div><h3>支持证据</h3>{dossier.bull_case.map((item) => <p key={item} className="positive">＋ {item}</p>)}</div><div><h3>反方证据</h3>{dossier.bear_case.map((item) => <p key={item} className="negative">－ {item}</p>)}</div><div><h3>失效条件</h3>{dossier.invalidation.map((item) => <p key={item}>× {item}</p>)}</div><div><h3>仍缺什么</h3>{dossier.missing_evidence.map((item) => <p key={item}>… {item}</p>)}</div></section></div>
+        </div> : null}
+      </details>
     </div> : null}
   </details>;
 }
@@ -793,10 +736,17 @@ export function StockLabPage() {
   const requestedSymbol = params.get("symbol")?.trim().toUpperCase() ?? "";
   const [term, setTerm] = useState(requestedSymbol);
   const [symbol, setSymbol] = useState(requestedSymbol);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [selectedSearchValue, setSelectedSearchValue] = useState(requestedSymbol);
   const [loadEvidence, setLoadEvidence] = useState(false);
   const deepDossierOpen = ["#stock-company-evidence", "#stock-risk-controls", "#stock-score-ledger"].includes(location.hash);
-  const [detailsOpen, setDetailsOpen] = useState(deepDossierOpen);
+  const linkedDeepSection: DeepDossierSection | null = location.hash === "#stock-company-evidence"
+    ? "company"
+    : ["#stock-risk-controls", "#stock-score-ledger"].includes(location.hash) ? "scoring" : null;
+  const [openPanel, setOpenPanel] = useState<SecondaryPanel | null>(deepDossierOpen ? "evidence" : null);
+  const [openDeepSection, setOpenDeepSection] = useState<DeepDossierSection | null>(linkedDeepSection);
   const [matches, setMatches] = useState<Quote[]>([]);
+  const [highlightedMatch, setHighlightedMatch] = useState(-1);
   const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
   const [recent, setRecent] = useState<RecentResearch[]>(() => loadRecentResearch());
   const debouncedTerm = useDebouncedValue(term);
@@ -826,26 +776,32 @@ export function StockLabPage() {
     if (requestedSymbol === symbol) return;
     setSymbol(requestedSymbol);
     setTerm(requestedSymbol);
+    setSelectedSearchValue(requestedSymbol);
     setMatches([]);
+    setHighlightedMatch(-1);
     setSearchNotice(null);
     setLoadEvidence(false);
+    setSwitcherOpen(false);
   }, [requestedSymbol, symbol]);
 
   useEffect(() => {
     setLoadEvidence(deepDossierOpen);
-    setDetailsOpen(deepDossierOpen);
-  }, [deepDossierOpen, symbol]);
+    setOpenPanel(deepDossierOpen ? "evidence" : null);
+    setOpenDeepSection(linkedDeepSection);
+  }, [deepDossierOpen, linkedDeepSection, symbol]);
 
   useEffect(() => {
     const normalizedTerm = debouncedTerm.trim();
-    if (normalizedTerm.length < 2 || /^(?:SH|SZ|BJ|HK|US)\.[A-Z0-9.]+$/i.test(normalizedTerm)) {
+    if (normalizedTerm.length < 2 || normalizedTerm.toUpperCase() === selectedSearchValue.toUpperCase() || /^(?:SH|SZ|BJ|HK|US)\.[A-Z0-9.]+$/i.test(normalizedTerm)) {
       setMatches([]);
+      setHighlightedMatch(-1);
       setSearchNotice(null);
       return undefined;
     }
     const currentQuote = query.data?.quote;
     if (currentQuote && [currentQuote.symbol, currentQuote.code, currentQuote.name].some((value) => value.toUpperCase() === normalizedTerm.toUpperCase())) {
       setMatches([]);
+      setHighlightedMatch(-1);
       setSearchNotice(null);
       return undefined;
     }
@@ -855,6 +811,7 @@ export function StockLabPage() {
       .then((items) => {
         if (ignore) return;
         setMatches(items);
+        setHighlightedMatch(-1);
         setSearchNotice(items.length
           ? { tone: "neutral", message: `找到 ${items.length} 只股票，请选择后开始分析。` }
           : { tone: "error", message: "没有找到匹配股票，请检查名称或代码。" });
@@ -862,15 +819,17 @@ export function StockLabPage() {
       .catch(() => {
         if (!ignore) {
           setMatches([]);
+          setHighlightedMatch(-1);
           setSearchNotice({ tone: "error", message: "股票搜索暂时不可用，请稍后重试。" });
         }
       });
     return () => { ignore = true; };
-  }, [debouncedTerm, query.data?.quote]);
+  }, [debouncedTerm, query.data?.quote, selectedSearchValue]);
 
   useEffect(() => {
     if (!query.data) return;
     setTerm(query.data.quote.name);
+    setSelectedSearchValue(query.data.quote.name);
     setRecent(rememberRecentResearch(query.data.quote));
   }, [query.data]);
 
@@ -889,18 +848,24 @@ export function StockLabPage() {
   const choose = (quote: Quote) => {
     setSymbol(quote.symbol);
     setTerm(quote.name);
+    setSelectedSearchValue(quote.name);
     setMatches([]);
+    setHighlightedMatch(-1);
     setSearchNotice(null);
     setLoadEvidence(false);
+    setSwitcherOpen(false);
     setParams({ symbol: quote.symbol });
   };
 
   const chooseSymbol = (nextSymbol: string, label = nextSymbol) => {
     setSymbol(nextSymbol);
     setTerm(label);
+    setSelectedSearchValue(label);
     setMatches([]);
+    setHighlightedMatch(-1);
     setSearchNotice(null);
     setLoadEvidence(false);
+    setSwitcherOpen(false);
     setParams({ symbol: nextSymbol });
   };
 
@@ -925,6 +890,7 @@ export function StockLabPage() {
       setSearchNotice({ tone: "neutral", message: "正在查找股票…" });
       const items = await api<Quote[]>(`/api/v1/search?q=${encodeURIComponent(value)}`);
       setMatches(items);
+      setHighlightedMatch(-1);
       if (items.length === 1) choose(items[0]);
       else setSearchNotice(items.length
         ? { tone: "neutral", message: `找到 ${items.length} 只股票，请选择后开始分析。` }
@@ -937,43 +903,81 @@ export function StockLabPage() {
 
   return <>
     <WorkbenchPageHeader
-      eyebrow="STOCK LAB"
       title="个股"
-      description="股票身份始终由你选择；先看操作结论，再核对改变决定的条件与专业证据。"
-      status={symbol ? <div className="stock-header-state"><span>当前标的</span><strong>已选择 · {(query.data?.quote.name ?? term) || symbol}</strong><small>{symbol}</small></div> : <div className="stock-header-state neutral"><span>当前标的</span><strong>尚未选择</strong><small>不会默认分析茅台</small></div>}
+      status={symbol ? undefined : <div className="stock-header-state neutral"><span>当前标的</span><strong>尚未选择</strong><small>不会默认分析茅台</small></div>}
     />
-    <PageTaskRail label="个股" steps={symbol ? [
-      { id: "stock-select", label: "确认股票", detail: "核对名称与代码" },
-      { id: "stock-final-gate", label: "操作结论", detail: "动作、风险与条件" },
-      { id: "stock-questions", label: "继续追问", detail: "只问影响决策的问题" },
-      { id: "stock-deep-evidence", label: "专业证据", detail: "按需展开来源与明细" },
+    <PageTaskRail label="个股" className="stock-page-task-rail" steps={symbol ? [
+      { id: "stock-final-gate", label: "结论", detail: "动作与仓位纪律" },
+      { id: "stock-decision-drivers", label: "依据", detail: "公司、消息与价格" },
+      { id: "stock-questions", label: "追问", detail: "影响决定的问题" },
+      { id: "stock-deep-evidence", label: "明细", detail: "财报、来源与评分" },
     ] : [
       { id: "stock-select", label: "选择股票", detail: "名称或代码均可" },
       { id: "stock-start", label: "选择来源", detail: "最近查看或市场线索" },
     ]} />
-    <div id="stock-select" className="stock-control-row">
-      <form className="stock-search" role="search" aria-label="选择股票进行分析" onSubmit={submitSearch}>
+    <div id="stock-select" className={`stock-control-row ${symbol ? "stock-switcher-compact" : ""}`}>
+      {symbol ? <button
+        type="button"
+        className="stock-switcher-toggle"
+        aria-expanded={switcherOpen}
+        aria-controls="stock-switcher-search"
+        onClick={() => setSwitcherOpen((current) => !current)}
+      >
+        <Search size={16} aria-hidden="true" />
+        <span>切换股票</span>
+        <small>{query.data?.quote.name ?? symbol} · {symbol}</small>
+      </button> : null}
+      {(!symbol || switcherOpen) ? <form id="stock-switcher-search" className="stock-search" role="search" aria-label="选择股票进行分析" onSubmit={submitSearch}>
         <Search size={18} aria-hidden="true" />
-        <input role="combobox" value={term} onChange={(event) => { setTerm(event.target.value); setSearchNotice(null); }} onKeyDown={(event) => { if (event.key === "Escape") { setMatches([]); setSearchNotice(null); } }} placeholder="输入股票代码或名称，如 600519 / HK.00700 / US.AAPL" aria-label="搜索股票" aria-autocomplete="list" aria-controls="stock-search-results" aria-describedby={searchNotice ? "stock-search-feedback" : undefined} aria-expanded={matches.length > 0} />
+        <input role="combobox" autoFocus={Boolean(symbol)} value={term} onFocus={(event) => { if (symbol) event.currentTarget.select(); }} onChange={(event) => { setTerm(event.target.value); setSelectedSearchValue(""); setHighlightedMatch(-1); setSearchNotice(null); }} onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setMatches([]);
+            setHighlightedMatch(-1);
+            setSearchNotice(null);
+            if (symbol) setSwitcherOpen(false);
+          } else if (matches.length > 0 && event.key === "ArrowDown") {
+            event.preventDefault();
+            setHighlightedMatch((current) => current >= matches.length - 1 ? 0 : current + 1);
+          } else if (matches.length > 0 && event.key === "ArrowUp") {
+            event.preventDefault();
+            setHighlightedMatch((current) => current <= 0 ? matches.length - 1 : current - 1);
+          } else if (event.key === "Enter" && highlightedMatch >= 0 && matches[highlightedMatch]) {
+            event.preventDefault();
+            choose(matches[highlightedMatch]);
+          }
+        }} placeholder="输入股票代码或名称，如 600519 / HK.00700 / US.AAPL" aria-label="搜索股票" aria-autocomplete="list" aria-controls="stock-search-results" aria-activedescendant={highlightedMatch >= 0 ? `stock-search-option-${highlightedMatch}` : undefined} aria-describedby={searchNotice ? "stock-search-feedback" : undefined} aria-expanded={matches.length > 0} />
         <button type="submit" className="stock-search-submit">分析</button>
-        {matches.length > 0 && <div className="search-results" id="stock-search-results" aria-label="股票搜索结果">{matches.map((item) => <button type="button" key={item.symbol} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}
-      </form>
+        {matches.length > 0 && <div className="search-results" id="stock-search-results" role="listbox" aria-label="股票搜索结果">{matches.map((item, index) => <button type="button" role="option" aria-selected={highlightedMatch === index} id={`stock-search-option-${index}`} className={highlightedMatch === index ? "active" : ""} key={item.symbol} onMouseEnter={() => setHighlightedMatch(index)} onClick={() => choose(item)}><b>{item.name}</b><span>{item.symbol}</span></button>)}</div>}
+      </form> : null}
       {fromOpportunity && <section className="stock-source-note compact" aria-label="线索来源"><strong>候选</strong>{sourcePresetLabel && <small>{sourcePresetLabel}</small>}</section>}
       {fromMarketBoard && <section className="stock-source-note compact" aria-label="板块来源"><strong>{sourceBoardName || "板块"}</strong><small>{sourceBoardType}</small></section>}
     </div>
     {searchNotice ? <p className={`stock-search-notice ${searchNotice.tone}`} id="stock-search-feedback" role={searchNotice.tone === "error" ? "alert" : "status"}>{searchNotice.message}</p> : null}
     {!symbol ? <section id="stock-start" className="stock-start-state" aria-label="开始股票分析">
-      <span>STOCK ANALYSIS</span>
-      <h2>先选股票，再生成结论</h2>
-      <p>系统不会默认把任何股票当成你的关注或持仓。输入名称、代码或从最近查看中选择。</p>
+      <h2>选择股票</h2>
       {recent.length > 0 ? <div><strong>最近查看</strong><nav>{recent.map((item) => <button type="button" key={item.symbol} onClick={() => chooseSymbol(item.symbol, item.name)}><b>{item.name}</b><small>{item.symbol}{item.sector ? ` · ${item.sector}` : ""}</small></button>)}</nav></div> : null}
-      <div className="stock-start-routes"><strong>还没有研究记录？</strong><nav><Link to="/opportunities"><b>从今日候选开始</b><small>先看经过策略筛选的研究线索</small></Link><Link to="/limit-ladder"><b>从连板结构开始</b><small>查看活跃股票与梯队位置</small></Link></nav></div>
+      <div className="stock-start-routes"><nav><Link to="/opportunities"><b>今日候选</b></Link><Link to="/limit-ladder"><b>连板梯队</b></Link></nav></div>
     </section> : null}
     <AsyncState loading={query.isLoading} loadingText={`正在核对 ${term || symbol} 的行情、财务与风险…`} error={query.error as Error | null} onRetry={() => void query.refetch()}>{query.data && <>
-    <StockFocusBoard dossier={query.data} evidence={evidenceQuery.data} params={params} />
-      <StockDecisionDrivers dossier={query.data} />
-      <StockAskRouter dossier={query.data} params={params} />
-      <StockDeepDossier dossier={query.data} evidence={evidenceQuery.data} evidenceLoading={evidenceQuery.isLoading} evidenceFailed={evidenceQuery.isError} open={detailsOpen} onOpenChange={setDetailsOpen} onOpenEvidence={() => setLoadEvidence(true)} />
+    <StockFocusBoard dossier={query.data} evidence={evidenceQuery.data} />
+      <section className="stock-section-directory" aria-label="个股分析目录">
+        <StockDecisionDrivers dossier={query.data} open={openPanel === "drivers"} onOpenChange={(open) => setOpenPanel(open ? "drivers" : null)} />
+        <StockAskPanel key={query.data.quote.symbol} symbol={query.data.quote.symbol} name={query.data.quote.name} />
+        <StockDeepDossier
+          dossier={query.data}
+          evidence={evidenceQuery.data}
+          evidenceLoading={evidenceQuery.isLoading}
+          evidenceFailed={evidenceQuery.isError}
+          open={openPanel === "evidence"}
+          openSection={openDeepSection}
+          onOpenChange={(open) => {
+            setOpenPanel(open ? "evidence" : null);
+            if (!open) setOpenDeepSection(null);
+          }}
+          onOpenSectionChange={setOpenDeepSection}
+          onOpenEvidence={() => setLoadEvidence(true)}
+        />
+      </section>
     </>}</AsyncState>
   </>;
 }

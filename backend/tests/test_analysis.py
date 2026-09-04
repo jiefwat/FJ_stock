@@ -16,6 +16,7 @@ from marketdesk.models import (
     Bar,
     DatasetMeta,
     EquityQuote,
+    FinancialHealth,
     FinancialPeriod,
     Freshness,
     HoldingItem,
@@ -830,6 +831,58 @@ def test_stock_news_deduplicates_the_same_syndicated_event() -> None:
     assert sentiment.score_impact == -3
 
 
+def test_stock_news_excludes_market_roundups_that_do_not_reference_the_stock() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    sentiment = analyse_stock_news(
+        [
+            stock_news_item(
+                "本周主力资金流向：多家公司资金异动",
+                summary="某公司被证监会立案调查，通信和汽车板块资金净流入。",
+                published_at=now - timedelta(hours=2),
+            ),
+            stock_news_item(
+                "贵州茅台发布月度经营数据",
+                published_at=now - timedelta(hours=3),
+            ),
+        ],
+        now=now,
+        company_name="贵州茅台",
+        stock_code="600519",
+    )
+
+    assert [item.title for item in sentiment.items] == ["贵州茅台发布月度经营数据"]
+    assert sentiment.hard_risk_count == 0
+    assert sentiment.negative_count == 0
+
+
+def test_stock_news_excludes_market_roundups_that_only_name_the_stock_in_summary() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    sentiment = analyse_stock_news(
+        [
+            stock_news_item(
+                "本周主力资金流向：有色金属、通信、汽车板块净流入",
+                summary=(
+                    "贵州茅台获小幅净流入，另有某公司被证监会立案调查，"
+                    "多家公司资金出现异动。"
+                ),
+                published_at=now - timedelta(hours=2),
+            ),
+            stock_news_item(
+                "白酒龙头经营韧性受关注",
+                summary="贵州茅台公布经营数据，贵州茅台渠道库存保持稳定。",
+                published_at=now - timedelta(hours=3),
+            ),
+        ],
+        now=now,
+        company_name="贵州茅台",
+        stock_code="600519",
+    )
+
+    assert [item.title for item in sentiment.items] == ["白酒龙头经营韧性受关注"]
+    assert sentiment.hard_risk_count == 0
+    assert sentiment.negative_count == 0
+
+
 def test_stock_analysis_is_insufficient_without_history() -> None:
     result = analyse_stock(equity(), [])
     assert result.stance == "insufficient_data"
@@ -885,6 +938,59 @@ def test_stock_stance_uses_multiple_visible_factors() -> None:
         "valuation",
     }
     assert round(50 + sum(item.impact for item in result.score_factors), 2) == result.stance_score
+
+
+def test_stock_evidence_coverage_only_reaches_full_when_every_source_is_available() -> None:
+    news = analyse_stock_news(
+        [
+            stock_news_item(
+                "公司发布月度经营数据",
+                published_at=datetime(2026, 8, 16, 12, tzinfo=UTC),
+            )
+        ],
+        now=datetime(2026, 8, 16, 12, tzinfo=UTC),
+    )
+    financial = FinancialHealth(available=True, conclusion="财报数据可用")
+
+    complete = analyse_stock(
+        equity(),
+        trending_bars(),
+        research_evidence=["机构报告已核验"],
+        financial_health=financial,
+        news_sentiment=news,
+    )
+    missing_research = analyse_stock(
+        equity(),
+        trending_bars(),
+        financial_health=financial,
+        news_sentiment=news,
+    )
+
+    assert complete.evidence_coverage == 1
+    assert missing_research.evidence_coverage == 0.9
+    assert "公告与研报增强数据" in missing_research.missing_evidence
+
+
+def test_recent_hard_risk_blocks_new_stock_participation() -> None:
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    bars = volatile_bars()
+    news = analyse_stock_news(
+        [stock_news_item("公司被证监会立案调查", published_at=now - timedelta(days=2))],
+        now=now,
+    )
+
+    result = analyse_stock(
+        equity(pe=18, price=bars[-1].close),
+        bars,
+        research_evidence=["机构报告已核验"],
+        financial_health=FinancialHealth(available=True, conclusion="财报数据可用"),
+        news_sentiment=news,
+    )
+
+    assert result.investment_advice.participation_status == "blocked"
+    assert result.investment_advice.action == "暂不参与"
+    assert "0%" in result.investment_advice.position_hint
+    assert any("立案调查" in item for item in result.investment_advice.blockers)
 
 
 def test_stock_analysis_adds_independent_momentum_and_risk_factors() -> None:

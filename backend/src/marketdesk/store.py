@@ -734,6 +734,18 @@ class Store:
             ).fetchall()
         return [HoldingItem.model_validate(self._public_row(row)) for row in rows]
 
+    def is_active_holding(self, user_id: int, subject_key: str, symbol: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM holdings
+                WHERE id=? AND user_id=? AND symbol=? AND quantity > 0 AND status != 'closed'
+                LIMIT 1
+                """,
+                (subject_key, user_id, symbol),
+            ).fetchone()
+        return row is not None
+
     def update_holding(
         self, item_id: int, user_id: int | None = None, **changes: object
     ) -> HoldingItem:
